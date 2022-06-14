@@ -1,0 +1,42 @@
+BasedOnStyle: Google
+
+ColumnLimit: 110
+
+AlignEscapedNewlines: Right
+AllowAllArgumentsOnNextLine: false
+AllowAllConstructorInitializersOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLambdasOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+BreakBeforeBraces: Custom
+DerivePointerAlignment: false
+FixNamespaceComments: true
+IndentCaseLabels: false
+IndentPPDirectives: None
+IndentWidth: 4
+PointerAlignment: Left
+IncludeBlocks: Preserve
+SortIncludes: true
+SortUsingDeclarations: true
+SpaceBeforeParens: ControlStatements
+
+BraceWrapping:
+  AfterClass: true
+  AfterControlStatement: false
+  AfterEnum: false
+  AfterFunction: true
+  AfterNamespace: false
+  AfterStruct: false
+  AfterUnion: false
+  AfterExternBlock: false
+  BeforeCatch: false
+  BeforeElse: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+  SplitEmptyNamespace: true
+
+BreakConstructorInitializers: "BeforeComma"
+BreakInheritanceList: "BeforeComma"
+  

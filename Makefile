@@ -1,21 +1,42 @@
-.PHONY: install build test clean
+.PHONY: build build-nodoc install create test publish docker-build docker-push docker
 
 ifeq ($(BUILD_TYPE),)
 BUILD_TYPE := RelWithDebInfo
 endif
 
-install:
-	./configure $(BUILD_TYPE)
-
-build:
-	cd build/$(BUILD_TYPE) && conan build ../..
+build: | install
+	mkdir -p build/$(BUILD_TYPE)
+	(cd build/$(BUILD_TYPE) && conan build ../..)
 
 test: build
-	build/$(BUILD_TYPE)/bin/turtle_util_Test
-	build/$(BUILD_TYPE)/bin/llfs_Test
-	build/$(BUILD_TYPE)/bin/turtle_core_Test
-	build/$(BUILD_TYPE)/bin/turtle_tree_Test
-	build/$(BUILD_TYPE)/bin/turtle_db_Test
+	mkdir -p build/$(BUILD_TYPE)
+ifeq ("$(GTEST_FILTER)","")
+	@echo -e "\n\nRunning DEATH tests ==============================================\n"
+	(cd build/$(BUILD_TYPE) && GTEST_OUTPUT='xml:../death-test-results.xml' GTEST_FILTER='*Death*' ctest --verbose)
+	@echo -e "\n\nRunning non-DEATH tests ==========================================\n"
+	(cd build/$(BUILD_TYPE) && GTEST_OUTPUT='xml:../test-results.xml' GTEST_FILTER='*-*Death*' ctest --verbose)
+else
+	(cd build/$(BUILD_TYPE) && GTEST_OUTPUT='xml:../test-results.xml' ctest --verbose)
+endif
 
-clean:
-	rm -rf build/$(BUILD_TYPE)
+install:
+	mkdir -p build/$(BUILD_TYPE)
+	(cd build/$(BUILD_TYPE) && conan install ../.. -s build_type=$(BUILD_TYPE) --build=missing)
+
+create: test
+	(cd build/$(BUILD_TYPE) && conan create ../.. -s build_type=$(BUILD_TYPE))
+
+
+publish: | test build
+	batteries/script/publish-release.sh
+
+
+docker-build:
+	(cd docker && docker build -t registry.gitlab.com/tonyastolfi/batteries .)
+
+
+docker-push: | docker-build
+	(cd docker && docker push registry.gitlab.com/tonyastolfi/batteries)
+
+
+docker: docker-build docker-push

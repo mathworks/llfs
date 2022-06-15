@@ -1,6 +1,6 @@
 BasedOnStyle: Google
 
-ColumnLimit: 110
+ColumnLimit: 100
 
 AlignEscapedNewlines: Right
 AllowAllArgumentsOnNextLine: false
@@ -10,15 +10,16 @@ AllowShortFunctionsOnASingleLine: None
 AllowShortIfStatementsOnASingleLine: false
 AllowShortLambdasOnASingleLine: false
 AllowShortLoopsOnASingleLine: false
+AllowAllConstructorInitializersOnNextLine: false
 BreakBeforeBraces: Custom
 DerivePointerAlignment: false
 FixNamespaceComments: true
 IndentCaseLabels: false
 IndentPPDirectives: None
-IndentWidth: 4
+IndentWidth: 2
 PointerAlignment: Left
-IncludeBlocks: Preserve
 SortIncludes: true
+IncludeBlocks: Preserve
 SortUsingDeclarations: true
 SpaceBeforeParens: ControlStatements
 
@@ -39,4 +40,4 @@ BraceWrapping:
 
 BreakConstructorInitializers: "BeforeComma"
 BreakInheritanceList: "BeforeComma"
-  
+IndentCaseLabels: "true"

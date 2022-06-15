@@ -1,0 +1,89 @@
+#+++++++++++-+-+--+----- --- -- -  -  -   -
+# See batteries/docker/Dockerfile (https://gitlab.com/tonyastolfi/batteries/)
+#
+image: registry.gitlab.com/tonyastolfi/batteries@sha256:1ff1701e2dead40a93933dca0fb33dd0950c2721cfe6d0c618710f6769f6cf2d
+
+#+++++++++++-+-+--+----- --- -- -  -  -   -
+default:
+  retry:
+    max: 2
+    when: runner_system_failure
+  before_script:
+    - "test -d /local/gitlab-runner-local-cache || { echo \"FATAL: no local docker cache volume mapped\"; false; }"
+    - "if [ ! -d /local/gitlab-runner-local-cache/.conan ]; then rm -rf /local/gitlab-runner-local-cache/.conan.IN_PROGRESS && cp -r ~/.conan /local/gitlab-runner-local-cache/.conan.IN_PROGRESS && mv /local/gitlab-runner-local-cache/.conan.IN_PROGRESS /local/gitlab-runner-local-cache/.conan; fi"
+    - export CONAN_USER_HOME=/local/gitlab-runner-local-cache
+    - echo "CI_DEPLOY_USER=${CI_DEPLOY_USER}"
+    - echo "CI_DEPLOY_PASSWORD=${CI_DEPLOY_PASSWORD}"
+    - env | grep 'RELEASE_CONAN'
+    - env | grep -v 'RELEASE_CONAN'
+
+#+++++++++++-+-+--+----- --- -- -  -  -   -
+stages:
+  - install
+  - build
+  - test
+  - release
+
+#+++++++++++-+-+--+----- --- -- -  -  -   -
+install:
+  stage: install
+  script:
+    - batteries/script/ci-make.sh install
+  rules:
+    - changes:
+      - conanfile.py
+      - .gitlab-ci.yml
+  cache:
+    - key: build-cache
+      paths:
+        - build/
+      policy: push
+
+#+++++++++++-+-+--+----- --- -- -  -  -   -
+build:
+  stage: build
+  script:
+    - batteries/script/ci-make.sh build
+  artifacts:
+    paths:
+      - build/
+  cache:
+    - key: build-cache
+      paths:
+        - build/
+      policy: pull-push
+
+#+++++++++++-+-+--+----- --- -- -  -  -   -
+test:
+  stage: test
+  script:
+    - batteries/script/ci-make.sh test
+  artifacts:
+    reports:
+      junit:
+        - build/Release/test-results.xml
+        - build/Release/death-test-results.xml
+  cache:
+    - key: build-cache
+      paths:
+        - build/
+      policy: pull
+
+#+++++++++++-+-+--+----- --- -- -  -  -   -
+release:
+  stage: release
+  variables:
+    RELEASE_CONAN_LOGIN_USERNAME: "${CI_DEPLOY_USER}"
+    RELEASE_CONAN_PASSWORD: "${CI_DEPLOY_PASSWORD}"
+  script:
+    - batteries/script/publish-release.sh
+  release:
+    tag_name: $CI_COMMIT_TAG
+    description: $CI_COMMIT_MESSAGE
+  rules:
+    - if: $CI_COMMIT_TAG
+  cache:
+    - key: build-cache
+      paths:
+        - build/
+      policy: pull

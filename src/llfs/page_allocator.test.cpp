@@ -17,9 +17,8 @@
 #include <llfs/memory_log_device.hpp>
 #include <llfs/testing/fake_log_device.hpp>
 
-#include <turtle/util/env.hpp>
-
 #include <batteries/async/fake_task_scheduler.hpp>
+#include <batteries/env.hpp>
 #include <batteries/state_machine_model.hpp>
 
 #include <boost/uuid/uuid_generators.hpp>
@@ -146,7 +145,7 @@ TEST(PageAllocatorTest, LogCrashRecovery)
   std::uniform_int_distribution<i32> pick_ref_count_delta(-5, +5);
   std::uniform_int_distribution<u64> pick_failure_time(1u, 4096u);
 
-  const bool extra_testing = turtle_db::getenv_as<int>("LLFS_EXTRA_TESTING").value_or(0);
+  const bool extra_testing = batt::getenv_as<int>("LLFS_EXTRA_TESTING").value_or(0);
 
   constexpr u64 kStartSeed = 0;
   const u64 kEndSeed = (extra_testing ? (10000 * kNumSeeds) : kNumSeeds) + kStartSeed;
@@ -549,7 +548,7 @@ class PageAllocatorModel
 
   usize max_concurrency() const override
   {
-    static const int n = turtle_db::getenv_as<int>("MODEL_CHECK_THREADS").value_or(4);
+    static const int n = batt::getenv_as<int>("MODEL_CHECK_THREADS").value_or(4);
     return n;
   }
 

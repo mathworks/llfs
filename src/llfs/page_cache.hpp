@@ -13,6 +13,7 @@
 #include <llfs/cache.hpp>
 #include <llfs/caller.hpp>
 #include <llfs/log_device.hpp>
+#include <llfs/metrics.hpp>
 #include <llfs/optional.hpp>
 #include <llfs/page_allocator.hpp>
 #include <llfs/page_arena.hpp>
@@ -30,8 +31,6 @@
 #include <llfs/seq.hpp>
 #include <llfs/slot_read_lock.hpp>
 #include <llfs/status.hpp>
-
-#include <turtle/util/metric_collectors.hpp>
 
 #include <glog/logging.h>
 

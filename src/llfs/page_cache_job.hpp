@@ -11,13 +11,12 @@
 #define LLFS_PAGE_CACHE_JOB_HPP
 
 #include <llfs/finalized_page_cache_job.hpp>
+#include <llfs/method_binder.hpp>
 #include <llfs/page_cache.hpp>
 #include <llfs/page_id.hpp>
 #include <llfs/page_loader.hpp>
 #include <llfs/page_size.hpp>
 #include <llfs/pinned_page.hpp>
-
-#include <turtle/util/method_binder.hpp>
 
 #include <functional>
 #include <memory>
@@ -273,8 +272,8 @@ class PageCacheJob : public PageLoader
     return this->root_set_delta_;
   }
 
-  TURTLE_DB_METHOD_BINDER(PageCacheJob, prefetch_hint, Prefetch);
-  TURTLE_DB_METHOD_BINDER(PageCacheJob, get, Get);
+  LLFS_METHOD_BINDER(PageCacheJob, prefetch_hint, Prefetch);
+  LLFS_METHOD_BINDER(PageCacheJob, get, Get);
 
   int binder_count = 0;
 

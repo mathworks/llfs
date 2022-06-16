@@ -20,13 +20,12 @@
 #include <llfs/status.hpp>
 #include <llfs/system_config.hpp>
 
-#include <turtle/util/syscall_retry.hpp>
-
 #include <batteries/async/handler.hpp>
 #include <batteries/async/task.hpp>
 #include <batteries/buffer.hpp>
 #include <batteries/math.hpp>
 #include <batteries/static_assert.hpp>
+#include <batteries/syscall_retry.hpp>
 
 #include <boost/beast/core/buffers_range.hpp>
 
@@ -341,7 +340,7 @@ class IoRing::File
   Status close()
   {
     const int fd = this->release();
-    return batt::status_from_retval(turtle_db::syscall_retry([&] {
+    return batt::status_from_retval(batt::syscall_retry([&] {
       return ::close(fd);
     }));
   }

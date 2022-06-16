@@ -10,12 +10,12 @@
 #ifndef LLFS_POINTERS_HPP
 #define LLFS_POINTERS_HPP
 
-#include <turtle/util/pointers.hpp>
+#include <batteries/pointers.hpp>
 
 namespace llfs {
 
-using ::turtle_db::NoopDeleter;
-using ::turtle_db::UniqueNonOwningPtr;
+using ::batt::NoopDeleter;
+using ::batt::UniqueNonOwningPtr;
 
 }  // namespace llfs
 

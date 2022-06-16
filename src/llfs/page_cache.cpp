@@ -10,10 +10,9 @@
 //
 
 #include <llfs/memory_log_device.hpp>
+#include <llfs/metrics.hpp>
 #include <llfs/page_cache_job.hpp>
 #include <llfs/status_code.hpp>
-
-#include <turtle/util/metric_registry.hpp>
 
 #include <boost/range/irange.hpp>
 #include <boost/uuid/random_generator.hpp>  // TODO [tastolfi 2021-04-05] remove me

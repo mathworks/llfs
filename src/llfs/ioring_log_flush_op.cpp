@@ -12,8 +12,7 @@
 #ifndef LLFS_DISABLE_IO_URING
 
 #include <llfs/ioring_log_device.hpp>
-
-#include <turtle/util/metric_registry.hpp>
+#include <llfs/metrics.hpp>
 
 namespace llfs {
 

@@ -9,18 +9,15 @@
 #include <llfs/filesystem.hpp>
 //
 
-#include <turtle/util/syscall_retry.hpp>
-
 #include <batteries/finally.hpp>
+#include <batteries/syscall_retry.hpp>
 
 #include <sys/types.h>
 #include <unistd.h>
 
 namespace llfs {
 
-// TODO [tastolfi 2022-01-03] move `syscall_retry` into a more core namespace/library.
-//
-using ::turtle_db::syscall_retry;
+using ::batt::syscall_retry;
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //

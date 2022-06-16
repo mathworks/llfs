@@ -27,21 +27,18 @@ class LlfsConan(ConanFile):
     requires = [
         "gtest/1.11.0",
         "boost/1.79.0",
-        "batteries/0.6.6@tonyastolfi+batteries/stable",
+        "glog/0.5.0",
+        "libunwind/1.5.0",
+        #"batteries/0.6.6@tonyastolfi+batteries/stable",
+        "batteries/0.6.7-devel",
+        "liburing/2.1",
+        "cli11/1.9.1",
     ]
     exports_sources = [
         "src/CMakeLists.txt",
-        "src/llfs.hpp",
-        "src/llfs/*.hpp",
-        "src/llfs/*/*.hpp",
-        "src/llfs/*_test.cpp",
-        "src/llfs/*.test.cpp",
-        "src/llfs/**/*.hpp",
-        "src/llfs/**/*_test.cpp",
-        "src/llfs/**/*.test.cpp",
-        "src/llfs/*.ipp",
-        "src/llfs/*/*.ipp",
-        "src/llfs/**/*.ipp",
+        "src/**/*.hpp",
+        "src/**/*.ipp",
+        "src/**/*.cpp",
     ]
 
     def configure(self):

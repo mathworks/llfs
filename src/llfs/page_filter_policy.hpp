@@ -7,17 +7,19 @@
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
 #pragma once
-#ifndef TURTLE_DB_PAGE_FILTER_POLICY_HPP
-#define TURTLE_DB_PAGE_FILTER_POLICY_HPP
+#ifndef LLFS_PAGE_FILTER_POLICY_HPP
+#define LLFS_PAGE_FILTER_POLICY_HPP
 
 #include <llfs/bloom_filter.hpp>
 
-#include <turtle/util/empty.hpp>
+#include <batteries/optional.hpp>
 
-namespace turtle_db {
+#include <variant>
 
-using PageFilterPolicy = std::variant<Empty, llfs::BloomFilterParams>;
+namespace llfs {
 
-}  // namespace turtle_db
+using PageFilterPolicy = std::variant<batt::NoneType, llfs::BloomFilterParams>;
 
-#endif  // TURTLE_DB_PAGE_FILTER_POLICY_HPP
+}  // namespace llfs
+
+#endif  // LLFS_PAGE_FILTER_POLICY_HPP

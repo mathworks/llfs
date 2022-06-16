@@ -22,8 +22,7 @@
 #include <llfs/ioring.hpp>
 #include <llfs/ioring_log_flush_op.hpp>
 #include <llfs/log_device_config.hpp>
-
-#include <turtle/util/metric_collectors.hpp>
+#include <llfs/metrics.hpp>
 
 #include <batteries/async/mutex.hpp>
 #include <batteries/async/task.hpp>

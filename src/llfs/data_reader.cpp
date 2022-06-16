@@ -9,8 +9,7 @@
 #include <llfs/data_reader.hpp>
 //
 
-#include <turtle/util/slice.hpp>
-
+#include <batteries/slice.hpp>
 #include <batteries/stream_util.hpp>
 
 namespace llfs {
@@ -51,7 +50,7 @@ Optional<u64> DataReader::read_varint()
 #ifdef LLFS_VERBOSE_DEBUG_LOGGING
 
   LOG(INFO) << "read_varint([@" << (const void*)p << "; " << z << "]) -> " << std::dec << n
-            << " (0x" << std::hex << n << ") " << batt::dump_range(as_slice(p, z));
+            << " (0x" << std::hex << n << ") " << batt::dump_range(batt::as_slice(p, z));
 
 #endif  // LLFS_VERBOSE_DEBUG_LOGGING
 

@@ -13,11 +13,11 @@
 
 #ifndef LLFS_DISABLE_IO_URING
 
+#include <llfs/metrics.hpp>
+
 #include <batteries/async/runtime.hpp>
 #include <batteries/seq/boxed.hpp>
 #include <batteries/stream_util.hpp>
-
-#include <turtle/util/metric_registry.hpp>
 
 namespace llfs {
 

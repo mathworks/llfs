@@ -117,6 +117,14 @@ macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
 
   add_dependencies(RunAllLibTests test_${TARGET_NAME})
 
+  # Default packaging instructions for the library.
+  #
+  install(TARGETS ${TARGET_NAME} DESTINATION "."
+    RUNTIME DESTINATION bin
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    )
+
 endmacro()
 # LLFS_DefineLibrary
 #==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -               
@@ -149,3 +157,10 @@ target_link_libraries(llfs_cli
 
 set_target_properties(llfs_cli PROPERTIES OUTPUT_NAME "llfs")
 
+# Default packaging instructions for the library.
+#
+install(TARGETS llfs_cli DESTINATION "."
+  RUNTIME DESTINATION bin
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  )

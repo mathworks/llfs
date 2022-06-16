@@ -50,8 +50,7 @@ TEST(Ioring, Test)
   StatusOr<IoRing> io = IoRing::make_new(/*entries=*/64);
   ASSERT_TRUE(io.ok()) << io.status();
 
-  int fd =
-      open("/tmp/turtle_ioring_test_file", O_CREAT | O_RDWR | O_DIRECT | O_SYNC, /*mode=*/0644);
+  int fd = open("/tmp/llfs_ioring_test_file", O_CREAT | O_RDWR | O_DIRECT | O_SYNC, /*mode=*/0644);
   ASSERT_GE(fd, 0) << std::strerror(errno);
 
   std::array<char, 1023> buf;

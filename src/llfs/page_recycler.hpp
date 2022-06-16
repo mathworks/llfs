@@ -19,11 +19,10 @@
 #include <llfs/slot_reader.hpp>
 #include <llfs/slot_writer.hpp>
 
-#include <turtle/util/metric_collectors.hpp>
-
 #include <batteries/async/mutex.hpp>
 #include <batteries/async/task.hpp>
 #include <batteries/async/task_scheduler.hpp>
+#include <batteries/metrics/metric_collectors.hpp>
 #include <batteries/small_vec.hpp>
 
 #include <boost/intrusive/list.hpp>
@@ -138,7 +137,7 @@ class PageRecycler
   //
   // Analysis:
   //
-  // Because the Turtle Tree structure bounds the maximum number of indirections from root to leaf
+  // Because B-tree like structures bound the maximum number of indirections from root to leaf
   // (logarithmic on the total collection size; currently compile-time limited in
   // <llfs/config.hpp>, kMaxPageRefDepth), the stack is similarly bounded.  At the highest
   // stack depth, we know that recycling can't discover any new references.  Therefore the size of

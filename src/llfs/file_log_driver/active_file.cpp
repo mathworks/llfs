@@ -11,7 +11,7 @@
 
 #include <llfs/filesystem.hpp>
 
-#include <turtle/util/syscall_retry.hpp>
+#include <batteries/syscall_retry.hpp>
 
 namespace llfs {
 
@@ -91,7 +91,7 @@ void FileLogDriver::ActiveFile::release()
 void FileLogDriver::ActiveFile::close() noexcept
 {
   if (this->fd_ != -1) {
-    turtle_db::syscall_retry([&] {
+    batt::syscall_retry([&] {
       return ::close(this->fd_);
     });
     this->fd_ = -1;
@@ -102,14 +102,14 @@ Status FileLogDriver::ActiveFile::truncate(u64 bytes_to_drop_from_end)
 {
   BATT_CHECK_NE(this->fd_, -1);
 
-  const off_t current_size = turtle_db::syscall_retry([&] {
+  const off_t current_size = batt::syscall_retry([&] {
     return ::lseek(this->fd_, /*offset=*/0, /*whence=*/SEEK_END);
   });
   BATT_CHECK_LE(bytes_to_drop_from_end, static_cast<u64>(current_size));
 
   const off_t target_size = current_size - bytes_to_drop_from_end;
 
-  const int retval = turtle_db::syscall_retry([&] {
+  const int retval = batt::syscall_retry([&] {
     return ::ftruncate(this->fd_, /*length=*/target_size);
   });
   BATT_REQUIRE_OK(status_from_retval(retval));
@@ -122,7 +122,7 @@ Status FileLogDriver::ActiveFile::truncate(u64 bytes_to_drop_from_end)
 Status FileLogDriver::ActiveFile::append(ConstBuffer buffer)
 {
   while (buffer.size() > 0) {
-    const auto bytes_written = turtle_db::syscall_retry([&] {
+    const auto bytes_written = batt::syscall_retry([&] {
       return ::pwrite(this->fd_, buffer.data(), buffer.size(), /*offset=*/this->slot_range_.size());
     });
     BATT_REQUIRE_OK(status_from_retval(bytes_written));
@@ -131,7 +131,7 @@ Status FileLogDriver::ActiveFile::append(ConstBuffer buffer)
     this->slot_range_.upper_bound += bytes_written;
   }
 
-  return status_from_retval(turtle_db::syscall_retry([&] {
+  return status_from_retval(batt::syscall_retry([&] {
     return fsync(this->fd_);
   }));
 }
@@ -151,7 +151,7 @@ StatusOr<FileLogDriver::SegmentFile> FileLogDriver::ActiveFile::split()
 
   // Set the name of the now finalized active segment file to reflect its slot range.
   //
-  int retval = turtle_db::syscall_retry([&] {
+  int retval = batt::syscall_retry([&] {
     return ::rename(/*from=*/this->location_.active_segment_file_path().c_str(),
                     /*to=*/finished_segment.file_name.c_str());
   });

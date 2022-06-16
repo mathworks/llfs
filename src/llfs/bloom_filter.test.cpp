@@ -21,11 +21,10 @@
 
 namespace {
 
-using turtle_db::LatencyMetric;
-using turtle_db::LatencyTimer;
-
 using llfs::as_slice;
 using llfs::BloomFilterParams;
+using llfs::LatencyMetric;
+using llfs::LatencyTimer;
 using llfs::packed_sizeof_bloom_filter;
 using llfs::PackedBloomFilter;
 using llfs::parallel_build_bloom_filter;

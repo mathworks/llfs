@@ -19,13 +19,12 @@
 #include <llfs/slot_reader.hpp>
 #include <llfs/slot_writer.hpp>
 
-#include <turtle/util/do_nothing.hpp>
-
 #include <batteries/async/mutex.hpp>
 #include <batteries/async/runtime.hpp>
 #include <batteries/async/task_scheduler.hpp>
 #include <batteries/async/types.hpp>
 #include <batteries/async/watch.hpp>
+#include <batteries/do_nothing.hpp>
 
 #include <boost/functional/hash.hpp>
 #include <boost/preprocessor/cat.hpp>
@@ -38,7 +37,7 @@
 namespace llfs {
 
 namespace {
-using ::turtle_db::DoNothing;
+using ::batt::DoNothing;
 }
 
 class PageAllocator

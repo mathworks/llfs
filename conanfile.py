@@ -55,6 +55,9 @@ class LlfsConan(ConanFile):
         self.copy("*.hpp", dst="include", src="src")
         self.copy("*.ipp", dst="include", src="src")
         self.copy("*.sh", dst="bin", src="script")
+        cmake = CMake(self)
+        cmake.configure()
+        cmake.install()
 
     def package_info(self):
         self.cpp_info.cxxflags = ["-std=c++17 -D_GNU_SOURCE"]

@@ -3,6 +3,9 @@
 #
 image: registry.gitlab.com/tonyastolfi/batteries@sha256:c3d87fff0be0114bae74368888f835d9e7c9961c5a48c19b798c2b9c6b4d1201
 
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+  
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 default:
   retry:

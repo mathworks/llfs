@@ -1,3 +1,3 @@
 [submodule "batteries"]
 	path = batteries
-	url = ../batteries/
+	url = ../batteries.git

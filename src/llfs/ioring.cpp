@@ -33,15 +33,20 @@ StatusOr<IoRing> IoRing::make_new(usize entries) noexcept
 
   impl->event_fd_ = eventfd(0, 0);
   if (impl->event_fd_ < 0) {
+    LOG(ERROR) << "failed to create eventfd: " << std::strerror(errno);
     return batt::status_from_retval(impl->event_fd_);
   }
 
   int retval = io_uring_queue_init(entries, &impl->ring_, /*flags=*/0);
   if (retval != 0) {
+    LOG(ERROR) << "failed io_uring_queue_init" << std::strerror(-retval);
     return status_from_retval(retval);
   }
 
-  io_uring_register_eventfd(&impl->ring_, impl->event_fd_);
+  retval = io_uring_register_eventfd(&impl->ring_, impl->event_fd_);
+  if (retval != 0) {
+    LOG(ERROR) << "failed io_uring_register_eventfd" << std::strerror(-retval);
+  }
 
   return {IoRing{std::move(impl)}};
 }

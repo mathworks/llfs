@@ -1,0 +1,28 @@
+                       LLFS - Low Level File System
+                       ============================
+
+This project was created at The MathWorks as part of the company's
+mission to accelerate the pace of discovery in engineering and
+science.  It is offered to the software community in order to help
+spur invention and innovation in the area of data management by
+providing a solid and flexible foundation on which new storage systems
+can be developed.
+
+LLFS was created by Tony Astolfi in 2021.  This document wishes to
+acknowledge the support and sponsorship of the following MathWorkers:
+
+- Jim Stewart
+- Sachin Nikumbh
+- Hans Scharler
+- Rob Aberg
+- Rob Purser
+
+NOTE: In accordance with the conditions of the Apache License v2.0,
+under which this project is released, this NOTICE text file MUST be
+included with all distributions of the project, including derivative
+works.
+
+The code of this project was authored by the following people (please
+contribute and add your name to the list!):
+
+- Tony Astolfi

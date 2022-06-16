@@ -39,13 +39,13 @@ StatusOr<IoRing> IoRing::make_new(usize entries) noexcept
 
   int retval = io_uring_queue_init(entries, &impl->ring_, /*flags=*/0);
   if (retval != 0) {
-    LOG(ERROR) << "failed io_uring_queue_init" << std::strerror(-retval);
+    LOG(ERROR) << "failed io_uring_queue_init: " << std::strerror(-retval);
     return status_from_retval(retval);
   }
 
   retval = io_uring_register_eventfd(&impl->ring_, impl->event_fd_);
   if (retval != 0) {
-    LOG(ERROR) << "failed io_uring_register_eventfd" << std::strerror(-retval);
+    LOG(ERROR) << "failed io_uring_register_eventfd: " << std::strerror(-retval);
   }
 
   return {IoRing{std::move(impl)}};

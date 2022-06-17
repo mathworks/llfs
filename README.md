@@ -1,5 +1,7 @@
 # LLFS - Low Level File System
 
+[[_TOC_]]
+
 LLFS is a library that provides low-level, portable building blocks for implementing external data structures on top of block- and log-based storage devices.  It aims to strike a middle ground between storage abstraction layers that are low-overhead but high effort, such as raw block devices, and feature-rich but lower efficiency options such as a full POSIX filesystem or relational (SQL) database.
 
 LLFS offers the following features:

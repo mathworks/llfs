@@ -12,9 +12,12 @@
 
 #include <llfs/data_packer.hpp>
 #include <llfs/file_offset_ptr.hpp>
+#include <llfs/raw_block_device.hpp>
 #include <llfs/storage_file_config_block.hpp>
 
 #include <batteries/type_traits.hpp>
+
+#include <vector>
 
 namespace llfs {
 
@@ -24,6 +27,10 @@ class StorageFileBuilder
   class Transaction
   {
    public:
+    using PreCommitAction = std::function<Status(RawBlockDevice*)>;
+
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+
     explicit Transaction(StorageFileBuilder& builder) noexcept;
 
     Transaction(const Transaction&) = delete;
@@ -33,6 +40,13 @@ class StorageFileBuilder
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+    // Add a storage object to the file.  This method allocates the next available slot in the
+    // file's current non-full config block.
+    //
+    // Returns a mutable reference to the packed config slot; any changes made to this slot prior to
+    // committing this transaction will be included in the written config block (see also
+    // `Transaction::packer()`).
+    //
     template <typename ConfigOptionsT>
     StatusOr<FileOffsetPtr<typename ConfigOptionsT::PackedConfigType&>> add_object(
         const ConfigOptionsT& options);
@@ -42,6 +56,11 @@ class StorageFileBuilder
     //
     batt::Interval<i64> reserve_aligned(u16 align_bits, i64 amount);
 
+    // Add an I/O action to be performed before the transaction is committed by writing out the
+    // config blocks.
+    //
+    void require_pre_commit_action(PreCommitAction&& action);
+
     //+++++++++++-+-+--+----- --- -- -  -  -   -
 
     void abort();
@@ -50,6 +69,10 @@ class StorageFileBuilder
 
     u64 reserve_device_id();
 
+    // Returns a mutable reference to the DataPacker for the current config block.  This allows the
+    // use of extra space at the end of the block for variable-sized data fields referenced from
+    // config slots.
+    //
     DataPacker& packer();
 
    private:
@@ -64,6 +87,7 @@ class StorageFileBuilder
     bool block_is_full_;
     i64 next_offset_;
     u64 next_available_device_id_;
+    std::vector<PreCommitAction> pre_commit_actions_;
   };
 
   explicit StorageFileBuilder(i64 base_offset) noexcept;

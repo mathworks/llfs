@@ -113,6 +113,11 @@ struct alignas(512) PackedConfigBlock {
   //
   PackedArray<PackedConfigSlot> slots;
 
+  //----- --- -- -  -  -   -
+  // IMPORTANT!  `slots` and `payload` fields MUST be adjacent, since `payload` contains the
+  // elements of the `slots` array.
+  //----- --- -- -  -  -   -
+
   // byte 64 +++++++++++-+-+--+----- --- -- -  -  -   -
 
   // This area is used for slot data and any strings or dynamic parts they might need.

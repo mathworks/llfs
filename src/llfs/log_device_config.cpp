@@ -10,6 +10,7 @@
 //
 
 #include <llfs/ioring_log_device.hpp>
+#include <llfs/raw_block_device.hpp>
 
 #include <batteries/stream_util.hpp>
 
@@ -47,6 +48,13 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
   p_config->logical_size = logical_size;
   p_config->pages_per_block_log2 = block_size_log2;
   p_config->uuid = options.uuid.value_or(boost::uuids::random_generator{}());
+
+  // Initialize the log page headers before flushing config slot.
+  //
+  txn.require_pre_flush_action(
+      [config = IoRingLogConfig::from_packed(p_config)](RawBlockDevice& file) {
+        return initialize_ioring_log_device(file, config, ConfirmThisWillEraseAllMyData{true});
+      });
 
   return OkStatus();
 }

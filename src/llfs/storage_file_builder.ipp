@@ -14,46 +14,32 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-template <typename T>
-StatusOr<FileOffsetPtr<T&>> FileLayoutBuilder::Transaction::add_slot(
-    batt::StaticType<T> static_type)
+template <typename ConfigOptionsT, typename PackedConfigT>
+StatusOr<FileOffsetPtr<const PackedConfigT&>> StorageFileBuilder::add_object(
+    const ConfigOptionsT& options)
 {
-  BATT_CHECK(this->active_);
-
-  BATT_STATIC_ASSERT_EQ(sizeof(T), sizeof(PackedConfigSlot));
-
-  T* slot = this->packer_.pack_record(static_type);
-  if (!slot) {
-    this->block_is_full_ = true;
-    return None;
-  }
-  slot->tag = PackedConfigTagFor<T>::value;
-
-  FileOffsetPtr<PackedConfigSlot&> p_slot = this->p_config_block_.mutable_slot(
-      config_block.object.slots.item_count + this->slots_pending_);
-
-  this->slots_pending_ += 1;
-
-  return FileOffsetPtr<T&>{
-      .object = *reinterpret_cast(&p_slot.object),
-      .file_offset = p_slot.offset,
-  };
+  return this->transact<FileOffsetPtr<const PackedConfigT&>>([&options](Transaction& txn) {
+    return txn.add_object(options);
+  });
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <typename R>
-StatusOr<R> FileLayoutBuilder::apply_transaction(const std::function<StatusOr<R>(Transaction&)>& fn)
+StatusOr<R> StorageFileBuilder::transact(const std::function<StatusOr<R>(Transaction&)>& fn)
 {
+  // Allow one retry so that `fn` gets at least one shot at succeeding with a completely fresh
+  // config block.
+  //
   for (usize attempts = 0; attempts < 2; ++attempts) {
-    Transaction t{*this};
+    Transaction txn{*this};
 
-    StatusOr<R> result = fn(t);
+    StatusOr<R> result = fn(txn);
 
     if (result.ok()) {
-      t.commit();
+      txn.commit();
     } else {
-      t.abort();
+      txn.abort();
       if (attempts == 0 && result.status() == batt::StatusCode::kResourceExhausted) {
         continue;
       }
@@ -61,6 +47,59 @@ StatusOr<R> FileLayoutBuilder::apply_transaction(const std::function<StatusOr<R>
 
     return result;
   }
+
+  BATT_UNREACHABLE();
+}
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename ConfigOptionsT, typename PackedConfigT>
+StatusOr<FileOffsetPtr<const PackedConfigT&>> StorageFileBuilder::Transaction::add_object(
+    const ConfigOptionsT& options)
+{
+  StatusOr<FileOffsetPtr<PackedConfigT&>> p_packed_config = this->add_config_slot(options);
+  BATT_REQUIRE_OK(p_packed_config);
+
+  Status config_status = configure_storage_object(*this, *p_packed_config, options);
+  BATT_REQUIRE_OK(config_status);
+
+  return p_packed_config;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename ConfigOptionsT, typename PackedConfigT>
+StatusOr<FileOffsetPtr<PackedConfigT&>> StorageFileBuilder::Transaction::add_config_slot(
+    const ConfigOptionsT& options)
+{
+  BATT_STATIC_ASSERT_EQ(sizeof(PackedConfigT), sizeof(PackedConfigSlot));
+
+  BATT_CHECK(this->active_);
+
+  PackedConfigT* slot = this->packer_.pack_record(batt::StaticType<PackedConfigT>{});
+  if (!slot) {
+    this->payload_overflow_ = true;
+    return {batt::StatusCode::kResourceExhausted};
+  }
+  //
+  // The PackedConfigBlock was zero-initialized by the ctor of StorageFileConfigBlock, so no need to
+  // clear the slot.
+
+  slot->tag = PackedConfigTagFor<PackedConfigT>::value;
+
+  this->config_block_.slots.item_count += 1;
+
+  FileOffsetPtr<PackedConfigSlot&> p_slot =
+      this->p_config_block_.mutable_slot(this->config_block_.slots.item_count - 1);
+
+  this->n_slots_added_ += 1;
+
+  return FileOffsetPtr<PackedConfigT&>{
+      .object = *reinterpret_cast<PackedConfigT*>(&p_slot.object),
+      .file_offset = p_slot.file_offset,
+  };
 }
 
 }  // namespace llfs

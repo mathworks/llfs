@@ -366,7 +366,7 @@ slot_offset_type IoRingLogDriver::PollFlushPos::get() const
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status initialize_ioring_log_device(IoRing::File& file, const IoRingLogDriver::Config& config,
+Status initialize_ioring_log_device(RawBlockDevice& file, const IoRingLogDriver::Config& config,
                                     ConfirmThisWillEraseAllMyData confirm)
 {
   IoRingLogDriver::PackedPageHeaderBuffer buffer;
@@ -383,7 +383,7 @@ Status initialize_ioring_log_device(IoRing::File& file, const IoRingLogDriver::C
   for (u64 block_i = 0; block_i < config.block_count(); ++block_i) {
     VLOG(1) << "writing initial block header; " << BATT_INSPECT(buffer.header.slot_offset)
             << BATT_INSPECT(file_offset);
-    Status write_status = file.write_all(file_offset, buffer.as_const_buffer());
+    Status write_status = write_all(file, file_offset, buffer.as_const_buffer());
     BATT_REQUIRE_OK(write_status);
     buffer.header.slot_offset += config.block_capacity();
     file_offset += config.block_size();

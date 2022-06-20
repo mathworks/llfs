@@ -29,10 +29,7 @@ namespace llfs {
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 /*explicit*/ StorageFileConfigBlock::StorageFileConfigBlock(i64 file_offset) noexcept
-    : ptr_{
-          .object = this->get_mutable(),
-          .file_offset = file_offset,
-      }
+    : ptr_{this->get_mutable(), file_offset}
 {
   std::memset(&this->block_, 0, sizeof(this->block_));
 }

@@ -56,6 +56,10 @@ struct PackedLogDeviceConfig {
   //
   u8 pad0_[2];
 
+  // The uuid for this log.
+  //
+  boost::uuids::uuid uuid;
+
   // The log2 of the number of 4096-byte pages per flush block.
   //
   little_u16 pages_per_block_log2;
@@ -71,10 +75,6 @@ struct PackedLogDeviceConfig {
   // The logical size of the log; this excludes all block headers.
   //
   little_u64 logical_size;
-
-  // The uuid for this log.
-  //
-  boost::uuids::uuid uuid;
 
   // Reserved for future use (set to 0 for now).
   //

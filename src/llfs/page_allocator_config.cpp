@@ -41,7 +41,7 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
   };
 
   BATT_ASSIGN_OK_RESULT(FileOffsetPtr<PackedLogDeviceConfig&> p_log_device,
-                        txn.add_object(log_device_config_options));
+                        txn.add_config_slot(log_device_config_options));
 
   p_config->log_device.reset(p_log_device.get(), &txn.packer());
 

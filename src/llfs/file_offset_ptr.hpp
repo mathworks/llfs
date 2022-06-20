@@ -14,6 +14,7 @@
 #include <llfs/filesystem.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/packed_config.hpp>
+#include <llfs/raw_block_device.hpp>
 
 #ifndef LLFS_DISABLE_IO_URING
 #include <llfs/ioring.hpp>
@@ -31,6 +32,19 @@ namespace llfs {
 template <typename T>
 struct FileOffsetPtr {
   FileOffsetPtr() = default;
+
+  template <typename U,
+            typename = std::enable_if_t<std::is_lvalue_reference_v<U> &&
+                                        std::is_same_v<std::decay_t<T>, std::decay_t<U>>>>
+  /*implicit*/ FileOffsetPtr(const FileOffsetPtr<U>& other) noexcept
+      : object{other.object}
+      , file_offset{other.file_offset}
+  {
+  }
+
+  FileOffsetPtr(T object, i64 file_offset) noexcept : object{object}, file_offset{file_offset}
+  {
+  }
 
   // The object stored at the given file_offset.
   //

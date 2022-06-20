@@ -71,7 +71,8 @@ struct IoRingLogConfig {
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  static IoRingLogConfig from_packed(const FileOffsetPtr<PackedLogDeviceConfig>& packed_config)
+  static IoRingLogConfig from_packed(
+      const FileOffsetPtr<const PackedLogDeviceConfig&>& packed_config)
   {
     return IoRingLogConfig{
         .logical_size = packed_config->logical_size,
@@ -361,7 +362,8 @@ class IoRingLogDriver
 class IoRingLogDeviceFactory : public LogDeviceFactory
 {
  public:
-  explicit IoRingLogDeviceFactory(int fd, const FileOffsetPtr<PackedLogDeviceConfig>& packed_config,
+  explicit IoRingLogDeviceFactory(int fd,
+                                  const FileOffsetPtr<const PackedLogDeviceConfig&>& packed_config,
                                   const IoRingLogDriver::Options& options) noexcept
       : IoRingLogDeviceFactory{fd, IoRingLogDriver::Config::from_packed(packed_config), options}
   {
@@ -408,7 +410,7 @@ class IoRingLogDeviceFactory : public LogDeviceFactory
 
 // Write an empty log device to the given fd.
 //
-Status initialize_ioring_log_device(IoRing::File& file, const IoRingLogDriver::Config& config,
+Status initialize_ioring_log_device(RawBlockDevice& file, const IoRingLogDriver::Config& config,
                                     ConfirmThisWillEraseAllMyData confirm);
 
 }  // namespace llfs

@@ -33,9 +33,9 @@ A job represents a single atomic update to a volume.  An application creates a n
 
 ## llfs::LogDevice
 
-`llfs::LogDevice` is an abstract base class that represents an append-only, fixed-size storage area with a logical "active region" which moves monotonically through an unbounded range of byte offsets from the start of the log.  A good way to think of this is as a "sliding window:" the size limit (capacity) of a `LogDevice` is the maximum size (in bytes) of the active region of a "virtual log" whose size is unbounded.  
+`llfs::LogDevice` is an abstract base class that represents an append-only, fixed-size storage area with a logical "active region" which moves monotonically through an unbounded range of byte offsets from the start of the log.  A good way to think of this is as a "sliding window:" the size limit (capacity) of a `LogDevice` is the maximum size (in bytes) of the active region of a "virtual log" whose maximum offset is unbounded.  
 
-The contents of a `LogDevice` are organized into sequential records, which can be of various sizes within a given log.  The log records are addressed by byte offset from the beginning of the log.  Thus not all log offsets actually point to the beginning of a valid record in a given log.  Applications must be careful to read records at valid offsets.  An offset interval that contains a single record within a log is referred to as a "slot" in LLFS.  There must be no logical gaps between subsequent records; any unused space at the end of one record is considered a part of that record.
+The contents of a `LogDevice` are organized into sequential records, which can vary in size.  The log records are addressed by byte offset from the beginning of the log.  Thus not all log offsets actually point to the beginning of a valid record in a given log.  Applications must be careful to read records at valid offsets.  An offset interval that contains a single record within a log is referred to as a "slot" in LLFS.  There must be no logical gaps between subsequent records; any unused space at the end of one record is considered a part of that record.
 
 The state of a `LogDevice` is captured by three variables: `trim_pos`, `commit_pos`, and `flush_pos`.  These are all scalar integers whose unit is byte offset from the beginning of the log (which is defined to be `0`).  They are mutually constrained by the following invariants:
 
@@ -48,9 +48,9 @@ Note that different `LogDevice` implementations are allowed to offer different d
 
 The distinction between these two levels of durability is reflected in the `LogDevice::Reader` interface.  A `Reader` object is bound to a specific durability level when it is created via `LogDevice::new_reader`.  The different levels are captured by `enum struct llfs::LogReadMode` (ordered by weakest to strongest):
 
-- `kInconsistent` - readers may or may not see committed data
-- `kSpeculative` - readers are guaranteed to see committed data but not necessarily flushed data
-- `kDurable` - readers are guaranteed to see flushed data, which implies they can also see committed data
+- `kInconsistent` - the data observed by readers may or may not have been committed yet
+- `kSpeculative` - the data observed by readers is guaranteed to be committed, but not necessarily flushed
+- `kDurable` - the data observed by readers is guaranteed to be flushed, which implies it is also committed
 
 `LogDevice` implementations are required to be thread-safe (the methods of a `LogDevice` object must be safe to access concurrently).  The instances of `llfs::LogDevice::Reader` and `llfs::LogDevice::Writer` returned by a `LogDevice` object are not required to be thread-safe, but are required to be thread-compatible (distinct objects are safe to access concurrently).
 
@@ -61,6 +61,19 @@ Space can be freed up in a `LogDevice` using the `trim` method, which updates th
 The `llfs::PageCache` implements read- and write-through caching of pages from multiple `llfs::PageDevice` instances, each of which has an associated `llfs::PageAllocator` and `llfs::PageRecycler` to allocate physical pages as needed and release pages when their reference count goes to zero.  The liveness and garbage collection model for LLFS is per-page reference counting (with _no_ cycle detection), so applications using LLFS must take care to implement non-cyclic data structures.  
 
 Each page is uniquely identified by a `llfs::PageId` value.  A `PageId` encodes (bit-wise) a device index (which is relative to the context of a `PageCache`), a physical page index (which is used by the various `PageDevice` implementations to read/write data), and a generation number.  The generation number means that each time a specific set of bytes is written to a physical location on a storage device, it is associated with a unique `PageId`.  This makes cache coherence for pages indexed by `PageId` much easier, as it is impossible for the "current" data bound to a given `PageId` to ever change.
+
+### llfs::PageCacheJob
+
+As mentioned in the section about `llfs::Volume`, `llfs::PageCacheJob` is the basic transaction mechanism provided by LLFS.  PageCache jobs provide all of the ACID properties:
+
+- Atomic: all of the side-effects of a job are observed (outside of the job), or none of them
+- Consistent: once a job has been committed, all observers will see its side effects
+- Isolated: new pages can be read within a job, but not outside it; jobs can be chained together speculatively to create a pipeline of transactions that can see the side-effects of previous jobs in the chain, even if those jobs aren't full committed yet (and therefore aren't visible externally)
+- Durable: once committed, all the data updates in the job are guaranteed to be written at the maximum durability level of the underyling log and page devices
+
+There is one caveat: currently `PageCacheJob`s do not support full read isolation.  This means that changes made external to a job after its creation are visible inside the job.  However, because of the append-only data model of LLFS, this is not a very serious restriction.  This is because log records and data pages don't ever change once they are written; rather, new log records and pages become visible and old ones are trimmed/dropped over time.  The record at a certain log offset is immutable, as is the data bound to a given `PageId`.  Therefore, if an application wishes to implement full read isolation within a `PageCacheJob`, it can easily do so by simply not reading past a certain log offset.
+
+`PageCacheJob` supports pipelining by chaining jobs together.  When a job sets another job as it's "base job," it gains access to all the new pages created by the base job even before they are fully flushed to durable storage.  This allows better utilization of storage hardware because an application doesn't have to wait until job data is fully flushed before it prepares the next batch of updates, even in the presence of data dependencies.  LLFS guarantees that jobs chained together in this way are observed by the outside world in the correct order.  Even if the application crashes, a later (speculative) job will not be observed unless the entire chain of base jobs has been fully committed.
 
 ## llfs::PageDevice
 
@@ -82,7 +95,9 @@ Newly allocated pages start out with a ref count value of 2.  Pages are consider
 
  The job of `llfs::PageRecycler` is to simplify the process of freeing a physical page so it can be re-allocated.  Because pages can contain references to other pages (which affect the ref-count of the referenced page), when a page is recycled, the ref counts of any pages that it references must be decremented.  This process must continue recursively so that all "dead" pages are correctly reclaimed and no resources are leaked.
 
-While it is possible for applications do to this directly using the `PageDevice` and `PageAllocator` APIs directly, it is somewhat non-trivial to do it correctly in a crash-safe manner.  `llfs::PageRecycler` stores its state in a `llfs::LogDevice`.  The state is comprised of a queue of `PageId` values identifying pages that are ready for recycling, and a "stack" for a depth-first traversal of recursively referenced pages.  `PageRecycler` always processes the deepest level of the stack first, to limit the total space requirements.  `PageRecycler` also imposes a creation-time-configurable limit on the maximum "branching factor" of page refs (i.e., the maximum number of out-refs per page), and the depth of a reference chain.  Because these limits are highly dependent on the sorts of data structures and page sizes that must be accomodated by the `PageRecycler`, each `llfs::Volume` is given its own `PageRecycler`.  This allows different `Volume` instances to configure these parameters optimally for the type of data stored by that volume.
+While it is possible for applications do to this directly using the `PageDevice` and `PageAllocator` APIs directly, it is somewhat non-trivial to do it correctly in a crash-safe manner.  `llfs::PageRecycler` stores its state in a `llfs::LogDevice`.  The state is comprised of a queue of `PageId` values identifying pages that are ready for recycling, and a "stack" for a depth-first traversal of recursively referenced pages.  `PageRecycler` always processes the deepest level of the stack first, to limit the total space requirements.  Thus the maximum reference depth is configured for a given `PageRecycler` at creation time.
+
+`PageRecycler` also imposes a creation-time-configurable limit on the maximum "branching factor" of page refs (i.e., the maximum number of out-refs per page), and the depth of a reference chain.  Because these limits are highly dependent on the sorts of data structures and page sizes that must be accomodated by the `PageRecycler`, each `llfs::Volume` is given its own `PageRecycler`.  This allows different `Volume` instances to configure these parameters optimally for the type of data stored by that volume.
 
 # Test Configuration: Docker and IO_URING
 

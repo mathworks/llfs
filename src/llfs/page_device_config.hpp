@@ -57,11 +57,15 @@ struct PackedPageDeviceConfig {
 
   // MUST be PackedObjectConfig::Tag::kPageDevice
   //
-  little_u32 tag;
+  little_u16 tag;
 
-  // Reserved for future use.
+  // Reserved for future use (set to 0 for now).
   //
-  little_u8 pad0_[4];
+  u8 pad0_[2];
+
+  // The uuid for this log.
+  //
+  boost::uuids::uuid uuid;
 
   // The offset in bytes of the first page, relative to this structure.
   //
@@ -79,13 +83,9 @@ struct PackedPageDeviceConfig {
   //
   little_u16 page_size_log2;
 
-  // A UUID for this device.
-  //
-  boost::uuids::uuid uuid;
-
   // Reserved for future use.
   //
-  little_u8 reserved_[14];
+  little_u8 reserved_[18];
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

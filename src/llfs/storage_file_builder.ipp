@@ -97,7 +97,7 @@ StatusOr<FileOffsetPtr<PackedConfigT&>> StorageFileBuilder::Transaction::add_con
   this->n_slots_added_ += 1;
 
   return FileOffsetPtr<PackedConfigT&>{
-      .object = *reinterpret_cast<PackedConfigT*>(&p_slot.object),
+      .object = *config_slot_cast<PackedConfigT>(&p_slot.object),
       .file_offset = p_slot.file_offset,
   };
 }

@@ -23,7 +23,8 @@ class MockRawBlockDevice : public RawBlockDevice
   MOCK_METHOD(StatusOr<i64>, write_some, (i64 offset, const ConstBuffer& data), (override));
   MOCK_METHOD(StatusOr<i64>, read_some, (i64 offset, const MutableBuffer& buffer), (override));
   MOCK_METHOD(StatusOr<i64>, get_size, (), (override));
-  MOCK_METHOD(Status, truncate, (i64 /*new_offset_upper_bound*/), (override));
+  MOCK_METHOD(Status, truncate, (i64 new_offset_upper_bound), (override));
+  MOCK_METHOD(Status, truncate_at_least, (i64 minimum_size), (override));
 };
 
 }  // namespace llfs

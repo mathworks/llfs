@@ -46,6 +46,10 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
   p_config->page_size_log2 = options.page_size_log2;
   p_config->uuid = options.uuid.value_or(boost::uuids::random_generator{}());
 
+  txn.require_pre_flush_action([pages_offset](RawBlockDevice& file) -> Status {
+    return file.truncate_at_least(pages_offset.upper_bound);
+  });
+
   return OkStatus();
 }
 

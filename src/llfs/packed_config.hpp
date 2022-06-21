@@ -20,6 +20,8 @@
 
 #include <boost/uuid/uuid.hpp>
 
+#include <cstddef>
+
 namespace llfs {
 
 struct PackedConfigSlotBase {
@@ -145,7 +147,33 @@ BATT_SUPPRESS_IF_GCC("-Winvalid-offsetof")
 BATT_STATIC_ASSERT_EQ(offsetof(PackedConfigBlock, crc64) + sizeof(little_u64),
                       PackedConfigBlock::kSize);
 
-BATT_UNSUPPRESS_IF_GCC()
+template <typename T>
+inline void verify_config_slot_type_requirements(batt::StaticType<T> = {})
+{
+  BATT_STATIC_ASSERT_EQ(sizeof(T), sizeof(::llfs::PackedConfigSlot));
+  BATT_STATIC_ASSERT_EQ(offsetof(T, tag), offsetof(::llfs::PackedConfigSlot, tag));
+  BATT_STATIC_ASSERT_EQ(offsetof(T, uuid), offsetof(::llfs::PackedConfigSlot, uuid));
+  BATT_STATIC_ASSERT_TYPE_EQ(decltype(T::tag), decltype(::llfs::PackedConfigSlot::tag));
+  BATT_STATIC_ASSERT_TYPE_EQ(decltype(T::uuid), decltype(::llfs::PackedConfigSlot::uuid));
+}
+
+// Cast the passed PackedConfigSlot to a derived config slot type, running static checks to make
+// sure the destination type conforms to the proper requirements.
+//
+#define LLFS_CONFIG_SLOT_CAST_IMPL(qualifiers, ptr_ref)                                            \
+  template <typename T>                                                                            \
+  qualifiers T ptr_ref config_slot_cast(qualifiers ::llfs::PackedConfigSlot ptr_ref src)           \
+  {                                                                                                \
+    ::llfs::verify_config_slot_type_requirements<T>();                                             \
+    return reinterpret_cast<qualifiers T ptr_ref>(src);                                            \
+  }
+
+LLFS_CONFIG_SLOT_CAST_IMPL(, *)
+LLFS_CONFIG_SLOT_CAST_IMPL(, &)
+LLFS_CONFIG_SLOT_CAST_IMPL(const, *)
+LLFS_CONFIG_SLOT_CAST_IMPL(const, &)
+
+#undef LLFS_CONFIG_SLOT_CAST_IMPL
 
 }  // namespace llfs
 

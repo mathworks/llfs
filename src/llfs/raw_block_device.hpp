@@ -74,6 +74,18 @@ class RawBlockDevice
     return batt::StatusCode::kUnimplemented;
   }
 
+  // (Optional API) Attempt to resize the backing file (as if by the POSIX `truncate` syscall), IFF
+  // the file is smaller than `minimum_size`.  This function should never shrink the file or destroy
+  // data.
+  //
+  // Returns `batt::OkStatus` on success, error status otherwise (`batt::StatusCode::kUnimplemented`
+  // if not supported by this implementation, which is the default).
+  //
+  virtual Status truncate_at_least(i64 /*minimum_size*/)
+  {
+    return batt::StatusCode::kUnimplemented;
+  }
+
  protected:
   RawBlockDevice() = default;
 };

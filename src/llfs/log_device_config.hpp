@@ -50,7 +50,7 @@ struct PackedLogDeviceConfig {
 
   // Must be PackedConfigSlot::Tag::kLogDevice.
   //
-  little_u32 tag;
+  little_u16 tag;
 
   // Reserved for future use (set to 0 for now).
   //
@@ -78,7 +78,7 @@ struct PackedLogDeviceConfig {
 
   // Reserved for future use (set to 0 for now).
   //
-  u8 pad1_[16];
+  u8 pad1_[18];
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

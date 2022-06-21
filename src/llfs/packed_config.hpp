@@ -76,6 +76,10 @@ struct alignas(512) PackedConfigBlock {
 
   static constexpr usize kSize = 4096;
 
+  static constexpr i32 kSizeLog2 = 12;
+
+  static_assert(1ull << kSizeLog2 == kSize, "Please fix kSizeLog2.");
+
   static constexpr usize kPayloadCapacity =
       kSize - (64 /*offsetof(payload)*/ + 8 /*sizeof(crc64)*/);
 

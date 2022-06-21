@@ -28,6 +28,21 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+/*static*/ StatusOr<std::unique_ptr<StorageFileConfigBlock>>
+StorageFileConfigBlock::read_from_raw_block_device(RawBlockDevice& file, i64 offset)
+{
+  auto config_block = std::make_unique<StorageFileConfigBlock>(offset);
+
+  Status read_status = read_all(file, config_block->ptr_.file_offset,
+                                batt::mutable_buffer_from_struct(config_block->ptr_.object));
+  BATT_REQUIRE_OK(read_status);
+
+  config_block->dirty_ = false;
+
+  return config_block;
+}
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 /*explicit*/ StorageFileConfigBlock::StorageFileConfigBlock(i64 file_offset) noexcept
     : ptr_{this->get_mutable(), file_offset}
 {

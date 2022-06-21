@@ -12,6 +12,7 @@
 
 #include <llfs/file_offset_ptr.hpp>
 #include <llfs/packed_config.hpp>
+#include <llfs/raw_block_device.hpp>
 
 #include <cstring>
 #include <type_traits>
@@ -22,6 +23,11 @@ class StorageFileConfigBlock
 {
  public:
   static StatusOr<std::unique_ptr<StorageFileConfigBlock>> read_from_fd(int fd, i64 offset);
+
+  static StatusOr<std::unique_ptr<StorageFileConfigBlock>> read_from_raw_block_device(
+      RawBlockDevice& file, i64 offset);
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   explicit StorageFileConfigBlock(i64 file_offset) noexcept;
 

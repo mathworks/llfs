@@ -211,4 +211,85 @@ StatusOr<i64> sizeof_fd(int fd)
   return retval;
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<i32> get_fd_flags(int fd)
+{
+  const int retval = batt::syscall_retry([&] {
+    return ::fcntl(fd, F_GETFD);
+  });
+  BATT_REQUIRE_OK(batt::status_from_retval(retval));
+
+  return retval;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status set_fd_flags(int fd, i32 flags)
+{
+  const int retval = batt::syscall_retry([&] {
+    return ::fcntl(fd, F_SETFD, flags);
+  });
+  return batt::status_from_retval(retval);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status update_fd_flags(int fd, EnableFileFlags enable_flags, DisableFileFlags disable_flags)
+{
+  StatusOr<i32> current_flags = get_fd_flags(fd);
+  BATT_REQUIRE_OK(current_flags);
+
+  const i32 desired_flags = (*current_flags | i32{enable_flags}) & ~i32{disable_flags};
+  return set_fd_flags(fd, desired_flags);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<i32> get_file_status_flags(int fd)
+{
+  const int retval = batt::syscall_retry([&] {
+    return ::fcntl(fd, F_GETFL);
+  });
+  BATT_REQUIRE_OK(batt::status_from_retval(retval));
+
+  return retval;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status set_file_status_flags(int fd, i32 flags)
+{
+  const int retval = batt::syscall_retry([&] {
+    return ::fcntl(fd, F_SETFL, flags);
+  });
+  return batt::status_from_retval(retval);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status update_file_status_flags(int fd, EnableFileFlags enable_flags,
+                                DisableFileFlags disable_flags)
+{
+  StatusOr<i32> current_flags = get_file_status_flags(fd);
+  BATT_REQUIRE_OK(current_flags);
+
+  const i32 desired_flags = (*current_flags | i32{enable_flags}) & ~i32{disable_flags};
+  return set_file_status_flags(fd, desired_flags);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status enable_raw_io_fd(int fd, bool enabled)
+{
+  // TODO [tastolfi 2022-06-21] Add O_SYNC/O_DSYNC to the flags masks below once Linux supports this
+  // (https://man7.org/linux/man-pages/man2/fcntl.2.html#BUGS)
+  //
+  if (enabled) {
+    return update_file_status_flags(fd, EnableFileFlags{O_DIRECT}, DisableFileFlags{0});
+  } else {
+    return update_file_status_flags(fd, EnableFileFlags{0}, DisableFileFlags{O_DIRECT});
+  }
+}
+
 }  // namespace llfs

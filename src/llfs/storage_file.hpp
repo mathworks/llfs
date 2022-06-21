@@ -20,7 +20,7 @@
 namespace llfs {
 
 StatusOr<std::vector<std::unique_ptr<StorageFileConfigBlock>>> read_storage_file(
-    RawBlockDevice& device, i64 start_offset);
+    RawBlockDevice& file, i64 start_offset);
 
 // Status write_storage_file_
 

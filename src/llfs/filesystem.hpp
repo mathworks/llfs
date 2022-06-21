@@ -49,6 +49,24 @@ StatusOr<i64> sizeof_file(std::string_view file_name);
 
 StatusOr<i64> sizeof_fd(int fd);
 
+BATT_STRONG_TYPEDEF(i32, EnableFileFlags);
+BATT_STRONG_TYPEDEF(i32, DisableFileFlags);
+
+StatusOr<i32> get_fd_flags(int fd);
+
+Status set_fd_flags(int fd, i32 flags);
+
+Status update_fd_flags(int fd, EnableFileFlags enable_flags, DisableFileFlags disable_flags);
+
+StatusOr<i32> get_file_status_flags(int fd);
+
+Status set_file_status_flags(int fd, i32 flags);
+
+Status update_file_status_flags(int fd, EnableFileFlags enable_flags,
+                                DisableFileFlags disable_flags);
+
+Status enable_raw_io_fd(int fd, bool enabled = true);
+
 }  // namespace llfs
 
 #endif  // LLFS_FILESYSTEM_HPP

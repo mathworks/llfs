@@ -13,15 +13,20 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<std::vector<std::unique_ptr<StorageFileConfigBlock>>>
-read_storage_file_config_blocks_from_fd(int fd, i64 start_offset)
+StatusOr<std::vector<std::unique_ptr<StorageFileConfigBlock>>> read_storage_file(
+    RawBlockDevice& file, i64 start_offset)
 {
   std::vector<std::unique_ptr<StorageFileConfigBlock>> blocks;
 
-  i64 offset = start_offset;
+  const i64 aligned_start = batt::round_up_bits(PackedConfigBlock::kSizeLog2, start_offset);
+  LOG_IF(WARNING, aligned_start != start_offset)
+      << "Specified `start_offset` is not aligned to " << PackedConfigBlock::kSize
+      << "-byte boundary; rounding up to " << aligned_start;
+
+  i64 offset = aligned_start;
   for (;;) {
     StatusOr<std::unique_ptr<StorageFileConfigBlock>> next_block =
-        StorageFileConfigBlock::read_from_fd(fd, offset);
+        StorageFileConfigBlock::read_from_raw_block_device(file, offset);
     BATT_REQUIRE_OK(next_block);
 
     const PackedConfigBlock& block = next_block->get()->get_const();

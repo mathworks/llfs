@@ -59,27 +59,35 @@ struct PackedPageAllocatorConfig {
 
   // Must be set to PackedConfigSlot::Tag::kPageAllocator.
   //
-  little_u32 tag;
+  little_u16 tag;
 
   // Reserved for future use.
   //
-  little_u8 pad0_[4];
-
-  // The maximum number of attachments allowed.
-  //
-  little_u64 max_attachments;
+  little_u8 pad0_[2];
 
   // Unique identifier for this page allocator.
   //
   boost::uuids::uuid uuid;
 
+  // The maximum number of attachments allowed.
+  //
+  little_u64 max_attachments;
+
+  // The page count of the page device managed by this allocator.
+  //
+  little_u64 page_count;
+
   // The PageAllocator log config.
   //
-  PackedPointer<PackedLogDeviceConfig> log_device;
+  boost::uuids::uuid log_device_uuid;
+
+  // The page size (log2) of the page device managed by this allocator (for sanity checking).
+  //
+  little_u16 page_size_log2;
 
   // Reserved for future use.
   //
-  little_u8 pad1_[28];
+  little_u8 pad1_[10];
 };
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedPageAllocatorConfig), PackedPageAllocatorConfig::kSize);
@@ -88,7 +96,7 @@ BATT_STATIC_ASSERT_EQ(sizeof(PackedPageAllocatorConfig), PackedPageAllocatorConf
 
 template <>
 struct PackedConfigTagFor<PackedPageAllocatorConfig> {
-  static constexpr u32 value = PackedConfigSlot::Tag::kPageAllocator;
+  static constexpr u16 value = PackedConfigSlot::Tag::kPageAllocator;
 };
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

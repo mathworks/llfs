@@ -124,13 +124,13 @@ void IoRingPageFileDevice::read(PageId page_id, ReadHandler&& handler)
     return;
   }
 
-  this->read_some(*page_offset_in_file, PageBuffer::allocate(this->page_size()),
+  this->read_some(page_id, *page_offset_in_file, PageBuffer::allocate(this->page_size()),
                   /*n_read_so_far=*/0, std::move(handler));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void IoRingPageFileDevice::read_some(i64 page_offset_in_file,
+void IoRingPageFileDevice::read_some(PageId page_id, i64 page_offset_in_file,
                                      std::shared_ptr<PageBuffer>&& page_buffer, usize n_read_so_far,
                                      ReadHandler&& handler)
 {
@@ -141,40 +141,49 @@ void IoRingPageFileDevice::read_some(i64 page_offset_in_file,
 
   this->file_.async_read_some(
       page_offset_in_file + n_read_so_far, buffer,
-      bind_handler(
-          std::move(handler), [this, page_offset_in_file, page_buffer = std::move(page_buffer),
-                               n_read_so_far](ReadHandler&& handler, StatusOr<i32> result) mutable {
-            if (!result.ok()) {
-              if (batt::status_is_retryable(result.status())) {
-                this->read_some(page_offset_in_file, std::move(page_buffer), n_read_so_far,
-                                std::move(handler));
-                return;
-              }
-
-              LOG(WARNING) << "IoRingPageFileDevice::read failed; page_offset_in_file+"
-                           << n_read_so_far << "=" << page_offset_in_file + n_read_so_far
-                           << " n_read_so_far=" << n_read_so_far
-                           << " page_offset_in_file=" << page_offset_in_file;
-
-              handler(result.status());
-              return;
-            }
-            BATT_CHECK_GT(*result, 0) << "We must either make progress or receive an error code!";
-
-            n_read_so_far += *result;
-
-            // If we have reached the end of the buffer, invoke the handler.
-            //
-            if (n_read_so_far == page_buffer->size()) {
-              handler(std::move(page_buffer));
-              return;
-            }
-
-            // The write was short; write again from the new stop point.
-            //
-            this->read_some(page_offset_in_file, std::move(page_buffer), n_read_so_far,
+      bind_handler(std::move(handler), [this, page_id, page_offset_in_file,
+                                        page_buffer = std::move(page_buffer), n_read_so_far](
+                                           ReadHandler&& handler, StatusOr<i32> result) mutable {
+        if (!result.ok()) {
+          if (batt::status_is_retryable(result.status())) {
+            this->read_some(page_id, page_offset_in_file, std::move(page_buffer), n_read_so_far,
                             std::move(handler));
-          }));
+            return;
+          }
+
+          LOG(WARNING) << "IoRingPageFileDevice::read failed; page_offset_in_file+" << n_read_so_far
+                       << "=" << page_offset_in_file + n_read_so_far
+                       << " n_read_so_far=" << n_read_so_far
+                       << " page_offset_in_file=" << page_offset_in_file;
+
+          handler(result.status());
+          return;
+        }
+        BATT_CHECK_GT(*result, 0) << "We must either make progress or receive an error code!";
+
+        n_read_so_far += *result;
+
+        // If we have reached the end of the buffer, invoke the handler.
+        //
+        if (n_read_so_far == page_buffer->size()) {
+          // Make sure the page generation numbers match.
+          //
+          if (page_buffer->page_id() != page_id) {
+            handler({::llfs::StatusCode::kPageGenerationNotFound});
+            return;
+          }
+
+          // Success!
+          //
+          handler(std::move(page_buffer));
+          return;
+        }
+
+        // The write was short; write again from the new stop point.
+        //
+        this->read_some(page_id, page_offset_in_file, std::move(page_buffer), n_read_so_far,
+                        std::move(handler));
+      }));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

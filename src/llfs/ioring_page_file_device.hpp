@@ -52,7 +52,7 @@ class IoRingPageFileDevice : public PageDevice
   void write_some(i64 page_offset_in_file, std::shared_ptr<const PageBuffer>&& page_buffer,
                   usize n_written_so_far, WriteHandler&& handler);
 
-  void read_some(i64 page_offset_in_file, std::shared_ptr<PageBuffer>&& page_buffer,
+  void read_some(PageId page_id, i64 page_offset_in_file, std::shared_ptr<PageBuffer>&& page_buffer,
                  usize n_read_so_far, ReadHandler&& handler);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -

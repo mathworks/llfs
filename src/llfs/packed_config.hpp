@@ -66,9 +66,13 @@ struct PackedConfigSlot : PackedConfigSlotHeader {
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedConfigSlot), PackedConfigSlot::kSize);
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
 template <typename T>
 struct PackedConfigTagFor;
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
 struct alignas(512) PackedConfigBlock {
   static constexpr u64 kMagic = 0x49dcc2d0e14dbe9eull;
 

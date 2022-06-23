@@ -10,11 +10,14 @@
 #ifndef LLFS_PAGE_DEVICE_CONFIG_HPP
 #define LLFS_PAGE_DEVICE_CONFIG_HPP
 
+#include <llfs/config.hpp>
 #include <llfs/int_types.hpp>
+#include <llfs/ioring_file_runtime_options.hpp>
 #include <llfs/packed_config.hpp>
 #include <llfs/page_id_factory.hpp>
 #include <llfs/page_size.hpp>
 #include <llfs/simple_packed_type.hpp>
+#include <llfs/storage_context.hpp>
 #include <llfs/storage_file_builder.hpp>
 
 #include <batteries/static_assert.hpp>
@@ -24,6 +27,8 @@
 #include <ostream>
 
 namespace llfs {
+
+class PageDevice;
 
 struct PackedPageDeviceConfig;
 
@@ -111,6 +116,15 @@ std::ostream& operator<<(std::ostream& out, const PackedPageDeviceConfig& t);
 Status configure_storage_object(StorageFileBuilder::Transaction&,
                                 FileOffsetPtr<PackedPageDeviceConfig&> p_config,
                                 const PageDeviceConfigOptions& options);
+
+#ifndef LLFS_DISABLE_IO_URING
+
+StatusOr<std::unique_ptr<PageDevice>> recover_storage_object(
+    const batt::SharedPtr<StorageContext>& storage_context, const std::string& file_name,
+    const FileOffsetPtr<const PackedPageDeviceConfig&>& p_config,
+    const IoRingFileRuntimeOptions& file_options);
+
+#endif  // LLFS_DISABLE_IO_URING
 
 }  // namespace llfs
 

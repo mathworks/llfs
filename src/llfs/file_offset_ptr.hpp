@@ -17,7 +17,7 @@
 #include <llfs/raw_block_device.hpp>
 
 #ifndef LLFS_DISABLE_IO_URING
-#include <llfs/ioring.hpp>
+#include <llfs/ioring_file.hpp>
 #endif  // LLFS_DISABLE_IO_URING
 
 #include <batteries/checked_cast.hpp>

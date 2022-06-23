@@ -34,6 +34,7 @@ enum struct StatusCode {
   kSlotGrantTooSmall = 18,
   kFailedToPackSlotVarHead = 19,
   kFailedToPackSlotVarTail = 20,
+  kPageGenerationNotFound = 21,
 };
 
 bool initialize_status_codes();

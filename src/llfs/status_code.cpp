@@ -48,6 +48,9 @@ bool initialize_status_codes()
       CODE_WITH_MSG_(StatusCode::kSlotGrantTooSmall, "Slot Grant too small"),
       CODE_WITH_MSG_(StatusCode::kFailedToPackSlotVarHead, "Failed to pack slot variant head"),
       CODE_WITH_MSG_(StatusCode::kFailedToPackSlotVarTail, "Failed to pack slot variant tail"),
+      CODE_WITH_MSG_(StatusCode::kPageGenerationNotFound,
+                     "PageDevice read failed with the given PageId because the current generation "
+                     "number doesn't match the requested generation"),
   });
   return initialized;
 }

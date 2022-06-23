@@ -12,7 +12,7 @@
 #ifndef LLFS_RAW_BLOCK_DEVICE_IMPL_HPP
 #define LLFS_RAW_BLOCK_DEVICE_IMPL_HPP
 
-#include <llfs/ioring.hpp>
+#include <llfs/ioring_file.hpp>
 #include <llfs/raw_block_device.hpp>
 
 namespace llfs {

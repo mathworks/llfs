@@ -564,8 +564,8 @@ TEST_F(VolumeTest, PageJobs)
     }
   }
 
-  LOG(INFO) << BATT_INSPECT(fake_root_log.state()->device_time);
-  LOG(INFO) << BATT_INSPECT(fake_recycler_log.state()->device_time);
+  VLOG(1) << BATT_INSPECT(fake_root_log.state()->device_time);
+  VLOG(1) << BATT_INSPECT(fake_recycler_log.state()->device_time);
 }
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
@@ -704,13 +704,13 @@ TEST_F(VolumeTest, ReaderInterruptedByVolumeClose)
   batt::Task reader_task{
       io.get_executor(),
       [&] {
-        LOG(INFO) << "inside reader task";
+        VLOG(1) << "inside reader task";
 
         llfs::StatusOr<llfs::VolumeReader> reader = test_volume->reader(
             llfs::SlotRangeSpec{llfs::None, llfs::None}, llfs::LogReadMode::kSpeculative);
         BATT_CHECK_OK(reader);
 
-        LOG(INFO) << "reader created";
+        VLOG(1) << "reader created";
 
         llfs::StatusOr<usize> result = reader->consume_slots(
             batt::WaitForResource::kTrue,
@@ -719,29 +719,29 @@ TEST_F(VolumeTest, ReaderInterruptedByVolumeClose)
               return llfs::OkStatus();
             });
 
-        LOG(INFO) << "consume_slots returned " << result;
+        VLOG(1) << "consume_slots returned " << result;
 
         BATT_CHECK_EQ(result.status(), batt::StatusCode::kClosed);
       },
       "test reader task"};
 
-  LOG(INFO) << "before first poll";
+  VLOG(1) << "before first poll";
 
   io.poll();
   io.reset();
 
-  LOG(INFO) << "after first poll; calling volume halt";
+  VLOG(1) << "after first poll; calling volume halt";
 
   test_volume->halt();
   this->root_log->close().IgnoreError();
   this->recycler_log->close().IgnoreError();
 
-  LOG(INFO) << "after volume halt; before second poll";
+  VLOG(1) << "after volume halt; before second poll";
 
   io.poll();
   io.reset();
 
-  LOG(INFO) << "after second poll";
+  VLOG(1) << "after second poll";
 
   reader_task.join();
   test_volume->join();

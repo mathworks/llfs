@@ -14,6 +14,7 @@
 
 #ifndef LLFS_DISABLE_IO_URING
 
+#include <llfs/ioring_file.hpp>
 #include <llfs/page_view.hpp>
 #include <llfs/ring_buffer.hpp>
 

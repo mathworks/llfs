@@ -51,4 +51,14 @@ StatusOr<std::vector<std::unique_ptr<StorageFileConfigBlock>>> read_storage_file
   return blocks;
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*explicit*/ StorageFile::StorageFile(
+    std::string&& file_name,
+    std::vector<std::unique_ptr<StorageFileConfigBlock>>&& config_blocks) noexcept
+    : file_name_{std::move(file_name)}
+    , config_blocks_{std::move(config_blocks)}
+{
+}
+
 }  // namespace llfs

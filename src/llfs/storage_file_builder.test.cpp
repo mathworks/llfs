@@ -18,6 +18,8 @@ namespace {
 
 using namespace llfs::int_types;
 
+constexpr usize kTestPageCount = 10;
+
 class StorageFileBuilderTest : public ::testing::Test
 {
  protected:
@@ -46,7 +48,7 @@ class StorageFileBuilderTest : public ::testing::Test
 
                     page_device_config->device_id == 0 &&
 
-                    page_device_config->page_count == 1024 * 1024 &&
+                    page_device_config->page_count == kTestPageCount &&
 
                     page_device_config->page_size_log2 == page_size_log2;
            }() &&
@@ -77,7 +79,7 @@ TEST_F(StorageFileBuilderTest, PageDeviceConfig_NoFlush)
   llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageDeviceConfig&>> packed_config =
       builder.add_object(llfs::PageDeviceConfigOptions{
           .page_size_log2 = llfs::PageSizeLog2{12},
-          .page_count = llfs::PageCount{1024 * 1024},
+          .page_count = llfs::PageCount{kTestPageCount},
           .device_id = llfs::None,
           .uuid = llfs::None,
       });
@@ -95,7 +97,7 @@ TEST_F(StorageFileBuilderTest, PageDeviceConfig_Flush)
 
       const auto options = llfs::PageDeviceConfigOptions{
           .page_size_log2 = llfs::PageSizeLog2{page_size_log2},
-          .page_count = llfs::PageCount{1024 * 1024},
+          .page_count = llfs::PageCount{kTestPageCount},
           .device_id = llfs::None,
           .uuid = llfs::None,
       };
@@ -118,6 +120,14 @@ TEST_F(StorageFileBuilderTest, PageDeviceConfig_Flush)
       EXPECT_CALL(mock_device, truncate_at_least(::testing::Eq(kExpectedFileSize)))
           .InSequence(flush_sequence)
           .WillOnce(::testing::Return(llfs::OkStatus()));
+
+      EXPECT_CALL(mock_device, write_some(::testing::Gt(kExpectedConfigBlockOffset),
+                                          ::testing::Truly([](const llfs::ConstBuffer& b) {
+                                            return b.size() == 512;
+                                          })))
+          .Times(options.page_count)
+          .InSequence(flush_sequence)
+          .WillRepeatedly(::testing::Return(512));
 
       EXPECT_CALL(mock_device,
                   write_some(::testing::Eq(kExpectedConfigBlockOffset),
@@ -170,8 +180,8 @@ TEST_F(StorageFileBuilderTest, WriteReadFile)
   llfs::IoRingRawBlockDevice test_device{std::move(test_file)};
 
   const auto page_device_options = llfs::PageDeviceConfigOptions{
-      .page_size_log2 = llfs::PageSizeLog2{13} /* 8192 */,
-      .page_count = llfs::PageCount{1024},
+      .page_size_log2 = llfs::PageSizeLog2{12} /* 4096 */,
+      .page_count = llfs::PageCount{kTestPageCount},
       .device_id = llfs::None,
       .uuid = llfs::None,
   };
@@ -180,12 +190,7 @@ TEST_F(StorageFileBuilderTest, WriteReadFile)
     llfs::StorageFileBuilder builder{test_device, /*base_offset=*/0};
 
     llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageDeviceConfig&>> packed_config =
-        builder.add_object(llfs::PageDeviceConfigOptions{
-            .page_size_log2 = llfs::PageSizeLog2{12},
-            .page_count = llfs::PageCount{1024 * 1024},
-            .device_id = llfs::None,
-            .uuid = llfs::None,
-        });
+        builder.add_object(page_device_options);
 
     ASSERT_TRUE(packed_config.ok()) << BATT_INSPECT(packed_config.status());
 
@@ -205,6 +210,11 @@ TEST_F(StorageFileBuilderTest, WriteReadFile)
     EXPECT_TRUE(this->verify_config_block(config_blocks->front()->get_const(),
                                           /*kExpectedPage0Offset=*/4096,
                                           /*kExpectedConfigBlockOffset=*/0, /*page_size_log2=*/12));
+
+    llfs::StorageFile storage_file{"test_file", std::move(*config_blocks)};
+
+    EXPECT_EQ(
+        storage_file.find_objects_by_type<llfs::PackedPageDeviceConfig>() | llfs::seq::count(), 1u);
   }
 }
 

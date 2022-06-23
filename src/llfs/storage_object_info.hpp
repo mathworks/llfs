@@ -14,6 +14,7 @@
 #include <llfs/packed_config.hpp>
 #include <llfs/page_id_factory.hpp>
 #include <llfs/page_size.hpp>
+#include <llfs/storage_file.hpp>
 
 #include <batteries/shared_ptr.hpp>
 
@@ -24,40 +25,9 @@
 namespace llfs {
 
 struct StorageObjectInfo : batt::RefCounted<StorageObjectInfo> {
-  // Must be one of the values defined in PackedConfigSlotBase::Tag.
-  //
-  u32 tag;
+  batt::SharedPtr<StorageFile> storage_file;
 
-  // The unique identifier for this object.
-  //
-  boost::uuids::uuid uuid;
-
-  // A human-friendly name for this object; doesn't need to be unique.
-  //
-  std::string common_name;
-
-  // The file containing this object.
-  //
-  std::string file_path;
-
-  // The offset within `file_path` where this object's config slot resides.
-  //
-  i64 config_file_offset;
-
-  // If the storage object is associated with a PageDevice, the device_id within its
-  // StorageContext/PageCache.
-  //
-  page_device_id_int device_id;
-
-  // If the storage object is associated with a PageDevice, the page size in bytes of that device
-  // (for sanity cross-checking).
-  //
-  PageSize page_size;
-
-  // If the storage object is associated with a PageDevice, the number of pages in that device
-  // (for sanity cross-checking).
-  //
-  PageCount page_count;
+  FileOffsetPtr<const PackedConfigSlot&> p_config_slot;
 };
 
 }  // namespace llfs

@@ -212,36 +212,6 @@ Status IoRing::register_buffers(BoxedSeq<MutableBuffer>&& buffers)
   return status_from_retval(retval);
 }
 
-//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-
-IoRing::File::File(IoRing& io, int fd) noexcept : io_{&io}, fd_{fd}
-{
-}
-
-IoRing::File::File(File&& that) noexcept : io_{that.io_}, fd_{that.fd_}
-{
-  that.fd_ = -1;
-  that.registered_fd_ = -1;
-}
-
-auto IoRing::File::operator=(File&& that) noexcept -> File&
-{
-  File copy{std::move(that)};
-
-  std::swap(this->io_, copy.io_);
-  std::swap(this->fd_, copy.fd_);
-  std::swap(this->registered_fd_, copy.registered_fd_);
-
-  return *this;
-}
-
-IoRing::File::~File() noexcept
-{
-  if (this->fd_ != -1) {
-    ::close(this->fd_);
-  }
-}
-
 }  // namespace llfs
 
 #endif  // LLFS_DISABLE_IO_URING

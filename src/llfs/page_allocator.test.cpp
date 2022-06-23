@@ -151,7 +151,7 @@ TEST(PageAllocatorTest, LogCrashRecovery)
   const u64 kEndSeed = (extra_testing ? (10000 * kNumSeeds) : kNumSeeds) + kStartSeed;
 
   for (u64 seed = kStartSeed; seed < kEndSeed; ++seed) {
-    LOG_EVERY_N(INFO, 1000) << BATT_INSPECT(seed);
+    VLOG_EVERY_N(1, 1000) << BATT_INSPECT(seed);
     std::default_random_engine rng{seed};
     for (usize i = 0; i < 19; ++i) {
       (void)rng();
@@ -538,11 +538,10 @@ class PageAllocatorModel
   {
     static std::atomic<usize> counter{0};
 
-    LOG(INFO) << r;
+    VLOG(1) << r;
 
     if ((counter.fetch_add(1) + 1) % this->max_concurrency() == 0) {
-      LOG(INFO)
-          << "=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------";
+      VLOG(1) << "=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------";
     }
   }
 
@@ -673,9 +672,9 @@ TEST(PageAllocatorTest, StateMachineSim)
 
   PageAllocatorModel::Result r = model.check_model();
 
-  LOG(INFO) << "FINAL RESULT ==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   - "
-            << std::endl
-            << r;
+  VLOG(1) << "FINAL RESULT ==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   - "
+          << std::endl
+          << r;
 
   EXPECT_TRUE(r.ok);
 }

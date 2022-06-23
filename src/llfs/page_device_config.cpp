@@ -9,6 +9,9 @@
 #include <llfs/page_device_config.hpp>
 //
 
+#include <llfs/ioring_page_file_device.hpp>
+#include <llfs/page_layout.hpp>
+
 #include <batteries/stream_util.hpp>
 
 #include <boost/uuid/random_generator.hpp>
@@ -46,11 +49,44 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
   p_config->page_size_log2 = options.page_size_log2;
   p_config->uuid = options.uuid.value_or(boost::uuids::random_generator{}());
 
-  txn.require_pre_flush_action([pages_offset](RawBlockDevice& file) -> Status {
-    return file.truncate_at_least(pages_offset.upper_bound);
+  txn.require_pre_flush_action([pages_offset, page_size = page_size,
+                                page_count = options.page_count](RawBlockDevice& file) -> Status {
+    DVLOG(1) << "truncating to " << BATT_INSPECT(pages_offset.upper_bound)
+             << BATT_INSPECT(page_size) << BATT_INSPECT(page_count);
+    Status truncate_status = file.truncate_at_least(pages_offset.upper_bound);
+    BATT_REQUIRE_OK(truncate_status);
+
+    // Initialize all the packed page headers.
+    //
+    std::aligned_storage_t<512, 512> buffer;
+    std::memset(&buffer, 0, sizeof(buffer));
+
+    auto& page_header = reinterpret_cast<PackedPageHeader&>(buffer);
+    page_header.magic = PackedPageHeader::kMagic;
+    page_header.crc32 = PackedPageHeader::kCrc32NotSet;
+    page_header.page_id = PackedPageId{.id_val = kInvalidPageId};
+
+    for (u64 page_i = 0; page_i < page_count; ++page_i) {
+      const i64 page_offset = pages_offset.lower_bound + page_i * page_size;
+      DVLOG(1) << "writing null page header | " << BATT_INSPECT(page_i)
+               << BATT_INSPECT(page_offset);
+      Status status = write_all(file, page_offset, ConstBuffer{&buffer, sizeof(buffer)});
+      BATT_REQUIRE_OK(status);
+    }
+
+    return OkStatus();
   });
 
   return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<std::unique_ptr<PageDevice>> recover_storage_object(
+    const batt::SharedPtr<StorageContext>& /*storage_context*/, IoRing::File&& file,
+    const FileOffsetPtr<const PackedPageDeviceConfig&>& p_config)
+{
+  return std::make_unique<IoRingPageFileDevice>(std::move(file), p_config);
 }
 
 }  // namespace llfs

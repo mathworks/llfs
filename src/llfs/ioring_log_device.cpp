@@ -366,7 +366,7 @@ slot_offset_type IoRingLogDriver::PollFlushPos::get() const
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status initialize_ioring_log_device(RawBlockDevice& file, const IoRingLogDriver::Config& config,
+Status initialize_ioring_log_device(RawBlockFile& file, const IoRingLogDriver::Config& config,
                                     ConfirmThisWillEraseAllMyData confirm)
 {
   IoRingLogDriver::PackedPageHeaderBuffer buffer;

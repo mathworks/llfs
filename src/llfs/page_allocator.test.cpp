@@ -42,6 +42,7 @@ using llfs::PackedPageAllocatorAttach;
 using llfs::page_id_int;
 using llfs::PageAllocator;
 using llfs::PageAllocatorAttachmentStatus;
+using llfs::PageAllocatorRuntimeOptions;
 using llfs::PageId;
 using llfs::PageIdFactory;
 using llfs::PageRefCount;
@@ -63,11 +64,11 @@ TEST(PageAllocatorTest, UpdateRefCounts)
   constexpr int kRepeatCount = 10;
   constexpr u64 kCoverageFactor = 10;
 
-  StatusOr<std::unique_ptr<PageAllocator>> page_allocator =
-      PageAllocator::recover(batt::Runtime::instance().default_scheduler(), "Test",
-                             PageIdFactory{/*device_capacity=*/kNumPages, /*page_device_id=*/0},
-                             *std::make_unique<MemoryLogDeviceFactory>(
-                                 PageAllocator::calculate_log_size(kNumPages, kMaxAttachments)));
+  StatusOr<std::unique_ptr<PageAllocator>> page_allocator = PageAllocator::recover(
+      PageAllocatorRuntimeOptions{batt::Runtime::instance().default_scheduler(), "Test"},
+      PageIdFactory{/*device_capacity=*/kNumPages, /*page_device_id=*/0},
+      *std::make_unique<MemoryLogDeviceFactory>(
+          PageAllocator::calculate_log_size(kNumPages, kMaxAttachments)));
 
   ASSERT_TRUE(page_allocator.ok()) << BATT_INSPECT(page_allocator.status());
   ASSERT_NE(*page_allocator, nullptr);
@@ -182,9 +183,10 @@ TEST(PageAllocatorTest, LogCrashRecovery)
                                                                   batt::make_copy(fake_log_state)};
 
     StatusOr<std::unique_ptr<PageAllocator>> status_or_page_allocator = PageAllocator::recover(
-        /*TODO [tastolfi 2022-01-21] use fake*/ batt::Runtime::instance().default_scheduler(),
-        "Test", PageIdFactory{/*device_capacity=*/kNumPages, /*page_device_id=*/0},
-        fake_log_factory);
+        PageAllocatorRuntimeOptions{
+            /*TODO [tastolfi 2022-01-21] use fake*/ batt::Runtime::instance().default_scheduler(),
+            "Test"},
+        PageIdFactory{/*device_capacity=*/kNumPages, /*page_device_id=*/0}, fake_log_factory);
 
     ASSERT_TRUE(status_or_page_allocator.ok());
     PageAllocator& page_allocator = **status_or_page_allocator;
@@ -306,10 +308,12 @@ TEST(PageAllocatorTest, LogCrashRecovery)
         mem_log, mem_log.driver().impl(), batt::make_copy(fake_recovered_log_state)};
 
     StatusOr<std::unique_ptr<PageAllocator>> status_or_recovered_page_allocator =
-        PageAllocator::recover(
-            /*TODO [tastolfi 2022-01-21] use fake*/ batt::Runtime::instance().default_scheduler(),
-            "Test", PageIdFactory{/*device_capacity=*/kNumPages, /*page_device_id=*/0},
-            fake_recovered_log_factory);
+        PageAllocator::recover(PageAllocatorRuntimeOptions{
+                                   /*TODO [tastolfi 2022-01-21] use fake*/ batt::Runtime::instance()
+                                       .default_scheduler(),
+                                   "Test"},
+                               PageIdFactory{/*device_capacity=*/kNumPages, /*page_device_id=*/0},
+                               fake_recovered_log_factory);
 
     ASSERT_TRUE(status_or_recovered_page_allocator.ok());
     PageAllocator& recovered_page_allocator = **status_or_recovered_page_allocator;
@@ -583,7 +587,7 @@ class PageAllocatorModel
     VLOG(2) << "entered recover() " << BATT_INSPECT(this->context_.work_count().get_value());
 
     StatusOr<std::unique_ptr<PageAllocator>> status_or_page_allocator =
-        PageAllocator::recover(this->fake_scheduler_, "Test",
+        PageAllocator::recover(PageAllocatorRuntimeOptions{this->fake_scheduler_, "Test"},
                                PageIdFactory{/*device_capacity=*/kNumPages, /*page_device_id=*/0},
                                *this->fake_log_factory_);
 

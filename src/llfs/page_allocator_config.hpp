@@ -15,6 +15,7 @@
 #include <llfs/optional.hpp>
 #include <llfs/packed_config.hpp>
 #include <llfs/packed_pointer.hpp>
+#include <llfs/page_allocator_runtime_options.hpp>
 #include <llfs/page_size.hpp>
 
 #include <batteries/static_assert.hpp>
@@ -50,6 +51,10 @@ struct PageAllocatorConfigOptions {
   // page allocator; it's not allowed to assign an existing log device to a new allocator.
   //
   Optional<u16> log_device_pages_per_block_log2;
+
+  // The device sequence number.
+  //
+  u32 page_device_id;
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
@@ -75,7 +80,7 @@ struct PackedPageAllocatorConfig {
 
   // The page count of the page device managed by this allocator.
   //
-  little_u64 page_count;
+  little_i64 page_count;
 
   // The PageAllocator log config.
   //
@@ -87,7 +92,15 @@ struct PackedPageAllocatorConfig {
 
   // Reserved for future use.
   //
-  little_u8 pad1_[10];
+  little_u8 pad1_[2];
+
+  // The device sequence number for the page device managed by this allocator.
+  //
+  little_u32 page_device_id;
+
+  // Reserved for future use.
+  //
+  little_u8 pad2_[4];
 };
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedPageAllocatorConfig), PackedPageAllocatorConfig::kSize);
@@ -106,6 +119,15 @@ std::ostream& operator<<(std::ostream& out, const PackedPageAllocatorConfig& t);
 Status configure_storage_object(StorageFileBuilder::Transaction&,
                                 FileOffsetPtr<PackedPageAllocatorConfig&> p_config,
                                 const PageAllocatorConfigOptions& options);
+
+class PageAllocator;
+
+StatusOr<std::unique_ptr<PageAllocator>> recover_storage_object(
+    const batt::SharedPtr<StorageContext>& storage_context,           //
+    const std::string& file_name,                                     //
+    const FileOffsetPtr<const PackedPageAllocatorConfig&>& p_config,  //
+    const PageAllocatorRuntimeOptions& options,                       //
+    const IoRingLogDriverOptions& log_options);
 
 }  // namespace llfs
 

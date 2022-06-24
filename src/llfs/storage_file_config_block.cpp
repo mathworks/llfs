@@ -29,7 +29,7 @@ namespace llfs {
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 /*static*/ StatusOr<std::unique_ptr<StorageFileConfigBlock>>
-StorageFileConfigBlock::read_from_raw_block_device(RawBlockDevice& file, i64 offset)
+StorageFileConfigBlock::read_from_raw_block_file(RawBlockFile& file, i64 offset)
 {
   auto config_block = std::make_unique<StorageFileConfigBlock>(offset);
 

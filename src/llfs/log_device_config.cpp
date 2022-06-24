@@ -10,7 +10,7 @@
 //
 
 #include <llfs/ioring_log_device.hpp>
-#include <llfs/raw_block_device.hpp>
+#include <llfs/raw_block_file.hpp>
 
 #include <batteries/stream_util.hpp>
 
@@ -52,11 +52,28 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
   // Initialize the log page headers before flushing config slot.
   //
   txn.require_pre_flush_action(
-      [config = IoRingLogConfig::from_packed(p_config)](RawBlockDevice& file) {
+      [config = IoRingLogConfig::from_packed(p_config)](RawBlockFile& file) {
         return initialize_ioring_log_device(file, config, ConfirmThisWillEraseAllMyData{true});
       });
 
   return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<std::unique_ptr<LogDeviceFactory>> recover_storage_object(
+    const batt::SharedPtr<StorageContext>& /*storage_context*/, const std::string& file_name,
+    const FileOffsetPtr<const PackedLogDeviceConfig&>& p_config,
+    const IoRingLogDriverOptions& options)
+{
+  const int flags = O_DIRECT | O_SYNC | O_RDWR;
+
+  int fd = batt::syscall_retry([&] {
+    return ::open(file_name.c_str(), flags);
+  });
+  BATT_REQUIRE_OK(batt::status_from_retval(fd));
+
+  return std::make_unique<IoRingLogDeviceFactory>(fd, p_config, options);
 }
 
 }  // namespace llfs

@@ -25,8 +25,10 @@
 namespace llfs {
 
 struct StorageObjectInfo : batt::RefCounted<StorageObjectInfo> {
-  batt::SharedPtr<StorageFile> storage_file;
+  explicit StorageObjectInfo(batt::SharedPtr<StorageFile>&& storage_file,
+                             FileOffsetPtr<const PackedConfigSlot&> p_config_slot) noexcept;
 
+  batt::SharedPtr<StorageFile> storage_file;
   FileOffsetPtr<const PackedConfigSlot&> p_config_slot;
 };
 

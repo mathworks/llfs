@@ -22,23 +22,16 @@ template <typename PackedConfigT>
 inline BoxedSeq<FileOffsetPtr<const PackedConfigT&>> StorageFile::find_objects_by_type(
     batt::StaticType<PackedConfigT>)
 {
-  return as_seq(this->config_blocks_)  //
-         | seq::map([](const std::unique_ptr<StorageFileConfigBlock>& p_config_block) {
-             return as_seq(boost::irange<usize>(0, p_config_block->get_const().slots.size()))  //
-                    | seq::filter_map([p_config_block = p_config_block.get()](usize slot_index)
-                                          -> Optional<FileOffsetPtr<const PackedConfigT&>> {
-                        const FileOffsetPtr<const PackedConfigSlot&> slot =
-                            p_config_block->get_const_ptr().get_slot(slot_index);
-                        if (slot->tag == PackedConfigTagFor<PackedConfigT>::value) {
-                          return FileOffsetPtr<const PackedConfigT&>{
-                              config_slot_cast<PackedConfigT>(slot.object), slot.file_offset};
-                        }
-                        return None;
-                      });
-           })              //
-         | seq::flatten()  //
+  return this->find_all_objects()  //
+         | seq::filter_map([](const FileOffsetPtr<const PackedConfigSlot&> slot)
+                               -> Optional<FileOffsetPtr<const PackedConfigT&>> {
+             if (slot->tag == PackedConfigTagFor<PackedConfigT>::value) {
+               return FileOffsetPtr<const PackedConfigT&>{
+                   config_slot_cast<PackedConfigT>(slot.object), slot.file_offset};
+             }
+             return None;
+           })  //
          | seq::boxed();
-  ;
 }
 
 }  // namespace llfs

@@ -6,7 +6,7 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-#include <llfs/raw_block_device_impl.hpp>
+#include <llfs/raw_block_file_impl.hpp>
 //
 
 #include <llfs/filesystem.hpp>
@@ -15,6 +15,10 @@
 #include <batteries/async/task.hpp>
 #include <batteries/checked_cast.hpp>
 #include <batteries/status.hpp>
+#include <batteries/stream_util.hpp>
+#include <batteries/syscall_retry.hpp>
+
+#include <boost/io/ios_state.hpp>
 
 #include <utility>
 
@@ -22,24 +26,39 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*explicit*/ IoRingRawBlockDevice::IoRingRawBlockDevice(IoRing::File&& file) noexcept
+/*explicit*/ IoRingRawBlockFile::IoRingRawBlockFile(IoRing::File&& file) noexcept
     : file_{std::move(file)}
 {
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<i64> IoRingRawBlockDevice::write_some(i64 offset, const ConstBuffer& data) /*override*/
+StatusOr<i64> IoRingRawBlockFile::write_some(i64 offset, const ConstBuffer& data) /*override*/
 {
-  return batt::Task::await<batt::StatusOr<i64>>([&](auto&& handler) {
+  VLOG(1) << "IoRingRawBlockFile::write_some(" << BATT_INSPECT(offset) << ", "
+          << BATT_INSPECT(data.size()) << ")";
+  VLOG(2) << "  data=" << batt::dump_hex(data.data(), data.size());
+
+  StatusOr<i64> result = batt::Task::await<batt::StatusOr<i64>>([&](auto&& handler) {
     this->file_.async_write_some(offset, data, BATT_FORWARD(handler));
   });
+  BATT_REQUIRE_OK(result);
+
+  const int retval = batt::syscall_retry([&] {
+    return ::fdatasync(this->file_.get_fd());
+  });
+  BATT_REQUIRE_OK(batt::status_from_retval(retval));
+
+  return result;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<i64> IoRingRawBlockDevice::read_some(i64 offset, const MutableBuffer& buffer) /*override*/
+StatusOr<i64> IoRingRawBlockFile::read_some(i64 offset, const MutableBuffer& buffer) /*override*/
 {
+  VLOG(1) << "IoRingRawBlockFile::read_some(" << BATT_INSPECT(offset) << ", "
+          << BATT_INSPECT(buffer.size()) << ")";
+
   return batt::Task::await<batt::StatusOr<i64>>([&](auto&& handler) {
     this->file_.async_read_some(offset, buffer, BATT_FORWARD(handler));
   });
@@ -47,21 +66,21 @@ StatusOr<i64> IoRingRawBlockDevice::read_some(i64 offset, const MutableBuffer& b
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<i64> IoRingRawBlockDevice::get_size() /*override*/
+StatusOr<i64> IoRingRawBlockFile::get_size() /*override*/
 {
   return sizeof_fd(this->file_.get_fd());
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status IoRingRawBlockDevice::truncate(i64 new_offset_upper_bound) /*override*/
+Status IoRingRawBlockFile::truncate(i64 new_offset_upper_bound) /*override*/
 {
   return truncate_fd(this->file_.get_fd(), BATT_CHECKED_CAST(u64, new_offset_upper_bound));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status IoRingRawBlockDevice::truncate_at_least(i64 minimum_size) /*override*/
+Status IoRingRawBlockFile::truncate_at_least(i64 minimum_size) /*override*/
 {
   StatusOr<i64> current_size = this->get_size();
   BATT_REQUIRE_OK(current_size);

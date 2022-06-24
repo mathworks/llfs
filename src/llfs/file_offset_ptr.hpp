@@ -14,7 +14,7 @@
 #include <llfs/filesystem.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/packed_config.hpp>
-#include <llfs/raw_block_device.hpp>
+#include <llfs/raw_block_file.hpp>
 
 #ifndef LLFS_DISABLE_IO_URING
 #include <llfs/ioring_file.hpp>
@@ -99,7 +99,7 @@ struct FileOffsetPtr {
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  std::decay_t<T>& operator*()
+  std::remove_reference_t<T>& operator*()
   {
     return this->object;
   }
@@ -109,7 +109,7 @@ struct FileOffsetPtr {
     return this->object;
   }
 
-  std::decay_t<T>* get()
+  std::remove_reference_t<T>* get()
   {
     return &this->object;
   }
@@ -119,7 +119,7 @@ struct FileOffsetPtr {
     return &this->object;
   }
 
-  std::decay_t<T>* operator->()
+  std::remove_reference_t<T>* operator->()
   {
     return this->get();
   }

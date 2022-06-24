@@ -101,6 +101,11 @@ class IoRing
       this->fn_(BATT_FORWARD(args)...);
     }
 
+    // Append a buffer to the end of `this->iov_`.
+    //
+    // This function MUST NOT be called more times than the value `entries` passed to
+    // `OpHandler::make_new` used to allocate this object.
+    //
     template <typename B>
     void push_buffer(const B& buf)
     {
@@ -110,6 +115,8 @@ class IoRing
       iov.iov_len = buf.size();
     }
 
+    // Consume `byte_count` bytes from the front of the buffers list in `this->iov_`.
+    //
     void shift_buffer(usize byte_count)
     {
       struct iovec* next = this->iov_;

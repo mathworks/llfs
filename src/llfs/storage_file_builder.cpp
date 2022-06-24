@@ -26,8 +26,8 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StorageFileBuilder::StorageFileBuilder(RawBlockDevice& device, i64 base_offset) noexcept
-    : device_{device}
+StorageFileBuilder::StorageFileBuilder(RawBlockFile& file, i64 base_offset) noexcept
+    : file_{file}
     , config_blocks_{}
     , unused_payload_{None}
     , base_offset_{base_offset}
@@ -45,7 +45,7 @@ Status StorageFileBuilder::flush_all()
   // blocks.
   //
   for (auto action : this->pre_flush_actions_) {
-    Status result = action(this->device_);
+    Status result = action(this->file_);
     BATT_REQUIRE_OK(result);
   }
 
@@ -65,7 +65,7 @@ Status StorageFileBuilder::flush_all()
 //
 Status StorageFileBuilder::flush_block(const FileOffsetPtr<PackedConfigBlock&>& p_config_block)
 {
-  return write_all(this->device_, p_config_block.file_offset,
+  return write_all(this->file_, p_config_block.file_offset,
                    batt::buffer_from_struct(p_config_block.object));
 }
 

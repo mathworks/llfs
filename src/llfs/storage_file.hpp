@@ -10,7 +10,7 @@
 #ifndef LLFS_STORAGE_FILE_HPP
 #define LLFS_STORAGE_FILE_HPP
 
-#include <llfs/raw_block_device.hpp>
+#include <llfs/raw_block_file.hpp>
 #include <llfs/seq.hpp>
 #include <llfs/status.hpp>
 #include <llfs/storage_file_config_block.hpp>
@@ -23,9 +23,11 @@
 
 namespace llfs {
 
-StatusOr<std::vector<std::unique_ptr<StorageFileConfigBlock>>> read_storage_file(
-    RawBlockDevice& file, i64 start_offset);
+StatusOr<std::vector<std::unique_ptr<StorageFileConfigBlock>>> read_storage_file(RawBlockFile& file,
+                                                                                 i64 start_offset);
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
 class StorageFile : public batt::RefCounted<StorageFile>
 {
  public:
@@ -37,6 +39,8 @@ class StorageFile : public batt::RefCounted<StorageFile>
   {
     return this->file_name_;
   }
+
+  BoxedSeq<FileOffsetPtr<const PackedConfigSlot&>> find_all_objects();
 
   template <typename PackedConfigT>
   BoxedSeq<FileOffsetPtr<const PackedConfigT&>> find_objects_by_type(

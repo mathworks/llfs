@@ -15,6 +15,7 @@
 #include <llfs/metrics.hpp>
 #include <llfs/page_allocator_events.hpp>
 #include <llfs/page_allocator_metrics.hpp>
+#include <llfs/page_allocator_runtime_options.hpp>
 #include <llfs/page_allocator_state.hpp>
 #include <llfs/slot_reader.hpp>
 #include <llfs/slot_writer.hpp>
@@ -57,17 +58,15 @@ class PageAllocator
 
   static u64 calculate_log_size(u64 physical_page_count, u64 max_attachments);
 
-  static StatusOr<std::unique_ptr<PageAllocator>> recover(batt::TaskScheduler& scheduler,
-                                                          std::string_view name,
-                                                          const PageIdFactory& page_ids,
-                                                          LogDeviceFactory& log_device_factory);
+  static StatusOr<std::unique_ptr<PageAllocator>> recover(
+      const PageAllocatorRuntimeOptions& options, const PageIdFactory& page_ids,
+      LogDeviceFactory& log_device_factory);
 
-  static std::unique_ptr<PageAllocator> recover_or_die(batt::TaskScheduler& scheduler,
-                                                       std::string_view name,
+  static std::unique_ptr<PageAllocator> recover_or_die(const PageAllocatorRuntimeOptions& options,
                                                        const PageIdFactory& page_ids,
                                                        LogDeviceFactory& log_device_factory)
   {
-    auto result = PageAllocator::recover(scheduler, name, page_ids, log_device_factory);
+    auto result = PageAllocator::recover(options, page_ids, log_device_factory);
     BATT_CHECK(result.ok()) << result.status();
     return std::move(*result);
   }

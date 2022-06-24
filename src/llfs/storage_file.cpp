@@ -13,8 +13,8 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<std::vector<std::unique_ptr<StorageFileConfigBlock>>> read_storage_file(
-    RawBlockDevice& file, i64 start_offset)
+StatusOr<std::vector<std::unique_ptr<StorageFileConfigBlock>>> read_storage_file(RawBlockFile& file,
+                                                                                 i64 start_offset)
 {
   std::vector<std::unique_ptr<StorageFileConfigBlock>> blocks;
 
@@ -26,7 +26,7 @@ StatusOr<std::vector<std::unique_ptr<StorageFileConfigBlock>>> read_storage_file
   i64 offset = aligned_start;
   for (;;) {
     StatusOr<std::unique_ptr<StorageFileConfigBlock>> next_block =
-        StorageFileConfigBlock::read_from_raw_block_device(file, offset);
+        StorageFileConfigBlock::read_from_raw_block_file(file, offset);
     BATT_REQUIRE_OK(next_block);
 
     const PackedConfigBlock& block = next_block->get()->get_const();
@@ -59,6 +59,22 @@ StatusOr<std::vector<std::unique_ptr<StorageFileConfigBlock>>> read_storage_file
     : file_name_{std::move(file_name)}
     , config_blocks_{std::move(config_blocks)}
 {
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+BoxedSeq<FileOffsetPtr<const PackedConfigSlot&>> StorageFile::find_all_objects()
+{
+  return as_seq(this->config_blocks_)  //
+         | seq::map([](const std::unique_ptr<StorageFileConfigBlock>& p_config_block) {
+             return as_seq(boost::irange<usize>(0, p_config_block->get_const().slots.size()))  //
+                    | seq::map([p_config_block = p_config_block.get()](
+                                   usize slot_index) -> FileOffsetPtr<const PackedConfigSlot&> {
+                        return p_config_block->get_const_ptr().get_slot(slot_index);
+                      });
+           })              //
+         | seq::flatten()  //
+         | seq::boxed();
 }
 
 }  // namespace llfs

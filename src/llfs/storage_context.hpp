@@ -13,27 +13,56 @@
 #include <llfs/packed_config.hpp>
 #include <llfs/page_id_factory.hpp>
 #include <llfs/page_size.hpp>
+#include <llfs/storage_file.hpp>
 #include <llfs/storage_object_info.hpp>
 
 #include <batteries/shared_ptr.hpp>
 
+#include <boost/functional/hash.hpp>
+
 #include <string>
+#include <unordered_map>
 
 namespace llfs {
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
 class StorageContext : public batt::RefCounted<StorageContext>
 {
  public:
+  StorageContext() = default;
+
   StorageContext(const StorageContext&) = delete;
   StorageContext& operator=(const StorageContext&) = delete;
 
-  virtual ~StorageContext() = default;
+  batt::SharedPtr<StorageObjectInfo> find_object_by_uuid(const boost::uuids::uuid& uuid);
 
-  virtual batt::SharedPtr<StorageObjectInfo> find_object_by_uuid(
-      const boost::uuids::uuid& uuid) = 0;
+  Status add_file(const batt::SharedPtr<StorageFile>& file);
 
- protected:
-  StorageContext() = default;
+  template <typename PackedConfigT, typename... ExtraConfigOptions,
+            typename R = decltype(recover_storage_object(
+                std::declval<batt::SharedPtr<StorageContext>>(), std::declval<const std::string&>(),
+                std::declval<FileOffsetPtr<const PackedConfigT&>>(),
+                std::declval<ExtraConfigOptions>()...))  //
+            >
+  R recover_object(batt::StaticType<PackedConfigT>, const boost::uuids::uuid& uuid,
+                   ExtraConfigOptions&&... extra_options)
+  {
+    batt::SharedPtr<StorageObjectInfo> info = this->find_object_by_uuid(uuid);
+    if (!info) {
+      return {batt::StatusCode::kNotFound};
+    }
+    return recover_storage_object(batt::shared_ptr_from(this), info->storage_file->file_name(),
+                                  FileOffsetPtr<const PackedConfigT&>{
+                                      config_slot_cast<PackedConfigT>(info->p_config_slot.object),
+                                      info->p_config_slot.file_offset},
+                                  BATT_FORWARD(extra_options)...);
+  }
+
+ private:
+  std::unordered_map<boost::uuids::uuid, batt::SharedPtr<StorageObjectInfo>,
+                     boost::hash<boost::uuids::uuid>>
+      index_;
 };
 
 }  // namespace llfs

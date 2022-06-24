@@ -20,6 +20,7 @@
 #include <llfs/define_packed_type.hpp>
 #include <llfs/file_offset_ptr.hpp>
 #include <llfs/ioring.hpp>
+#include <llfs/ioring_log_driver_options.hpp>
 #include <llfs/ioring_log_flush_op.hpp>
 #include <llfs/log_device_config.hpp>
 #include <llfs/metrics.hpp>
@@ -154,36 +155,7 @@ class IoRingLogDriver
     return block_size * block_count;
   }
 
-  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-  // Performance tuning options.
-  //
-  class Options
-  {
-   public:
-    Options() noexcept
-    {
-    }
-
-    // The debug name of this log.
-    //
-    std::string name;
-
-    // How long to wait for a full page worth of log data before flushing to disk.
-    //
-    u32 page_write_buffer_delay_usec = 0;  // TODO [tastolfi 2021-06-21] remove or implement
-
-    usize queue_depth_log2 = 4;
-
-    usize queue_depth() const
-    {
-      return usize{1} << this->queue_depth_log2;
-    }
-
-    usize queue_depth_mask() const
-    {
-      return this->queue_depth() - 1;
-    }
-  };
+  using Options = IoRingLogDriverOptions;
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   //
@@ -410,7 +382,7 @@ class IoRingLogDeviceFactory : public LogDeviceFactory
 
 // Write an empty log device to the given fd.
 //
-Status initialize_ioring_log_device(RawBlockDevice& file, const IoRingLogDriver::Config& config,
+Status initialize_ioring_log_device(RawBlockFile& file, const IoRingLogDriver::Config& config,
                                     ConfirmThisWillEraseAllMyData confirm);
 
 }  // namespace llfs

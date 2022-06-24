@@ -6,21 +6,21 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-// Contains various implementations of abstract class RawBlockDevice.
+// Contains various implementations of abstract class RawBlockFile.
 
 #pragma once
-#ifndef LLFS_RAW_BLOCK_DEVICE_IMPL_HPP
-#define LLFS_RAW_BLOCK_DEVICE_IMPL_HPP
+#ifndef LLFS_RAW_BLOCK_FILE_IMPL_HPP
+#define LLFS_RAW_BLOCK_FILE_IMPL_HPP
 
 #include <llfs/ioring_file.hpp>
-#include <llfs/raw_block_device.hpp>
+#include <llfs/raw_block_file.hpp>
 
 namespace llfs {
 
-class IoRingRawBlockDevice : public RawBlockDevice
+class IoRingRawBlockFile : public RawBlockFile
 {
  public:
-  explicit IoRingRawBlockDevice(IoRing::File&& file) noexcept;
+  explicit IoRingRawBlockFile(IoRing::File&& file) noexcept;
 
   StatusOr<i64> write_some(i64 offset, const ConstBuffer& data) override;
 
@@ -38,4 +38,4 @@ class IoRingRawBlockDevice : public RawBlockDevice
 
 }  // namespace llfs
 
-#endif  // LLFS_RAW_BLOCK_DEVICE_IMPL_HPP
+#endif  // LLFS_RAW_BLOCK_FILE_IMPL_HPP

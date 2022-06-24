@@ -7,8 +7,8 @@
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
 #pragma once
-#ifndef LLFS_RAW_BLOCK_DEVICE_HPP
-#define LLFS_RAW_BLOCK_DEVICE_HPP
+#ifndef LLFS_RAW_BLOCK_FILE_HPP
+#define LLFS_RAW_BLOCK_FILE_HPP
 
 #include <llfs/buffer.hpp>
 #include <llfs/int_types.hpp>
@@ -20,7 +20,7 @@ namespace llfs {
 
 // Abstracts low-level (block-aligned, unbuffered) I/O to durable storage.
 //
-class RawBlockDevice
+class RawBlockFile
 {
  public:
   // For the convenience of implementations; verifies the alignment and size constraints of the
@@ -38,12 +38,12 @@ class RawBlockDevice
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  RawBlockDevice(const RawBlockDevice&) = delete;
-  RawBlockDevice& operator=(const RawBlockDevice&) = delete;
+  RawBlockFile(const RawBlockFile&) = delete;
+  RawBlockFile& operator=(const RawBlockFile&) = delete;
 
-  virtual ~RawBlockDevice() = default;
+  virtual ~RawBlockFile() = default;
 
-  // Write `data` to the device at the specified bytes offset.  This may result in a short write, in
+  // Write `data` to the file at the specified bytes offset.  This may result in a short write, in
   // which case the caller is responsible for retrying.
   //
   // The memory pointed to by `data` must be 512-byte aligned; `data.size()` must be a multiple of
@@ -51,7 +51,7 @@ class RawBlockDevice
   //
   virtual StatusOr<i64> write_some(i64 offset, const ConstBuffer& data) = 0;
 
-  // Read as much data as possible into `buffer` from the device, starting at device byte `offset`.
+  // Read as much data as possible into `buffer` from the file, starting at file byte `offset`.
   // This may result in a short read, in which case the caller is responsible for retrying.
   //
   // The memory pointed to by `data` must be 512-byte aligned; `data.size()` must be a multiple of
@@ -59,7 +59,7 @@ class RawBlockDevice
   //
   virtual StatusOr<i64> read_some(i64 offset, const MutableBuffer& buffer) = 0;
 
-  // Returns the current device size (i.e., the greatest valid offset plus the minimum valid data
+  // Returns the current file size (i.e., the greatest valid offset plus the minimum valid data
   // size).
   //
   virtual StatusOr<i64> get_size() = 0;
@@ -87,16 +87,16 @@ class RawBlockDevice
   }
 
  protected:
-  RawBlockDevice() = default;
+  RawBlockFile() = default;
 };
 
-// Write all the given data to the device.
+// Write all the given data to the file.
 //
-Status write_all(RawBlockDevice& device, i64 offset, const ConstBuffer& data);
+Status write_all(RawBlockFile& file, i64 offset, const ConstBuffer& data);
 
-// Fill the entire buffer by reading from the device.
+// Fill the entire buffer by reading from the file.
 //
-Status read_all(RawBlockDevice& device, i64 offset, const MutableBuffer& buffer);
+Status read_all(RawBlockFile& file, i64 offset, const MutableBuffer& buffer);
 
 // Generic form of write_all/read_all.
 //
@@ -112,7 +112,7 @@ Status transfer_all(i64 offset, const BufferT& buffer, TransferOp&& transfer_som
       }
       BATT_REQUIRE_OK(n_transferred);
 
-      *n_transferred = RawBlockDevice::align_down(*n_transferred);
+      *n_transferred = RawBlockFile::align_down(*n_transferred);
       if (*n_transferred == 0) {
         return batt::StatusCode::kInternal;
       }
@@ -127,4 +127,4 @@ Status transfer_all(i64 offset, const BufferT& buffer, TransferOp&& transfer_som
 
 }  // namespace llfs
 
-#endif  // LLFS_RAW_BLOCK_DEVICE_HPP
+#endif  // LLFS_RAW_BLOCK_FILE_HPP

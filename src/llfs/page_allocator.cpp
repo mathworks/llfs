@@ -51,7 +51,7 @@ u64 PageAllocator::calculate_log_size(u64 physical_page_count, u64 max_attachmen
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<std::unique_ptr<PageAllocator>> PageAllocator::recover(
-    batt::TaskScheduler& scheduler, std::string_view name, const PageIdFactory& page_ids,
+    const PageAllocatorRuntimeOptions& options, const PageIdFactory& page_ids,
     LogDeviceFactory& log_device_factory)
 {
   initialize_status_codes();
@@ -92,8 +92,8 @@ StatusOr<std::unique_ptr<PageAllocator>> PageAllocator::recover(
 
   // Now we can create the PageAllocator.
   //
-  return std::unique_ptr<PageAllocator>{
-      new PageAllocator{scheduler, name, std::move(*recovered_log), std::move(recovered_state)}};
+  return std::unique_ptr<PageAllocator>{new PageAllocator{
+      options.scheduler, options.name, std::move(*recovered_log), std::move(recovered_state)}};
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

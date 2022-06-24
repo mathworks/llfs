@@ -29,7 +29,7 @@ class LlfsConan(ConanFile):
         "boost/1.79.0",
         "glog/0.5.0",
         "libunwind/1.5.0",
-        "batteries/0.6.10@tonyastolfi+batteries/stable",
+        "batteries/0.6.11@tonyastolfi+batteries/stable",
         "liburing/2.1",
         "cli11/1.9.1",
     ]

@@ -12,7 +12,7 @@
 
 #include <llfs/data_packer.hpp>
 #include <llfs/file_offset_ptr.hpp>
-#include <llfs/raw_block_device.hpp>
+#include <llfs/raw_block_file.hpp>
 #include <llfs/storage_file_config_block.hpp>
 
 #include <batteries/type_traits.hpp>
@@ -24,7 +24,7 @@ namespace llfs {
 class StorageFileBuilder
 {
  public:
-  using PreFlushAction = std::function<Status(RawBlockDevice&)>;
+  using PreFlushAction = std::function<Status(RawBlockFile&)>;
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   //
@@ -133,7 +133,7 @@ class StorageFileBuilder
   //
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  explicit StorageFileBuilder(RawBlockDevice& device, i64 base_offset) noexcept;
+  explicit StorageFileBuilder(RawBlockFile& file, i64 base_offset) noexcept;
 
   // Add a storage object to the file.
   //
@@ -161,13 +161,13 @@ class StorageFileBuilder
   //
   void finalize_config_block();
 
-  // Writes the given config block to the device.
+  // Writes the given config block to the file.
   //
   Status flush_block(const FileOffsetPtr<PackedConfigBlock&>& p_config_block);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  RawBlockDevice& device_;
+  RawBlockFile& file_;
   std::vector<std::unique_ptr<StorageFileConfigBlock>> config_blocks_;
   Optional<MutableBuffer> unused_payload_;
   i64 base_offset_;

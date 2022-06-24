@@ -33,6 +33,8 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
 {
   p_config->max_attachments = options.max_attachments;
   p_config->uuid = options.uuid.value_or(boost::uuids::random_generator{}());
+  p_config->page_device_id = options.page_device_id;
+  p_config->page_count = options.page_count;
 
   // If `options` specifies a uuid for the log device, then use that; otherwise, create a log device
   // and add it to the transaction.
@@ -57,6 +59,28 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
   BATT_ASSIGN_OK_RESULT(p_config->log_device_uuid, resolve_log_device_uuid());
 
   return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<std::unique_ptr<PageAllocator>> recover_storage_object(
+    const batt::SharedPtr<StorageContext>& storage_context,           //
+    const std::string& /*file_name*/,                                 //
+    const FileOffsetPtr<const PackedPageAllocatorConfig&>& p_config,  //
+    const PageAllocatorRuntimeOptions& options,                       //
+    const IoRingLogDriverOptions& log_options)
+{
+  StatusOr<std::unique_ptr<LogDeviceFactory>> log_factory = storage_context->recover_object(
+      batt::StaticType<PackedLogDeviceConfig>{}, p_config->log_device_uuid, log_options);
+
+  BATT_REQUIRE_OK(log_factory);
+
+  const auto page_ids = PageIdFactory{
+      p_config->page_count,
+      p_config->page_device_id,
+  };
+
+  return PageAllocator::recover(options, page_ids, **log_factory);
 }
 
 }  // namespace llfs

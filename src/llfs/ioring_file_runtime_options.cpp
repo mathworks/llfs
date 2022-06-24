@@ -29,10 +29,35 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<IoRing::File> open_ioring_file(const std::string& /*file_name*/,
-                                        const IoRingFileRuntimeOptions& /*file_options*/)
+StatusOr<IoRing::File> open_ioring_file(const std::string& file_name,
+                                        const IoRingFileRuntimeOptions& file_options)
 {
-  return {batt::StatusCode::kUnimplemented};
+  int flags = 0;
+  {
+    if (file_options.use_raw_io) {
+      flags |= O_DIRECT | O_SYNC;
+    }
+    if (file_options.allow_read) {
+      if (file_options.allow_write) {
+        flags |= O_RDWR;
+      } else {
+        flags |= O_RDONLY;
+      }
+    } else {
+      if (file_options.allow_write) {
+        flags |= O_WRONLY;
+      } else {
+        return {batt::StatusCode::kInvalidArgument};
+      }
+    }
+  }
+
+  int fd = batt::syscall_retry([&] {
+    return ::open(file_name.c_str(), flags);
+  });
+  BATT_REQUIRE_OK(batt::status_from_retval(fd));
+
+  return IoRing::File{file_options.io, fd};
 }
 
 }  // namespace llfs

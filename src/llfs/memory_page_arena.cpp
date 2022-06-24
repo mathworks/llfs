@@ -22,7 +22,8 @@ PageArena make_memory_page_arena(batt::TaskScheduler& scheduler, isize n_pages, 
 
   return PageArena{
       std::make_unique<MemoryPageDevice>(device_id, n_pages, page_size),
-      PageAllocator::recover_or_die(scheduler, name, PageIdFactory{n_pages, device_id},
+      PageAllocator::recover_or_die(PageAllocatorRuntimeOptions{scheduler, name},
+                                    PageIdFactory{n_pages, device_id},
                                     *std::make_unique<MemoryLogDeviceFactory>(log_size))};
 }
 

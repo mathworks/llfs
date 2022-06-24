@@ -7,17 +7,17 @@
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
 #pragma once
-#ifndef LLFS_MOCK_RAW_BLOCK_DEVICE_HPP
-#define LLFS_MOCK_RAW_BLOCK_DEVICE_HPP
+#ifndef LLFS_RAW_BLOCK_FILE_MOCK_HPP
+#define LLFS_RAW_BLOCK_FILE_MOCK_HPP
 
-#include <llfs/raw_block_device.hpp>
+#include <llfs/raw_block_file.hpp>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 namespace llfs {
 
-class MockRawBlockDevice : public RawBlockDevice
+class RawBlockFileMock : public RawBlockFile
 {
  public:
   MOCK_METHOD(StatusOr<i64>, write_some, (i64 offset, const ConstBuffer& data), (override));
@@ -29,4 +29,4 @@ class MockRawBlockDevice : public RawBlockDevice
 
 }  // namespace llfs
 
-#endif  // LLFS_MOCK_RAW_BLOCK_DEVICE_HPP
+#endif  // LLFS_RAW_BLOCK_FILE_MOCK_HPP

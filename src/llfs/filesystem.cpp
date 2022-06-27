@@ -33,11 +33,15 @@ StatusOr<int> open_file_read_only(std::string_view file_name)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<int> open_file_read_write(std::string_view file_name, OpenForAppend open_for_append)
+StatusOr<int> open_file_read_write(std::string_view file_name, OpenForAppend open_for_append,
+                                   OpenRawIO open_raw_io)
 {
   int flags = O_RDWR;
   if (open_for_append) {
     flags |= O_APPEND;
+  }
+  if (open_raw_io) {
+    flags |= O_DIRECT | O_SYNC;
   }
   const int fd = syscall_retry([&] {
     return ::open(std::string(file_name).c_str(), flags);

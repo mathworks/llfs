@@ -13,6 +13,7 @@
 #include <llfs/raw_block_file_mock.hpp>
 #include <llfs/storage_file.hpp>
 
+#include <batteries/async/runtime.hpp>
 #include <batteries/math.hpp>
 
 namespace {
@@ -170,7 +171,9 @@ TEST_F(StorageFileBuilderTest, WriteReadFile)
     ioring_thread.join();
   });
 
-  auto storage_context = batt::make_shared<llfs::StorageContext>();
+  auto storage_context = batt::make_shared<llfs::StorageContext>(
+      batt::Runtime::instance().default_scheduler(), *ioring);
+
   const char* const test_file_name = "/tmp/llfs_test_file";
   std::filesystem::remove(test_file_name);
   boost::uuids::uuid page_device_uuid;

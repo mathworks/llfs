@@ -9,7 +9,18 @@
 #include <llfs/storage_context.hpp>
 //
 
+#include <llfs/page_arena_config.hpp>
+#include <llfs/raw_block_file_impl.hpp>
+
 namespace llfs {
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StorageContext::StorageContext(batt::TaskScheduler& scheduler, IoRing& io) noexcept
+    : scheduler_{scheduler}
+    , io_{io}
+{
+}
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
@@ -25,6 +36,22 @@ batt::SharedPtr<StorageObjectInfo> StorageContext::find_object_by_uuid(
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+Status StorageContext::add_named_file(std::string&& file_name, i64 start_offset)
+{
+  StatusOr<int> fd = open_file_read_write(file_name, OpenForAppend{false}, OpenRawIO{true});
+  BATT_REQUIRE_OK(fd);
+
+  IoRingRawBlockFile file{IoRing::File{this->io_, *fd}};
+  StatusOr<std::vector<std::unique_ptr<StorageFileConfigBlock>>> config_blocks =
+      read_storage_file(file, start_offset);
+  BATT_REQUIRE_OK(config_blocks);
+
+  return this->add_file(
+      batt::make_shared<StorageFile>(std::move(file_name), std::move(*config_blocks)));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 Status StorageContext::add_file(const batt::SharedPtr<StorageFile>& file)
 {
   file->find_all_objects()  //
@@ -34,6 +61,57 @@ Status StorageContext::add_file(const batt::SharedPtr<StorageFile>& file)
         });
 
   return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<batt::SharedPtr<PageCache>> StorageContext::get_page_cache()
+{
+  if (this->page_cache_) {
+    return this->page_cache_;
+  }
+
+  std::vector<PageArena> storage_pool;
+
+  for (const auto& [uuid, p_object_info] : this->index_) {
+    if (p_object_info->p_config_slot->tag == PackedConfigSlotBase::Tag::kPageArena) {
+      const auto& packed_arena_config =
+          config_slot_cast<PackedPageArenaConfig>(p_object_info->p_config_slot.object);
+
+      const std::string base_name =
+          batt::to_string("PageDevice_", packed_arena_config.page_device_uuid);
+
+      StatusOr<PageArena> arena = this->recover_object(
+          batt::StaticType<PackedPageArenaConfig>{}, uuid,
+          PageAllocatorRuntimeOptions{
+              .scheduler = this->scheduler_,
+              .name = batt::to_string(base_name, "_Allocator"),
+          },
+          [&] {
+            IoRingLogDriverOptions options;
+            options.name = batt::to_string(base_name, "_AllocatorLog");
+            return options;
+          }(),
+          IoRingFileRuntimeOptions{
+              .io = this->io_,
+              .use_raw_io = true,
+              .allow_read = true,
+              .allow_write = true,
+          });
+
+      BATT_REQUIRE_OK(arena);
+
+      storage_pool.emplace_back(std::move(*arena));
+    }
+  }
+
+  StatusOr<batt::SharedPtr<PageCache>> page_cache =
+      PageCache::make_shared(std::move(storage_pool), PageCacheOptions::with_default_values());
+  BATT_REQUIRE_OK(page_cache);
+
+  this->page_cache_ = *page_cache;
+
+  return page_cache;
 }
 
 }  // namespace llfs

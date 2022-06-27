@@ -21,6 +21,7 @@
 #include <llfs/int_types.hpp>
 #include <llfs/optional.hpp>
 #include <llfs/packed_array.hpp>  // TODO [tastolfi 2022-01-06] remove
+#include <llfs/packed_bytes.hpp>
 #include <llfs/packed_variant.hpp>
 
 #include <glog/logging.h>

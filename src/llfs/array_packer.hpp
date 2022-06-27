@@ -12,6 +12,7 @@
 
 #include <llfs/data_layout.hpp>
 #include <llfs/packed_array.hpp>
+#include <llfs/packed_bytes.hpp>
 #include <llfs/seq.hpp>
 
 namespace llfs {

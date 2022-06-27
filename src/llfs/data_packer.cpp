@@ -9,6 +9,8 @@
 #include <llfs/data_packer.hpp>
 //
 
+#include <llfs/varint.hpp>
+
 #include <batteries/stream_util.hpp>
 
 namespace llfs {
@@ -195,85 +197,40 @@ Optional<std::string_view> DataPacker::pack_string_to(PackedBytes* rec, const st
 
 u8* DataPacker::pack_varint(u64 n)
 {
+  if (this->full_) {
+    return nullptr;
+  }
+
+  // Attempt to pack the varint to the front of the available range.
+  //
+  u8* const dst_begin = this->avail_.begin();
+  u8* const avail_end = this->avail_.end();
+  u8* dst_end = pack_varint_to(dst_begin, avail_end, n);
+  if (dst_end == nullptr) {
+    this->full_ = true;
+    return nullptr;
+  }
+
+  // Commit the packed bytes.
+  //
+  this->avail_ = boost::iterator_range<u8*>{dst_end, avail_end};
+
+  return dst_end;
   const usize bytes_required = packed_sizeof_varint(n);
   if (this->full_ || this->space() < bytes_required) {
     this->full_ = true;
     return nullptr;
   }
 
-  constexpr u64 kLowBitsMask = 0b01111111;
-  constexpr u8 kHighBitMask = 0b10000000;
-
-#ifdef LLFS_VERBOSE_DEBUG_LOGGING
-  const u64 n_val = n;
-#endif  // LLFS_VERBOSE_DEBUG_LOGGING
-  u8* p = &this->avail_.front();
-
-  switch (bytes_required) {
-    case 10:
-      avail_.front() = (n & kLowBitsMask) | kHighBitMask;
-      avail_.pop_front();
-      n >>= 7;
-      // fall-through
-    case 9:
-      avail_.front() = (n & kLowBitsMask) | kHighBitMask;
-      avail_.pop_front();
-      n >>= 7;
-      // fall-through
-    case 8:
-      avail_.front() = (n & kLowBitsMask) | kHighBitMask;
-      avail_.pop_front();
-      n >>= 7;
-      // fall-through
-    case 7:
-      avail_.front() = (n & kLowBitsMask) | kHighBitMask;
-      avail_.pop_front();
-      n >>= 7;
-      // fall-through
-    case 6:
-      avail_.front() = (n & kLowBitsMask) | kHighBitMask;
-      avail_.pop_front();
-      n >>= 7;
-      // fall-through
-    case 5:
-      avail_.front() = (n & kLowBitsMask) | kHighBitMask;
-      avail_.pop_front();
-      n >>= 7;
-      // fall-through
-    case 4:
-      avail_.front() = (n & kLowBitsMask) | kHighBitMask;
-      avail_.pop_front();
-      n >>= 7;
-      // fall-through
-    case 3:
-      avail_.front() = (n & kLowBitsMask) | kHighBitMask;
-      avail_.pop_front();
-      n >>= 7;
-      // fall-through
-    case 2:
-      avail_.front() = (n & kLowBitsMask) | kHighBitMask;
-      avail_.pop_front();
-      n >>= 7;
-      // fall-through
-    case 1:
-      avail_.front() = (n & kLowBitsMask);
-      avail_.pop_front();
-      break;
-    default:
-      BATT_PANIC() << "bytes_required calculation was wrong! n=" << n
-                   << " bytes_required=" << bytes_required;
-      break;
-  }
-
 #ifdef LLFS_VERBOSE_DEBUG_LOGGING
 
   LOG(INFO) << "pack_varint(" << std::dec << n_val << " (0x" << std::hex << n_val << std::dec
-            << ")) -> [@" << (const void*)p << "; " << std::dec << bytes_required << "] "
-            << batt::dump_range(as_slice(p, bytes_required));
+            << ")) -> [@" << (const void*)dst_begin << "; " << std::dec << bytes_required << "] "
+            << batt::dump_range(as_slice(dst_begin, bytes_required));
 
 #endif  // LLFS_VERBOSE_DEBUG_LOGGING
 
-  return p;
+  return dst_begin;
 }
 
 }  // namespace llfs

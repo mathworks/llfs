@@ -12,6 +12,7 @@
 
 #include <llfs/interval.hpp>
 #include <llfs/page_layout.hpp>
+#include <llfs/varint.hpp>
 
 #include <batteries/async/watch.hpp>
 #include <batteries/buffer.hpp>
@@ -204,6 +205,8 @@ struct SlotWithPayload {
   T payload;
 };
 // TODO [tastolfi 2022-01-04] SlotReader should pass `SlotWithPayload` ?
+
+constexpr usize kMaxSlotHeaderSize = kMaxVarInt32Size;
 
 }  // namespace llfs
 

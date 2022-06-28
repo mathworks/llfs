@@ -51,12 +51,21 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
     page_device_options.uuid = (*p_page_device_config)->uuid;
   }
 
+  const u64 log_block_size = 1ull << options.log_block_size_bits.value_or(12);
+  const u64 log_block_pages = log_block_size / kLogPageSize;
+  BATT_CHECK_EQ(log_block_size % kLogPageSize, 0u)
+      << "The PageAllocator log block size must be a multiple of the kLogPageSize (" << kLogPageSize
+      << "); specified value = " << log_block_size;
+
+  const u64 log_block_pages_log2 = batt::log2_ceil(log_block_pages);
+  BATT_CHECK_EQ(1ull << log_block_pages_log2, log_block_pages);
+
   auto page_allocator_options = PageAllocatorConfigOptions{
       .page_count = options.page_count,
       .max_attachments = options.max_attachments,
       .uuid = options.allocator_uuid,
       .log_device_uuid = options.log_uuid,
-      .log_device_pages_per_block_log2 = options.log_block_size_bits,
+      .log_device_pages_per_block_log2 = log_block_pages_log2,
       .page_device_id = BATT_CHECKED_CAST(u32, *page_device_options.device_id),
   };
 

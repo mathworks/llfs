@@ -133,6 +133,8 @@ class StorageFileBuilder
   //
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   explicit StorageFileBuilder(RawBlockFile& file, i64 base_offset) noexcept;
 
   // Add a storage object to the file.

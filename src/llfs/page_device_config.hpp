@@ -37,22 +37,39 @@ struct PackedPageDeviceConfig;
 struct PageDeviceConfigOptions {
   using PackedConfigType = PackedPageDeviceConfig;
 
-  // log2(the page size of the device)
+  // The unique identifier for the device; if None, a random UUID is generated.
   //
-  PageSizeLog2 page_size_log2;
+  Optional<boost::uuids::uuid> uuid;
 
   // The number of pages in this device.
   //
   PageCount page_count;
+
+  // log2(the page size of the device)
+  //
+  PageSizeLog2 page_size_log2;
 
   // The device id for this device; if None, this will be set to the lowest unused id in the storage
   // context where this device is configured.
   //
   Optional<page_device_id_int> device_id;
 
-  // The unique identifier for the device; if None, a random UUID is generated.
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  // Returns the page size in bytes.
   //
-  Optional<boost::uuids::uuid> uuid;
+  u64 page_size() const noexcept
+  {
+    return u64{1} << this->page_size_bits;
+  }
+
+  // Sets the page size (bytes).  `n` must be a power of 2, >=512.
+  //
+  void page_size(u64 n)
+  {
+    this->page_size_bits = PageSizeLog2(batt::log2_ceil(n));
+    BATT_CHECK_EQ(this->page_size(), n);
+  }
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

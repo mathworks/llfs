@@ -26,6 +26,23 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+/*static*/ StatusOr<std::unique_ptr<IoRingRawBlockFile>> IoRingRawBlockFile::open(
+    IoRing& io, const char* file_name, int flags, Optional<mode_t> mode)
+{
+  const int fd = batt::syscall_retry([&] {
+    if (mode) {
+      return ::open(file_name, flags, *mode);
+    } else {
+      return ::open(file_name, flags);
+    }
+  });
+  BATT_REQUIRE_OK(batt::status_from_retval(fd));
+
+  return std::make_unique<IoRingRawBlockFile>(IoRing::File{io, fd});
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 /*explicit*/ IoRingRawBlockFile::IoRingRawBlockFile(IoRing::File&& file) noexcept
     : file_{std::move(file)}
 {

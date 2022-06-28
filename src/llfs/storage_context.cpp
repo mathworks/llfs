@@ -107,6 +107,7 @@ StatusOr<batt::SharedPtr<PageCache>> StorageContext::get_page_cache()
 
   StatusOr<batt::SharedPtr<PageCache>> page_cache =
       PageCache::make_shared(std::move(storage_pool), PageCacheOptions::with_default_values());
+
   BATT_REQUIRE_OK(page_cache);
 
   this->page_cache_ = *page_cache;

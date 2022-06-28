@@ -103,7 +103,10 @@ struct IoRingLogConfig {
   usize block_count() const
   {
     BATT_CHECK_EQ(this->physical_size % this->block_size(), 0u)
-        << "The physical size of the log must be a multiple of the block size!";
+        << "The physical size of the log must be a multiple of the block size!"
+        << BATT_INSPECT(this->physical_size) << BATT_INSPECT(this->block_size())
+        << BATT_INSPECT(this->pages_per_block_log2);
+
     return this->physical_size / this->block_size();
   }
 };

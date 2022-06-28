@@ -13,13 +13,23 @@
 #define LLFS_RAW_BLOCK_FILE_IMPL_HPP
 
 #include <llfs/ioring_file.hpp>
+#include <llfs/optional.hpp>
 #include <llfs/raw_block_file.hpp>
+
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 namespace llfs {
 
 class IoRingRawBlockFile : public RawBlockFile
 {
  public:
+  static StatusOr<std::unique_ptr<IoRingRawBlockFile>> open(IoRing& io, const char* file_name,
+                                                            int flags, Optional<mode_t> mode);
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   explicit IoRingRawBlockFile(IoRing::File&& file) noexcept;
 
   StatusOr<i64> write_some(i64 offset, const ConstBuffer& data) override;

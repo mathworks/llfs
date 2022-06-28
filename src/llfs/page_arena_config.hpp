@@ -22,28 +22,19 @@
 
 namespace llfs {
 
+struct PackedPageArenaConfig;
+
 struct PageArenaConfigOptions {
-  PageCount page_count;
-  u16 page_size_bits;
-  Optional<u16> log_block_size_bits;
-  Optional<u64> device_id;
-  Optional<boost::uuids::uuid> device_uuid;
-  Optional<boost::uuids::uuid> log_uuid;
-  Optional<boost::uuids::uuid> allocator_uuid;
-  Optional<boost::uuids::uuid> arena_uuid;
-  u64 max_attachments;
+  using PackedConfigType = PackedPageArenaConfig;
 
-  u64 page_size() const noexcept
-  {
-    return u64{1} << this->page_size_bits;
-  }
-
-  void page_size(u64 n)
-  {
-    this->page_size_bits = batt::log2_ceil(n);
-    BATT_CHECK_EQ(this->page_size(), n);
-  }
+  // The unique identifier for the arena; if None, a random UUID is generated.
+  //
+  Optional<boost::uuids::uuid> uuid;
+  PageAllocatorConfigOptions allocator;
+  PageDeviceConfigOptions page_device;
 };
+
+BATT_STATIC_ASSERT_EQ(sizeof(PackedConfigSlotHeader), 20u);
 
 struct PackedPageArenaConfig : PackedConfigSlotHeader {
   static constexpr usize kSize = 64;

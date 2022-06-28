@@ -32,6 +32,12 @@ struct PackedLogDeviceConfig;
 struct LogDeviceConfigOptions {
   using PackedConfigType = PackedLogDeviceConfig;
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  static constexpr u64 kDefaultBlockSizeBytes = 16384;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   // The capacity in bytes of the log.
   //
   usize log_size;
@@ -44,6 +50,30 @@ struct LogDeviceConfigOptions {
   // Higher values == higher (better) throughput, higher (worse) latency.
   //
   Optional<u16> pages_per_block_log2;
+
+  // +++++++++++-+-+--+----- --- -- -  -  -   -
+
+  // Returns the log flush block size in bytes.
+  //
+  u64 block_size() const
+  {
+    static const u64 kDefaultPagesPerBlockLog2 =
+        batt::log2_ceil(kDefaultBlockSizeBytes / kLogPageSize);
+
+    return u64{1} << this->pages_per_block_log2.value_or(kDefaultPagesPerBlockLog2);
+  }
+
+  // Sets the log flush block size in bytes; `n` must be a power of 2, >= kLogPageSize
+  // (default=4096).
+  //
+  void block_size(u64 n_bytes)
+  {
+    const u64 n_pages = n_bytes / kLogPageSize;
+    this->pages_per_block_log2 = batt::log2_ceil(n_pages);
+
+    BATT_CHECK_EQ((u64{1} << *this->pages_per_block_log2) * kLogPageSize, n_bytes)
+        << BATT_INSPECT(n_bytes) << BATT_INSPECT(n_pages) << BATT_INSPECT(kLogPageSize);
+  }
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

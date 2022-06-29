@@ -21,8 +21,8 @@ std::string FilesystemPageDevice::filename_from_id(PageId id)
 }
 
 std::unique_ptr<FilesystemPageDevice> FilesystemPageDevice::erase(
-    const fs::path& parent_dir, page_device_id_int device_id, page_id_int capacity, u32 page_size,
-    ConfirmThisWillEraseAllMyData confirm)
+    const fs::path& parent_dir, page_device_id_int device_id, PageCount capacity,
+    PageSize page_size, ConfirmThisWillEraseAllMyData confirm)
 {
   if (confirm == ConfirmThisWillEraseAllMyData::kNo) {
     return nullptr;
@@ -69,8 +69,8 @@ std::unique_ptr<FilesystemPageDevice> FilesystemPageDevice::open(const fs::path&
       return nullptr;
     }
   }
-  return std::unique_ptr<FilesystemPageDevice>(
-      new FilesystemPageDevice(page_size, batt::make_copy(parent_dir), device_id, capacity));
+  return std::unique_ptr<FilesystemPageDevice>(new FilesystemPageDevice(
+      PageSize{page_size}, batt::make_copy(parent_dir), device_id, PageCount{capacity}));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

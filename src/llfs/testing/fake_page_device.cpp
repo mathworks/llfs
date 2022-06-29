@@ -21,7 +21,7 @@ PageIdFactory FakePageDevice::page_ids() /*override*/
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-u32 FakePageDevice::page_size() /*override*/
+PageSize FakePageDevice::page_size() /*override*/
 {
   return this->device_page_size;
 }

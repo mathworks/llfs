@@ -13,6 +13,7 @@
 #include <llfs/constants.hpp>
 #include <llfs/int_types.hpp>
 
+#include <batteries/static_assert.hpp>
 #include <batteries/strong_typedef.hpp>
 
 #include <atomic>
@@ -64,6 +65,14 @@ inline std::atomic<bool>& suppress_log_output_for_test()
   static std::atomic<bool> value_{false};
   return value_;
 }
+
+// The device-level log page size and max atomic write size.
+//
+constexpr usize kLogPageSize = 4 * kKiB;
+constexpr usize kLogAtomicWriteSize = 4 * kKiB;
+constexpr usize kLogAtomicWriteBits = 12;
+
+BATT_STATIC_ASSERT_EQ(usize{1} << kLogAtomicWriteBits, kLogAtomicWriteSize);
 
 }  // namespace llfs
 

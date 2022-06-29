@@ -31,23 +31,33 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
                                 FileOffsetPtr<PackedPageAllocatorConfig&> p_config,
                                 const PageAllocatorConfigOptions& options)
 {
+  const auto resolved_device_id = [&]() -> page_device_id_int {
+    if (!options.page_device_id) {
+      return txn.reserve_device_id();
+    } else {
+      return *options.page_device_id;
+    }
+  }();
+
   p_config->max_attachments = options.max_attachments;
   p_config->uuid = options.uuid.value_or(boost::uuids::random_generator{}());
-  p_config->page_device_id = options.page_device_id;
+  p_config->page_device_id = resolved_device_id;
   p_config->page_count = options.page_count;
 
   // If `options` specifies a uuid for the log device, then use that; otherwise, create a log device
   // and add it to the transaction.
   //
   auto resolve_log_device_uuid = [&]() -> StatusOr<boost::uuids::uuid> {
-    if (options.log_device_uuid) {
-      return *options.log_device_uuid;
+    if (options.log_device.uuid) {
+      return *options.log_device.uuid;
     }
 
     const LogDeviceConfigOptions log_device_config_options{
-        .log_size = PageAllocator::calculate_log_size(options.page_count, options.max_attachments),
-        .uuid = options.log_device_uuid,
-        .pages_per_block_log2 = options.log_device_pages_per_block_log2,
+        .uuid = None,
+        .pages_per_block_log2 = options.log_device.pages_per_block_log2,
+        .log_size =
+            std::max(PageAllocator::calculate_log_size(options.page_count, options.max_attachments),
+                     options.log_device.log_size),
     };
 
     BATT_ASSIGN_OK_RESULT(const FileOffsetPtr<const PackedLogDeviceConfig&> p_log_device,
@@ -76,7 +86,7 @@ StatusOr<std::unique_ptr<PageAllocator>> recover_storage_object(
   BATT_REQUIRE_OK(log_factory);
 
   const auto page_ids = PageIdFactory{
-      p_config->page_count,
+      PageCount{BATT_CHECKED_CAST(PageCount::value_type, p_config->page_count.value())},
       p_config->page_device_id,
   };
 

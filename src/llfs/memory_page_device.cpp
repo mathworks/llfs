@@ -15,8 +15,8 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-MemoryPageDevice::MemoryPageDevice(page_device_id_int device_id, isize capacity,
-                                   u32 page_size) noexcept
+MemoryPageDevice::MemoryPageDevice(page_device_id_int device_id, PageCount capacity,
+                                   PageSize page_size) noexcept
     : page_ids_{capacity, device_id}
     , page_size_{page_size}
 {
@@ -33,7 +33,7 @@ PageIdFactory MemoryPageDevice::page_ids()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-u32 MemoryPageDevice::page_size()
+PageSize MemoryPageDevice::page_size()
 {
   return this->page_size_;
 }

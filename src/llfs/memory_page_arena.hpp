@@ -21,8 +21,9 @@
 
 namespace llfs {
 
-PageArena make_memory_page_arena(batt::TaskScheduler& scheduler, isize n_pages, PageSize page_size,
-                                 std::string&& name, page_device_id_int device_id);
+PageArena make_memory_page_arena(batt::TaskScheduler& scheduler, PageCount n_pages,
+                                 PageSize page_size, std::string&& name,
+                                 page_device_id_int device_id);
 
 }  // namespace llfs
 

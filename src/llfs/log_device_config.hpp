@@ -38,10 +38,6 @@ struct LogDeviceConfigOptions {
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  // The capacity in bytes of the log.
-  //
-  usize log_size;
-
   // The unique identifier for the log; if None, a random UUID will be generated.
   //
   Optional<boost::uuids::uuid> uuid;
@@ -50,6 +46,10 @@ struct LogDeviceConfigOptions {
   // Higher values == higher (better) throughput, higher (worse) latency.
   //
   Optional<u16> pages_per_block_log2;
+
+  // The capacity in bytes of the log.
+  //
+  usize log_size;
 
   // +++++++++++-+-+--+----- --- -- -  -  -   -
 

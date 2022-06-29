@@ -30,7 +30,7 @@ struct PageArenaConfigOptions {
   // The unique identifier for the arena; if None, a random UUID is generated.
   //
   Optional<boost::uuids::uuid> uuid;
-  PageAllocatorConfigOptions allocator;
+  PageAllocatorConfigOptions page_allocator;
   PageDeviceConfigOptions page_device;
 };
 

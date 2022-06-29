@@ -31,30 +31,29 @@ struct PackedPageAllocatorConfig;
 struct PageAllocatorConfigOptions {
   using PackedConfigType = PackedPageAllocatorConfig;
 
-  // The number of pages tracked by this allocator.
+  // The unique identifier for this allocator; if None, a random UUID is generated.
   //
-  PageCount page_count;
+  Optional<boost::uuids::uuid> uuid;
 
   // The maximum number of clients that can make changes to page ref counts.
   //
   u64 max_attachments;
 
-  // The unique identifier for this allocator; if None, a random UUID is generated.
+  // The number of pages tracked by this allocator.
   //
-  Optional<boost::uuids::uuid> uuid;
+  PageCount page_count;
 
-  // The unique identifier for the page allocator WAL; if None, a random UUID is generated.
+  // Options for the log device that stores the state of this page allocator.
   //
-  Optional<boost::uuids::uuid> log_device_uuid;
+  LogDeviceConfigOptions log_device;
 
-  // Passed on when created the WAL; a new unique log device is always created when configuring a
-  // page allocator; it's not allowed to assign an existing log device to a new allocator.
+  // (Sanity check) The page size (log2) of the page device managed by this allocator.
   //
-  Optional<u16> log_device_pages_per_block_log2;
+  PageSizeLog2 page_size_log2;
 
   // The device sequence number.
   //
-  u32 page_device_id;
+  Optional<u32> page_device_id;
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

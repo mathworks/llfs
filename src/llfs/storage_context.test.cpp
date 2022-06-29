@@ -68,30 +68,56 @@ TEST(StorageContextTest, GetPageCache)
 
     llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageArenaConfig&>> config_4kb =
         builder.add_object(llfs::PageArenaConfigOptions{
-            .page_count = llfs::PageCount{32},
-            .page_size_bits = llfs::PageSizeLog2{12},
-            .log_block_size_bits = 13,
-            .device_id = llfs::None,
-            .device_uuid = llfs::None,
-            .log_uuid = llfs::None,
-            .allocator_uuid = llfs::None,
-            .arena_uuid = arena_uuid_4kb,
-            .max_attachments = 32,
+            .uuid = arena_uuid_4kb,
+            .page_allocator =
+                llfs::PageAllocatorConfigOptions{
+                    .uuid = llfs::None,
+                    .max_attachments = 32,
+                    .page_count = llfs::PageCount{32},
+                    .log_device =
+                        llfs::LogDeviceConfigOptions{
+                            .uuid = llfs::None,
+                            .pages_per_block_log2 = 1,
+                            .log_size = 0,
+                        },
+                    .page_size_log2 = llfs::PageSizeLog2{12},
+                    .page_device_id = llfs::None,
+                },
+            .page_device =
+                llfs::PageDeviceConfigOptions{
+                    .uuid = llfs::None,
+                    .device_id = llfs::None,
+                    .page_count = llfs::PageCount{32},
+                    .page_size_log2 = llfs::PageSizeLog2{12},
+                },
         });
 
     ASSERT_TRUE(config_4kb.ok()) << BATT_INSPECT(config_4kb.status());
 
     llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageArenaConfig&>> config_2mb =
         builder.add_object(llfs::PageArenaConfigOptions{
-            .page_count = llfs::PageCount{32},
-            .page_size_bits = llfs::PageSizeLog2{21},
-            .log_block_size_bits = 13,
-            .device_id = llfs::None,
-            .device_uuid = llfs::None,
-            .log_uuid = llfs::None,
-            .allocator_uuid = llfs::None,
-            .arena_uuid = arena_uuid_2mb,
-            .max_attachments = 32,
+            .uuid = arena_uuid_2mb,
+            .page_allocator =
+                llfs::PageAllocatorConfigOptions{
+                    .uuid = llfs::None,
+                    .max_attachments = 32,
+                    .page_count = llfs::PageCount{32},
+                    .log_device =
+                        llfs::LogDeviceConfigOptions{
+                            .uuid = llfs::None,
+                            .pages_per_block_log2 = 1,
+                            .log_size = 0,
+                        },
+                    .page_size_log2 = llfs::PageSizeLog2{21},
+                    .page_device_id = llfs::None,
+                },
+            .page_device =
+                llfs::PageDeviceConfigOptions{
+                    .uuid = llfs::None,
+                    .device_id = llfs::None,
+                    .page_count = llfs::PageCount{32},
+                    .page_size_log2 = llfs::PageSizeLog2{21},
+                },
         });
 
     ASSERT_TRUE(config_2mb.ok()) << BATT_INSPECT(config_2mb.status());

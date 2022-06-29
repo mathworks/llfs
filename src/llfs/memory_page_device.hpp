@@ -12,6 +12,7 @@
 
 #include <llfs/int_types.hpp>
 #include <llfs/page_device.hpp>
+#include <llfs/page_size.hpp>
 #include <llfs/status.hpp>
 
 #include <glog/logging.h>
@@ -28,11 +29,12 @@ namespace llfs {
 class MemoryPageDevice : public PageDevice
 {
  public:
-  explicit MemoryPageDevice(page_device_id_int device_id, isize capacity, u32 page_size) noexcept;
+  explicit MemoryPageDevice(page_device_id_int device_id, PageCount capacity,
+                            PageSize page_size) noexcept;
 
   PageIdFactory page_ids() override;
 
-  u32 page_size() override;
+  PageSize page_size() override;
 
   StatusOr<std::shared_ptr<PageBuffer>> prepare(PageId page_id) override;
 
@@ -55,7 +57,7 @@ class MemoryPageDevice : public PageDevice
   };
 
   const PageIdFactory page_ids_;
-  const u32 page_size_;
+  const PageSize page_size_;
   batt::Mutex<State> state_;
 };
 

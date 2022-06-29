@@ -28,12 +28,6 @@
 
 namespace llfs {
 
-constexpr usize kLogPageSize = 4 * kKiB;
-constexpr usize kLogAtomicWriteSize = 4 * kKiB;
-constexpr usize kLogAtomicWriteBits = 12;
-
-BATT_STATIC_ASSERT_EQ(usize{1} << kLogAtomicWriteBits, kLogAtomicWriteSize);
-
 using LogPageBuffer = std::aligned_storage_t<kLogPageSize, 512>;
 
 class IoRingLogDriver;

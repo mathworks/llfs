@@ -12,6 +12,7 @@
 
 #include <llfs/data_packer.hpp>
 #include <llfs/file_offset_ptr.hpp>
+#include <llfs/page_id_factory.hpp>
 #include <llfs/raw_block_file.hpp>
 #include <llfs/storage_file_config_block.hpp>
 
@@ -69,7 +70,7 @@ class StorageFileBuilder
 
     // Return the next available monotonic device id number.
     //
-    u64 reserve_device_id();
+    page_device_id_int reserve_device_id();
 
     // Returns a mutable reference to the DataPacker for the current config block.  This allows the
     // use of extra space at the end of the block for variable-sized data fields referenced from
@@ -123,7 +124,7 @@ class StorageFileBuilder
 
     // The next available device number; used by `reserve_device_id`.
     //
-    u64 next_available_device_id_;
+    page_device_id_int next_available_device_id_;
 
     // I/O actions that must succeed before flushing this config block; used to initialize data in
     // the storage file that is referenced by config slots.
@@ -174,7 +175,7 @@ class StorageFileBuilder
   Optional<MutableBuffer> unused_payload_;
   i64 base_offset_;
   i64 next_offset_;
-  u64 next_available_device_id_;
+  page_device_id_int next_available_device_id_;
   std::vector<PreFlushAction> pre_flush_actions_;
 };
 

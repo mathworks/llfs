@@ -1,5 +1,7 @@
 # Data Packing/Serialization
 
+[[_TOC_]]
+
 ## Summary
 
 LLFS includes a no-copy data serialization (packing) and

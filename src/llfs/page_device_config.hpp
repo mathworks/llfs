@@ -41,6 +41,11 @@ struct PageDeviceConfigOptions {
   //
   Optional<boost::uuids::uuid> uuid;
 
+  // The device id for this device; if None, this will be set to the lowest unused id in the storage
+  // context where this device is configured.
+  //
+  Optional<page_device_id_int> device_id;
+
   // The number of pages in this device.
   //
   PageCount page_count;
@@ -49,25 +54,20 @@ struct PageDeviceConfigOptions {
   //
   PageSizeLog2 page_size_log2;
 
-  // The device id for this device; if None, this will be set to the lowest unused id in the storage
-  // context where this device is configured.
-  //
-  Optional<page_device_id_int> device_id;
-
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   // Returns the page size in bytes.
   //
   u64 page_size() const noexcept
   {
-    return u64{1} << this->page_size_bits;
+    return u64{1} << this->page_size_log2;
   }
 
   // Sets the page size (bytes).  `n` must be a power of 2, >=512.
   //
   void page_size(u64 n)
   {
-    this->page_size_bits = PageSizeLog2(batt::log2_ceil(n));
+    this->page_size_log2 = PageSizeLog2(batt::log2_ceil(n));
     BATT_CHECK_EQ(this->page_size(), n);
   }
 };

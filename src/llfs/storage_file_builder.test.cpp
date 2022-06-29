@@ -80,10 +80,10 @@ TEST_F(StorageFileBuilderTest, PageDeviceConfig_NoFlush)
 
   llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageDeviceConfig&>> packed_config =
       builder.add_object(llfs::PageDeviceConfigOptions{
-          .page_size_log2 = llfs::PageSizeLog2{12},
-          .page_count = llfs::PageCount{kTestPageCount},
-          .device_id = llfs::None,
           .uuid = llfs::None,
+          .device_id = llfs::None,
+          .page_count = llfs::PageCount{kTestPageCount},
+          .page_size_log2 = llfs::PageSizeLog2{12},
       });
 
   ASSERT_TRUE(packed_config.ok()) << BATT_INSPECT(packed_config.status());
@@ -98,10 +98,10 @@ TEST_F(StorageFileBuilderTest, PageDeviceConfig_Flush)
       llfs::StorageFileBuilder builder{file_mock, base_file_offset};
 
       const auto options = llfs::PageDeviceConfigOptions{
-          .page_size_log2 = llfs::PageSizeLog2{page_size_log2},
-          .page_count = llfs::PageCount{kTestPageCount},
-          .device_id = llfs::None,
           .uuid = llfs::None,
+          .device_id = llfs::None,
+          .page_count = llfs::PageCount{kTestPageCount},
+          .page_size_log2 = llfs::PageSizeLog2{page_size_log2},
       };
       const usize kTestPageSize = 1ll << options.page_size_log2;
 
@@ -189,10 +189,10 @@ TEST_F(StorageFileBuilderTest, WriteReadFile)
     llfs::IoRingRawBlockFile test_file{llfs::IoRing::File{*ioring, *test_fd}};
 
     const auto page_device_options = llfs::PageDeviceConfigOptions{
-        .page_size_log2 = llfs::PageSizeLog2{12} /* 4096 */,
-        .page_count = llfs::PageCount{kTestPageCount},
-        .device_id = llfs::None,
         .uuid = llfs::None,
+        .device_id = llfs::None,
+        .page_count = llfs::PageCount{kTestPageCount},
+        .page_size_log2 = llfs::PageSizeLog2{12} /* 4096 */,
     };
 
     {

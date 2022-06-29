@@ -33,7 +33,7 @@ class IoRingPageFileDevice : public PageDevice
 
   PageIdFactory page_ids() override;
 
-  u32 page_size() override;
+  PageSize page_size() override;
 
   StatusOr<std::shared_ptr<PageBuffer>> prepare(PageId page_id) override;
 

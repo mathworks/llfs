@@ -55,7 +55,7 @@ class FakePageDevice : public PageDevice
 
   PageIdFactory page_ids() override;
 
-  u32 page_size() override;
+  PageSize page_size() override;
 
   // If `this->prepare_status` is non-ok, returns `this->prepare_status`, else pass the call through
   // to the underlying MemoryPageDevice

@@ -57,10 +57,10 @@ class FilesystemPageDevice : public PageDevice
 
   static std::unique_ptr<FilesystemPageDevice> erase(const fs::path& parent_dir,
                                                      page_device_id_int device_id,
-                                                     page_id_int capacity, u32 page_size,
+                                                     PageCount capacity, PageSize page_size,
                                                      ConfirmThisWillEraseAllMyData confirm);
 
-  u32 page_size() override
+  PageSize page_size() override
   {
     return this->page_size_;
   }
@@ -87,8 +87,8 @@ class FilesystemPageDevice : public PageDevice
   void drop(PageId id, WriteHandler&& handler) override;
 
  private:
-  explicit FilesystemPageDevice(u32 page_size, fs::path&& parent_dir, page_device_id_int device_id,
-                                i64 capacity) noexcept
+  explicit FilesystemPageDevice(PageSize page_size, fs::path&& parent_dir,
+                                page_device_id_int device_id, PageCount capacity) noexcept
       : page_size_{page_size}
       , parent_dir_(std::move(parent_dir))
       , device_id_{device_id}
@@ -101,10 +101,10 @@ class FilesystemPageDevice : public PageDevice
     return parent_dir_ / filename_from_id(id);
   }
 
-  const u32 page_size_;
+  const PageSize page_size_;
   const fs::path parent_dir_;
   const page_device_id_int device_id_;
-  const i64 capacity_;
+  const PageCount capacity_;
   std::mutex mutex_;
   std::unordered_set<PageId, PageId::Hash> pre_dropped_;
   std::unordered_set<PageId, PageId::Hash> live_;

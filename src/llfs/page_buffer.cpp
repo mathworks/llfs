@@ -53,9 +53,9 @@ static PoolContext& pool_for_size(usize size)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-usize PageBuffer::size() const
+PageSize PageBuffer::size() const
 {
-  return get_page_header(*this).size;
+  return PageSize{get_page_header(*this).size};
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -81,7 +81,7 @@ void PageBuffer::set_page_id(PageId id)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*static*/ std::shared_ptr<PageBuffer> PageBuffer::allocate(usize page_size, PageId page_id)
+/*static*/ std::shared_ptr<PageBuffer> PageBuffer::allocate(PageSize page_size, PageId page_id)
 {
   PageBuffer* obj = nullptr;
 

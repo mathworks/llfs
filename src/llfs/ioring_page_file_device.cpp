@@ -21,7 +21,8 @@ IoRingPageFileDevice::IoRingPageFileDevice(
     IoRing::File&& file, const FileOffsetPtr<PackedPageDeviceConfig>& config) noexcept
     : file_{std::move(file)}
     , config_{config}
-    , page_ids_{this->config_->page_count, this->config_->device_id}
+    , page_ids_{PageCount{batt::checked_cast<u32>(this->config_->page_count.value())},
+                this->config_->device_id}
 {
 }
 
@@ -34,9 +35,9 @@ PageIdFactory IoRingPageFileDevice::page_ids()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-u32 IoRingPageFileDevice::page_size()
+PageSize IoRingPageFileDevice::page_size()
 {
-  return batt::checked_cast<u32>(this->config_->page_size());
+  return PageSize{batt::checked_cast<u32>(this->config_->page_size())};
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

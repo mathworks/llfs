@@ -13,8 +13,10 @@
 #include <llfs/config.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/page_id.hpp>
+#include <llfs/page_size.hpp>
 
 #include <batteries/assert.hpp>
+#include <batteries/checked_cast.hpp>
 #include <batteries/math.hpp>
 
 #include <boost/operators.hpp>
@@ -48,18 +50,17 @@ constexpr page_id_int kPageDeviceIdMask = ((page_id_int{1} << kPageDeviceIdBits)
 class PageIdFactory : public boost::equality_comparable<PageIdFactory>
 {
  public:
-  explicit PageIdFactory(i64 device_capacity, page_device_id_int page_device_id) noexcept
-      : capacity_{static_cast<page_id_int>(device_capacity)}
+  explicit PageIdFactory(PageCount device_capacity, page_device_id_int page_device_id) noexcept
+      : capacity_{BATT_CHECKED_CAST(page_id_int, device_capacity.value())}
       , device_id_{page_device_id}
       , device_id_prefix_{(this->device_id_ << kPageDeviceIdShift) & kPageDeviceIdMask}
   {
-    BATT_CHECK_GE(device_capacity, 0);
     BATT_CHECK_GE(this->physical_page_mask_ + 1, this->capacity_);
   }
 
-  i64 get_physical_page_count() const
+  PageCount get_physical_page_count() const
   {
-    return this->capacity_;
+    return PageCount{this->capacity_};
   }
 
   PageId make_page_id(page_id_int physical_page, page_generation_int generation) const

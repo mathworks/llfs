@@ -13,6 +13,7 @@
 #include <llfs/page_buffer.hpp>
 #include <llfs/page_id.hpp>
 #include <llfs/page_id_factory.hpp>
+#include <llfs/page_size.hpp>
 #include <llfs/status.hpp>
 
 #include <glog/logging.h>
@@ -42,16 +43,15 @@ class PageDevice
 
   virtual PageIdFactory page_ids() = 0;
 
-  // TODO [tastolfi 2021-09-07] should this be 64 bit?  store as log2?
-  //
-  virtual u32 page_size() = 0;
+  virtual PageSize page_size() = 0;
 
   // For convenience...
   //
-  u64 capacity()
+  PageCount capacity()
   {
     return this->page_ids().get_physical_page_count();
   }
+
   page_device_id_int get_id()
   {
     return this->page_ids().get_device_id();

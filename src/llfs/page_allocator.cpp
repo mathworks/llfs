@@ -170,8 +170,7 @@ StatusOr<PageId> PageAllocator::allocate_page(batt::WaitForResource wait_for_res
       }
       LOG_FIRST_N(INFO, 1) << "Unable to allocate page (pool is empty)";
       if (wait_for_resource == batt::WaitForResource::kFalse) {
-        return Status{
-            batt::StatusCode::kUnavailable};  // TODO [tastolfi 2021-10-20] "the pool is empty"
+        return Status{batt::StatusCode::kResourceExhausted};
       }
     }
     BATT_DEBUG_INFO("[PageAllocator::allocate_page] waiting for free page");

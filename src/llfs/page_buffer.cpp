@@ -9,6 +9,7 @@
 #include <llfs/page_buffer.hpp>
 //
 
+#include <llfs/config.hpp>
 #include <llfs/page_layout.hpp>
 
 #include <batteries/math.hpp>
@@ -23,9 +24,7 @@ namespace llfs {
 //
 namespace {
 
-// TODO [tastolfi 2021-09-03] make config constants for the pool capacity and arena size below.
-
-using Pool = boost::lockfree::queue<PageBuffer*, boost::lockfree::capacity<256>,
+using Pool = boost::lockfree::queue<PageBuffer*, boost::lockfree::capacity<kPageBufferPoolSize>,
                                     boost::lockfree::fixed_sized<true>>;
 
 struct PoolContext {
@@ -35,8 +34,8 @@ struct PoolContext {
 
 static PoolContext& pool_for_size(usize size)
 {
-  static std::array<PoolContext*, 32>& context_ = []() -> decltype(auto) {
-    static std::array<PoolContext*, 32> context_;
+  static std::array<PoolContext*, kPageBufferPoolLevels>& context_ = []() -> decltype(auto) {
+    static std::array<PoolContext*, kPageBufferPoolLevels> context_;
     context_.fill(nullptr);
     for (auto& c : context_) {
       c = new PoolContext;

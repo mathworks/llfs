@@ -51,6 +51,10 @@ bool initialize_status_codes()
       CODE_WITH_MSG_(StatusCode::kPageGenerationNotFound,
                      "PageDevice read failed with the given PageId because the current generation "
                      "number doesn't match the requested generation"),
+      CODE_WITH_MSG_(StatusCode::kFileLogDeviceConfigWriteFailed,
+                     "Could not write FileLogDevice config file"),
+      CODE_WITH_MSG_(StatusCode::kFileLogDeviceConfigReadFailed,
+                     "Could not read FileLogDevice config file"),
   });
   return initialized;
 }

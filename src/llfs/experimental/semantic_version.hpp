@@ -13,21 +13,9 @@
 #include <llfs/int_types.hpp>
 #include <llfs/simple_packed_type.hpp>
 
-#include <batteries/strong_typedef.hpp>
+#include <batteries/static_assert.hpp>
 
 namespace llfs {
-
-/* TODO [tastolfi 2022-02-07] ?
-BATT_STRONG_TYPEDEF(u32, MajorVersion);
-BATT_STRONG_TYPEDEF(u16, MinorVersion);
-BATT_STRONG_TYPEDEF(u16, PatchVersion);
-
-struct SemanticVersion {
-  MajorVersion major;
-  MinorVersion minor;
-  PatchVersion patch;
-};
-*/
 
 struct PackedSemanticVersion {
   big_u32 major;
@@ -36,6 +24,8 @@ struct PackedSemanticVersion {
 };
 
 LLFS_SIMPLE_PACKED_TYPE(PackedSemanticVersion);
+
+BATT_STATIC_ASSERT_EQ(sizeof(PackedSemanticVersion), 8);
 
 }  // namespace llfs
 

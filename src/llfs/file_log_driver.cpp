@@ -63,8 +63,7 @@ StatusOr<std::unique_ptr<FileLogDevice>> FileLogDriver::initialize(
     std::ofstream ofs(location.config_file_path().string().c_str());
     ofs << config.max_size << " " << config.min_segment_split_size;
     if (!ofs.good()) {
-      return Status{batt::StatusCode::kInternal};  // TODO [tastolfi 2021-10-20]  "Could not write
-                                                   // FileLogDevice config file"
+      return Status{::llfs::StatusCode::kFileLogDeviceConfigWriteFailed};
     }
   }
 
@@ -92,8 +91,7 @@ StatusOr<std::unique_ptr<FileLogDevice>> FileLogDriver::recover(const Location& 
     if (ifs.good()) {
       ifs >> config.max_size >> config.min_segment_split_size;
       if (!ifs.good() && !ifs.eof()) {
-        return Status{batt::StatusCode::kInternal};  // TODO [tastolfi 2021-10-20]  "Could not read
-                                                     // FileLogDriver config file"
+        return Status{::llfs::StatusCode::kFileLogDeviceConfigReadFailed};
       }
     }
   }
@@ -101,9 +99,7 @@ StatusOr<std::unique_ptr<FileLogDevice>> FileLogDriver::recover(const Location& 
   // Create the device.
   //
   std::unique_ptr<FileLogDevice> log_device = std::make_unique<FileLogDevice>(
-      RingBuffer::TempFile{config.max_size},
-      // TODO [tastolfi 2021-03-10] - plumb the executor through the API
-      location, config, scheduler);
+      RingBuffer::TempFile{config.max_size}, location, config, scheduler);
 
   FileLogDriver& driver = log_device->driver().impl();
 

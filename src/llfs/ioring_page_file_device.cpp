@@ -202,8 +202,7 @@ StatusOr<u64> IoRingPageFileDevice::get_physical_page(PageId page_id) const
 {
   const i64 physical_page = this->page_ids_.get_physical_page(page_id);
   if (physical_page > this->config_->page_count || physical_page < 0) {
-    return Status{batt::StatusCode::kOutOfRange};  // TODO [tastolfi 2021-10-20] "the specified page
-                                                   // is beyond the device max"
+    return Status{batt::StatusCode::kOutOfRange};
   }
 
   return physical_page;

@@ -74,6 +74,16 @@ constexpr usize kLogAtomicWriteBits = 12;
 
 BATT_STATIC_ASSERT_EQ(usize{1} << kLogAtomicWriteBits, kLogAtomicWriteSize);
 
+// The maximum number of page buffers of a given size to cache (in order to avoid/reduce heap
+// allocation).
+//
+constexpr usize kPageBufferPoolSize = 256;
+
+// The number of size-based sub-pools to maintain in the page buffer pool/cache; each level's buffer
+// size is twice the buffer size of the previous level.
+//
+constexpr usize kPageBufferPoolLevels = 32;
+
 }  // namespace llfs
 
 #endif  // LLFS_CONFIG_HPP

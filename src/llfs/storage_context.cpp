@@ -36,7 +36,7 @@ batt::SharedPtr<StorageObjectInfo> StorageContext::find_object_by_uuid(
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status StorageContext::add_named_file(std::string&& file_name, i64 start_offset)
+Status StorageContext::add_existing_named_file(std::string&& file_name, i64 start_offset)
 {
   StatusOr<int> fd = open_file_read_write(file_name, OpenForAppend{false}, OpenRawIO{true});
   BATT_REQUIRE_OK(fd);
@@ -46,13 +46,13 @@ Status StorageContext::add_named_file(std::string&& file_name, i64 start_offset)
       read_storage_file(file, start_offset);
   BATT_REQUIRE_OK(config_blocks);
 
-  return this->add_file(
+  return this->add_existing_file(
       batt::make_shared<StorageFile>(std::move(file_name), std::move(*config_blocks)));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status StorageContext::add_file(const batt::SharedPtr<StorageFile>& file)
+Status StorageContext::add_existing_file(const batt::SharedPtr<StorageFile>& file)
 {
   file->find_all_objects()  //
       | seq::for_each([&](const FileOffsetPtr<const PackedConfigSlot&>& slot) {
@@ -113,6 +113,22 @@ StatusOr<batt::SharedPtr<PageCache>> StorageContext::get_page_cache()
   this->page_cache_ = *page_cache;
 
   return page_cache;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+batt::BoxedSeq<batt::SharedPtr<StorageObjectInfo>> StorageContext::find_objects_by_tag(u16 tag)
+{
+  return as_seq(this->index_.begin(), this->index_.end())  //
+         | seq::filter_map(
+               [tag](const auto& kv_pair) -> Optional<batt::SharedPtr<StorageObjectInfo>> {
+                 if (kv_pair.second->p_config_slot->tag == tag) {
+                   return kv_pair.second;
+                 } else {
+                   return None;
+                 }
+               })  //
+         | seq::boxed();
 }
 
 }  // namespace llfs

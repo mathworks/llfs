@@ -23,7 +23,7 @@ install:
 	mkdir -p build/$(BUILD_TYPE)
 	(cd build/$(BUILD_TYPE) && conan install ../.. -s build_type=$(BUILD_TYPE) --build=missing)
 
-create: test
+create:
 	(cd build/$(BUILD_TYPE) && conan create ../.. -s build_type=$(BUILD_TYPE))
 
 

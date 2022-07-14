@@ -14,6 +14,7 @@
 
 #ifndef LLFS_DISABLE_IO_URING
 
+#include <llfs/api_types.hpp>
 #include <llfs/buffer.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/seq.hpp>
@@ -28,6 +29,8 @@
 #include <batteries/syscall_retry.hpp>
 
 #include <boost/beast/core/buffers_range.hpp>
+
+#include <glog/logging.h>
 
 #include <liburing.h>
 
@@ -76,7 +79,7 @@ class IoRing
 
   using CompletionHandler = batt::AbstractHandler<StatusOr<i32>>;
 
-  static StatusOr<IoRing> make_new(usize entries) noexcept;
+  static StatusOr<IoRing> make_new(MaxQueueDepth entries) noexcept;
 
   template <typename Fn>
   struct OpHandler {
@@ -237,6 +240,46 @@ inline void IoRing::submit(
   //
   BATT_CHECK_EQ(1, io_uring_submit(&this->impl_->ring_)) << std::strerror(errno);
 }
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+// An IoRing with fixed-size thread pool; the thread pool and the IoRing are shut down when the last
+// active copy of an original ScopedIoRing object goes out of scope.  ScopedIoRing is move-only.
+//
+class ScopedIoRing
+{
+ public:
+  static StatusOr<ScopedIoRing> make_new(MaxQueueDepth entries, ThreadPoolSize n_threads) noexcept;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  ScopedIoRing(const ScopedIoRing&) = delete;
+  ScopedIoRing& operator=(const ScopedIoRing&) = delete;
+
+  ScopedIoRing(ScopedIoRing&&) = default;
+  ScopedIoRing& operator=(ScopedIoRing&&) = default;
+
+  ~ScopedIoRing() noexcept;
+
+  IoRing& get()
+  {
+    return this->io_;
+  }
+
+  void halt();
+
+  void join();
+
+ private:
+  explicit ScopedIoRing(IoRing&& io, ThreadPoolSize n_threads) noexcept;
+
+  void io_thread_main();
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  IoRing io_;
+  std::vector<std::thread> threads_;
+  std::unique_ptr<std::atomic<bool>> halted_;
+};
 
 }  // namespace llfs
 

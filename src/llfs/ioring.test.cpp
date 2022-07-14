@@ -48,7 +48,7 @@ using namespace llfs::constants;
 
 TEST(Ioring, Test)
 {
-  StatusOr<IoRing> io = IoRing::make_new(/*entries=*/64);
+  StatusOr<IoRing> io = IoRing::make_new(llfs::MaxQueueDepth{64});
   ASSERT_TRUE(io.ok()) << io.status();
 
   int fd = open("/tmp/llfs_ioring_test_file", O_CREAT | O_RDWR | O_DIRECT | O_SYNC, /*mode=*/0644);
@@ -102,7 +102,7 @@ TEST(Ioring, Test)
 
 TEST(Ioring, DISABLED_BlockDev)
 {
-  StatusOr<IoRing> io = IoRing::make_new(/*entries=*/64);
+  StatusOr<IoRing> io = IoRing::make_new(llfs::MaxQueueDepth{64});
   ASSERT_TRUE(io.ok()) << io.status();
 
   int fd = open("/dev/nvme3n1", O_RDWR | O_DIRECT | O_SYNC);

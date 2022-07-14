@@ -18,7 +18,9 @@
 #include <llfs/packed_pointer.hpp>
 #include <llfs/page_size.hpp>
 #include <llfs/storage_file_builder.hpp>
+#include <llfs/volume.hpp>
 #include <llfs/volume_options.hpp>
+#include <llfs/volume_runtime_options.hpp>
 
 #include <boost/uuid/uuid.hpp>
 
@@ -26,12 +28,27 @@
 
 namespace llfs {
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// Forward-declarations
+//
 struct PackedVolumeConfig;
 struct VolumeConfigOptions;
 
-Status configure_storage_object(StorageFileBuilder::Transaction&,
+// Add a PackedVolumeConfig to the passed transaction, according to the options specified.
+// Applications should not call this function directly; instead, use
+// `StorageFileBuilder::add_object(VolumeConfigOptions)`.
+//
+Status configure_storage_object(StorageFileBuilder::Transaction& txn,
                                 FileOffsetPtr<PackedVolumeConfig&> p_config,
                                 const VolumeConfigOptions& options);
+
+// Recover a Volume from the passed storage context.  Applications should not call this function
+// directly; instead use `StorageContext::recover_object`.
+//
+StatusOr<std::unique_ptr<Volume>> recover_storage_object(
+    const batt::SharedPtr<StorageContext>& storage_context, const std::string file_name,
+    const FileOffsetPtr<const PackedVolumeConfig&>& p_volume_config,
+    VolumeRuntimeOptions&& volume_runtime_options);
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
@@ -42,26 +59,13 @@ struct VolumeConfigOptions {
   //
   VolumeOptions base;
 
-  // The size of the root log (WAL).
+  // Options controlling the creation of the root log (WAL).
   //
-  usize root_log_size;
+  LogDeviceConfigOptions root_log;
 
-  // Where inside the file to place the volume.  Optional, defaults to 0.
-  //
-  Optional<i64> base_file_offset;
-
-  // How much space to allocate within the recycler log for top-level (discovery depth==0) recycled
-  // pages.  Optional; the recycler log size defaults to double the minimum size.
+  // Used to calculate the minimum recycler log size.
   //
   Optional<PageCount> recycler_max_buffered_page_count;
-
-  // Advanced option.
-  //
-  Optional<u16> root_log_pages_per_block_log2;
-
-  // Advanced option.
-  //
-  Optional<u16> recycler_log_pages_per_block_log2;
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
@@ -85,13 +89,17 @@ struct PackedVolumeConfig : PackedConfigSlotHeader {
 
   PackedConfigSlotBase slot_1;
 
+  // The average number of bytes between WAL trims.
+  //
+  little_u64 trim_lock_update_interval_bytes;
+
   // Human-readable volume name - UTF-8 encoding
   //
   PackedBytes name;
 
   // Reserved for future use.
   //
-  u8 pad1_[56];
+  u8 pad1_[48];
 };
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedVolumeConfig), PackedVolumeConfig::kSize);

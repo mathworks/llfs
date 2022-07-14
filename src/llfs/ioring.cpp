@@ -27,7 +27,7 @@
 
 namespace llfs {
 
-StatusOr<IoRing> IoRing::make_new(usize entries) noexcept
+StatusOr<IoRing> IoRing::make_new(MaxQueueDepth entries) noexcept
 {
   auto impl = std::make_unique<IoRing::Impl>();
 
@@ -210,6 +210,76 @@ Status IoRing::register_buffers(BoxedSeq<MutableBuffer>&& buffers)
 
   const int retval = io_uring_register_buffers(&this->impl_->ring_, iov.data(), iov.size());
   return status_from_retval(retval);
+}
+
+//#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*static*/ StatusOr<ScopedIoRing> ScopedIoRing::make_new(MaxQueueDepth entries,
+                                                         ThreadPoolSize n_threads) noexcept
+{
+  StatusOr<IoRing> io = IoRing::make_new(entries);
+  BATT_REQUIRE_OK(io);
+
+  return ScopedIoRing{std::move(*io), n_threads};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*explicit*/ ScopedIoRing::ScopedIoRing(IoRing&& io, ThreadPoolSize n_threads) noexcept
+    : io_{std::move(io)}
+    , threads_{}
+    , halted_{std::make_unique<std::atomic<bool>>(false)}
+{
+  // IMPORTANT: we must call on_work_started before launching threads so that `IoRing::run` doesn't
+  // exit prematurely.
+  //
+  this->io_.on_work_started();
+
+  for (usize i = 0; i < n_threads; ++i) {
+    this->threads_.emplace_back([this] {
+      this->io_thread_main();
+    });
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+ScopedIoRing::~ScopedIoRing() noexcept
+{
+  this->halt();
+  this->join();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void ScopedIoRing::io_thread_main()
+{
+  Status status = this->io_.run();
+  VLOG(1) << "ScopedIoRing::io_thread_main() exited with " << BATT_INSPECT(status);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void ScopedIoRing::halt()
+{
+  if (!this->halted_) {
+    return;
+  }
+  const bool halted_previously = this->halted_->exchange(true);
+  if (!halted_previously) {
+    this->io_.on_work_finished();
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void ScopedIoRing::join()
+{
+  for (std::thread& t : this->threads_) {
+    t.join();
+  }
 }
 
 }  // namespace llfs

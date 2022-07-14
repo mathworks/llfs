@@ -27,9 +27,10 @@ class LlfsConan(ConanFile):
     requires = [
         "gtest/1.11.0",
         "boost/1.79.0",
-        "glog/0.5.0",
+        "openssl/3.0.3",
+        "glog/0.6.0",
         "libunwind/1.5.0",
-        "batteries/0.6.11@tonyastolfi+batteries/stable",
+        "batteries/0.6.14@tonyastolfi+batteries/stable",
         "liburing/2.1",
         "cli11/1.9.1",
     ]
@@ -47,7 +48,6 @@ class LlfsConan(ConanFile):
     def build(self):
         cmake = CMake(self)
         cmake.verbose = VERBOSE_
-        cmake.definitions["BUILD_DOC"] = "ON"
         cmake.configure(source_folder="src")
         cmake.build()
 
@@ -60,7 +60,7 @@ class LlfsConan(ConanFile):
         cmake.install()
 
     def package_info(self):
-        self.cpp_info.cxxflags = ["-std=c++17 -D_GNU_SOURCE"]
+        self.cpp_info.cxxflags = ["-std=c++17", "-D_GNU_SOURCE"]
         self.cpp_info.system_libs = ["dl"]
         self.cpp_info.libs = ["llfs"]
 

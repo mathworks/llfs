@@ -9,6 +9,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(LLFS CXX)
 
+add_definitions("-fno-diagnostics-color")
+
 #==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -               
 # Set the language version.
 #

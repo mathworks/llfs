@@ -42,9 +42,11 @@ class StorageContext : public batt::RefCounted<StorageContext>
 
   batt::SharedPtr<StorageObjectInfo> find_object_by_uuid(const boost::uuids::uuid& uuid);
 
-  Status add_named_file(std::string&& file_name, i64 start_offset = 0);
+  batt::BoxedSeq<batt::SharedPtr<StorageObjectInfo>> find_objects_by_tag(u16 tag);
 
-  Status add_file(const batt::SharedPtr<StorageFile>& file);
+  Status add_existing_named_file(std::string&& file_name, i64 start_offset = 0);
+
+  Status add_existing_file(const batt::SharedPtr<StorageFile>& file);
 
   template <typename PackedConfigT, typename... ExtraConfigOptions,
             typename R = decltype(recover_storage_object(

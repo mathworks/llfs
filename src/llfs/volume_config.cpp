@@ -10,6 +10,7 @@
 //
 
 #include <llfs/page_recycler.hpp>
+#include <llfs/uuid.hpp>
 
 #include <boost/uuid/random_generator.hpp>
 
@@ -32,47 +33,83 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
                                 FileOffsetPtr<PackedVolumeConfig&> p_config,
                                 const VolumeConfigOptions& options)
 {
-#if 0
-  if (options.base.name.size() > VolumeOptions::kMaxNameLength) {
-    return {batt::StatusCode::kInvalidArgument};
-  }
+  BATT_CHECK(!options.root_log.uuid)
+      << "Creating a Volume from a pre-existing root log is not supported";
 
+  StatusOr<FileOffsetPtr<const PackedLogDeviceConfig&>> p_root_log_config =
+      txn.add_object(options.root_log);
+
+  BATT_REQUIRE_OK(p_root_log_config);
+
+  const LogDeviceConfigOptions recycler_log_options{
+      .uuid = random_uuid(),
+      .pages_per_block_log2 = 2,
+      .log_size = PageRecycler::calculate_log_size(options.base.max_refs_per_page,
+                                                   options.recycler_max_buffered_page_count),
+  };
+
+  StatusOr<FileOffsetPtr<const PackedLogDeviceConfig&>> p_recycler_log_config =
+      txn.add_object(recycler_log_options);
+
+  BATT_REQUIRE_OK(p_recycler_log_config);
+
+  p_config->uuid = options.base.uuid.value_or(random_uuid());
+  p_config->slot_i = 0;
+  p_config->n_slots = 2;
   p_config->max_refs_per_page = options.base.max_refs_per_page;
-  p_config->volume_uuid = options.base.uuid.value_or(boost::uuids::random_generator{}());
+  p_config->root_log_uuid = (*p_root_log_config)->uuid;
+  p_config->recycler_log_uuid = (*p_recycler_log_config)->uuid;
+
+  p_config->tag = PackedConfigSlotBase::Tag::kVolumeContinuation;
+  p_config->slot_1.slot_i = 1;
+  p_config->slot_1.n_slots = 2;
+  p_config->trim_lock_update_interval_bytes = options.base.trim_lock_update_interval;
 
   if (!txn.packer().pack_string_to(&p_config->name, options.base.name)) {
-    return {batt::StatusCode::kResourceExhausted};
-  }
-
-  {
-    LogDeviceConfigOptions root_log_config_options{
-        .log_size = options.root_log_size,
-        .uuid = None,
-        .pages_per_block_log2 = options.root_log_pages_per_block_log2,
-    };
-
-    BATT_ASSIGN_OK_RESULT(FileOffsetPtr<PackedLogDeviceConfig&> p_root_log,
-                          txn.add_object(root_log_config_options));
-
-    p_config->root_log.reset(p_root_log.get(), &txn.packer());
-  }
-  {
-    LogDeviceConfigOptions recycler_log_config_options{
-        .log_size = PageRecycler::calculate_log_size(options.base.max_refs_per_page,
-                                                     options.recycler_max_buffered_page_count),
-        .uuid = None,
-        .pages_per_block_log2 = options.recycler_log_pages_per_block_log2,
-    };
-
-    BATT_ASSIGN_OK_RESULT(FileOffsetPtr<PackedLogDeviceConfig&> p_recycler_log,
-                          txn.add_object(recycler_log_config_options));
-
-    p_config->recycler_log.reset(p_recycler_log.get(), &txn.packer());
+    return ::batt::StatusCode::kResourceExhausted;
   }
 
   return OkStatus();
-#endif
-  return batt::StatusCode::kUnimplemented;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<std::unique_ptr<Volume>> recover_storage_object(
+    const batt::SharedPtr<StorageContext>& storage_context, const std::string file_name,
+    const FileOffsetPtr<const PackedVolumeConfig&>& p_volume_config,
+    VolumeRuntimeOptions&& volume_runtime_options)
+{
+  StatusOr<batt::SharedPtr<PageCache>> page_cache = storage_context->get_page_cache();
+  BATT_REQUIRE_OK(page_cache);
+
+  StatusOr<std::unique_ptr<LogDeviceFactory>> root_log_factory = storage_context->recover_object(
+      batt::StaticType<PackedLogDeviceConfig>{}, p_volume_config->root_log_uuid,
+      volume_runtime_options.root_log_options);
+  BATT_REQUIRE_OK(root_log_factory);
+
+  StatusOr<std::unique_ptr<LogDeviceFactory>> recycler_log_factory =
+      storage_context->recover_object(batt::StaticType<PackedLogDeviceConfig>{},
+                                      p_volume_config->recycler_log_uuid,
+                                      volume_runtime_options.recycler_log_options);
+  BATT_REQUIRE_OK(recycler_log_factory);
+
+  VolumeRecoverParams params{
+      .scheduler = volume_runtime_options.scheduler,
+      .options =
+          VolumeOptions{
+              .name = std::string{p_volume_config->name.as_str()},
+              .uuid = p_volume_config->uuid,
+              .max_refs_per_page = MaxRefsPerPage{p_volume_config->max_refs_per_page},
+              .trim_lock_update_interval =
+                  TrimLockUpdateInterval{p_volume_config->trim_lock_update_interval_bytes},
+          },
+      .cache = *page_cache,
+      .root_log_factory = root_log_factory->get(),
+      .recycler_log_factory = recycler_log_factory->get(),
+      .trim_control = std::move(volume_runtime_options.trim_control),
+  };
+
+  return Volume::recover(std::move(params), volume_runtime_options.slot_visitor_fn);
 }
 
 }  // namespace llfs

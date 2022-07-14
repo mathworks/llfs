@@ -28,7 +28,7 @@ IoRingLogDriver::IoRingLogDriver(LogStorageDriverContext& context, int fd, const
     : context_{context}
     , config_{config}
     , options_{options}
-    , ioring_{*IoRing::make_new(this->queue_depth() * 2)}
+    , ioring_{*IoRing::make_new(MaxQueueDepth{this->queue_depth() * 2})}
     , file_{this->ioring_, fd}
     , flush_ops_(this->queue_depth())
 {
@@ -40,9 +40,6 @@ IoRingLogDriver::IoRingLogDriver(LogStorageDriverContext& context, int fd, const
       .add(metric_name("trim_pos"), this->trim_pos_)
       .add(metric_name("flush_pos"), this->flush_pos_)
       .add(metric_name("commit_pos"), this->commit_pos_);
-  //.add(metric_name("flush_write_latency"), this->metrics_.flush_write_latency)
-  //.add(metric_name("logical_bytes_flushed"), this->metrics_.logical_bytes_flushed)
-  //.add(metric_name("physical_bytes_flushed"), this->metrics_.physical_bytes_flushed);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -53,9 +50,6 @@ IoRingLogDriver::~IoRingLogDriver() noexcept
       .remove(this->trim_pos_)
       .remove(this->flush_pos_)
       .remove(this->commit_pos_);
-  //.remove(this->metrics_.flush_write_latency)
-  //.remove(this->metrics_.logical_bytes_flushed)
-  //.remove(this->metrics_.physical_bytes_flushed);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

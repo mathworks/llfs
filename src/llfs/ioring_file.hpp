@@ -43,116 +43,45 @@ class IoRing::File
   // the memory pointed to by `buffers`. Invokes `handler` from within `IoRing::run()` with error
   // status or the number of bytes successfully read.
   //
-  template <typename MutableBufferSequence, typename Handler,
+  template <typename MutableBufferSequence, typename Handler = void(StatusOr<i32>),
             typename = std::enable_if_t<
                 !std::is_same_v<std::decay_t<MutableBufferSequence>, MutableBuffer>>>
-  void async_read_some(i64 offset, MutableBufferSequence&& buffers, Handler&& handler)
-  {
-    DVLOG(1) << "async_read_some(mulitple buffers)";
-    this->io_->submit(BATT_FORWARD(buffers), BATT_FORWARD(handler),
-                      [offset, this](struct io_uring_sqe* sqe, auto& op) {
-                        if (this->registered_fd_ == -1) {
-                          io_uring_prep_readv(sqe, this->fd_, op.iov_, op.iov_count_, offset);
-                        } else {
-                          io_uring_prep_readv(sqe, this->registered_fd_, op.iov_, op.iov_count_,
-                                              offset);
-                          sqe->flags |= IOSQE_FIXED_FILE;
-                        }
-                      });
-  }
+  void async_read_some(i64 offset, MutableBufferSequence&& buffers, Handler&& handler);
 
   // Asynchronously reads data from the file starting at the given offset, copying read data into
   // the memory pointed to by `buffer`. Invokes `handler` from within `IoRing::run()` with error
   // status or the number of bytes successfully read.
   //
-  template <typename Handler>
-  void async_read_some(i64 offset, const MutableBuffer& buffer, Handler&& handler)
-  {
-    static const std::vector<MutableBuffer> empty;
-
-    DVLOG(1) << "async_read_some(single buffer)";
-    this->io_->submit(
-        empty, BATT_FORWARD(handler),
-        [&buffer, offset, this](struct io_uring_sqe* sqe, auto& /*op*/) {
-          if (this->registered_fd_ == -1) {
-            io_uring_prep_read(sqe, this->fd_, buffer.data(), buffer.size(), offset);
-            DVLOG(1) << "async_read_some - NOT registered fd " << BATT_INSPECT(int(sqe->flags));
-          } else {
-            DVLOG(1) << "async_read_some - registered fd";
-            io_uring_prep_read(sqe, this->registered_fd_, buffer.data(), buffer.size(), offset);
-            sqe->flags |= IOSQE_FIXED_FILE;
-          }
-        });
-  }
+  template <typename Handler = void(StatusOr<i32>)>
+  void async_read_some(i64 offset, const MutableBuffer& buffer, Handler&& handler);
 
   // Asynchronously writes the contents of `buffers` to the file starting at the given offset.
   // Invokes `handler` from within `IoRing::run()` with error status or the number of bytes
   // successfully written.
   //
-  template <typename ConstBufferSequence, typename Handler,
+  template <typename ConstBufferSequence, typename Handler = void(StatusOr<i32>),
             typename =
                 std::enable_if_t<!std::is_same_v<std::decay_t<ConstBufferSequence>, ConstBuffer> &&
                                  !std::is_same_v<std::decay_t<ConstBufferSequence>, MutableBuffer>>>
-  void async_write_some(i64 offset, ConstBufferSequence&& buffers, Handler&& handler)
-  {
-    this->io_->submit(BATT_FORWARD(buffers), BATT_FORWARD(handler),
-                      [offset, this](struct io_uring_sqe* sqe, auto& op) {
-                        if (this->registered_fd_ == -1) {
-                          io_uring_prep_writev(sqe, this->fd_, op.iov_, op.iov_count_, offset);
-                        } else {
-                          io_uring_prep_writev(sqe, this->registered_fd_, op.iov_, op.iov_count_,
-                                               offset);
-                          sqe->flags |= IOSQE_FIXED_FILE;
-                        }
-                      });
-  }
+  void async_write_some(i64 offset, ConstBufferSequence&& buffers, Handler&& handler);
 
   // Asynchronously writes the contents of `buffer` to the file starting at the given offset.
   // Invokes `handler` from within `IoRing::run()` with error status or the number of bytes
   // successfully written.
   //
-  template <typename Handler>
-  void async_write_some(i64 offset, const ConstBuffer& buffer, Handler&& handler)
-  {
-    static const std::vector<ConstBuffer> empty;
-
-    this->io_->submit(empty, BATT_FORWARD(handler),
-                      [&buffer, offset, this](struct io_uring_sqe* sqe, auto& /*op*/) {
-                        if (this->registered_fd_ == -1) {
-                          io_uring_prep_write(sqe, this->fd_, buffer.data(), buffer.size(), offset);
-                        } else {
-                          io_uring_prep_write(sqe, this->registered_fd_, buffer.data(),
-                                              buffer.size(), offset);
-                          sqe->flags |= IOSQE_FIXED_FILE;
-                        }
-                      });
-  }
+  template <typename Handler = void(StatusOr<i32>)>
+  void async_write_some(i64 offset, const ConstBuffer& buffer, Handler&& handler);
 
   // Variant of `async_write_some` that should be used in the case where the memory pointed to by
   // `buffer` has been registered with the io_uring for faster access (as opposed to mmapping the
   // buffer memory for each IOP).
   //
-  template <typename Handler>
+  template <typename Handler = void(StatusOr<i32>)>
   void async_write_some_fixed(i64 offset, const ConstBuffer& buffer, int buf_index,
-                              Handler&& handler)
-  {
-    static const std::vector<ConstBuffer> empty;
+                              Handler&& handler);
 
-    this->io_->submit(empty, BATT_FORWARD(handler),
-                      [&buffer, buf_index, offset, this](struct io_uring_sqe* sqe, auto& /*op*/) {
-                        if (this->registered_fd_ == -1) {
-                          io_uring_prep_write_fixed(sqe, this->fd_, buffer.data(), buffer.size(),
-                                                    offset, buf_index);
-                        } else {
-                          io_uring_prep_write_fixed(sqe, this->registered_fd_, buffer.data(),
-                                                    buffer.size(), offset, buf_index);
-                          sqe->flags |= IOSQE_FIXED_FILE;
-                        }
-                      });
-  }
-
-  // Writes the entire contents of `buffer` to the file at the given byte `offset`.  Blocking call
-  // (using batt::Task::await).
+  // Writes the entire contents of `buffer` to the file at the given byte `offset`.  Blocking
+  // call (using batt::Task::await).
   //
   Status write_all(i64 offset, ConstBuffer buffer);
 
@@ -186,6 +115,108 @@ class IoRing::File
   int fd_ = -1;
   int registered_fd_ = -1;
 };
+
+//#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename MutableBufferSequence, typename Handler, typename>
+inline void IoRing::File::async_read_some(i64 offset, MutableBufferSequence&& buffers,
+                                          Handler&& handler)
+{
+  DVLOG(1) << "async_read_some(mulitple buffers)";
+  this->io_->submit(BATT_FORWARD(buffers), BATT_FORWARD(handler),
+                    [offset, this](struct io_uring_sqe* sqe, auto& op) {
+                      if (this->registered_fd_ == -1) {
+                        io_uring_prep_readv(sqe, this->fd_, op.iov_, op.iov_count_, offset);
+                      } else {
+                        io_uring_prep_readv(sqe, this->registered_fd_, op.iov_, op.iov_count_,
+                                            offset);
+                        sqe->flags |= IOSQE_FIXED_FILE;
+                      }
+                    });
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename Handler>
+inline void IoRing::File::async_read_some(i64 offset, const MutableBuffer& buffer,
+                                          Handler&& handler)
+{
+  static const std::vector<MutableBuffer> empty;
+
+  DVLOG(1) << "async_read_some(single buffer)";
+  this->io_->submit(
+      empty, BATT_FORWARD(handler),
+      [&buffer, offset, this](struct io_uring_sqe* sqe, auto& /*op*/) {
+        if (this->registered_fd_ == -1) {
+          io_uring_prep_read(sqe, this->fd_, buffer.data(), buffer.size(), offset);
+          DVLOG(1) << "async_read_some - NOT registered fd " << BATT_INSPECT(int(sqe->flags));
+        } else {
+          DVLOG(1) << "async_read_some - registered fd";
+          io_uring_prep_read(sqe, this->registered_fd_, buffer.data(), buffer.size(), offset);
+          sqe->flags |= IOSQE_FIXED_FILE;
+        }
+      });
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename ConstBufferSequence, typename Handler, typename>
+inline void IoRing::File::async_write_some(i64 offset, ConstBufferSequence&& buffers,
+                                           Handler&& handler)
+{
+  this->io_->submit(BATT_FORWARD(buffers), BATT_FORWARD(handler),
+                    [offset, this](struct io_uring_sqe* sqe, auto& op) {
+                      if (this->registered_fd_ == -1) {
+                        io_uring_prep_writev(sqe, this->fd_, op.iov_, op.iov_count_, offset);
+                      } else {
+                        io_uring_prep_writev(sqe, this->registered_fd_, op.iov_, op.iov_count_,
+                                             offset);
+                        sqe->flags |= IOSQE_FIXED_FILE;
+                      }
+                    });
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename Handler>
+inline void IoRing::File::async_write_some(i64 offset, const ConstBuffer& buffer, Handler&& handler)
+{
+  static const std::vector<ConstBuffer> empty;
+
+  this->io_->submit(empty, BATT_FORWARD(handler),
+                    [&buffer, offset, this](struct io_uring_sqe* sqe, auto& /*op*/) {
+                      if (this->registered_fd_ == -1) {
+                        io_uring_prep_write(sqe, this->fd_, buffer.data(), buffer.size(), offset);
+                      } else {
+                        io_uring_prep_write(sqe, this->registered_fd_, buffer.data(), buffer.size(),
+                                            offset);
+                        sqe->flags |= IOSQE_FIXED_FILE;
+                      }
+                    });
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename Handler>
+inline void IoRing::File::async_write_some_fixed(i64 offset, const ConstBuffer& buffer,
+                                                 int buf_index, Handler&& handler)
+{
+  static const std::vector<ConstBuffer> empty;
+
+  this->io_->submit(empty, BATT_FORWARD(handler),
+                    [&buffer, buf_index, offset, this](struct io_uring_sqe* sqe, auto& /*op*/) {
+                      if (this->registered_fd_ == -1) {
+                        io_uring_prep_write_fixed(sqe, this->fd_, buffer.data(), buffer.size(),
+                                                  offset, buf_index);
+                      } else {
+                        io_uring_prep_write_fixed(sqe, this->registered_fd_, buffer.data(),
+                                                  buffer.size(), offset, buf_index);
+                        sqe->flags |= IOSQE_FIXED_FILE;
+                      }
+                    });
+}
 
 }  // namespace llfs
 

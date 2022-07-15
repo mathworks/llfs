@@ -52,6 +52,33 @@ Status StorageContext::add_existing_named_file(std::string&& file_name, i64 star
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+Status StorageContext::add_new_file(const std::string& file_name,
+                                    const std::function<Status(StorageFileBuilder&)>& initializer)
+{
+  {
+    BATT_ASSIGN_OK_RESULT(
+        std::unique_ptr<IoRingRawBlockFile> file,
+        IoRingRawBlockFile::open(this->io_, file_name.c_str(),
+                                 /*flags=*/O_RDWR | O_CREAT | O_EXCL | O_DIRECT | O_SYNC,
+                                 /*mode=*/S_IRUSR | S_IWUSR));
+
+    StorageFileBuilder builder{*file, /*base_offset=*/0};
+
+    Status init_status = initializer(builder);
+    if (!init_status.ok()) {
+      file->close().IgnoreError();
+      delete_file(file_name).IgnoreError();
+      return init_status;
+    }
+
+    Status flush_status = builder.flush_all();
+    BATT_REQUIRE_OK(flush_status);
+  }
+  return this->add_existing_named_file(batt::make_copy(file_name));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 Status StorageContext::add_existing_file(const batt::SharedPtr<StorageFile>& file)
 {
   file->find_all_objects()  //

@@ -109,4 +109,11 @@ Status IoRingRawBlockFile::truncate_at_least(i64 minimum_size) /*override*/
   return batt::OkStatus();
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status IoRingRawBlockFile::close()
+{
+  return close_fd(this->file_.release());
+}
+
 }  // namespace llfs

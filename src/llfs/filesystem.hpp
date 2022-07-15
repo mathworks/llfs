@@ -45,6 +45,8 @@ StatusOr<ConstBuffer> read_fd(int fd, MutableBuffer buffer, u64 offset);
 
 Status write_fd(int fd, ConstBuffer buffer, u64 offset);
 
+Status close_fd(int fd);
+
 Status delete_file(std::string_view file_name);
 
 StatusOr<i64> sizeof_file(std::string_view file_name);

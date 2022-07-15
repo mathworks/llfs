@@ -42,6 +42,8 @@ class IoRingRawBlockFile : public RawBlockFile
 
   Status truncate_at_least(i64 /*minimum_size*/) override;
 
+  Status close();
+
  private:
   IoRing::File file_;
 };

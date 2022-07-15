@@ -16,6 +16,7 @@
 #include <llfs/page_id_factory.hpp>
 #include <llfs/page_size.hpp>
 #include <llfs/storage_file.hpp>
+#include <llfs/storage_file_builder.hpp>
 #include <llfs/storage_object_info.hpp>
 
 #include <batteries/async/task_scheduler.hpp>
@@ -23,31 +24,69 @@
 
 #include <boost/functional/hash.hpp>
 
+#include <functional>
 #include <string>
 #include <unordered_map>
 
 namespace llfs {
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+// A collection of storage files containing one or more storage objects, used to create a PageCache
+// and recover LLFS Volumes.
 //
 class StorageContext : public batt::RefCounted<StorageContext>
 {
  public:
+  // Construct a new StorageContext that will use the given TaskScheduler and IoRing for background
+  // tasks and asynchronous file I/O.
+  //
   explicit StorageContext(batt::TaskScheduler& scheduler, IoRing& io) noexcept;
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+  // noncopyable
+  //
   StorageContext(const StorageContext&) = delete;
   StorageContext& operator=(const StorageContext&) = delete;
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  // Returns a PageCache object that can be used to access all PageDevices in the StorageContext.
+  // The PageCache is created the first time this function is called, and cached to be returned on
+  // subsequent calls.
+  //
   StatusOr<batt::SharedPtr<PageCache>> get_page_cache();
 
+  // If one of the files managed by this context contains an object with the given uuid, returns
+  // metadata about that object.  Otherwise returns nullptr.
+  //
   batt::SharedPtr<StorageObjectInfo> find_object_by_uuid(const boost::uuids::uuid& uuid);
 
+  // Returns a sequence of StorageObjectInfo for all objects with the type named by the passed
+  // `tag`.  See `PackedConfigSlotBase::Tag`.
+  //
   batt::BoxedSeq<batt::SharedPtr<StorageObjectInfo>> find_objects_by_tag(u16 tag);
 
+  // Adds an already existing file to this context.
+  //
   Status add_existing_named_file(std::string&& file_name, i64 start_offset = 0);
 
+  // Creates a new file with the given name by invoking the passed `initializer` function to build
+  // storage objects.
+  //
+  // If the initializer returns an error Status, then the file is not created.
+  //
+  Status add_new_file(const std::string& file_name,
+                      const std::function<Status(StorageFileBuilder&)>& initializer);
+
+  // Adds an already existing file to this context; the file must have been scanned for metadata by
+  // `read_storage_file`.
+  //
   Status add_existing_file(const batt::SharedPtr<StorageFile>& file);
 
+  // Attempts to recover an object of a given type from this context by uuid.
+  //
+  // The type of the first argument determines the return type, the tag of the packed config, and
+  // the type of the extra_options parameter pack.
+  //
   template <typename PackedConfigT, typename... ExtraConfigOptions,
             typename R = decltype(recover_storage_object(
                 std::declval<batt::SharedPtr<StorageContext>>(), std::declval<const std::string&>(),
@@ -68,15 +107,26 @@ class StorageContext : public batt::RefCounted<StorageContext>
                                   BATT_FORWARD(extra_options)...);
   }
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
+  // Passed in at creation time; used to schedule all background tasks needed by recovered objects
+  // and the PageCache.
+  //
   batt::TaskScheduler& scheduler_;
 
+  // Passed in at creation time; this is the default IoRing used to perform I/O.
+  //
   IoRing& io_;
 
+  // An index of all storage objects by uuid.
+  //
   std::unordered_map<boost::uuids::uuid, batt::SharedPtr<StorageObjectInfo>,
                      boost::hash<boost::uuids::uuid>>
       index_;
 
+  // The PageCache for this context; this is lazily created the first time
+  // `StorageContext::get_page_cache()` is called.
+  //
   batt::SharedPtr<PageCache> page_cache_;
 };
 

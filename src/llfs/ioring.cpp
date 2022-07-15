@@ -222,15 +222,48 @@ Status IoRing::register_buffers(BoxedSeq<MutableBuffer>&& buffers)
   StatusOr<IoRing> io = IoRing::make_new(entries);
   BATT_REQUIRE_OK(io);
 
-  return ScopedIoRing{std::move(*io), n_threads};
+  return ScopedIoRing{std::make_unique<Impl>(std::move(*io), n_threads)};
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*explicit*/ ScopedIoRing::ScopedIoRing(IoRing&& io, ThreadPoolSize n_threads) noexcept
+/*explicit*/ ScopedIoRing::ScopedIoRing(std::unique_ptr<Impl>&& impl) noexcept
+    : impl_{std::move(impl)}
+{
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+IoRing& ScopedIoRing::get() const
+{
+  BATT_ASSERT_NOT_NULLPTR(this->impl_);
+  return this->impl_->get();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void ScopedIoRing::halt()
+{
+  if (this->impl_) {
+    this->impl_->halt();
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void ScopedIoRing::join()
+{
+  if (this->impl_) {
+    this->impl_->join();
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*explicit*/ ScopedIoRing::Impl::Impl(IoRing&& io, ThreadPoolSize n_threads) noexcept
     : io_{std::move(io)}
     , threads_{}
-    , halted_{std::make_unique<std::atomic<bool>>(false)}
+    , halted_{false}
 {
   // IMPORTANT: we must call on_work_started before launching threads so that `IoRing::run` doesn't
   // exit prematurely.
@@ -246,7 +279,7 @@ Status IoRing::register_buffers(BoxedSeq<MutableBuffer>&& buffers)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-ScopedIoRing::~ScopedIoRing() noexcept
+ScopedIoRing::Impl::~Impl() noexcept
 {
   this->halt();
   this->join();
@@ -254,7 +287,7 @@ ScopedIoRing::~ScopedIoRing() noexcept
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void ScopedIoRing::io_thread_main()
+void ScopedIoRing::Impl::io_thread_main()
 {
   Status status = this->io_.run();
   VLOG(1) << "ScopedIoRing::io_thread_main() exited with " << BATT_INSPECT(status);
@@ -262,12 +295,16 @@ void ScopedIoRing::io_thread_main()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void ScopedIoRing::halt()
+IoRing& ScopedIoRing::Impl::get()
 {
-  if (!this->halted_) {
-    return;
-  }
-  const bool halted_previously = this->halted_->exchange(true);
+  return this->io_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void ScopedIoRing::Impl::halt()
+{
+  const bool halted_previously = this->halted_.exchange(true);
   if (!halted_previously) {
     this->io_.on_work_finished();
   }
@@ -275,7 +312,7 @@ void ScopedIoRing::halt()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void ScopedIoRing::join()
+void ScopedIoRing::Impl::join()
 {
   for (std::thread& t : this->threads_) {
     t.join();

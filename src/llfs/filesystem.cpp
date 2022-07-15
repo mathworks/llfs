@@ -169,6 +169,16 @@ Status write_fd(int fd, ConstBuffer buffer, u64 offset)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+Status close_fd(int fd)
+{
+  const int retval = syscall_retry([&] {
+    return ::close(fd);
+  });
+  return batt::status_from_retval(retval);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 Status delete_file(std::string_view file_name)
 {
   return batt::status_from_retval(syscall_retry([&] {

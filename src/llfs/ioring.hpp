@@ -248,6 +248,13 @@ inline void IoRing::submit(
 class ScopedIoRing
 {
  public:
+  class Impl;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  // Creates a new IoRing with the specified number of completion queue entries and a thread pool of
+  // the specified size; returns error Status if the IoRing could not be created.
+  //
   static StatusOr<ScopedIoRing> make_new(MaxQueueDepth entries, ThreadPoolSize n_threads) noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -258,27 +265,97 @@ class ScopedIoRing
   ScopedIoRing(ScopedIoRing&&) = default;
   ScopedIoRing& operator=(ScopedIoRing&&) = default;
 
-  ~ScopedIoRing() noexcept;
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  IoRing& get()
+  // Returns true iff this object is valid; a ScopedIoRing object is valid until its value is
+  // move-copied to another ScopedIoRing variable.
+  //
+  explicit operator bool() const
   {
-    return this->io_;
+    return this->impl_ != nullptr;
   }
 
+  // Returns a reference to the IoRing contained by this; if this is invalid (see operator bool),
+  // behavior is undefined.
+  //
+  IoRing& get() const;
+
+  // Initiates a graceful shutdown of the IoRing and thread pool.
+  //
   void halt();
 
+  // Blocks the current task/thread until the thread pool has exited.  NOTE: this function does not
+  // initiate a shutdown, see `ScopedIoRing::halt()`.
+  //
   void join();
 
  private:
-  explicit ScopedIoRing(IoRing&& io, ThreadPoolSize n_threads) noexcept;
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  void io_thread_main();
+  // Constructs a new ScopedIoRing object with the given Impl.
+  //
+  explicit ScopedIoRing(std::unique_ptr<Impl>&& impl) noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  // Pointer to Impl which contains the state for this object.
+  //
+  std::unique_ptr<Impl> impl_;
+};
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+// The state of a ScopedIoRing; this is separate class to allow ScopedIoRing to be moved while
+// keeping the address of the underyling IoRing object stable for the sake of the backing thread
+// pool.
+//
+class ScopedIoRing::Impl
+{
+ public:
+  // Impl is strictly non-copyable!
+  //
+  Impl(const Impl&) = delete;
+  Impl& operator=(const Impl&) = delete;
+
+  // Create a new Impl with the given IoRing and a thread pool of the given size.
+  //
+  explicit Impl(IoRing&& io, ThreadPoolSize n_threads) noexcept;
+
+  // Gracefully shuts down the IoRing and thread pool, waiting for all threads to join before
+  // returning.
+  //
+  ~Impl() noexcept;
+
+  // The thread function used by the contained thread pool; calls `IoRing::run()`
+  //
+  void io_thread_main();
+
+  // Returns a reference to the IoRing.
+  //
+  IoRing& get();
+
+  // Initiates graceful shutdown.
+  //
+  void halt();
+
+  // Waits for shutdown to complete.
+  //
+  void join();
+
+ private:
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  // The IoRing passed in at creation time.
+  //
   IoRing io_;
+
+  // The threads comprising the pool which processes I/O completion events.
+  //
   std::vector<std::thread> threads_;
-  std::unique_ptr<std::atomic<bool>> halted_;
+
+  // Flag that indicates whether halt has been called; this makes it safe to call `halt()` multiple
+  // times (only the first time has any effect).
+  //
+  std::atomic<bool> halted_;
 };
 
 }  // namespace llfs

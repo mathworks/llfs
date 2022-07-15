@@ -21,12 +21,18 @@
 namespace llfs {
 
 template <typename T>
-using PackedTypeFor =
-    typename decltype(llfs_packed_type_for(batt::StaticType<std::decay_t<T>>{}))::type;
-
-template <typename T>
 struct Use_macro_LLFS_DEFINE_PACKED_TYPE_FOR_to_define_the_packed_representation_of_type {
 };
+
+template <typename T>
+struct DefinePackedTypeFor {
+  using type =
+      llfs::Use_macro_LLFS_DEFINE_PACKED_TYPE_FOR_to_define_the_packed_representation_of_type<T>;
+};
+
+template <typename T>
+using PackedTypeFor =
+    typename decltype(llfs_packed_type_for(batt::StaticType<std::decay_t<T>>{}))::type;
 
 class DataReader;
 
@@ -53,8 +59,8 @@ using UnpackedTypeFor = batt::RemoveStatusOr<decltype(unpack_object(std::declval
 namespace batt {
 
 template <typename T>
-inline llfs::Use_macro_LLFS_DEFINE_PACKED_TYPE_FOR_to_define_the_packed_representation_of_type<T>
-llfs_packed_type_for(StaticType<T>)
+inline StaticType<typename ::llfs::DefinePackedTypeFor<std::decay_t<T>>::type> llfs_packed_type_for(
+    StaticType<T>)
 {
   return {};
 }

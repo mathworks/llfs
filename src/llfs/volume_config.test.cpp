@@ -15,6 +15,7 @@
 
 #include <llfs/constants.hpp>
 #include <llfs/ioring.hpp>
+#include <llfs/packed_bytes.hpp>
 #include <llfs/storage_context.hpp>
 
 #include <filesystem>
@@ -97,22 +98,53 @@ TEST(VolumeConfigTest, ConfigRestore)
     };
   };
 
-  // Verify that we get the correct error status if we try to recover a Volume from the wrong type
-  // of config slot.
   {
-    llfs::StatusOr<std::unique_ptr<llfs::Volume>> expect_fail = storage_context->recover_object(
-        batt::StaticType<llfs::PackedVolumeConfig>{}, root_log_uuid, make_volume_runtime_options());
+    // Verify that we get the correct error status if we try to recover a Volume from the wrong type
+    // of config slot.
+    {
+      llfs::StatusOr<std::unique_ptr<llfs::Volume>> expect_fail =
+          storage_context->recover_object(batt::StaticType<llfs::PackedVolumeConfig>{},
+                                          root_log_uuid, make_volume_runtime_options());
 
-    EXPECT_FALSE(expect_fail.ok());
-    EXPECT_EQ(expect_fail.status(), llfs::StatusCode::kStorageObjectTypeError);
+      EXPECT_FALSE(expect_fail.ok());
+      EXPECT_EQ(expect_fail.status(), llfs::StatusCode::kStorageObjectTypeError);
+    }
+
+    // Now restore the volume, write some events.
+    //
+    llfs::StatusOr<std::unique_ptr<llfs::Volume>> maybe_volume = storage_context->recover_object(
+        batt::StaticType<llfs::PackedVolumeConfig>{}, volume_uuid, make_volume_runtime_options());
+
+    ASSERT_TRUE(maybe_volume.ok()) << BATT_INSPECT(maybe_volume.status());
+
+    llfs::Volume& volume = **maybe_volume;
+    llfs::StatusOr<batt::Grant> grant =
+        volume.reserve(volume.calculate_grant_size("alpha") +        //
+                           volume.calculate_grant_size("bravo") +    //
+                           volume.calculate_grant_size("charlie") +  //
+                           volume.calculate_grant_size("delta"),
+                       batt::WaitForResource::kTrue);
+
+    ASSERT_TRUE(grant.ok()) << BATT_INSPECT(grant.status());
+
+    llfs::StatusOr<llfs::SlotRange> alpha_slot = volume.append("alpha", *grant);
+    ASSERT_TRUE(alpha_slot.ok()) << BATT_INSPECT(alpha_slot.status());
+
+    llfs::StatusOr<llfs::SlotRange> bravo_slot = volume.append("bravo", *grant);
+    ASSERT_TRUE(bravo_slot.ok()) << BATT_INSPECT(bravo_slot.status());
+
+    llfs::StatusOr<llfs::SlotRange> charlie_slot = volume.append("charlie", *grant);
+    ASSERT_TRUE(charlie_slot.ok()) << BATT_INSPECT(charlie_slot.status());
+
+    llfs::StatusOr<llfs::SlotRange> delta_slot = volume.append("delta", *grant);
+    ASSERT_TRUE(delta_slot.ok()) << BATT_INSPECT(delta_slot.status());
+
+    llfs::Status sync_status = volume
+                                   .sync(llfs::LogReadMode::kDurable,
+                                         llfs::SlotUpperBoundAt{.offset = delta_slot->upper_bound})
+                                   .status();
+    ASSERT_TRUE(sync_status.ok()) << BATT_INSPECT(sync_status);
   }
-
-  // Now restore the volume, write some events.
-  //
-  llfs::StatusOr<std::unique_ptr<llfs::Volume>> volume = storage_context->recover_object(
-      batt::StaticType<llfs::PackedVolumeConfig>{}, volume_uuid, make_volume_runtime_options());
-
-  ASSERT_TRUE(volume.ok()) << BATT_INSPECT(volume.status());
 }
 
 }  // namespace

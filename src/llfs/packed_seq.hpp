@@ -11,6 +11,7 @@
 #define LLFS_PACKED_SEQ_HPP
 
 #include <llfs/define_packed_type.hpp>
+#include <llfs/int_types.hpp>
 #include <llfs/packed_array.hpp>
 #include <llfs/seq.hpp>
 
@@ -72,13 +73,11 @@ StatusOr<BoxedSeq<ItemT>> unpack_object(const PackedArray<T>& packed, Src* src)
          | seq::boxed();
 }
 
-}  // namespace llfs
-
-namespace batt {
-
 template <typename T>
-LLFS_DEFINE_PACKED_TYPE_FOR(::llfs::BoxedSeq<T>, ::llfs::PackedArray<::llfs::PackedTypeFor<T>>);
+struct DefinePackedTypeFor<::batt::BoxedSeq<T>> {
+  using type = PackedArray<PackedTypeFor<T>>;
+};
 
-}
+}  // namespace llfs
 
 #endif  // LLFS_PACKED_SEQ_HPP

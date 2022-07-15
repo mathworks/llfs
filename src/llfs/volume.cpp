@@ -18,6 +18,56 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+const VolumeOptions& Volume::options() const
+{
+  return this->options_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const boost::uuids::uuid& Volume::get_volume_uuid() const
+{
+  return this->volume_uuid_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const boost::uuids::uuid& Volume::get_recycler_uuid() const
+{
+  return this->recycler_->uuid();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const boost::uuids::uuid& Volume::get_trimmer_uuid() const
+{
+  return this->trimmer_.uuid();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+u64 Volume::calculate_grant_size(const PackableRef& payload) const
+{
+  return packed_sizeof_slot(payload);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+u64 Volume::calculate_grant_size(const std::string_view& payload) const
+{
+  return packed_sizeof_slot(payload);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
+{
+  return packed_sizeof_slot(prepare(appendable)) +
+         packed_sizeof_slot(batt::StaticType<PackedCommitJob>{});
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 /*static*/ auto Volume::recover(VolumeRecoverParams&& params,
                                 const VolumeReader::SlotVisitorFn& slot_visitor_fn)
     -> StatusOr<std::unique_ptr<Volume>>
@@ -296,10 +346,16 @@ StatusOr<batt::Grant> Volume::reserve(u64 size, batt::WaitForResource wait_for_l
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-
 StatusOr<SlotRange> Volume::append(const PackableRef& payload, batt::Grant& grant)
 {
   return this->slot_writer_.append(grant, payload);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<SlotRange> Volume::append(const std::string_view& payload, batt::Grant& grant)
+{
+  return this->append(PackableRef{payload}, grant);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -438,6 +494,96 @@ StatusOr<VolumeReader> Volume::reader(const SlotRangeSpec& slot_range, LogReadMo
   BATT_REQUIRE_OK(read_lock);
 
   return VolumeReader{*this, std::move(*read_lock), mode};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+std::unique_ptr<PageCacheJob> Volume::new_job() const
+{
+  return this->cache().new_job();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+struct PrepareJob_must_be_passed_to_Volume_append_by_move* Volume::append(const AppendableJob&,
+                                                                          batt::Grant&,
+                                                                          Optional<SlotSequencer>&&)
+{
+  return nullptr;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status Volume::await_trim(slot_offset_type slot_lower_bound)
+{
+  return this->slot_writer_.await_trim(slot_lower_bound);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+PageCache& Volume::cache() const
+{
+  return *this->cache_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+SlotLockManager& Volume::trim_control()
+{
+  return *this->trim_control_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<SlotRange> Volume::sync(StatusOr<SlotRange> slot_range)
+{
+  BATT_REQUIRE_OK(slot_range);
+
+  return this->sync(LogReadMode::kDurable, SlotUpperBoundAt{
+                                               .offset = slot_range->upper_bound,
+                                           });
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<SlotReadLock> Volume::lock_slots(const SlotRange& slot_range, LogReadMode mode)
+{
+  return this->lock_slots(SlotRangeSpec::from(slot_range), mode);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+u64 Volume::root_log_space() const
+{
+  return this->root_log_->space();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+u64 Volume::root_log_size() const
+{
+  return this->root_log_->size();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+u64 Volume::root_log_capacity() const
+{
+  return this->root_log_->capacity();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+SlotRange Volume::root_log_slot_range(LogReadMode mode) const
+{
+  return this->root_log_->slot_range(mode);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const PageRecycler::Metrics& Volume::page_recycler_metrics() const
+{
+  return this->recycler_->metrics();
 }
 
 }  // namespace llfs

@@ -50,20 +50,86 @@ using little_i64 = boost::endian::little_int64_t;
 
 using namespace int_types;
 
+template <>
+struct DefinePackedTypeFor<::llfs::u8> {
+  using type = ::llfs::little_u8;
+};
+
+template <>
+struct DefinePackedTypeFor<::llfs::u16> {
+  using type = ::llfs::little_u16;
+};
+
+template <>
+struct DefinePackedTypeFor<::llfs::u32> {
+  using type = ::llfs::little_u32;
+};
+
+template <>
+struct DefinePackedTypeFor<::llfs::u64> {
+  using type = ::llfs::little_u64;
+};
+
+template <>
+struct DefinePackedTypeFor<::llfs::i8> {
+  using type = ::llfs::little_i8;
+};
+
+template <>
+struct DefinePackedTypeFor<::llfs::i16> {
+  using type = ::llfs::little_i16;
+};
+
+template <>
+struct DefinePackedTypeFor<::llfs::i32> {
+  using type = ::llfs::little_i32;
+};
+
+template <>
+struct DefinePackedTypeFor<::llfs::i64> {
+  using type = ::llfs::little_i64;
+};
+
+template <>
+struct DefinePackedTypeFor<::llfs::little_u8> {
+  using type = ::llfs::little_u8;
+};
+
+template <>
+struct DefinePackedTypeFor<::llfs::little_u16> {
+  using type = ::llfs::little_u16;
+};
+
+template <>
+struct DefinePackedTypeFor<::llfs::little_u32> {
+  using type = ::llfs::little_u32;
+};
+
+template <>
+struct DefinePackedTypeFor<::llfs::little_u64> {
+  using type = ::llfs::little_u64;
+};
+
+template <>
+struct DefinePackedTypeFor<::llfs::little_i8> {
+  using type = ::llfs::little_i8;
+};
+
+template <>
+struct DefinePackedTypeFor<::llfs::little_i16> {
+  using type = ::llfs::little_i16;
+};
+
+template <>
+struct DefinePackedTypeFor<::llfs::little_i32> {
+  using type = ::llfs::little_i32;
+};
+
+template <>
+struct DefinePackedTypeFor<::llfs::little_i64> {
+  using type = ::llfs::little_i64;
+};
+
 }  // namespace llfs
-
-namespace batt {
-
-LLFS_DEFINE_PACKED_TYPE_FOR(::llfs::u8, ::llfs::little_u8);
-LLFS_DEFINE_PACKED_TYPE_FOR(::llfs::u16, ::llfs::little_u16);
-LLFS_DEFINE_PACKED_TYPE_FOR(::llfs::u32, ::llfs::little_u32);
-LLFS_DEFINE_PACKED_TYPE_FOR(::llfs::u64, ::llfs::little_u64);
-
-LLFS_DEFINE_PACKED_TYPE_FOR(::llfs::i8, ::llfs::little_i8);
-LLFS_DEFINE_PACKED_TYPE_FOR(::llfs::i16, ::llfs::little_i16);
-LLFS_DEFINE_PACKED_TYPE_FOR(::llfs::i32, ::llfs::little_i32);
-LLFS_DEFINE_PACKED_TYPE_FOR(::llfs::i64, ::llfs::little_i64);
-
-}  // namespace batt
 
 #endif  // LLFS_INT_TYPES_HPP

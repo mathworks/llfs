@@ -11,10 +11,12 @@
 #define LLFS_PACKED_BYTES_HPP
 
 #include <llfs/data_layout.hpp>
+#include <llfs/define_packed_type.hpp>
 #include <llfs/int_types.hpp>
 
 #include <batteries/static_assert.hpp>
 
+#include <string>
 #include <string_view>
 
 namespace llfs {
@@ -101,10 +103,37 @@ inline usize packed_sizeof(const std::string_view& s)
   return packed_sizeof_str(s.size());
 }
 
+inline usize packed_sizeof(const std::string& s)
+{
+  return packed_sizeof_str(s.size());
+}
+
 inline usize packed_sizeof(const PackedBytes& rec)
 {
   return packed_sizeof_str(rec.size());
 }
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+
+class DataPacker;
+class DataReader;
+
+StatusOr<std::string_view> unpack_object(const PackedBytes& obj, DataReader* src);
+
+PackedBytes* pack_object_to(const std::string_view& from, PackedBytes* to, DataPacker* dst);
+
+template <>
+struct DefinePackedTypeFor<std::string> {
+  using type = PackedBytes;
+};
+
+template <>
+struct DefinePackedTypeFor<std::string_view> {
+  using type = PackedBytes;
+};
+
+static_assert(std::is_same_v<PackedBytes, PackedTypeFor<std::string_view>>, "");
+static_assert(std::is_same_v<PackedBytes, PackedTypeFor<std::string>>, "");
 
 }  // namespace llfs
 

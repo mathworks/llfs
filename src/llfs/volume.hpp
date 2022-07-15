@@ -73,31 +73,19 @@ class Volume
 
   // The VolumeOptions used to create/recover this volume.
   //
-  const VolumeOptions& options() const
-  {
-    return this->options_;
-  }
+  const VolumeOptions& options() const;
 
   // Returns the UUID for this volume.
   //
-  const boost::uuids::uuid& get_volume_uuid() const
-  {
-    return this->volume_uuid_;
-  }
+  const boost::uuids::uuid& get_volume_uuid() const;
 
   // Returns the UUID for this volume's recycler log.
   //
-  const boost::uuids::uuid& get_recycler_uuid() const
-  {
-    return this->recycler_->uuid();
-  }
+  const boost::uuids::uuid& get_recycler_uuid() const;
 
   // Returns the UUID for this volume's trimmer task.
   //
-  const boost::uuids::uuid& get_trimmer_uuid() const
-  {
-    return this->trimmer_.uuid();
-  }
+  const boost::uuids::uuid& get_trimmer_uuid() const;
 
   // Reserve `size` bytes in the log for future appends.
   //
@@ -105,29 +93,27 @@ class Volume
 
   // Returns the number of bytes needed to append `payload`.
   //
-  u64 calculate_grant_size(const PackableRef& payload) const
-  {
-    return packed_sizeof_slot(payload);
-  }
+  u64 calculate_grant_size(const PackableRef& payload) const;
+
+  // Returns the number of bytes needed to append `payload`.
+  //
+  u64 calculate_grant_size(const std::string_view& payload) const;
 
   // Returns the number of bytes needed to append `prepare_job`.
   //
-  u64 calculate_grant_size(const AppendableJob& appendable) const
-  {
-    return packed_sizeof_slot(prepare(appendable)) +
-           packed_sizeof_slot(batt::StaticType<PackedCommitJob>{});
-  }
+  u64 calculate_grant_size(const AppendableJob& appendable) const;
 
   // Atomically append a new slot containing `payload` to the end of the root log.
   //
   StatusOr<SlotRange> append(const PackableRef& payload, batt::Grant& grant);
 
+  // Atomically append a new slot containing `payload` to the end of the root log.
+  //
+  StatusOr<SlotRange> append(const std::string_view& payload, batt::Grant& grant);
+
   // Create a new PageCacheJob for writing new pages via the WAL of this Volume.
   //
-  std::unique_ptr<PageCacheJob> new_job() const
-  {
-    return this->cache().new_job();
-  }
+  std::unique_ptr<PageCacheJob> new_job() const;
 
   // Atomically append a new slot containing `payload` to the end of the root log, committing the
   // job contained in `prepare_job`.
@@ -138,10 +124,7 @@ class Volume
   // Overload to prevent confusion.
   //
   struct PrepareJob_must_be_passed_to_Volume_append_by_move* append(
-      const AppendableJob&, batt::Grant&, Optional<SlotSequencer>&& = None)
-  {
-    return nullptr;
-  }
+      const AppendableJob&, batt::Grant&, Optional<SlotSequencer>&& = None);
 
   // Returns a new VolumeReader for the given slot range and durability level.  This can be used to
   // read raw user-level slot data; if you want to read typed user slots, use `typed_reader`
@@ -159,17 +142,11 @@ class Volume
   // Blocks until the Volume is closed/failed, or the root log trim position has reached the
   // specified lower bound.
   //
-  Status await_trim(slot_offset_type slot_lower_bound)
-  {
-    return this->slot_writer_.await_trim(slot_lower_bound);
-  }
+  Status await_trim(slot_offset_type slot_lower_bound);
 
   // Returns the PageCache associated with this Volume.
   //
-  PageCache& cache() const
-  {
-    return *this->cache_;
-  }
+  PageCache& cache() const;
 
   // Set the Volume's minimum trim position.  The log will be trimmed when all slot read locks for a
   // given SlotRange have been released; this method only releases one such lock.
@@ -179,10 +156,7 @@ class Volume
   // Returns a reference to the root log lock manager, to allow users to obtain read locks on
   // arbitrary SlotRanges of the root log without the overhead of creating a full VolumeReader.
   //
-  SlotLockManager& trim_control()
-  {
-    return *this->trim_control_;
-  }
+  SlotLockManager& trim_control();
 
   // Blocks until the root log has reached the given durability level at the given slot offset.
   //
@@ -190,14 +164,7 @@ class Volume
 
   // Convenience.
   //
-  StatusOr<SlotRange> sync(StatusOr<SlotRange> slot_range)
-  {
-    BATT_REQUIRE_OK(slot_range);
-
-    return this->sync(LogReadMode::kDurable, SlotUpperBoundAt{
-                                                 .offset = slot_range->upper_bound,
-                                             });
-  }
+  StatusOr<SlotRange> sync(StatusOr<SlotRange> slot_range);
 
   // Acquires a read lock on a the given slot offset range within the log, to prevent premature
   // trimming while that segment is being read.
@@ -206,35 +173,27 @@ class Volume
 
   // Convenience.
   //
-  StatusOr<SlotReadLock> lock_slots(const SlotRange& slot_range, LogReadMode mode)
-  {
-    return this->lock_slots(SlotRangeSpec::from(slot_range), mode);
-  }
+  StatusOr<SlotReadLock> lock_slots(const SlotRange& slot_range, LogReadMode mode);
 
-  auto root_log_space() const
-  {
-    return this->root_log_->space();
-  }
+  // Returns the number of free bytes in the root log.
+  //
+  u64 root_log_space() const;
 
-  auto root_log_size() const
-  {
-    return this->root_log_->size();
-  }
+  // Returns the number of valid (committed) bytes in the root log.
+  //
+  u64 root_log_size() const;
 
-  auto root_log_capacity() const
-  {
-    return this->root_log_->capacity();
-  }
+  // Returns the total byte size of the root log; capacity == space + size.
+  //
+  u64 root_log_capacity() const;
 
-  auto root_log_slot_range(LogReadMode mode) const
-  {
-    return this->root_log_->slot_range(mode);
-  }
+  // Returns the current valid slot offset range for the root log at the specified durability level.
+  //
+  SlotRange root_log_slot_range(LogReadMode mode) const;
 
-  const PageRecycler::Metrics& page_recycler_metrics() const
-  {
-    return this->recycler_->metrics();
-  }
+  // Returns diagnostic metrics for this Volume's PageRecycler.
+  //
+  const PageRecycler::Metrics& page_recycler_metrics() const;
 
  private:
   explicit Volume(const VolumeOptions& options, const boost::uuids::uuid& volume_uuid,

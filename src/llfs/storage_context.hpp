@@ -128,6 +128,9 @@ class StorageContext : public batt::RefCounted<StorageContext>
   // `StorageContext::get_page_cache()` is called.
   //
   batt::SharedPtr<PageCache> page_cache_;
+
+  // TODO [tastolfi 2022-07-15]  IMPORTANT!!! BUG : we must track the device_ids to make sure there
+  // are no conflicts.
 };
 
 }  // namespace llfs

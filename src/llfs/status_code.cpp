@@ -55,6 +55,7 @@ bool initialize_status_codes()
                      "Could not write FileLogDevice config file"),
       CODE_WITH_MSG_(StatusCode::kFileLogDeviceConfigReadFailed,
                      "Could not read FileLogDevice config file"),
+      CODE_WITH_MSG_(StatusCode::kStorageObjectTypeError, "Storage object is not of expected type"),
   });
   return initialized;
 }

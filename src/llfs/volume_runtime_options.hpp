@@ -20,10 +20,6 @@ namespace llfs {
 // Options used to recover a Volume from a StorageContext.
 //
 struct VolumeRuntimeOptions {
-  // The scheduler used to launch all background tasks needed by the Volume.
-  //
-  batt::TaskScheduler* scheduler;
-
   // A slot visitor that will be invoked to rebuild the application-specific Volume state by
   // replaying the events found in the root log.
   //

@@ -60,7 +60,7 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
   p_config->root_log_uuid = (*p_root_log_config)->uuid;
   p_config->recycler_log_uuid = (*p_recycler_log_config)->uuid;
 
-  p_config->tag = PackedConfigSlotBase::Tag::kVolumeContinuation;
+  p_config->slot_1.tag = PackedConfigSlotBase::Tag::kVolumeContinuation;
   p_config->slot_1.slot_i = 1;
   p_config->slot_1.n_slots = 2;
   p_config->trim_lock_update_interval_bytes = options.base.trim_lock_update_interval;
@@ -94,7 +94,7 @@ StatusOr<std::unique_ptr<Volume>> recover_storage_object(
   BATT_REQUIRE_OK(recycler_log_factory);
 
   VolumeRecoverParams params{
-      .scheduler = volume_runtime_options.scheduler,
+      .scheduler = &storage_context->get_scheduler(),
       .options =
           VolumeOptions{
               .name = std::string{p_volume_config->name.as_str()},

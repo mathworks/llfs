@@ -11,6 +11,7 @@
 
 #include <llfs/page_arena_config.hpp>
 #include <llfs/raw_block_file_impl.hpp>
+#include <llfs/status_code.hpp>
 
 namespace llfs {
 
@@ -20,6 +21,7 @@ StorageContext::StorageContext(batt::TaskScheduler& scheduler, IoRing& io) noexc
     : scheduler_{scheduler}
     , io_{io}
 {
+  initialize_status_codes();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -83,6 +85,8 @@ Status StorageContext::add_existing_file(const batt::SharedPtr<StorageFile>& fil
 {
   file->find_all_objects()  //
       | seq::for_each([&](const FileOffsetPtr<const PackedConfigSlot&>& slot) {
+          VLOG(1) << "Adding " << *slot << " to storage context";
+
           this->index_.emplace(slot->uuid,
                                batt::make_shared<StorageObjectInfo>(batt::make_copy(file), slot));
         });

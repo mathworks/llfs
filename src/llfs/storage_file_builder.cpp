@@ -186,6 +186,13 @@ u64 StorageFileBuilder::Transaction::reserve_device_id()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+DataPacker& StorageFileBuilder::Transaction::packer()
+{
+  return this->packer_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void StorageFileBuilder::Transaction::abort()
 {
   if (!this->active_) {

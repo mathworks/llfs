@@ -28,7 +28,7 @@ class IoRingLogDriverOptions
 
   // The debug name of this log.
   //
-  std::string name;
+  std::string name = "(anonymous log driver)";
 
   // How long to wait for a full page worth of log data before flushing to disk.
   //

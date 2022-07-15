@@ -74,20 +74,8 @@ struct PageDeviceConfigOptions {
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-struct PackedPageDeviceConfig {
+struct PackedPageDeviceConfig : PackedConfigSlotHeader {
   static constexpr usize kSize = PackedConfigSlot::kSize;
-
-  // MUST be PackedObjectConfig::Tag::kPageDevice
-  //
-  little_u16 tag;
-
-  // Reserved for future use (set to 0 for now).
-  //
-  u8 pad0_[2];
-
-  // The uuid for this log.
-  //
-  boost::uuids::uuid uuid;
 
   // The offset in bytes of the first page, relative to this structure.
   //

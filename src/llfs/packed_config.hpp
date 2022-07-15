@@ -36,6 +36,8 @@ struct PackedConfigSlotBase {
     // The range [0x1000..0x1fff] is reserved for continuation slots.
 
     static constexpr u16 kVolumeContinuation = 0x1000;
+
+    static std::string_view to_string(u16 value);
   };
 
   // One of the values above; identifies the type of this slot.
@@ -69,6 +71,8 @@ struct PackedConfigSlot : PackedConfigSlotHeader {
 };
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedConfigSlot), PackedConfigSlot::kSize);
+
+std::ostream& operator<<(std::ostream& out, const PackedConfigSlot& slot);
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
@@ -162,11 +166,20 @@ BATT_STATIC_ASSERT_EQ(offsetof(PackedConfigBlock, crc64) + sizeof(little_u64),
 template <typename T>
 inline void verify_config_slot_type_requirements(batt::StaticType<T> = {})
 {
-  BATT_STATIC_ASSERT_EQ(sizeof(T), sizeof(::llfs::PackedConfigSlot));
-  BATT_STATIC_ASSERT_EQ(offsetof(T, tag), offsetof(::llfs::PackedConfigSlot, tag));
-  BATT_STATIC_ASSERT_EQ(offsetof(T, uuid), offsetof(::llfs::PackedConfigSlot, uuid));
-  BATT_STATIC_ASSERT_TYPE_EQ(decltype(T::tag), decltype(::llfs::PackedConfigSlot::tag));
-  BATT_STATIC_ASSERT_TYPE_EQ(decltype(T::uuid), decltype(::llfs::PackedConfigSlot::uuid));
+  BATT_STATIC_ASSERT_GE(sizeof(T), sizeof(::llfs::PackedConfigSlot));
+  BATT_STATIC_ASSERT_EQ(sizeof(T) % sizeof(::llfs::PackedConfigSlot), 0);
+
+#define LLFS_VERIFY_CONFIG_SLOT_FIELD(field_name)                                                  \
+  BATT_STATIC_ASSERT_EQ(offsetof(T, field_name), offsetof(::llfs::PackedConfigSlot, field_name));  \
+  BATT_STATIC_ASSERT_TYPE_EQ(decltype(T::field_name),                                              \
+                             decltype(::llfs::PackedConfigSlot::field_name))
+
+  LLFS_VERIFY_CONFIG_SLOT_FIELD(tag);
+  LLFS_VERIFY_CONFIG_SLOT_FIELD(slot_i);
+  LLFS_VERIFY_CONFIG_SLOT_FIELD(n_slots);
+  LLFS_VERIFY_CONFIG_SLOT_FIELD(uuid);
+
+#undef LLFS_VERIFY_CONFIG_SLOT_FIELD
 }
 
 // Cast the passed PackedConfigSlot to a derived config slot type, running static checks to make

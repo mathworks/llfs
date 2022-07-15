@@ -37,6 +37,7 @@ enum struct StatusCode {
   kPageGenerationNotFound = 21,
   kFileLogDeviceConfigWriteFailed = 22,
   kFileLogDeviceConfigReadFailed = 23,
+  kStorageObjectTypeError = 24,
 };
 
 bool initialize_status_codes();

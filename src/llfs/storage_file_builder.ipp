@@ -74,27 +74,29 @@ template <typename ConfigOptionsT, typename PackedConfigT>
 StatusOr<FileOffsetPtr<PackedConfigT&>> StorageFileBuilder::Transaction::add_config_slot(
     const ConfigOptionsT& options)
 {
-  BATT_STATIC_ASSERT_EQ(sizeof(PackedConfigT), sizeof(PackedConfigSlot));
+  verify_config_slot_type_requirements<PackedConfigT>();
 
   BATT_CHECK(this->active_);
 
-  PackedConfigT* slot = this->packer_.pack_record(batt::StaticType<PackedConfigT>{});
-  if (!slot) {
+  PackedConfigT* packed_config = this->packer_.pack_record(batt::StaticType<PackedConfigT>{});
+  if (!packed_config) {
     this->payload_overflow_ = true;
     return {batt::StatusCode::kResourceExhausted};
   }
   //
   // The PackedConfigBlock was zero-initialized by the ctor of StorageFileConfigBlock, so no need to
-  // clear the slot.
+  // clear the packed_config.
 
-  slot->tag = PackedConfigTagFor<PackedConfigT>::value;
+  packed_config->tag = PackedConfigTagFor<PackedConfigT>::value;
+  packed_config->slot_i = 0;
+  packed_config->n_slots = sizeof(PackedConfigT) / sizeof(PackedConfigSlot);
 
-  this->config_block_.slots.item_count += 1;
+  this->config_block_.slots.item_count += packed_config->n_slots;
 
-  FileOffsetPtr<PackedConfigSlot&> p_slot =
-      this->p_config_block_.mutable_slot(this->config_block_.slots.item_count - 1);
+  FileOffsetPtr<PackedConfigSlot&> p_slot = this->p_config_block_.mutable_slot(
+      this->config_block_.slots.item_count - packed_config->n_slots);
 
-  this->n_slots_added_ += 1;
+  this->n_slots_added_ += packed_config->n_slots;
 
   return FileOffsetPtr<PackedConfigT&>{
       .object = *config_slot_cast<PackedConfigT>(&p_slot.object),

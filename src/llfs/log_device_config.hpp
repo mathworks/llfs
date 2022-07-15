@@ -78,20 +78,8 @@ struct LogDeviceConfigOptions {
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-struct PackedLogDeviceConfig {
+struct PackedLogDeviceConfig : PackedConfigSlotHeader {
   static constexpr usize kSize = PackedConfigSlot::kSize;
-
-  // Must be PackedConfigSlot::Tag::kLogDevice.
-  //
-  little_u16 tag;
-
-  // Reserved for future use (set to 0 for now).
-  //
-  u8 pad0_[2];
-
-  // The uuid for this log.
-  //
-  boost::uuids::uuid uuid;
 
   // The log2 of the number of 4096-byte pages per flush block.
   //

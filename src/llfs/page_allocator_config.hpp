@@ -58,20 +58,8 @@ struct PageAllocatorConfigOptions {
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-struct PackedPageAllocatorConfig {
+struct PackedPageAllocatorConfig : PackedConfigSlotHeader {
   static constexpr usize kSize = PackedConfigSlot::kSize;
-
-  // Must be set to PackedConfigSlot::Tag::kPageAllocator.
-  //
-  little_u16 tag;
-
-  // Reserved for future use.
-  //
-  little_u8 pad0_[2];
-
-  // Unique identifier for this page allocator.
-  //
-  boost::uuids::uuid uuid;
 
   // The maximum number of attachments allowed.
   //

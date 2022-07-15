@@ -49,6 +49,16 @@ class StorageContext : public batt::RefCounted<StorageContext>
   StorageContext& operator=(const StorageContext&) = delete;
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  batt::TaskScheduler& get_scheduler() const
+  {
+    return this->scheduler_;
+  }
+
+  IoRing& get_ioring() const
+  {
+    return this->io_;
+  }
+
   // Returns a PageCache object that can be used to access all PageDevices in the StorageContext.
   // The PageCache is created the first time this function is called, and cached to be returned on
   // subsequent calls.
@@ -99,6 +109,9 @@ class StorageContext : public batt::RefCounted<StorageContext>
     batt::SharedPtr<StorageObjectInfo> info = this->find_object_by_uuid(uuid);
     if (!info) {
       return {batt::StatusCode::kNotFound};
+    }
+    if (PackedConfigTagFor<PackedConfigT>::value != info->p_config_slot->tag) {
+      return {::llfs::StatusCode::kStorageObjectTypeError};
     }
     return recover_storage_object(batt::shared_ptr_from(this), info->storage_file->file_name(),
                                   FileOffsetPtr<const PackedConfigT&>{

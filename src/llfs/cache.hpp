@@ -10,6 +10,8 @@
 #ifndef LLFS_CACHE_HPP
 #define LLFS_CACHE_HPP
 
+#include <llfs/logging.hpp>
+
 #include <llfs/int_types.hpp>
 #include <llfs/metrics.hpp>
 #include <llfs/optional.hpp>
@@ -79,7 +81,7 @@ class Cache : public boost::intrusive_ref_counter<Cache<K, V>>
   {
     initialize_status_codes();
 
-    VLOG(1) << "Cache(n_slots=" << n_slots << ")";
+    LLFS_VLOG(1) << "Cache(n_slots=" << n_slots << ")";
     auto locked = this->free_pool_.lock();
     for (auto& isolated_slot : as_slice(this->slots_.get(), this->n_slots_)) {
       isolated_slot->set_cache_ptr(this);
@@ -123,7 +125,7 @@ class Cache : public boost::intrusive_ref_counter<Cache<K, V>>
         .remove(this->metrics_.erase_count)
         .remove(this->metrics_.full_count);
 
-    VLOG(1) << "Cache::~Cache()";
+    LLFS_VLOG(1) << "Cache::~Cache()";
   }
 
   const Metrics& metrics() const

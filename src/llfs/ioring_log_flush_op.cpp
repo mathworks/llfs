@@ -17,7 +17,8 @@
 namespace llfs {
 
 #define THIS_VLOG(lvl)                                                                             \
-  VLOG(lvl) << "(driver=" << this->driver_->name_ << ") LogFlushOp[" << this->self_index() << "] "
+  LLFS_VLOG(lvl) << "(driver=" << this->driver_->name_ << ") LogFlushOp[" << this->self_index()    \
+                 << "] "
 
 #define THIS_LOG(lvl)                                                                              \
   LOG(lvl) << "(driver=" << this->driver_->name_ << ") LogFlushOp[" << this->self_index() << "] "
@@ -177,7 +178,7 @@ void IoRingLogFlushOp::handle_flush(const StatusOr<i32>& result)
       this->start_flush();
       return;
     }
-    LOG(INFO) << "flush failed: " << result.status();
+    LLFS_LOG_INFO() << "flush failed: " << result.status();
     return;
   }
   BATT_CHECK_EQ(*result & 511, 0u)

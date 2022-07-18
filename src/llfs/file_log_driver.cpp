@@ -13,7 +13,7 @@
 
 #include <batteries/syscall_retry.hpp>
 
-#include <glog/logging.h>
+#include <llfs/logging.hpp>
 
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -150,7 +150,7 @@ StatusOr<std::unique_ptr<FileLogDevice>> FileLogDriver::recover(const Location& 
 //
 StatusOr<FileLogDriver::ActiveFile> FileLogDriver::recover_segments()
 {
-  LOG(INFO) << "FileLogDriver::recover_segments";
+  LLFS_LOG_INFO() << "FileLogDriver::recover_segments";
 
   fs::path prefix_dir = this->shared_state_.location.parent_dir();
   std::string prefix_base(FileLogDriver::Location::segment_file_prefix());
@@ -165,7 +165,7 @@ StatusOr<FileLogDriver::ActiveFile> FileLogDriver::recover_segments()
                       << "creating dir_iter from prefix_dir: " << prefix_dir;
   for (const auto& p : dir_iter) {
     std::string name = p.path().filename().string();
-    LOG(INFO) << "found file: " << name;
+    LLFS_LOG_INFO() << "found file: " << name;
     if (boost::algorithm::starts_with(name, prefix_base) &&
         boost::algorithm::ends_with(name, FileLogDriver::Location::segment_ext())) {
       Optional<SlotRange> slot_range =
@@ -178,7 +178,7 @@ StatusOr<FileLogDriver::ActiveFile> FileLogDriver::recover_segments()
       }
     }
   }
-  LOG(INFO) << "finished scanning log segments";
+  LLFS_LOG_INFO() << "finished scanning log segments";
 
   // Sort the segments by slot offset.
   //
@@ -209,7 +209,7 @@ StatusOr<FileLogDriver::ActiveFile> FileLogDriver::recover_segments()
     return segments.front().slot_range.lower_bound;
   }();
 
-  LOG(INFO) << "recovered log lower_bound=" << recovered_lower_bound;
+  LLFS_LOG_INFO() << "recovered log lower_bound=" << recovered_lower_bound;
 
   // Reset all ring buffer pointers to the start of the recovered segments' slot range.  We will
   // advance flush_pos and commit_pos as we read segment data into the buffer.
@@ -222,7 +222,7 @@ StatusOr<FileLogDriver::ActiveFile> FileLogDriver::recover_segments()
   //
   MutableBuffer dst = this->context_.buffer_.get_mut(recovered_lower_bound);
   for (const SegmentFile& s : segments) {
-    LOG(INFO) << "reading segment file contents: " << s.file_name;
+    LLFS_LOG_INFO() << "reading segment file contents: " << s.file_name;
     StatusOr<ConstBuffer> result = s.read(dst);
     BATT_REQUIRE_OK(result);
 
@@ -230,7 +230,8 @@ StatusOr<FileLogDriver::ActiveFile> FileLogDriver::recover_segments()
     this->shared_state_.flush_pos.fetch_add(result->size());
     this->shared_state_.commit_pos.fetch_add(result->size());
   }
-  LOG(INFO) << "finished reading non-head log segments; attempting to re-activate head segment...";
+  LLFS_LOG_INFO()
+      << "finished reading non-head log segments; attempting to re-activate head segment...";
 
   // Now attempt to open the active (head) segment file.
   //
@@ -239,7 +240,7 @@ StatusOr<FileLogDriver::ActiveFile> FileLogDriver::recover_segments()
 
   BATT_REQUIRE_OK(active_file) << batt::LogLevel::kInfo << "opening active log file failed";
 
-  LOG(INFO) << "active segment created/recovered; size=" << active_file->size();
+  LLFS_LOG_INFO() << "active segment created/recovered; size=" << active_file->size();
 
   this->shared_state_.flush_pos.fetch_add(active_file->size());
   this->shared_state_.commit_pos.fetch_add(active_file->size());
@@ -385,7 +386,7 @@ void FileLogDriver::trim_task_main()
     }
   }();
 
-  LOG(INFO) << "[FileLogDriver::trim_task_main] finished with status=" << status;
+  LLFS_LOG_INFO() << "[FileLogDriver::trim_task_main] finished with status=" << status;
 }
 
 }  // namespace llfs

@@ -96,7 +96,7 @@ TEST(PageAllocatorTest, UpdateRefCounts)
 
   for (page_id_int update_count = 1; update_count < kNumPages * kCoverageFactor; ++update_count) {
     if (update_count % 100 == 0) {
-      VLOG(1) << "update_count=" << update_count;
+      LLFS_VLOG(1) << "update_count=" << update_count;
     }
     std::vector<PageRefCount> updates;
     for (page_id_int page_index = 0; page_index < std::min(kNumPages, update_count); ++page_index) {
@@ -154,7 +154,7 @@ TEST(PageAllocatorTest, LogCrashRecovery)
   const u64 kEndSeed = (extra_testing ? (10000 * kNumSeeds) : kNumSeeds) + kStartSeed;
 
   for (u64 seed = kStartSeed; seed < kEndSeed; ++seed) {
-    VLOG_EVERY_N(1, 1000) << BATT_INSPECT(seed);
+    LLFS_VLOG_EVERY_N(1, 1000) << BATT_INSPECT(seed);
     std::default_random_engine rng{seed};
     for (usize i = 0; i < 19; ++i) {
       (void)rng();
@@ -177,7 +177,7 @@ TEST(PageAllocatorTest, LogCrashRecovery)
         /*size=*/PageAllocator::calculate_log_size(/*physical_page_count=*/kNumPages,
                                                    /*max_attachments=*/kMaxAttachments)};
 
-    LOG_FIRST_N(INFO, 1) << BATT_INSPECT(mem_log.space());
+    LLFS_LOG_INFO_FIRST_N(1) << BATT_INSPECT(mem_log.space());
 
     auto fake_log_state = std::make_shared<FakeLogDevice::State>();
 
@@ -196,7 +196,7 @@ TEST(PageAllocatorTest, LogCrashRecovery)
     {
       u64 delta = pick_failure_time(rng);
       fake_log_state->failure_time = fake_log_state->device_time + delta;
-      VLOG(1) << BATT_INSPECT(delta);
+      LLFS_VLOG(1) << BATT_INSPECT(delta);
     }
 
     std::array<bool, kMaxAttachments> expect_attached;
@@ -232,8 +232,8 @@ TEST(PageAllocatorTest, LogCrashRecovery)
           prc.ref_count = std::clamp<i32>(delta, 1 - expect_ref_count[page_i], +5);
         }
 
-        VLOG(2) << "page " << page_i << ": " << expect_ref_count[page_i] << " -> "
-                << expect_ref_count[page_i] + prc.ref_count;
+        LLFS_VLOG(2) << "page " << page_i << ": " << expect_ref_count[page_i] << " -> "
+                     << expect_ref_count[page_i] + prc.ref_count;
 
         if (prc.ref_count == llfs::kRefCount_1_to_0) {
           expect_ref_count[page_i] = 0;
@@ -243,7 +243,7 @@ TEST(PageAllocatorTest, LogCrashRecovery)
       }
 
       const usize client_i = pick_client(rng);
-      VLOG(2) << BATT_INSPECT(client_i);
+      LLFS_VLOG(2) << BATT_INSPECT(client_i);
 
       // If this is the first time we picked this client, then generate a UUID and attach.
       //
@@ -289,7 +289,7 @@ TEST(PageAllocatorTest, LogCrashRecovery)
       if (!update_status.ok()) {
         break;
       }
-      VLOG(1) << BATT_INSPECT(mem_log.slot_range(LogReadMode::kDurable));
+      LLFS_VLOG(1) << BATT_INSPECT(mem_log.slot_range(LogReadMode::kDurable));
     }
     EXPECT_TRUE(fake_log_state->is_failed());
     //
@@ -300,10 +300,10 @@ TEST(PageAllocatorTest, LogCrashRecovery)
     page_allocator.halt();
     page_allocator.join();
 
-    VLOG(1) << "RECOVERING +++++++++++-+-+--+----- --- -- -  -  - "
-            << BATT_INSPECT(mem_log.slot_range(LogReadMode::kDurable))
-            << BATT_INSPECT(fake_log_state->device_time)
-            << BATT_INSPECT(fake_log_state->failure_time);
+    LLFS_VLOG(1) << "RECOVERING +++++++++++-+-+--+----- --- -- -  -  - "
+                 << BATT_INSPECT(mem_log.slot_range(LogReadMode::kDurable))
+                 << BATT_INSPECT(fake_log_state->device_time)
+                 << BATT_INSPECT(fake_log_state->failure_time);
 
     auto fake_recovered_log_state = std::make_shared<FakeLogDevice::State>();
 
@@ -467,14 +467,14 @@ class PageAllocatorModel
       return;
     }
 
-    VLOG(2) << "Entered PageAllocatorModel::step()";
+    LLFS_VLOG(2) << "Entered PageAllocatorModel::step()";
 
     this->state_.crash_count += 1;
     if (this->state_.crash_count < kMaxCrashCount) {
       this->fake_log_state_->failure_time = this->pick_int(0, 64);
     }
 
-    VLOG(2) << "Launching recovery task";
+    LLFS_VLOG(2) << "Launching recovery task";
 
     batt::Task recovery_task{this->context_.get_executor(), [&] {
                                Status recover_status = this->recover();
@@ -491,7 +491,7 @@ class PageAllocatorModel
       return;
     }
 
-    VLOG(2) << "Launching client tasks";
+    LLFS_VLOG(2) << "Launching client tasks";
 
     std::array<std::unique_ptr<batt::Task>, kMaxAttachments> client_tasks;
     {
@@ -546,10 +546,11 @@ class PageAllocatorModel
   {
     static std::atomic<usize> counter{0};
 
-    VLOG(1) << r;
+    LLFS_VLOG(1) << r;
 
     if ((counter.fetch_add(1) + 1) % this->max_concurrency() == 0) {
-      VLOG(1) << "=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------";
+      LLFS_VLOG(1)
+          << "=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------";
     }
   }
 
@@ -580,24 +581,24 @@ class PageAllocatorModel
     BATT_CHECK_NOT_NULLPTR(task);
 
     while (!task->try_join()) {
-      VLOG(2) << BATT_INSPECT(this->context_.work_count().get_value())
-              << BATT_INSPECT(this->fake_log_state_->is_failed());
+      LLFS_VLOG(2) << BATT_INSPECT(this->context_.work_count().get_value())
+                   << BATT_INSPECT(this->fake_log_state_->is_failed());
       BATT_CHECK(this->run_one(this->context_));
     }
   }
 
   Status recover()
   {
-    VLOG(2) << "entered recover() " << BATT_INSPECT(this->context_.work_count().get_value());
+    LLFS_VLOG(2) << "entered recover() " << BATT_INSPECT(this->context_.work_count().get_value());
 
     StatusOr<std::unique_ptr<PageAllocator>> status_or_page_allocator = PageAllocator::recover(
         PageAllocatorRuntimeOptions{this->fake_scheduler_, "Test"},
         PageIdFactory{/*device_capacity=*/PageCount{kNumPages}, /*page_device_id=*/0},
         *this->fake_log_factory_);
 
-    VLOG(2) << "after PageAllocator::recover() "
-            << BATT_INSPECT(this->context_.work_count().get_value())
-            << BATT_INSPECT(status_or_page_allocator.status());
+    LLFS_VLOG(2) << "after PageAllocator::recover() "
+                 << BATT_INSPECT(this->context_.work_count().get_value())
+                 << BATT_INSPECT(status_or_page_allocator.status());
 
     BATT_REQUIRE_OK(status_or_page_allocator);
 
@@ -680,9 +681,9 @@ TEST(PageAllocatorTest, StateMachineSim)
 
   PageAllocatorModel::Result r = model.check_model();
 
-  VLOG(1) << "FINAL RESULT ==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   - "
-          << std::endl
-          << r;
+  LLFS_VLOG(1) << "FINAL RESULT ==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   - "
+               << std::endl
+               << r;
 
   EXPECT_TRUE(r.ok);
 }

@@ -85,7 +85,7 @@ Status StorageContext::add_existing_file(const batt::SharedPtr<StorageFile>& fil
 {
   file->find_all_objects()  //
       | seq::for_each([&](const FileOffsetPtr<const PackedConfigSlot&>& slot) {
-          VLOG(1) << "Adding " << *slot << " to storage context";
+          LLFS_VLOG(1) << "Adding " << *slot << " to storage context";
 
           this->index_.emplace(slot->uuid,
                                batt::make_shared<StorageObjectInfo>(batt::make_copy(file), slot));

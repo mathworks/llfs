@@ -15,7 +15,7 @@
 #include <llfs/status.hpp>
 #include <llfs/system_config.hpp>
 
-#include <glog/logging.h>
+#include <llfs/logging.hpp>
 
 #include <batteries/assert.hpp>
 #include <batteries/case_of.hpp>

@@ -16,7 +16,7 @@
 #include <llfs/page_size.hpp>
 #include <llfs/status.hpp>
 
-#include <glog/logging.h>
+#include <llfs/logging.hpp>
 
 #include <batteries/assert.hpp>
 #include <batteries/stream_util.hpp>

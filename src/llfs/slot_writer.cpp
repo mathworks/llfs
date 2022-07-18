@@ -121,15 +121,15 @@ StatusOr<SlotRange> SlotWriter::Append::commit()
 
   BATT_CHECK(!this->committed_);
   this->committed_ = true;
-  VLOG(1) << "LogDevice::Writer::commit(" << this->packer_.buffer_size() << ")";
+  LLFS_VLOG(1) << "LogDevice::Writer::commit(" << this->packer_.buffer_size() << ")";
 
   StatusOr<slot_offset_type> commit_slot_upper_bound =
       (*this->writer_lock_)->commit(this->packer_.buffer_size());
 
   BATT_REQUIRE_OK(commit_slot_upper_bound);
 
-  VLOG(1) << (void*)this << " commit succeeded; new upper_bound= " << *commit_slot_upper_bound
-          << " == " << (*this->writer_lock_)->slot_offset();
+  LLFS_VLOG(1) << (void*)this << " commit succeeded; new upper_bound= " << *commit_slot_upper_bound
+               << " == " << (*this->writer_lock_)->slot_offset();
 
   // Grow the in-use grant by the amount written.
   //

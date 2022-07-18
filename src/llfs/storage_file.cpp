@@ -19,7 +19,7 @@ StatusOr<std::vector<std::unique_ptr<StorageFileConfigBlock>>> read_storage_file
   std::vector<std::unique_ptr<StorageFileConfigBlock>> blocks;
 
   const i64 aligned_start = batt::round_up_bits(PackedConfigBlock::kSizeLog2, start_offset);
-  LOG_IF(WARNING, aligned_start != start_offset)
+  LLFS_LOG_WARNING_IF(aligned_start != start_offset)
       << "Specified `start_offset` is not aligned to " << PackedConfigBlock::kSize
       << "-byte boundary; rounding up to " << aligned_start;
 
@@ -31,11 +31,11 @@ StatusOr<std::vector<std::unique_ptr<StorageFileConfigBlock>>> read_storage_file
 
     const PackedConfigBlock& block = next_block->get()->get_const();
     if (block.magic != PackedConfigBlock::kMagic) {
-      LOG(WARNING) << "The magic number is wrong!";
+      LLFS_LOG_WARNING() << "The magic number is wrong!";
       return {batt::StatusCode::kDataLoss};
     }
     if (block.crc64 != block.true_crc64()) {
-      LOG(WARNING) << "The crc64 doesn't match!";
+      LLFS_LOG_WARNING() << "The crc64 doesn't match!";
       return {batt::StatusCode::kDataLoss};
     }
 

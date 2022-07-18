@@ -34,8 +34,8 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
 {
   if (options.page_device.device_id &&
       options.page_allocator.page_device_id != *options.page_device.device_id) {
-    LOG(WARNING) << "The device numbers for page device and page allocator must match when "
-                    "configuring a page arena.";
+    LLFS_LOG_WARNING() << "The device numbers for page device and page allocator must match when "
+                          "configuring a page arena.";
     return batt::StatusCode::kInvalidArgument;
   }
 

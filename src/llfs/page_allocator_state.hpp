@@ -274,7 +274,7 @@ class PageAllocatorState : public PageAllocatorStateNoLock
       case ProposalStatus::kInvalid_NotAttached:
         return false;
     }
-    LOG(WARNING) << "Invalid ProposalStatus value: " << (int)proposal_status;
+    LLFS_LOG_WARNING() << "Invalid ProposalStatus value: " << (int)proposal_status;
     return false;
   }
 

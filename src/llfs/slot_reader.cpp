@@ -69,20 +69,20 @@ StatusOr<SlotParse> SlotReader::parse_next(batt::WaitForResource wait_for_data)
 
   for (;;) {
     if (this->log_reader_.is_closed()) {
-      VLOG(1) << "reader is closed; returning";
+      LLFS_VLOG(1) << "reader is closed; returning";
       return {batt::StatusCode::kClosed};
     }
 
     if (min_bytes_needed > 0) {
       if (wait_for_data != batt::WaitForResource::kTrue) {
-        VLOG(1) << "out of data; wait_for_data == false, returning";
+        LLFS_VLOG(1) << "out of data; wait_for_data == false, returning";
         return {StatusCode::kSlotReaderOutOfData};
       }
-      VLOG(1) << "waiting for " << min_bytes_needed << " bytes to be available";
+      LLFS_VLOG(1) << "waiting for " << min_bytes_needed << " bytes to be available";
       auto status = this->log_reader_.await(BytesAvailable{
           .size = min_bytes_needed,
       });
-      VLOG(1) << "got event from reader; " << BATT_INSPECT(status);
+      LLFS_VLOG(1) << "got event from reader; " << BATT_INSPECT(status);
       BATT_REQUIRE_OK(status);
     }
     min_bytes_needed = 0;
@@ -93,7 +93,7 @@ StatusOr<SlotParse> SlotReader::parse_next(batt::WaitForResource wait_for_data)
 
     BATT_CHECK_EQ(current_slot, this->consumed_upper_bound_.get_value());
 
-    VLOG(1) << "data.size() = " << data.size() << ", current_slot = " << current_slot;
+    LLFS_VLOG(1) << "data.size() = " << data.size() << ", current_slot = " << current_slot;
 
     if (seq::LoopControl::kBreak == this->pre_slot_fn_(current_slot)) {
       return {batt::StatusCode::kLoopBreak};
@@ -150,7 +150,7 @@ void SlotReader::consume_slot(const SlotParse& slot)
 {
   const usize slot_size = slot.offset.size();
   BATT_CHECK_GT(slot_size, 0);
-  VLOG(1) << "log_reader.consume(" << slot_size << ")";
+  LLFS_VLOG(1) << "log_reader.consume(" << slot_size << ")";
   this->log_reader_.consume(slot_size);
   this->consumed_upper_bound_.fetch_add(slot_size);
 }

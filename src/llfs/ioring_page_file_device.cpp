@@ -89,10 +89,10 @@ void IoRingPageFileDevice::write_some(i64 page_offset_in_file,
             return;
           }
 
-          LOG(WARNING) << "IoRingPageFileDevice::write failed; page_offset_in_file+"
-                       << n_written_so_far << "=" << page_offset_in_file + n_written_so_far
-                       << " n_written_so_far=" << n_written_so_far
-                       << " page_offset_in_file=" << page_offset_in_file;
+          LLFS_LOG_WARNING() << "IoRingPageFileDevice::write failed; page_offset_in_file+"
+                             << n_written_so_far << "=" << page_offset_in_file + n_written_so_far
+                             << " n_written_so_far=" << n_written_so_far
+                             << " page_offset_in_file=" << page_offset_in_file;
 
           handler(result.status());
           return;
@@ -152,10 +152,10 @@ void IoRingPageFileDevice::read_some(PageId page_id, i64 page_offset_in_file,
             return;
           }
 
-          LOG(WARNING) << "IoRingPageFileDevice::read failed; page_offset_in_file+" << n_read_so_far
-                       << "=" << page_offset_in_file + n_read_so_far
-                       << " n_read_so_far=" << n_read_so_far
-                       << " page_offset_in_file=" << page_offset_in_file;
+          LLFS_LOG_WARNING() << "IoRingPageFileDevice::read failed; page_offset_in_file+"
+                             << n_read_so_far << "=" << page_offset_in_file + n_read_so_far
+                             << " n_read_so_far=" << n_read_so_far
+                             << " page_offset_in_file=" << page_offset_in_file;
 
           handler(result.status());
           return;

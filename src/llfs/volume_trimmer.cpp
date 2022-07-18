@@ -41,7 +41,7 @@ namespace llfs {
 //
 void VolumeTrimmer::halt()
 {
-  VLOG(1) << "VolumeTrimmer::halt";
+  LLFS_VLOG(1) << "VolumeTrimmer::halt";
 
   this->halt_requested_ = true;  // IMPORTANT: must come first!
   this->id_refresh_grant_.revoke();
@@ -51,7 +51,7 @@ void VolumeTrimmer::halt()
 //
 Status VolumeTrimmer::run()
 {
-  VLOG(1) << "VolumeTrimmer::run";
+  LLFS_VLOG(1) << "VolumeTrimmer::run";
 
   slot_offset_type trim_lower_bound = this->log_reader_->slot_offset();
   slot_offset_type least_upper_bound = trim_lower_bound + 1;
@@ -85,7 +85,7 @@ Status VolumeTrimmer::run()
 
     slot_offset_type new_trim_target = trim_lower_bound;
 
-    VLOG(1) << "new value for " << BATT_INSPECT(*trim_upper_bound) << "; scanning log slots";
+    LLFS_VLOG(1) << "new value for " << BATT_INSPECT(*trim_upper_bound) << "; scanning log slots";
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
     // Scan log slots up to the new unlocked slot offset, collecting page refs to release.
@@ -94,16 +94,16 @@ Status VolumeTrimmer::run()
         batt::WaitForResource::kTrue, [&](const SlotParse& slot, const auto& payload) -> Status {
           const SlotRange& slot_range = slot.offset;
 
-          VLOG(2) << "read slot: " << BATT_INSPECT(slot_range)
-                  << BATT_INSPECT(!slot_less_than(slot_range.lower_bound, *trim_upper_bound))
-                  << BATT_INSPECT(slot_less_than(*trim_upper_bound, slot_range.upper_bound));
+          LLFS_VLOG(2) << "read slot: " << BATT_INSPECT(slot_range)
+                       << BATT_INSPECT(!slot_less_than(slot_range.lower_bound, *trim_upper_bound))
+                       << BATT_INSPECT(slot_less_than(*trim_upper_bound, slot_range.upper_bound));
 
           if (!slot_less_than(slot_range.lower_bound, *trim_upper_bound) ||
               slot_less_than(*trim_upper_bound, slot_range.upper_bound)) {
             return StatusCode::kBreakSlotReaderLoop;
           }
 
-          VLOG(2) << "visiting slot...";
+          LLFS_VLOG(2) << "visiting slot...";
 
           new_trim_target = slot_max(new_trim_target, slot_range.upper_bound);
           return this->visit_slot(slot, payload);
@@ -113,8 +113,8 @@ Status VolumeTrimmer::run()
       BATT_REQUIRE_OK(read_status);
     }
 
-    VLOG(1) << "(" << BATT_INSPECT(new_trim_target)
-            << ") trimmed segment read; releasing obsolete pages";
+    LLFS_VLOG(1) << "(" << BATT_INSPECT(new_trim_target)
+                 << ") trimmed segment read; releasing obsolete pages";
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
     // If we found some obsolete jobs in the newly trimmed log segment, then collect up all root set
@@ -129,11 +129,11 @@ Status VolumeTrimmer::run()
       std::unique_ptr<PageCacheJob> job = this->cache_.new_job();
 
       for (PageId page_id : roots_to_trim) {
-        VLOG(1) << " -- " << page_id;
+        LLFS_VLOG(1) << " -- " << page_id;
         job->delete_root(page_id);
       }
 
-      VLOG(1) << "committing job";
+      LLFS_VLOG(1) << "committing job";
 
       BATT_DEBUG_INFO("[VolumeTrimmer] commit(PageCacheJob)");
 
@@ -153,12 +153,12 @@ Status VolumeTrimmer::run()
     // ** IMPORTANT ** It is only safe to trim the log after `commit(PageCacheJob, ...)` returns;
     // otherwise we will lose information about which root set page references to remove!
 
-    VLOG(1) << "checking for ids to refresh";
+    LLFS_VLOG(1) << "checking for ids to refresh";
 
     // If the trimmed log segment contained a PackedVolumeIds slot, then refresh it before trimming.
     //
     if (this->ids_to_refresh_) {
-      VLOG(1) << " -- " << *this->ids_to_refresh_;
+      LLFS_VLOG(1) << " -- " << *this->ids_to_refresh_;
 
       StatusOr<SlotRange> id_refresh_slot =
           this->slot_writer_.append(this->id_refresh_grant_, *this->ids_to_refresh_);
@@ -179,7 +179,7 @@ Status VolumeTrimmer::run()
       this->ids_to_refresh_ = None;
     }
 
-    VLOG(1) << "trimming the log";
+    LLFS_VLOG(1) << "trimming the log";
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
     // Now that we have fully committed any ref_count deltas, trim the log and continue.
@@ -217,7 +217,8 @@ Status VolumeTrimmer::run()
     bytes_trimmed += (new_trim_target - trim_lower_bound);
     trim_lower_bound = new_trim_target;
 
-    VLOG(1) << "trim is complete; awaiting new target (" << BATT_INSPECT(least_upper_bound) << ")";
+    LLFS_VLOG(1) << "trim is complete; awaiting new target (" << BATT_INSPECT(least_upper_bound)
+                 << ")";
   }
 }
 
@@ -231,15 +232,15 @@ Status VolumeTrimmer::visit_slot(const SlotParse& slot, const Ref<const PackedPr
                                       }) |
                                       seq::collect_vec();
 
-  VLOG(2) << "visit_slot(" << BATT_INSPECT(slot.offset)
-          << ", PrepareJob) root_page_ids=" << batt::dump_range(root_page_ids);
+  LLFS_VLOG(2) << "visit_slot(" << BATT_INSPECT(slot.offset)
+               << ", PrepareJob) root_page_ids=" << batt::dump_range(root_page_ids);
 
   const auto& [iter, inserted] =
       this->roots_per_pending_job_.emplace(slot.offset.lower_bound, std::move(root_page_ids));
   (void)iter;
   if (!inserted) {
     BATT_UNTESTED_LINE();
-    LOG(WARNING) << "duplicate prepare job found at " << BATT_INSPECT(slot.offset);
+    LLFS_LOG_WARNING() << "duplicate prepare job found at " << BATT_INSPECT(slot.offset);
   }
 
   return OkStatus();
@@ -249,12 +250,13 @@ Status VolumeTrimmer::visit_slot(const SlotParse& slot, const Ref<const PackedPr
 //
 Status VolumeTrimmer::visit_slot(const SlotParse& slot, const PackedCommitJob& commit)
 {
-  VLOG(2) << "visit_slot(" << BATT_INSPECT(slot.offset) << ", CommitJob)";
+  LLFS_VLOG(2) << "visit_slot(" << BATT_INSPECT(slot.offset) << ", CommitJob)";
 
   auto iter = this->roots_per_pending_job_.find(commit.prepare_slot);
   if (iter == this->roots_per_pending_job_.end()) {
     BATT_UNTESTED_LINE();
-    LOG(WARNING) << "commit slot found for missing prepare: " << BATT_INSPECT(commit.prepare_slot);
+    LLFS_LOG_WARNING() << "commit slot found for missing prepare: "
+                       << BATT_INSPECT(commit.prepare_slot);
   } else {
     this->obsolete_roots_.insert(this->obsolete_roots_.end(),  //
                                  iter->second.begin(), iter->second.end());

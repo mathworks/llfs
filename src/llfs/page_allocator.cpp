@@ -14,7 +14,7 @@
 #include <llfs/metrics.hpp>
 #include <llfs/slot_reader.hpp>
 
-#include <glog/logging.h>
+#include <llfs/logging.hpp>
 
 #include <boost/range/irange.hpp>
 #include <boost/uuid/uuid_io.hpp>
@@ -83,7 +83,7 @@ StatusOr<std::unique_ptr<PageAllocator>> PageAllocator::recover(
         BATT_ASSIGN_OK_RESULT(usize slots_recovered, slot_reader.run(batt::WaitForResource::kFalse,
                                                                      process_recovered_event));
 
-        VLOG(1) << "PageAllocator recovered log: " << BATT_INSPECT(slots_recovered);
+        LLFS_VLOG(1) << "PageAllocator recovered log: " << BATT_INSPECT(slots_recovered);
 
         return log_reader.slot_offset();
       });
@@ -110,7 +110,7 @@ PageAllocator::PageAllocator(batt::TaskScheduler& scheduler, std::string_view na
                        },
                        "[PageAllocator::checkpoint_task]"}
 {
-  VLOG(1) << "PageAllocator() (this=" << (void*)this << ")";
+  LLFS_VLOG(1) << "PageAllocator() (this=" << (void*)this << ")";
 
   const auto metric_name = [this](std::string_view property) {
     return batt::to_string("PageAllocator_", this->name_, "_", property);
@@ -128,7 +128,7 @@ PageAllocator::PageAllocator(batt::TaskScheduler& scheduler, std::string_view na
 
 PageAllocator::~PageAllocator() noexcept
 {
-  VLOG(1) << "~PageAllocator() (this=" << (void*)this << ")";
+  LLFS_VLOG(1) << "~PageAllocator() (this=" << (void*)this << ")";
 
   this->halt();
   this->join();
@@ -140,8 +140,8 @@ PageAllocator::~PageAllocator() noexcept
 
 void PageAllocator::halt() noexcept
 {
-  VLOG(1) << "PageAllocator::halt()";
-  VLOG(2) << boost::stacktrace::stacktrace{};
+  LLFS_VLOG(1) << "PageAllocator::halt()";
+  LLFS_VLOG(2) << boost::stacktrace::stacktrace{};
 
   this->stop_requested_.set_value(true);
 
@@ -168,7 +168,7 @@ StatusOr<PageId> PageAllocator::allocate_page(batt::WaitForResource wait_for_res
         this->metrics_.pages_allocated.fetch_add(1);
         return *page_id;
       }
-      LOG_FIRST_N(INFO, 1) << "Unable to allocate page (pool is empty)";
+      LLFS_LOG_INFO_FIRST_N(1) << "Unable to allocate page (pool is empty)";
       if (wait_for_resource == batt::WaitForResource::kFalse) {
         return Status{batt::StatusCode::kResourceExhausted};
       }
@@ -183,7 +183,7 @@ StatusOr<PageId> PageAllocator::allocate_page(batt::WaitForResource wait_for_res
 //
 void PageAllocator::deallocate_page(PageId page_id)
 {
-  VLOG(1) << "page deallocated: " << page_id;
+  LLFS_VLOG(1) << "page deallocated: " << page_id;
   this->state_.lock()->get()->deallocate_page(page_id);
   this->metrics_.pages_freed.fetch_add(1);
 }
@@ -192,7 +192,7 @@ void PageAllocator::deallocate_page(PageId page_id)
 //
 Status PageAllocator::recover_page(PageId page_id)
 {
-  VLOG(1) << "removing page from free pool for recovery: " << page_id;
+  LLFS_VLOG(1) << "removing page from free pool for recovery: " << page_id;
   return this->state_.lock()->get()->recover_page(page_id);
 }
 
@@ -310,22 +310,23 @@ void PageAllocator::checkpoint_task_main()
 
       count += 1;
 
-      VLOG(2) << "PageAllocator checkpoint written (count=" << count
-              << ", trim_size=" << (new_trim_pos - old_trim_pos)
-              << ", slice_size=" << (slice_grant_before - slice_grant->size())
-              << "); trim_pos: " << old_trim_pos << " -> " << new_trim_pos
-              << " log_full=" << this->slot_writer_.log_size() << "/"
-              << this->slot_writer_.log_capacity() << " in_use=" << this->slot_writer_.in_use_size()
-              << " avail=" << this->slot_writer_.pool_size();
+      LLFS_VLOG(2) << "PageAllocator checkpoint written (count=" << count
+                   << ", trim_size=" << (new_trim_pos - old_trim_pos)
+                   << ", slice_size=" << (slice_grant_before - slice_grant->size())
+                   << "); trim_pos: " << old_trim_pos << " -> " << new_trim_pos
+                   << " log_full=" << this->slot_writer_.log_size() << "/"
+                   << this->slot_writer_.log_capacity()
+                   << " in_use=" << this->slot_writer_.in_use_size()
+                   << " avail=" << this->slot_writer_.pool_size();
     }
   }();
 
   if (this->stop_requested_.get_value()) {
-    VLOG(1) << "[PageAllocator::checkpoint_task] exited with status=" << final_status;
+    LLFS_VLOG(1) << "[PageAllocator::checkpoint_task] exited with status=" << final_status;
   } else {
     if (!suppress_log_output_for_test()) {
-      LOG(ERROR) << "[PageAllocator::checkpoint_task] exited unexpectedly with status="
-                 << final_status;
+      LLFS_LOG_ERROR() << "[PageAllocator::checkpoint_task] exited unexpectedly with status="
+                       << final_status;
     }
     this->checkpoint_grant_.revoke();
     this->slot_writer_.halt();

@@ -8,7 +8,7 @@
 
 #include <llfs/file_log_driver.hpp>
 
-#include <glog/logging.h>
+#include <llfs/logging.hpp>
 
 namespace llfs {
 
@@ -62,7 +62,7 @@ void FileLogDriver::FlushTaskMain::operator()()
     }
   }();
 
-  LOG(INFO) << "[FileLogDriver::flush_task_main] finished with status=" << status;
+  LLFS_LOG_INFO() << "[FileLogDriver::flush_task_main] finished with status=" << status;
 }
 
 }  // namespace llfs

@@ -86,10 +86,10 @@ void MemoryPageDevice::read(PageId page_id, ReadHandler&& handler)
     auto& rec = locked->page_recs[physical_page];
     const auto current_generation_on_device = rec.generation;
     if (requested_generation != current_generation_on_device || rec.page == nullptr) {
-      LOG(INFO) << "failing read with `kNotFound` (generations do not match);"
-                << BATT_INSPECT(page_id) << BATT_INSPECT(requested_generation)
-                << BATT_INSPECT(current_generation_on_device)
-                << BATT_INSPECT((const void*)rec.page.get()) <<
+      LLFS_LOG_INFO() << "failing read with `kNotFound` (generations do not match);"
+                      << BATT_INSPECT(page_id) << BATT_INSPECT(requested_generation)
+                      << BATT_INSPECT(current_generation_on_device)
+                      << BATT_INSPECT((const void*)rec.page.get()) <<
           [&](std::ostream& out) {
             out << std::endl;
             batt::this_task_debug_info(out);
@@ -103,7 +103,7 @@ void MemoryPageDevice::read(PageId page_id, ReadHandler&& handler)
               }
             }
           };
-      VLOG(1) << boost::stacktrace::stacktrace{};
+      LLFS_VLOG(1) << boost::stacktrace::stacktrace{};
       return Status{batt::StatusCode::kNotFound};  // TODO [tastolfi 2021-10-20] Add custom message?
     }
 
@@ -135,8 +135,8 @@ void MemoryPageDevice::drop(PageId page_id, WriteHandler&& handler)
       // Since the refcount is 0 in this case, nobody is actually using the page so no harm, no
       // foul.
       //
-      VLOG(1) << " -- skipping drop " << BATT_INSPECT(page_id) << BATT_INSPECT(generation_on_device)
-              << BATT_INSPECT(generation_to_drop);
+      LLFS_VLOG(1) << " -- skipping drop " << BATT_INSPECT(page_id)
+                   << BATT_INSPECT(generation_on_device) << BATT_INSPECT(generation_to_drop);
     }
 
     const usize index = locked->recently_dropped_next % locked->recently_dropped.size();

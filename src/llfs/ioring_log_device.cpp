@@ -98,15 +98,15 @@ Status IoRingLogDriver::read_log_data()
   // The background thread to process IO completions.
   //
   std::thread ioring_thread{[this] {
-    VLOG(1) << "ioring_thread started";
+    LLFS_VLOG(1) << "ioring_thread started";
     this->ioring_.run().IgnoreError();
-    VLOG(1) << "ioring_thread returning";
+    LLFS_VLOG(1) << "ioring_thread returning";
   }};
 
   // Shut down the ioring and reset when we leave this scope.
   //
   const auto stop_ioring_thread = batt::finally([&] {
-    VLOG(1) << "Stopping ioring";
+    LLFS_VLOG(1) << "Stopping ioring";
     this->ioring_.on_work_finished();
     ioring_thread.join();
     this->ioring_.reset();
@@ -130,9 +130,9 @@ Status IoRingLogDriver::read_log_data()
 
   u64 file_offset = this->config_.physical_offset;
   for (usize block_i = 0; block_i < this->config_.block_count(); ++block_i) {
-    VLOG(1) << "reading log; " << BATT_INSPECT(block_i) << BATT_INSPECT(file_offset)
-            << BATT_INSPECT(this->config_.block_size()) << BATT_INSPECT(block_buffer.size())
-            << BATT_INSPECT(this->file_.get_fd());
+    LLFS_VLOG(1) << "reading log; " << BATT_INSPECT(block_i) << BATT_INSPECT(file_offset)
+                 << BATT_INSPECT(this->config_.block_size()) << BATT_INSPECT(block_buffer.size())
+                 << BATT_INSPECT(this->file_.get_fd());
 
     Status read_status = this->file_.read_all(file_offset, block_buffer);
     BATT_REQUIRE_OK(read_status);
@@ -211,11 +211,11 @@ void IoRingLogDriver::flush_task_main()
 {
   Status status = [&]() -> Status {
     const u64 total_size = (this->log_end_ - this->log_start_);
-    LOG(INFO) << "(driver=" << this->name_ << ") log physical size=0x" << std::hex << total_size
-              << " block_size=0x" << this->block_size() << " block_capacity=0x"
-              << this->block_capacity() << " queue_depth=" << std::dec << this->queue_depth();
-    LOG(INFO) << "(driver=" << this->name_
-              << ") buffer delay=" << this->options_.page_write_buffer_delay_usec << "usec";
+    LLFS_LOG_INFO() << "(driver=" << this->name_ << ") log physical size=0x" << std::hex
+                    << total_size << " block_size=0x" << this->block_size() << " block_capacity=0x"
+                    << this->block_capacity() << " queue_depth=" << std::dec << this->queue_depth();
+    LLFS_LOG_INFO() << "(driver=" << this->name_
+                    << ") buffer delay=" << this->options_.page_write_buffer_delay_usec << "usec";
 
     // Now tell the ops to start flushing data.  They will write in parallel but only one at a time
     // will perform an async_wait on `commit_pos_`, to prevent thundering herd bottlenecks.
@@ -233,10 +233,11 @@ void IoRingLogDriver::flush_task_main()
     //
     batt::Watch<bool> done{false};
     std::thread io_thread{[this, &done] {
-      LOG(INFO) << "(driver=" << this->name_ << ") invoking IoRing::run()";
+      LLFS_LOG_INFO() << "(driver=" << this->name_ << ") invoking IoRing::run()";
       Status io_status = this->ioring_.run();
       if (!io_status.ok()) {
-        LOG(WARNING) << "(driver=" << this->name_ << ") IoRing::run() returned: " << io_status;
+        LLFS_LOG_WARNING() << "(driver=" << this->name_
+                           << ") IoRing::run() returned: " << io_status;
       }
       done.set_value(true);
     }};
@@ -247,7 +248,7 @@ void IoRingLogDriver::flush_task_main()
     return OkStatus();
   }();
 
-  LOG(INFO) << "[IoRingLogDriver::flush_task] exited with status=" << status;
+  LLFS_LOG_INFO() << "[IoRingLogDriver::flush_task] exited with status=" << status;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -263,7 +264,7 @@ void IoRingLogDriver::poll_commit_state()
 {
   if (!this->waiting_for_commit_.empty()) {
     slot_offset_type known_commit_pos = this->commit_pos_.get_value();
-    VLOG(1) << "(driver=" << this->name_ << ") read commit_pos=" << known_commit_pos;
+    LLFS_VLOG(1) << "(driver=" << this->name_ << ") read commit_pos=" << known_commit_pos;
     do {
       slot_offset_type next_wait_pos = this->waiting_for_commit_.top();
       if (slot_less_than(known_commit_pos, next_wait_pos)) {
@@ -276,8 +277,9 @@ void IoRingLogDriver::poll_commit_state()
       //
       const usize op_index =
           ((next_wait_pos - 1) / this->block_capacity()) & this->queue_depth_mask_;
-      VLOG(1) << "(driver=" << this->name_ << ") commit_pos=" << known_commit_pos << " waking op["
-              << op_index << "], which was waiting on commit_pos >= " << next_wait_pos;
+      LLFS_VLOG(1) << "(driver=" << this->name_ << ") commit_pos=" << known_commit_pos
+                   << " waking op[" << op_index
+                   << "], which was waiting on commit_pos >= " << next_wait_pos;
 
       this->flush_ops_[op_index].poll_commit_pos(known_commit_pos);
     } while (!this->waiting_for_commit_.empty());
@@ -289,7 +291,8 @@ void IoRingLogDriver::poll_commit_state()
 void IoRingLogDriver::wait_for_commit_pos(slot_offset_type last_seen)
 {
   if (!this->commit_pos_listener_active_) {
-    VLOG(1) << "(driver=" << this->name_ << ") wait_for_commit_pos(last_seen=" << last_seen << ")";
+    LLFS_VLOG(1) << "(driver=" << this->name_ << ") wait_for_commit_pos(last_seen=" << last_seen
+                 << ")";
     this->commit_pos_listener_active_ = true;
     this->commit_pos_.async_wait(
         last_seen, make_custom_alloc_handler(
@@ -304,8 +307,9 @@ void IoRingLogDriver::wait_for_commit_pos(slot_offset_type last_seen)
                                  this->ioring_.stop();
                                  return;
                                }
-                               VLOG(1) << "(driver=" << this->name_
-                                       << ") commit_pos listener invoked: " << updated_commit_pos;
+                               LLFS_VLOG(1)
+                                   << "(driver=" << this->name_
+                                   << ") commit_pos listener invoked: " << updated_commit_pos;
                                this->poll_commit_state();
                              }));
                        }));
@@ -344,7 +348,7 @@ void IoRingLogDriver::PollFlushPos::operator()(IoRingLogDriver* this_)
     op_upper_bound_ += this_->block_capacity();
   }
   if (update) {
-    VLOG(1) << "(driver=" << this_->name_ << ") writing flush_pos=" << local_flush_pos_;
+    LLFS_VLOG(1) << "(driver=" << this_->name_ << ") writing flush_pos=" << local_flush_pos_;
     this_->flush_pos_.set_value(local_flush_pos_);
   }
 }
@@ -375,8 +379,8 @@ Status initialize_ioring_log_device(RawBlockFile& file, const IoRingLogDriver::C
 
   u64 file_offset = config.physical_offset;
   for (u64 block_i = 0; block_i < config.block_count(); ++block_i) {
-    VLOG(1) << "writing initial block header; " << BATT_INSPECT(buffer.header.slot_offset)
-            << BATT_INSPECT(file_offset);
+    LLFS_VLOG(1) << "writing initial block header; " << BATT_INSPECT(buffer.header.slot_offset)
+                 << BATT_INSPECT(file_offset);
     Status write_status = write_all(file, file_offset, buffer.as_const_buffer());
     BATT_REQUIRE_OK(write_status);
     buffer.header.slot_offset += config.block_capacity();

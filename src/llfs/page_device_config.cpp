@@ -51,8 +51,8 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
 
   txn.require_pre_flush_action([pages_offset, page_size = page_size,
                                 page_count = options.page_count](RawBlockFile& file) -> Status {
-    DVLOG(1) << "truncating to " << BATT_INSPECT(pages_offset.upper_bound)
-             << BATT_INSPECT(page_size) << BATT_INSPECT(page_count);
+    LLFS_DVLOG(1) << "truncating to " << BATT_INSPECT(pages_offset.upper_bound)
+                  << BATT_INSPECT(page_size) << BATT_INSPECT(page_count);
     Status truncate_status = file.truncate_at_least(pages_offset.upper_bound);
     BATT_REQUIRE_OK(truncate_status);
 
@@ -68,8 +68,8 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
 
     for (u64 page_i = 0; page_i < page_count; ++page_i) {
       const i64 page_offset = pages_offset.lower_bound + page_i * page_size;
-      DVLOG(1) << "writing null page header | " << BATT_INSPECT(page_i)
-               << BATT_INSPECT(page_offset);
+      LLFS_DVLOG(1) << "writing null page header | " << BATT_INSPECT(page_i)
+                    << BATT_INSPECT(page_offset);
       Status status = write_all(file, page_offset, ConstBuffer{&buffer, sizeof(buffer)});
       BATT_REQUIRE_OK(status);
     }

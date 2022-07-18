@@ -117,9 +117,9 @@ void arena_create(ArenaCommandArgs& args)
     args.total_size = args.page_count * args.page_size;
   }
 
-  VLOG(1) << BATT_INSPECT(args.page_count);
-  VLOG(1) << BATT_INSPECT(args.page_size);
-  VLOG(1) << BATT_INSPECT(args.total_size);
+  LLFS_VLOG(1) << BATT_INSPECT(args.page_count);
+  LLFS_VLOG(1) << BATT_INSPECT(args.page_size);
+  LLFS_VLOG(1) << BATT_INSPECT(args.total_size);
 
   BATT_PANIC() << "Implement me!";
 
@@ -134,13 +134,13 @@ void arena_create(ArenaCommandArgs& args)
   PackedPageArenaConfig config;
   BATT_CHECK_OK(builder.build(&config));
 
-  VLOG(1) << BATT_INSPECT(config);
+  LLFS_VLOG(1) << BATT_INSPECT(config);
 
   // Create an empty file of the required size.
   //
   BATT_CHECK_OK(truncate_file(args.filename, config.total_arena_size()));
 
-  VLOG(1) << BATT_INSPECT(config.total_arena_size()) << BATT_INSPECT(sizeof(config));
+  LLFS_VLOG(1) << BATT_INSPECT(config.total_arena_size()) << BATT_INSPECT(sizeof(config));
 
   FileSegmentRef file_ref{
       .path_utf8 = args.filename,
@@ -156,10 +156,10 @@ void arena_create(ArenaCommandArgs& args)
   // The IoRing requires a background thread to process events.
   //
   std::thread ioring_thread{[&] {
-    VLOG(1) << "ioring_thread entered";
+    LLFS_VLOG(1) << "ioring_thread entered";
     Status ioring_exit_status = ioring->run();
-    VLOG(1) << BATT_INSPECT(ioring_exit_status);
-    VLOG(1) << "ioring_thread finished";
+    LLFS_VLOG(1) << BATT_INSPECT(ioring_exit_status);
+    LLFS_VLOG(1) << "ioring_thread finished";
   }};
 
   // Initialize the page arena file.
@@ -169,17 +169,17 @@ void arena_create(ArenaCommandArgs& args)
     StatusOr<PageArena> arena =
         initialize_page_arena_file(batt::Runtime::instance().default_scheduler(), *ioring, file_ref,
                                    runtime_options, config, ConfirmThisWillEraseAllMyData::kYes);
-    VLOG(1) << "arena initialize returned: " << arena.status();
+    LLFS_VLOG(1) << "arena initialize returned: " << arena.status();
     BATT_CHECK_OK(arena);
   }
   ioring->on_work_finished();
 
   // Shut down the IoRing.
   //
-  VLOG(1) << "stopping the ioring";
+  LLFS_VLOG(1) << "stopping the ioring";
   ioring->stop();
 
-  VLOG(1) << "joining the ioring_thread";
+  LLFS_VLOG(1) << "joining the ioring_thread";
   ioring_thread.join();
 #endif
 }

@@ -30,7 +30,7 @@
 
 #include <boost/beast/core/buffers_range.hpp>
 
-#include <glog/logging.h>
+#include <llfs/logging.hpp>
 
 #include <liburing.h>
 
@@ -232,9 +232,9 @@ inline void IoRing::submit(
 
   // Increment work count; decrement in invoke_handler.
   //
-  DVLOG(1) << "(submit) before; " << BATT_INSPECT(this->impl_->work_count_);
+  LLFS_DVLOG(1) << "(submit) before; " << BATT_INSPECT(this->impl_->work_count_);
   this->on_work_started();
-  DVLOG(1) << "(submit) after; " << BATT_INSPECT(this->impl_->work_count_);
+  LLFS_DVLOG(1) << "(submit) after; " << BATT_INSPECT(this->impl_->work_count_);
 
   // Finally, submit the request.
   //

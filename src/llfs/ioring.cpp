@@ -13,7 +13,7 @@
 
 #ifndef LLFS_DISABLE_IO_URING
 
-#include <glog/logging.h>
+#include <llfs/logging.hpp>
 
 #include <batteries/assert.hpp>
 
@@ -33,19 +33,19 @@ StatusOr<IoRing> IoRing::make_new(MaxQueueDepth entries) noexcept
 
   impl->event_fd_ = eventfd(0, 0);
   if (impl->event_fd_ < 0) {
-    LOG(ERROR) << "failed to create eventfd: " << std::strerror(errno);
+    LLFS_LOG_ERROR() << "failed to create eventfd: " << std::strerror(errno);
     return batt::status_from_retval(impl->event_fd_);
   }
 
   int retval = io_uring_queue_init(entries, &impl->ring_, /*flags=*/0);
   if (retval != 0) {
-    LOG(ERROR) << "failed io_uring_queue_init: " << std::strerror(-retval);
+    LLFS_LOG_ERROR() << "failed io_uring_queue_init: " << std::strerror(-retval);
     return status_from_retval(retval);
   }
 
   retval = io_uring_register_eventfd(&impl->ring_, impl->event_fd_);
   if (retval != 0) {
-    LOG(ERROR) << "failed io_uring_register_eventfd: " << std::strerror(-retval);
+    LLFS_LOG_ERROR() << "failed io_uring_register_eventfd: " << std::strerror(-retval);
   }
 
   return {IoRing{std::move(impl)}};
@@ -53,7 +53,7 @@ StatusOr<IoRing> IoRing::make_new(MaxQueueDepth entries) noexcept
 
 IoRing::Impl::~Impl() noexcept
 {
-  DVLOG(1) << "IoRing::Impl::~Impl()";
+  LLFS_DVLOG(1) << "IoRing::Impl::~Impl()";
 
   if (this->ring_init_) {
     io_uring_queue_exit(&this->ring_);
@@ -73,12 +73,12 @@ IoRing::IoRing(std::unique_ptr<Impl>&& impl) noexcept : impl_{std::move(impl)}
 Status IoRing::run()
 {
   while (this->impl_->work_count_ && !this->impl_->needs_reset_) {
-    DVLOG(1) << "IoRing::run() " << BATT_INSPECT(this->impl_->work_count_);
+    LLFS_DVLOG(1) << "IoRing::run() " << BATT_INSPECT(this->impl_->work_count_);
 
     // Block on the event_fd until a completion event is available.
     {
       eventfd_t v;
-      DVLOG(1) << "IoRing::run() reading eventfd";
+      LLFS_DVLOG(1) << "IoRing::run() reading eventfd";
       int retval = eventfd_read(this->impl_->event_fd_, &v);
       if (retval != 0) {
         return status_from_retval(retval);
@@ -90,23 +90,23 @@ Status IoRing::run()
     for (;;) {
       struct io_uring_cqe cqe;
       {
-        DVLOG(1) << "IoRing::run() locking mutex";
+        LLFS_DVLOG(1) << "IoRing::run() locking mutex";
         std::unique_lock<std::mutex> lock{this->impl_->mutex_};
 
         struct io_uring_cqe* p_cqe = nullptr;
 
         // Dequeue a single completion event from the ring buffer.
         //
-        DVLOG(1) << "IoRing::run() io_uring_peek_cqe";
+        LLFS_DVLOG(1) << "IoRing::run() io_uring_peek_cqe";
         const int retval = io_uring_peek_cqe(&this->impl_->ring_, &p_cqe);
         if (retval == -EAGAIN) {
-          DVLOG(1) << "IoRing::run() io_uring_peek_cqe: EAGAIN";
+          LLFS_DVLOG(1) << "IoRing::run() io_uring_peek_cqe: EAGAIN";
           break;
         }
         if (retval < 0) {
-          DVLOG(1) << "IoRing::run() io_uring_peek_cqe: fail, retval=" << retval;
+          LLFS_DVLOG(1) << "IoRing::run() io_uring_peek_cqe: fail, retval=" << retval;
           Status status = status_from_retval(retval);
-          LOG(WARNING) << "io_uring_wait_cqe failed: " << status;
+          LLFS_LOG_WARNING() << "io_uring_wait_cqe failed: " << status;
           return status;
         }
         BATT_CHECK_NOT_NULLPTR(p_cqe);
@@ -115,22 +115,22 @@ Status IoRing::run()
 
         // Consume the event so the ring buffer can move on.
         //
-        DVLOG(1) << "IoRing::run() io_uring_cqe_seen";
+        LLFS_DVLOG(1) << "IoRing::run() io_uring_cqe_seen";
         io_uring_cqe_seen(&this->impl_->ring_, p_cqe);
       }
 
       // Invoke the associated handler.  This will also decrement the activity counter.
       //
       try {
-        DVLOG(1) << "IoRing::run() invoke_handler " << BATT_INSPECT(this->impl_->work_count_);
+        LLFS_DVLOG(1) << "IoRing::run() invoke_handler " << BATT_INSPECT(this->impl_->work_count_);
         invoke_handler(&cqe);
-        DVLOG(1) << "IoRing::run() ... " << BATT_INSPECT(this->impl_->work_count_);
+        LLFS_DVLOG(1) << "IoRing::run() ... " << BATT_INSPECT(this->impl_->work_count_);
       } catch (...) {
-        LOG(ERROR) << "Uncaught exception";
+        LLFS_LOG_ERROR() << "Uncaught exception";
       }
     }
   }
-  DVLOG(1) << "IoRing::run() " << BATT_INSPECT(this->impl_->work_count_) << " LEAVING";
+  LLFS_DVLOG(1) << "IoRing::run() " << BATT_INSPECT(this->impl_->work_count_) << " LEAVING";
 
   return OkStatus();
 }
@@ -142,7 +142,7 @@ void IoRing::invoke_handler(struct io_uring_cqe* cqe)
 
   if (cqe->res < 0) {
     auto status = status_from_errno(-cqe->res);
-    VLOG(1) << "ioring op failed: " << status;
+    LLFS_VLOG(1) << "ioring op failed: " << status;
     handler->notify(status);
   } else {
     handler->notify(cqe->res);
@@ -162,7 +162,7 @@ void IoRing::on_work_finished()
 {
   static const std::vector<ConstBuffer> empty;
 
-  DVLOG(1) << "IoRing::on_work_finished()";
+  LLFS_DVLOG(1) << "IoRing::on_work_finished()";
 
   // Submit a no-op to wake the run loop.
   //
@@ -290,7 +290,7 @@ ScopedIoRing::Impl::~Impl() noexcept
 void ScopedIoRing::Impl::io_thread_main()
 {
   Status status = this->io_.run();
-  VLOG(1) << "ScopedIoRing::io_thread_main() exited with " << BATT_INSPECT(status);
+  LLFS_VLOG(1) << "ScopedIoRing::io_thread_main() exited with " << BATT_INSPECT(status);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

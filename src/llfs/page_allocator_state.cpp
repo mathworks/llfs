@@ -9,7 +9,7 @@
 #include <llfs/page_allocator_state.hpp>
 //
 
-#include <glog/logging.h>
+#include <llfs/logging.hpp>
 
 namespace llfs {
 
@@ -251,7 +251,7 @@ PageAllocatorState::ProposalStatus PageAllocatorState::propose_exactly_once(
 {
   auto iter = this->attachments_.find(user_slot.user_id);
   if (iter == this->attachments_.end()) {
-    VLOG(1) << "[propose_exactly_once] did not find attachment for user";
+    LLFS_VLOG(1) << "[propose_exactly_once] did not find attachment for user";
 
     if (attach == AllowAttach::kTrue) {
       return ProposalStatus::kValid;
@@ -259,15 +259,15 @@ PageAllocatorState::ProposalStatus PageAllocatorState::propose_exactly_once(
     return ProposalStatus::kInvalid_NotAttached;
   }
 
-  VLOG(1) << "[propose_exactly_once] last seen user slot=" << iter->second->get_user_slot()
-          << "; event user slot=" << user_slot.slot_offset;
+  LLFS_VLOG(1) << "[propose_exactly_once] last seen user slot=" << iter->second->get_user_slot()
+               << "; event user slot=" << user_slot.slot_offset;
 
   if (slot_less_than(iter->second->get_user_slot(), user_slot.slot_offset)) {
     return ProposalStatus::kValid;
   }
 
-  VLOG(1) << "skipping slot; no change (learned=" << iter->second->get_user_slot()
-          << ", proposed=" << user_slot.slot_offset << ")";
+  LLFS_VLOG(1) << "skipping slot; no change (learned=" << iter->second->get_user_slot()
+               << ", proposed=" << user_slot.slot_offset << ")";
 
   return ProposalStatus::kNoChange;
 }
@@ -276,8 +276,8 @@ PageAllocatorState::ProposalStatus PageAllocatorState::propose_exactly_once(
 //
 void PageAllocatorState::update_learned_upper_bound(slot_offset_type offset)
 {
-  VLOG(1) << "updating learned upper_bound: " << this->learned_upper_bound_.get_value() << " -> "
-          << offset;
+  LLFS_VLOG(1) << "updating learned upper_bound: " << this->learned_upper_bound_.get_value()
+               << " -> " << offset;
 
   clamp_min_slot(this->learned_upper_bound_, offset);
 }
@@ -295,7 +295,7 @@ PageAllocatorState::ProposalStatus PageAllocatorState::propose(
 void PageAllocatorState::learn(slot_offset_type index_slot, const PackedPageAllocatorAttach& attach,
                                Metrics&)
 {
-  VLOG(1) << "learning " << attach;
+  LLFS_VLOG(1) << "learning " << attach;
 
   auto [iter, was_inserted] = this->attachments_.emplace(
       attach.user_slot.user_id, std::make_unique<PageAllocatorAttachment>(
@@ -324,7 +324,7 @@ PageAllocatorState::ProposalStatus PageAllocatorState::propose(
 void PageAllocatorState::learn(slot_offset_type index_slot, const PackedPageAllocatorDetach& detach,
                                Metrics&)
 {
-  VLOG(1) << "learning " << detach;
+  LLFS_VLOG(1) << "learning " << detach;
 
   auto iter = this->attachments_.find(detach.user_slot.user_id);
   BATT_CHECK_NE(iter, this->attachments_.end());
@@ -347,7 +347,7 @@ PageAllocatorState::ProposalStatus PageAllocatorState::propose(const PackedPageR
 void PageAllocatorState::learn(slot_offset_type index_slot, const PackedPageRefCount& packed,
                                Metrics&)
 {
-  VLOG(1) << "learning " << packed;
+  LLFS_VLOG(1) << "learning " << packed;
 
   const PageId page_id{packed.page_id.value()};
   const page_id_int physical_page = this->page_ids_.get_physical_page(page_id);
@@ -379,7 +379,7 @@ PageAllocatorState::ProposalStatus PageAllocatorState::propose(const PackedPageA
 void PageAllocatorState::learn(slot_offset_type index_slot, const PackedPageAllocatorTxn& txn,
                                Metrics& metrics)
 {
-  VLOG(1) << "(device=" << this->page_ids_.get_device_id() << ") learning " << txn;
+  LLFS_VLOG(1) << "(device=" << this->page_ids_.get_device_id() << ") learning " << txn;
 
   // Update the client attachment for this transaction so we don't double-commit.
   {
@@ -420,9 +420,9 @@ void run_ref_count_update_sanity_checks(const PackedPageRefCount& delta, i32 bef
 
   const i32 after_ref_count = before_ref_count + delta.ref_count;
 
-  VLOG(2) << "page: " << std::hex << delta.page_id.value() << std::dec
-          << " += " << delta.ref_count.value() << "; " << before_ref_count << " -> "
-          << after_ref_count;
+  LLFS_VLOG(2) << "page: " << std::hex << delta.page_id.value() << std::dec
+               << " += " << delta.ref_count.value() << "; " << before_ref_count << " -> "
+               << after_ref_count;
 
   BATT_CHECK_GE(before_ref_count, 0);
   BATT_CHECK_GE(after_ref_count, 0)
@@ -463,14 +463,14 @@ void PageAllocatorState::learn_ref_count_delta(const PackedPageRefCount& delta,
 
   const page_generation_int old_generation = obj->set_generation(page_generation);
   if (old_generation > page_generation) {
-    LOG(ERROR) << "page generation went backwards!  old=" << old_generation
-               << " current=" << page_generation;
+    LLFS_LOG_ERROR() << "page generation went backwards!  old=" << old_generation
+                     << " current=" << page_generation;
     // TODO [tastolfi 2021-04-05] - stop?  panic?  recover?
   }
 
   const i32 prior_value = obj->fetch_add(delta.ref_count);
-  VLOG(2) << "  -- page_id=" << delta.page_id << "; ref_count=" << prior_value << " -> "
-          << (prior_value + delta.ref_count) << " (stored=" << obj->get_count() << ")";
+  LLFS_VLOG(2) << "  -- page_id=" << delta.page_id << "; ref_count=" << prior_value << " -> "
+               << (prior_value + delta.ref_count) << " (stored=" << obj->get_count() << ")";
 
   // Sanity checks.
   //
@@ -497,9 +497,9 @@ void PageAllocatorState::learn_ref_count_1_to_0(const PackedPageRefCount& delta,
   BATT_CHECK_EQ(delta.ref_count, kRefCount_1_to_0);
 
   if (obj->get_generation() != page_generation) {
-    LOG(INFO) << "refcount 1->0 on " << std::hex << delta.page_id.value()
-              << " generations don't match: current=" << std::dec << obj->get_generation()
-              << " delta.gen=" << page_generation;
+    LLFS_LOG_INFO() << "refcount 1->0 on " << std::hex << delta.page_id.value()
+                    << " generations don't match: current=" << std::dec << obj->get_generation()
+                    << " delta.gen=" << page_generation;
 
     BATT_CHECK_GT(obj->get_generation(), page_generation);
     return;
@@ -510,7 +510,8 @@ void PageAllocatorState::learn_ref_count_1_to_0(const PackedPageRefCount& delta,
   i32 count = obj->get_count();
   while (count == 1) {
     if (obj->compare_exchange_weak(count, 0)) {
-      VLOG(2) << "page ref_count => 0 (adding to free pool): " << std::hex << delta.page_id.value();
+      LLFS_VLOG(2) << "page ref_count => 0 (adding to free pool): " << std::hex
+                   << delta.page_id.value();
       if (!obj->PageAllocatorFreePoolHook::is_linked()) {
         this->free_pool_.push_back(*obj);
         this->free_pool_size_.fetch_add(1);

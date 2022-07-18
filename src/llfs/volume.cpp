@@ -123,7 +123,7 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
     // If no uuids were found while opening the log, create them now.
     //
     if (!visitor.ids) {
-      VLOG(1) << "Initializing Volume uuids for the first time";
+      LLFS_VLOG(1) << "Initializing Volume uuids for the first time";
 
       visitor.ids.emplace(SlotWithPayload<PackedVolumeIds>{
           .slot_range = {0, 1},
@@ -146,7 +146,7 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
       BATT_UNTESTED_COND(!flush_status.ok());
       BATT_REQUIRE_OK(flush_status);
     }
-    VLOG(1) << BATT_INSPECT(visitor.ids->payload);
+    LLFS_VLOG(1) << BATT_INSPECT(visitor.ids->payload);
 
     // Attach the main uuid, recycler uuid, and trimmer uuid to each device in the cache storage
     // pool.
@@ -154,7 +154,7 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
     {
       // Loop through all combinations of uuid, device_id.
       //
-      VLOG(1) << "Recovered attachments: " << batt::dump_range(visitor.device_attachments);
+      LLFS_VLOG(1) << "Recovered attachments: " << batt::dump_range(visitor.device_attachments);
       for (const auto& uuid : {
                visitor.ids->payload.main_uuid,
                visitor.ids->payload.recycler_uuid,
@@ -170,8 +170,8 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
             continue;
           }
 
-          VLOG(1) << "[Volume::recover] attaching client " << uuid << " to device "
-                  << arena.device().get_id();
+          LLFS_VLOG(1) << "[Volume::recover] attaching client " << uuid << " to device "
+                       << arena.device().get_id();
 
           StatusOr<slot_offset_type> sync_slot =
               arena.allocator().attach_user(uuid, /*user_slot=*/0u);
@@ -308,7 +308,8 @@ void Volume::start()
     this->trimmer_task_.emplace(/*executor=*/batt::Runtime::instance().schedule_task(),
                                 [this] {
                                   Status result = this->trimmer_.run();
-                                  VLOG(1) << "Volume::trimmer_task_ exited with status=" << result;
+                                  LLFS_VLOG(1)
+                                      << "Volume::trimmer_task_ exited with status=" << result;
                                 },
                                 "Volume::trimmer_task_");
   }

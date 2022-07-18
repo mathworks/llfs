@@ -19,7 +19,7 @@
 #include <batteries/async/types.hpp>
 #include <batteries/type_traits.hpp>
 
-#include <glog/logging.h>
+#include <llfs/logging.hpp>
 
 #include <functional>
 

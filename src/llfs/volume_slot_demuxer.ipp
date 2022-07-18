@@ -56,7 +56,7 @@ StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_raw_data(const SlotParse& slot,
     this->mark_slot_visited(slot);
   });
 
-  VLOG(1) << "on_raw_data(" << BATT_INSPECT(slot) << ")";
+  LLFS_VLOG(1) << "on_raw_data(" << BATT_INSPECT(slot) << ")";
 
   Status status = this->visitor_fn_(slot, raw_data_from_slot(slot, raw.pointer()));
   BATT_REQUIRE_OK(status);
@@ -73,7 +73,7 @@ StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_prepare_job(
     this->mark_slot_visited(slot);
   });
 
-  VLOG(1) << "on_prepare_job(" << BATT_INSPECT(slot) << ")";
+  LLFS_VLOG(1) << "on_prepare_job(" << BATT_INSPECT(slot) << ")";
 
   const auto [iter, inserted] = this->pending_jobs_.emplace(
       slot.offset.lower_bound, SlotParseWithPayload<Ref<const PackedPrepareJob>>{
@@ -98,7 +98,7 @@ StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_commit_job(const SlotParse& slot,
     this->mark_slot_visited(slot);
   });
 
-  VLOG(1) << "on_commit_job(" << BATT_INSPECT(slot) << ")";
+  LLFS_VLOG(1) << "on_commit_job(" << BATT_INSPECT(slot) << ")";
 
   auto iter = this->pending_jobs_.find(commit.prepare_slot);
   if (iter != this->pending_jobs_.end()) {
@@ -132,7 +132,7 @@ StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_rollback_job(
     this->mark_slot_visited(slot);
   });
 
-  VLOG(1) << "on_rollback_job(" << BATT_INSPECT(slot) << ")";
+  LLFS_VLOG(1) << "on_rollback_job(" << BATT_INSPECT(slot) << ")";
 
   this->pending_jobs_.erase(rollback.prepare_slot);
 
@@ -149,7 +149,7 @@ StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_volume_attach(
     this->mark_slot_visited(slot);
   });
 
-  VLOG(1) << "on_volume_attach(" << BATT_INSPECT(slot) << ")";
+  LLFS_VLOG(1) << "on_volume_attach(" << BATT_INSPECT(slot) << ")";
 
   return this->base_.on_volume_attach(slot, attach);
 }
@@ -164,7 +164,7 @@ StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_volume_detach(
     this->mark_slot_visited(slot);
   });
 
-  VLOG(1) << "on_volume_detach(" << BATT_INSPECT(slot) << ")";
+  LLFS_VLOG(1) << "on_volume_detach(" << BATT_INSPECT(slot) << ")";
 
   return this->base_.on_volume_detach(slot, detach);
 }
@@ -179,7 +179,7 @@ StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_volume_ids(const SlotParse& slot,
     this->mark_slot_visited(slot);
   });
 
-  VLOG(1) << "on_volume_ids(" << BATT_INSPECT(slot) << ")";
+  LLFS_VLOG(1) << "on_volume_ids(" << BATT_INSPECT(slot) << ")";
 
   return this->base_.on_volume_ids(slot, ids);
 }
@@ -194,7 +194,7 @@ StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_volume_recovered(
     this->mark_slot_visited(slot);
   });
 
-  VLOG(1) << "on_volume_recovered(" << BATT_INSPECT(slot) << ")";
+  LLFS_VLOG(1) << "on_volume_recovered(" << BATT_INSPECT(slot) << ")";
 
   this->pending_jobs_.clear();
 
@@ -211,7 +211,7 @@ StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_volume_format_upgrade(
     this->mark_slot_visited(slot);
   });
 
-  VLOG(1) << "on_volume_format_upgrade(" << BATT_INSPECT(slot) << ")";
+  LLFS_VLOG(1) << "on_volume_format_upgrade(" << BATT_INSPECT(slot) << ")";
 
   return this->base_.on_volume_format_upgrade(slot, upgrade);
 }

@@ -98,7 +98,7 @@ StatusOr<SlotRange> refresh_recycler_info_slot(TypedSlotWriter<PageRecycleEvent>
         StatusOr<usize> slots_recovered = slot_reader.run(batt::WaitForResource::kFalse, visitor);
         BATT_REQUIRE_OK(slots_recovered);
 
-        VLOG(1) << "PageRecycler recovered log: " << BATT_INSPECT(*slots_recovered);
+        LLFS_VLOG(1) << "PageRecycler recovered log: " << BATT_INSPECT(*slots_recovered);
 
         return log_reader.slot_offset();
       });
@@ -186,7 +186,7 @@ PageRecycler::PageRecycler(batt::TaskScheduler& scheduler, const std::string& na
 //
 PageRecycler::~PageRecycler() noexcept
 {
-  VLOG(1) << "PageRecycler::~PageRecycler() ENTERED";
+  LLFS_VLOG(1) << "PageRecycler::~PageRecycler() ENTERED";
 
   this->halt();
   this->join();
@@ -195,7 +195,7 @@ PageRecycler::~PageRecycler() noexcept
       .remove(this->metrics_.insert_count)
       .remove(this->metrics_.remove_count);
 
-  VLOG(1) << "PageRecycler::~PageRecycler() RETURNING";
+  LLFS_VLOG(1) << "PageRecycler::~PageRecycler() RETURNING";
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -235,8 +235,8 @@ void PageRecycler::join()
 StatusOr<slot_offset_type> PageRecycler::recycle_pages(const Slice<const PageId>& page_ids,
                                                        batt::Grant* grant, u32 depth)
 {
-  VLOG(1) << "PageRecycler::recycle_pages(page_ids=" << batt::dump_range(page_ids) << ") "
-          << this->name_;
+  LLFS_VLOG(1) << "PageRecycler::recycle_pages(page_ids=" << batt::dump_range(page_ids) << ") "
+               << this->name_;
 
   if (page_ids.empty()) {
     return this->wal_device_->slot_range(LogReadMode::kDurable).upper_bound;
@@ -265,7 +265,7 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(const Slice<const PageId>
       }();
       if (!local_grant.ok()) {
         if (!suppress_log_output_for_test() && !this->stop_requested_.load()) {
-          LOG(WARNING) << "PageRecycler::recycle_pages failed; not enough log buffer space";
+          LLFS_LOG_WARNING() << "PageRecycler::recycle_pages failed; not enough log buffer space";
         }
       }
       BATT_REQUIRE_OK(local_grant);
@@ -327,7 +327,7 @@ StatusOr<slot_offset_type> PageRecycler::insert_to_log(
     StatusOr<SlotRange> append_slot = this->slot_writer_.append(grant, item);
     BATT_REQUIRE_OK(append_slot);
     last_slot = slot_max(last_slot, append_slot->upper_bound);
-    VLOG(1) << "Write " << item << " to the log; last_slot=" << last_slot;
+    LLFS_VLOG(1) << "Write " << item << " to the log; last_slot=" << last_slot;
   }
   BATT_CHECK_NE(this->slot_writer_.slot_offset(), current_slot);
 
@@ -362,15 +362,15 @@ void PageRecycler::start_recycle_task()
 //
 void PageRecycler::refresh_grants()
 {
-  VLOG(1) << "PageRecycler::refresh_grants() ENTERED";
+  LLFS_VLOG(1) << "PageRecycler::refresh_grants() ENTERED";
 
   u64 available = this->slot_writer_.pool_size();
-  VLOG(1) << " -- " << BATT_INSPECT(available);
+  LLFS_VLOG(1) << " -- " << BATT_INSPECT(available);
 
   const PageRecyclerOptions& options = this->state_.no_lock().options;
 
-  VLOG(1) << " -- " << BATT_INSPECT(this->recycle_task_grant_.size())
-          << BATT_INSPECT(options.recycle_task_target());
+  LLFS_VLOG(1) << " -- " << BATT_INSPECT(this->recycle_task_grant_.size())
+               << BATT_INSPECT(options.recycle_task_target());
 
   if (this->recycle_task_grant_.size() < options.recycle_task_target()) {
     const auto target_delta =
@@ -391,7 +391,7 @@ void PageRecycler::refresh_grants()
     this->recycle_task_grant_.subsume(std::move(*tmp));
   }
 
-  VLOG(1) << " -- " << BATT_INSPECT(available) << " (after reserving for recycle_task)";
+  LLFS_VLOG(1) << " -- " << BATT_INSPECT(available) << " (after reserving for recycle_task)";
 
   if (available > 0) {
     if (this->stop_requested_) {
@@ -408,7 +408,7 @@ void PageRecycler::refresh_grants()
     this->insert_grant_pool_.subsume(std::move(grant));
   }
 
-  VLOG(1) << " -- " << BATT_INSPECT(this->insert_grant_pool_);
+  LLFS_VLOG(1) << " -- " << BATT_INSPECT(this->insert_grant_pool_);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -475,12 +475,12 @@ void PageRecycler::recycle_task_main()
   }();
 
   if (this->stop_requested_.load()) {
-    VLOG(1) << "[PageRecycler::recycle_task] exited with status code= "
-            << this->recycle_task_status_;
+    LLFS_VLOG(1) << "[PageRecycler::recycle_task] exited with status code= "
+                 << this->recycle_task_status_;
   } else {
     if (!suppress_log_output_for_test()) {
-      LOG(WARNING) << "[PageRecycler::recycle_task] exited, no stop requested; code= "
-                   << this->recycle_task_status_;
+      LLFS_LOG_WARNING() << "[PageRecycler::recycle_task] exited, no stop requested; code= "
+                         << this->recycle_task_status_;
     }
     this->page_deleter_.notify_failure(*this, this->recycle_task_status_);
   }
@@ -490,7 +490,7 @@ void PageRecycler::recycle_task_main()
 //
 StatusOr<PageRecycler::Batch> PageRecycler::prepare_batch(std::vector<PageToRecycle>&& to_recycle)
 {
-  VLOG(1) << "Preparing Batch: " << batt::dump_range(to_recycle);
+  LLFS_VLOG(1) << "Preparing Batch: " << batt::dump_range(to_recycle);
 
   const PageRecyclerOptions& options = this->state_.no_lock().options;
 
@@ -510,9 +510,9 @@ StatusOr<PageRecycler::Batch> PageRecycler::prepare_batch(std::vector<PageToRecy
       return Status{batt::StatusCode::kCancelled};
     }
 
-    VLOG(1) << "[PageRecycler::recycle_task] writing remove slot: " << next_page
-            << BATT_INSPECT(batch.slot_offset) << BATT_INSPECT(this->recycle_task_grant_.size())
-            << " " << this->name_;
+    LLFS_VLOG(1) << "[PageRecycler::recycle_task] writing remove slot: " << next_page
+                 << BATT_INSPECT(batch.slot_offset)
+                 << BATT_INSPECT(this->recycle_task_grant_.size()) << " " << this->name_;
 
     StatusOr<SlotRange> append_slot = this->slot_writer_.append(
         this->recycle_task_grant_, PackedRecyclePagePrepare{
@@ -537,7 +537,7 @@ StatusOr<PageRecycler::Batch> PageRecycler::prepare_batch(std::vector<PageToRecy
   Status flush_status = this->await_flush(*sync_upper_bound);
   BATT_REQUIRE_OK(flush_status);
 
-  VLOG(1) << "Batch Prepared; slot=" << batch.slot_offset;
+  LLFS_VLOG(1) << "Batch Prepared; slot=" << batch.slot_offset;
 
   return batch;
 }
@@ -546,7 +546,7 @@ StatusOr<PageRecycler::Batch> PageRecycler::prepare_batch(std::vector<PageToRecy
 //
 Status PageRecycler::commit_batch(const Batch& batch)
 {
-  VLOG(1) << "Committing Batch: " << batch;
+  LLFS_VLOG(1) << "Committing Batch: " << batch;
 
   // Recycle the pages inside a job.
   //
@@ -572,8 +572,9 @@ Status PageRecycler::commit_batch(const Batch& batch)
     return Status{StatusCode::kRecyclerStopped};
   }
 
-  VLOG(1) << "[PageRecycler::commit_batch] delete_pages OK; "
-          << BATT_INSPECT(this->recycle_task_grant_.size()) << BATT_INSPECT(this->stop_requested_);
+  LLFS_VLOG(1) << "[PageRecycler::commit_batch] delete_pages OK; "
+               << BATT_INSPECT(this->recycle_task_grant_.size())
+               << BATT_INSPECT(this->stop_requested_);
 
   // Write the Committed slot.
   //
@@ -583,14 +584,14 @@ Status PageRecycler::commit_batch(const Batch& batch)
                                                            });
   BATT_REQUIRE_OK(append_slot);
 
-  VLOG(1) << "[PageRecycler::commit_batch] append Commit slot OK";
+  LLFS_VLOG(1) << "[PageRecycler::commit_batch] append Commit slot OK";
 
   Status flush_status = this->await_flush(append_slot->upper_bound);
   BATT_REQUIRE_OK(flush_status);
 
   this->latest_batch_upper_bound_ = append_slot->upper_bound;
 
-  VLOG(1) << "[PageRecycler::commit_batch] flush OK - done";
+  LLFS_VLOG(1) << "[PageRecycler::commit_batch] flush OK - done";
 
   return OkStatus();
 }
@@ -626,11 +627,11 @@ Status PageRecycler::trim_log()
   //
   if (options.info_needs_refresh(latest_info_slot, *this->wal_device_) ||
       trim_point > latest_info_slot) {
-    VLOG(1) << "[PageRecycler::recycle_task] refreshing info slot; "
-            << BATT_INSPECT(latest_info_slot) << BATT_INSPECT(lru_slot)
-            << BATT_INSPECT(this->latest_batch_upper_bound_) << BATT_INSPECT(trim_point)
-            << BATT_INSPECT(this->wal_device_->slot_range(LogReadMode::kSpeculative))
-            << BATT_INSPECT(this->wal_device_->slot_range(LogReadMode::kDurable));
+    LLFS_VLOG(1) << "[PageRecycler::recycle_task] refreshing info slot; "
+                 << BATT_INSPECT(latest_info_slot) << BATT_INSPECT(lru_slot)
+                 << BATT_INSPECT(this->latest_batch_upper_bound_) << BATT_INSPECT(trim_point)
+                 << BATT_INSPECT(this->wal_device_->slot_range(LogReadMode::kSpeculative))
+                 << BATT_INSPECT(this->wal_device_->slot_range(LogReadMode::kDurable));
 
     StatusOr<batt::Grant> info_slot_grant =
         this->recycle_task_grant_.spend(options.info_slot_size());
@@ -651,16 +652,16 @@ Status PageRecycler::trim_log()
     latest_info_slot = new_info_slot.lower_bound;
     this->state_.no_lock().latest_info_refresh_slot.set_value(latest_info_slot);
 
-    VLOG(1) << "[PageRecycler::recycle_task]  --> " << BATT_INSPECT(new_info_slot)
-            << BATT_INSPECT(this->wal_device_->slot_range(LogReadMode::kSpeculative))
-            << BATT_INSPECT(this->wal_device_->slot_range(LogReadMode::kDurable));
+    LLFS_VLOG(1) << "[PageRecycler::recycle_task]  --> " << BATT_INSPECT(new_info_slot)
+                 << BATT_INSPECT(this->wal_device_->slot_range(LogReadMode::kSpeculative))
+                 << BATT_INSPECT(this->wal_device_->slot_range(LogReadMode::kDurable));
   }
 
   // IMPORTANT - never trim off the latest info slot!
   //
   BATT_CHECK_LE(trim_point, latest_info_slot);
 
-  VLOG(1) << "trim_log: " << trim_point;
+  LLFS_VLOG(1) << "trim_log: " << trim_point;
 
   // Trim the log; MUST happen after the await_flush.
   //

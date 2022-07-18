@@ -124,7 +124,7 @@ template <typename MutableBufferSequence, typename Handler, typename>
 inline void IoRing::File::async_read_some(i64 offset, MutableBufferSequence&& buffers,
                                           Handler&& handler)
 {
-  DVLOG(1) << "async_read_some(mulitple buffers)";
+  LLFS_DVLOG(1) << "async_read_some(mulitple buffers)";
   this->io_->submit(BATT_FORWARD(buffers), BATT_FORWARD(handler),
                     [offset, this](struct io_uring_sqe* sqe, auto& op) {
                       if (this->registered_fd_ == -1) {
@@ -145,15 +145,15 @@ inline void IoRing::File::async_read_some(i64 offset, const MutableBuffer& buffe
 {
   static const std::vector<MutableBuffer> empty;
 
-  DVLOG(1) << "async_read_some(single buffer)";
+  LLFS_DVLOG(1) << "async_read_some(single buffer)";
   this->io_->submit(
       empty, BATT_FORWARD(handler),
       [&buffer, offset, this](struct io_uring_sqe* sqe, auto& /*op*/) {
         if (this->registered_fd_ == -1) {
           io_uring_prep_read(sqe, this->fd_, buffer.data(), buffer.size(), offset);
-          DVLOG(1) << "async_read_some - NOT registered fd " << BATT_INSPECT(int(sqe->flags));
+          LLFS_DVLOG(1) << "async_read_some - NOT registered fd " << BATT_INSPECT(int(sqe->flags));
         } else {
-          DVLOG(1) << "async_read_some - registered fd";
+          LLFS_DVLOG(1) << "async_read_some - registered fd";
           io_uring_prep_read(sqe, this->registered_fd_, buffer.data(), buffer.size(), offset);
           sqe->flags |= IOSQE_FIXED_FILE;
         }

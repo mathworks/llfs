@@ -9,7 +9,7 @@
 #include <llfs/file_log_driver.hpp>
 //
 
-#include <glog/logging.h>
+#include <llfs/logging.hpp>
 
 #include <boost/algorithm/string/predicate.hpp>
 

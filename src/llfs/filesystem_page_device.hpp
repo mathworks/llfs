@@ -15,7 +15,7 @@
 #include <llfs/optional.hpp>
 #include <llfs/page_device.hpp>
 
-#include <glog/logging.h>
+#include <llfs/logging.hpp>
 
 #include <batteries/assert.hpp>
 

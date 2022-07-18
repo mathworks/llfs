@@ -67,7 +67,7 @@ StatusOr<Optional<PageRecycler::Batch>> PageRecyclerRecoveryVisitor::consume_lat
     //
     auto iter = this->recovered_pages_.find(page_id);
     if (iter == this->recovered_pages_.end()) {
-      LOG(WARNING) << "kBatchContainsUnknownPageDuringRecovery: " << page_id;
+      LLFS_LOG_WARNING() << "kBatchContainsUnknownPageDuringRecovery: " << page_id;
       return Status{StatusCode::kBatchContainsUnknownPageDuringRecovery};
     }
 
@@ -101,7 +101,7 @@ Optional<SlotRange> PageRecyclerRecoveryVisitor::latest_info_refresh_slot() cons
 Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
                                                const PageToRecycle& to_recycle)
 {
-  VLOG(1) << "Recovered slot: |" << slot.offset << "| " << to_recycle;
+  LLFS_VLOG(1) << "Recovered slot: |" << slot.offset << "| " << to_recycle;
 
   this->recovered_pages_[to_recycle.page_id] = to_recycle;
   return OkStatus();
@@ -112,14 +112,15 @@ Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
 Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
                                                const PackedRecyclePagePrepare& prepare)
 {
-  VLOG(1) << "Recovered slot: |" << slot.offset << "| " << prepare;
+  LLFS_VLOG(1) << "Recovered slot: |" << slot.offset << "| " << prepare;
 
   // Validate the new prepared page against the current batch (or start one).
   //
   if (this->latest_batch_slot_) {
     if (prepare.batch_slot != *this->latest_batch_slot_) {
-      LOG(WARNING) << "kTooManyPendingBatchesDuringRecovery" << BATT_INSPECT(prepare.batch_slot)
-                   << BATT_INSPECT(*this->latest_batch_slot_);
+      LLFS_LOG_WARNING() << "kTooManyPendingBatchesDuringRecovery"
+                         << BATT_INSPECT(prepare.batch_slot)
+                         << BATT_INSPECT(*this->latest_batch_slot_);
       return Status{StatusCode::kTooManyPendingBatchesDuringRecovery};
     }
   } else {
@@ -137,14 +138,14 @@ Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
 Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
                                                const PackedRecycleBatchCommit& commit)
 {
-  VLOG(1) << "Recovered slot: |" << slot.offset << "| " << commit;
+  LLFS_VLOG(1) << "Recovered slot: |" << slot.offset << "| " << commit;
 
   // It's OK if the latest prepared batch has been trimmed off the log; but if we *can* see it, then
   // validate that the batch slots match here.
   //
   if (this->latest_batch_slot_ && *this->latest_batch_slot_ != commit.batch_slot) {
-    LOG(WARNING) << "kInvalidBatchCommitDuringRecovery: " << BATT_INSPECT(this->latest_batch_slot_)
-                 << BATT_INSPECT(commit.batch_slot);
+    LLFS_LOG_WARNING() << "kInvalidBatchCommitDuringRecovery: "
+                       << BATT_INSPECT(this->latest_batch_slot_) << BATT_INSPECT(commit.batch_slot);
     return Status{StatusCode::kInvalidBatchCommitDuringRecovery};
   }
   this->latest_batch_slot_ = None;
@@ -157,7 +158,7 @@ Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
 Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
                                                const PackedPageRecyclerInfo& info)
 {
-  VLOG(1) << "Recovered slot: |" << slot.offset << "| " << info;
+  LLFS_VLOG(1) << "Recovered slot: |" << slot.offset << "| " << info;
 
   this->latest_info_refresh_slot_ = slot.offset;
 

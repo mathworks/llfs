@@ -84,6 +84,23 @@ constexpr usize kPageBufferPoolSize = 256;
 //
 constexpr usize kPageBufferPoolLevels = 32;
 
+// Used in the code to react to debug/release builds.
+//
+#ifndef NDEBUG
+constexpr bool kDebugBuild = true;
+#else
+constexpr bool kDebugBuild = false;
+#endif
+
+// Logging configuration; uncomment one of the lines below to select the logging implementation.
+//
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+//#define LLFS_DISABLE_LOGGING
+//#define LLFS_USE_BOOST_LOG
+#define LLFS_USE_GLOG
+//#define LLFS_USE_SELF_LOGGING
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+
 }  // namespace llfs
 
 #endif  // LLFS_CONFIG_HPP

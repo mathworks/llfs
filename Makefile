@@ -6,7 +6,7 @@ endif
 
 build: | install
 	mkdir -p build/$(BUILD_TYPE)
-	(cd build/$(BUILD_TYPE) && conan build ../..)
+	(cd build/$(BUILD_TYPE) && time -f "Build Time: %e seconds." conan build ../..)
 
 test: build
 	mkdir -p build/$(BUILD_TYPE)

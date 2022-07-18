@@ -219,7 +219,7 @@ class FakePageDeleter : public PageDeleter
               << BATT_INSPECT(fake_child) << BATT_INSPECT(fake_page) << BATT_INSPECT(caller_slot);
           BATT_CHECK(!fake_child.deleted) << BATT_INSPECT(fake_child) << BATT_INSPECT(fake_page);
 
-          VLOG(1) << "dereferencing " << fake_child << BATT_INSPECT(caller_slot);
+          LLFS_VLOG(1) << "dereferencing " << fake_child << BATT_INSPECT(caller_slot);
           fake_child.in_ref_count.fetch_sub(1);
         }
 
@@ -259,7 +259,7 @@ class FakePageDeleter : public PageDeleter
     for (const PageToRecycle& next : to_delete) {
       BATT_CHECK_EQ(next.depth, depth);
       FakePage& fake_page = *this->test_->fake_pages_[next.page_id];
-      VLOG(1) << "deleting " << fake_page << " at recycler slot " << caller_slot;
+      LLFS_VLOG(1) << "deleting " << fake_page << " at recycler slot " << caller_slot;
       fake_page.deleted = true;
     }
 
@@ -268,7 +268,7 @@ class FakePageDeleter : public PageDeleter
 
   void notify_caught_up(PageRecycler& recycler, slot_offset_type slot) override
   {
-    VLOG(1) << "CAUGHT UP ==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -";
+    LLFS_VLOG(1) << "CAUGHT UP ==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -";
 
     const boost::uuids::uuid& caller_uuid = recycler.uuid();
     auto iter = this->current_slot_.find(caller_uuid);
@@ -321,7 +321,7 @@ void PageRecyclerTest::run_crash_recovery_test()
     this->generate_fake_pages(rng, fake_page_count, max_branching_factor);
 
     const u64 log_size = PageRecycler::calculate_log_size(MaxRefsPerPage{max_branching_factor});
-    VLOG(1) << BATT_INSPECT(log_size);
+    LLFS_VLOG(1) << BATT_INSPECT(log_size);
 
     MemoryLogDevice mem_log{log_size};
 
@@ -345,9 +345,10 @@ void PageRecyclerTest::run_crash_recovery_test()
 
     fake_log_state->failure_time = pick_failure_time(rng);
 
-    VLOG(1) << BATT_INSPECT(seed) << " PageRecycler created; "
-            << BATT_INSPECT(fake_log_state->device_time)
-            << BATT_INSPECT(fake_log_state->failure_time) << " (max=" << max_failure_time << ")";
+    LLFS_VLOG(1) << BATT_INSPECT(seed) << " PageRecycler created; "
+                 << BATT_INSPECT(fake_log_state->device_time)
+                 << BATT_INSPECT(fake_log_state->failure_time) << " (max=" << max_failure_time
+                 << ")";
 
     PageRecycler& recycler = **status_or_recycler;
     this->recycler_ = &recycler;
@@ -466,8 +467,8 @@ void PageRecyclerTest::run_crash_recovery_test()
     ASSERT_FALSE(failed);
     ASSERT_NO_FATAL_FAILURE(flush_all_events());
 
-    VLOG(1) << "Run Finished" << BATT_INSPECT(seed)
-            << BATT_INSPECT(fake_recovered_log_state->device_time);
+    LLFS_VLOG(1) << "Run Finished" << BATT_INSPECT(seed)
+                 << BATT_INSPECT(fake_recovered_log_state->device_time);
   }
 }
 

@@ -32,7 +32,7 @@
 #include <llfs/slot_read_lock.hpp>
 #include <llfs/status.hpp>
 
-#include <glog/logging.h>
+#include <llfs/logging.hpp>
 
 #include <batteries/assert.hpp>
 #include <batteries/async/latch.hpp>

@@ -143,7 +143,7 @@ void PageCacheJob::pin_new_if_needed(PageId page_id,
 //
 void PageCacheJob::unpin(PageId id)
 {
-  LOG(INFO) << "PageCacheJob::unpin(" << id << ")";
+  LLFS_VLOG(1) << "PageCacheJob::unpin(" << id << ")";
   this->pinned_.erase(id);
 }
 
@@ -181,8 +181,8 @@ StatusOr<PinnedPage> PageCacheJob::get(PageId page_id,
                                          "inside `pin_new`; possible race condition?  (remember, "
                                          "PageCacheJob is not thread-safe)";
 
-      LOG(WARNING) << "The specified page has not yet been built/pinned to the job."
-                   << BATT_INSPECT(page_id);
+      LLFS_LOG_WARNING() << "The specified page has not yet been built/pinned to the job."
+                         << BATT_INSPECT(page_id);
 
       return Status{batt::StatusCode::kUnavailable};  // TODO [tastolfi 2021-10-20]
     }

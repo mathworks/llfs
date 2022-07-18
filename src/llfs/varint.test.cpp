@@ -13,7 +13,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include <glog/logging.h>
+#include <llfs/logging.hpp>
 
 #include <llfs/data_reader.hpp>
 
@@ -59,7 +59,7 @@ TEST(VarIntTest, RandomValues)
   u64 max_value = (1ull << 7) - 1;
 
   for (usize nbytes = 1; nbytes <= 10; ++nbytes) {
-    VLOG(1) << "\n" << std::bitset<64>{min_value} << "..\n" << std::bitset<64>{max_value};
+    LLFS_VLOG(1) << "\n" << std::bitset<64>{min_value} << "..\n" << std::bitset<64>{max_value};
     std::uniform_int_distribution<u64> pick_number{min_value, max_value};
     for (usize i = 0; i < 10000; ++i) {
       u64 n = pick_number(rng);

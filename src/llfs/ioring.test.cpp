@@ -69,13 +69,13 @@ TEST(Ioring, Test)
 
   for (u64 offset = 0; offset < 1 * kMiB; offset += 512 * 100) {
     if (offset % (100 * 10 * kMiB) == 0) {
-      LOG(INFO) << BATT_INSPECT(offset);
+      LLFS_LOG_INFO() << BATT_INSPECT(offset);
     }
     bool ok = false;
     f.async_write_some(
         offset, std::array{ConstBuffer{data, 512}}, /*handler=*/[&](StatusOr<i32> result) {
           if (!result.ok()) {
-            LOG(INFO) << "write failed: " << result.status();
+            LLFS_LOG_INFO() << "write failed: " << result.status();
             return;
           }
           EXPECT_EQ(*result, 512);
@@ -110,7 +110,7 @@ TEST(Ioring, DISABLED_BlockDev)
 
   ASSERT_GE(fd, 0) << std::strerror(errno);
 
-  LOG(INFO) << BATT_INSPECT(fd) << BATT_INSPECT(fd2);
+  LLFS_LOG_INFO() << BATT_INSPECT(fd) << BATT_INSPECT(fd2);
   close(fd2);
 
   using llfs::PageBuffer;
@@ -126,8 +126,8 @@ TEST(Ioring, DISABLED_BlockDev)
 
   IoRing::File f{*io, fd};
 
-  LOG(INFO) << "==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -";
-  LOG(INFO) << "start (uring)";
+  LLFS_LOG_INFO() << "==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -";
+  LLFS_LOG_INFO() << "start (uring)";
   ConstBuffer data = buf;
   Watch<i64> sem{0};
   for (u64 off = 0; off < 40 * kGiB;) {
@@ -136,13 +136,13 @@ TEST(Ioring, DISABLED_BlockDev)
       BATT_CHECK(result.ok());
       off += *result;
       if (off % 10000 * kMiB == 0) {
-        LOG(INFO) << BATT_INSPECT(off);
+        LLFS_LOG_INFO() << BATT_INSPECT(off);
       }
       sem.set_value(1);
     });
     BATT_CHECK(sem.await_equal(1).ok());
   }
-  LOG(INFO) << "done (uring)";
+  LLFS_LOG_INFO() << "done (uring)";
 
   t.detach();
 }

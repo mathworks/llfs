@@ -81,7 +81,7 @@ TEST(BloomFilterTest, RandomItems)
       items.emplace_back(make_random_word(rng));
     }
     for (const auto& s : as_slice(items.data(), 40)) {
-      VLOG(1) << "sample random word: " << s;
+      LLFS_VLOG(1) << "sample random word: " << s;
     }
     std::sort(items.begin(), items.end());
 
@@ -96,9 +96,9 @@ TEST(BloomFilterTest, RandomItems)
 
       const double actual_bit_rate = double(filter->word_count() * 64) / double(items.size());
 
-      VLOG(1) << BATT_INSPECT(n_items) << " (target)" << BATT_INSPECT(bits_per_item)
-              << BATT_INSPECT(filter->word_count_mask) << BATT_INSPECT(filter->hash_count)
-              << " bit_rate == " << actual_bit_rate;
+      LLFS_VLOG(1) << BATT_INSPECT(n_items) << " (target)" << BATT_INSPECT(bits_per_item)
+                   << BATT_INSPECT(filter->word_count_mask) << BATT_INSPECT(filter->hash_count)
+                   << " bit_rate == " << actual_bit_rate;
 
       {
         LatencyTimer build_timer{build_latency, items.size()};
@@ -147,11 +147,11 @@ TEST(BloomFilterTest, RandomItems)
         << BATT_INSPECT(s.second.actual_rate()) << BATT_INSPECT(s.second.expected_rate);
   }
 
-  LOG(INFO) << "build latency (per key) == " << build_latency
-            << " build rate (keys/sec) == " << build_latency.rate_per_second();
+  LLFS_LOG_INFO() << "build latency (per key) == " << build_latency
+                  << " build rate (keys/sec) == " << build_latency.rate_per_second();
 
-  LOG(INFO) << "normalized query latency (per key*bit) == " << query_latency
-            << " query rate (key*bits/sec) == " << query_latency.rate_per_second();
+  LLFS_LOG_INFO() << "normalized query latency (per key*bit) == " << query_latency
+                  << " query rate (key*bits/sec) == " << query_latency.rate_per_second();
 }
 
 }  // namespace

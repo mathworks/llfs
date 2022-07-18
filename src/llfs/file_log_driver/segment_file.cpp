@@ -11,13 +11,13 @@
 
 #include <llfs/filesystem.hpp>
 
-#include <glog/logging.h>
+#include <llfs/logging.hpp>
 
 namespace llfs {
 
 Status FileLogDriver::SegmentFile::remove()
 {
-  VLOG(1) << "trimming log segment file: " << this->file_name;
+  LLFS_VLOG(1) << "trimming log segment file: " << this->file_name;
   return delete_file(this->file_name);
 }
 

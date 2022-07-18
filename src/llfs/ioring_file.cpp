@@ -77,12 +77,12 @@ Status IoRing::File::write_all(i64 offset, ConstBuffer buffer)
 Status IoRing::File::read_all(i64 offset, MutableBuffer buffer)
 {
   while (buffer.size() != 0) {
-    DVLOG(1) << "IoRing::File::read_all about to async_read_some; " << BATT_INSPECT(offset)
-             << BATT_INSPECT((void*)buffer.data()) << BATT_INSPECT(buffer.size());
+    LLFS_DVLOG(1) << "IoRing::File::read_all about to async_read_some; " << BATT_INSPECT(offset)
+                  << BATT_INSPECT((void*)buffer.data()) << BATT_INSPECT(buffer.size());
     StatusOr<i32> n_read = batt::Task::await<StatusOr<i32>>([&](auto&& handler) {
       this->async_read_some(offset, buffer, BATT_FORWARD(handler));
     });
-    DVLOG(1) << BATT_INSPECT(n_read);
+    LLFS_DVLOG(1) << BATT_INSPECT(n_read);
     BATT_REQUIRE_OK(n_read);
     offset += *n_read;
     buffer += *n_read;

@@ -10,7 +10,7 @@
 #ifndef LLFS_DATA_LAYOUT_HPP
 #define LLFS_DATA_LAYOUT_HPP
 
-#include <glog/logging.h>
+#include <llfs/logging.hpp>
 
 #include <llfs/buffer.hpp>
 #include <llfs/define_packed_type.hpp>

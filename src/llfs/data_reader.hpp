@@ -24,7 +24,7 @@
 #include <llfs/packed_bytes.hpp>
 #include <llfs/packed_variant.hpp>
 
-#include <glog/logging.h>
+#include <llfs/logging.hpp>
 
 #include <batteries/assert.hpp>
 #include <batteries/type_traits.hpp>
@@ -211,8 +211,8 @@ class DataReader
     const usize items_size = sizeof(T) * usize{packed_array->item_count.value()};
 
     if (this->bytes_available() < items_size) {
-      DLOG(WARNING) << "ran out of data while reading array with item_count="
-                    << packed_array->item_count.value();
+      LLFS_DLOG_WARNING() << "ran out of data while reading array with item_count="
+                          << packed_array->item_count.value();
       return nullptr;
     }
 

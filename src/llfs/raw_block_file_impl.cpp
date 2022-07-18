@@ -52,9 +52,9 @@ namespace llfs {
 //
 StatusOr<i64> IoRingRawBlockFile::write_some(i64 offset, const ConstBuffer& data) /*override*/
 {
-  VLOG(1) << "IoRingRawBlockFile::write_some(" << BATT_INSPECT(offset) << ", "
-          << BATT_INSPECT(data.size()) << ")";
-  VLOG(2) << "  data=" << batt::dump_hex(data.data(), data.size());
+  LLFS_VLOG(1) << "IoRingRawBlockFile::write_some(" << BATT_INSPECT(offset) << ", "
+               << BATT_INSPECT(data.size()) << ")";
+  LLFS_VLOG(2) << "  data=" << batt::dump_hex(data.data(), data.size());
 
   StatusOr<i64> result = batt::Task::await<batt::StatusOr<i64>>([&](auto&& handler) {
     this->file_.async_write_some(offset, data, BATT_FORWARD(handler));
@@ -73,8 +73,8 @@ StatusOr<i64> IoRingRawBlockFile::write_some(i64 offset, const ConstBuffer& data
 //
 StatusOr<i64> IoRingRawBlockFile::read_some(i64 offset, const MutableBuffer& buffer) /*override*/
 {
-  VLOG(1) << "IoRingRawBlockFile::read_some(" << BATT_INSPECT(offset) << ", "
-          << BATT_INSPECT(buffer.size()) << ")";
+  LLFS_VLOG(1) << "IoRingRawBlockFile::read_some(" << BATT_INSPECT(offset) << ", "
+               << BATT_INSPECT(buffer.size()) << ")";
 
   return batt::Task::await<batt::StatusOr<i64>>([&](auto&& handler) {
     this->file_.async_read_some(offset, buffer, BATT_FORWARD(handler));

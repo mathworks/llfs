@@ -142,7 +142,8 @@ class PageAllocator
           BATT_CHECK(packed_ref_counts.pack_item(prc));
         });
 
-    VLOG(2) << "updating ref counts: " << batt::dump_range(txn->ref_counts, batt::Pretty::True);
+    LLFS_VLOG(2) << "updating ref counts: "
+                 << batt::dump_range(txn->ref_counts, batt::Pretty::True);
 
     StatusOr<slot_offset_type> update_status = this->update(*txn);
     BATT_REQUIRE_OK(update_status);
@@ -177,7 +178,7 @@ class PageAllocator
           seq::for_each(BATT_FORWARD(garbage_collect_fn));
     }
 
-    VLOG(2) << [&](std::ostream& out) {
+    LLFS_VLOG(2) << [&](std::ostream& out) {
       auto& state = this->state_.no_lock();
       for (const auto& prc : txn->ref_counts) {
         out << prc << " -> " << state.get_ref_count_obj(PageId{prc.page_id}).ref_count;

@@ -12,7 +12,7 @@
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 // Must be first
-#include <glog/logging.h>
+#include <llfs/logging.hpp>
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
 #include <llfs/buffer.hpp>

@@ -270,7 +270,7 @@ Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 c
   const PageCacheJob* job = this->job_.get();
   BATT_CHECK_NOT_NULLPTR(job);
 
-  VLOG(1) << "commit(PageCacheJob): entered";
+  LLFS_VLOG(1) << "commit(PageCacheJob): entered";
 
   // Make sure the job is pruned!
   //
@@ -329,7 +329,7 @@ Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 c
   Status drop_status = this->drop_deleted_pages(callers);
   BATT_REQUIRE_OK(drop_status);
 
-  VLOG(1) << "commit(PageCacheJob): done";
+  LLFS_VLOG(1) << "commit(PageCacheJob): done";
 
   success = true;
 
@@ -340,7 +340,7 @@ Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 c
 //
 Status CommittablePageCacheJob::write_new_pages(const JobCommitParams& params, u64 callers)
 {
-  VLOG(1) << "commit(PageCacheJob): writing new pages";
+  LLFS_VLOG(1) << "commit(PageCacheJob): writing new pages";
 
   if (this->job_->get_new_pages().empty()) {
     return OkStatus();
@@ -358,7 +358,7 @@ Status CommittablePageCacheJob::write_new_pages(const JobCommitParams& params, u
   batt::Watch<i64> done_counter{0};
   const usize n_ops = job->get_new_pages().size();
   auto ops = PageWriteOp::allocate_array(n_ops, done_counter);
-  VLOG(1) << "commit(PageCacheJob): writing new pages";
+  LLFS_VLOG(1) << "commit(PageCacheJob): writing new pages";
   {
     usize i = 0;
     for (auto& p : job->get_new_pages()) {
@@ -374,7 +374,7 @@ Status CommittablePageCacheJob::write_new_pages(const JobCommitParams& params, u
       {
         std::shared_ptr<PageBuffer> mutable_page_buffer = new_page.buffer();
         if (mutable_page_buffer == nullptr) {
-          VLOG(1) << "Skipping page header update for recovered page " << page_id;
+          LLFS_VLOG(1) << "Skipping page header update for recovered page " << page_id;
         } else {
           {
             PackedPageUserSlot& user_slot =
@@ -443,7 +443,7 @@ auto CommittablePageCacheJob::start_ref_count_updates(const JobCommitParams& par
                                                       PageRefCountUpdates& updates, u64 /*callers*/)
     -> StatusOr<DeadPages>
 {
-  VLOG(1) << "commit(PageCacheJob): updating ref counts";
+  LLFS_VLOG(1) << "commit(PageCacheJob): updating ref counts";
 
   DeadPages dead_pages;
 
@@ -460,7 +460,7 @@ auto CommittablePageCacheJob::start_ref_count_updates(const JobCommitParams& par
         arena.allocator().update_page_ref_counts(
             *params.caller_uuid, params.caller_slot, as_seq(device_state.ref_count_updates),
             /*dead_page_fn=*/[&dead_pages](page_id_int dead_page_id) {
-              VLOG(1) << "(recycle event) page is now dead: " << std::hex << dead_page_id;
+              LLFS_VLOG(1) << "(recycle event) page is now dead: " << std::hex << dead_page_id;
               dead_pages.ids.emplace_back(PageId{dead_page_id});
             }));
     //
@@ -474,7 +474,7 @@ auto CommittablePageCacheJob::start_ref_count_updates(const JobCommitParams& par
 //
 Status CommittablePageCacheJob::await_ref_count_updates(const PageRefCountUpdates& updates)
 {
-  VLOG(1) << "commit(PageCacheJob): waiting on ref count sync";
+  LLFS_VLOG(1) << "commit(PageCacheJob): waiting on ref count sync";
 
   // Now wait for the allocator logs to flush.
   //
@@ -577,7 +577,8 @@ void CommittablePageCacheJob::hint_pages_obsolete(
 Status CommittablePageCacheJob::recycle_dead_pages(const JobCommitParams& params,
                                                    const DeadPages& dead_pages)
 {
-  VLOG(1) << "commit(PageCacheJob): recycling dead pages (count=" << dead_pages.ids.size() << ")";
+  LLFS_VLOG(1) << "commit(PageCacheJob): recycling dead pages (count=" << dead_pages.ids.size()
+               << ")";
 
   BATT_CHECK_NOT_NULLPTR(params.recycler.pointer());
 
@@ -585,7 +586,7 @@ Status CommittablePageCacheJob::recycle_dead_pages(const JobCommitParams& params
                         params.recycler.recycle_pages(as_slice(dead_pages.ids),
                                                       params.recycle_grant, params.recycle_depth));
 
-  VLOG(1) << "commit(PageCacheJob): waiting for PageRecycler sync point";
+  LLFS_VLOG(1) << "commit(PageCacheJob): waiting for PageRecycler sync point";
 
   return params.recycler.await_flush(recycler_sync_point);
   //
@@ -597,7 +598,7 @@ Status CommittablePageCacheJob::recycle_dead_pages(const JobCommitParams& params
 //
 Status CommittablePageCacheJob::drop_deleted_pages(u64 callers)
 {
-  VLOG(1) << "commit(PageCacheJob): dropping deleted pages";
+  LLFS_VLOG(1) << "commit(PageCacheJob): dropping deleted pages";
 
   const auto& deleted_pages = this->job_->get_deleted_pages();
 

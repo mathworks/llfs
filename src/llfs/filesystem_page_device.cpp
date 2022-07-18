@@ -9,7 +9,7 @@
 #include <llfs/filesystem_page_device.hpp>
 //
 
-#include <glog/logging.h>
+#include <llfs/logging.hpp>
 
 namespace llfs {
 
@@ -31,11 +31,11 @@ std::unique_ptr<FilesystemPageDevice> FilesystemPageDevice::erase(
   // Remove the contents of the parent directory.
   //
   for (auto& p : fs::directory_iterator(parent_dir)) {
-    LOG(INFO) << "Removing: " << p.path();
+    LLFS_LOG_INFO() << "Removing: " << p.path();
     std::error_code ec;
     fs::remove_all(p.path(), ec);
     if (ec) {
-      LOG(ERROR) << "  Failed to remove " << p.path() << ": " << ec;
+      LLFS_LOG_ERROR() << "  Failed to remove " << p.path() << ": " << ec;
       return nullptr;
     }
   }
@@ -60,12 +60,12 @@ std::unique_ptr<FilesystemPageDevice> FilesystemPageDevice::open(const fs::path&
   page_device_id_int device_id;
   u32 page_size;
 
-  LOG(INFO) << "opening FilesystemPageDevice at " << parent_dir;
+  LLFS_LOG_INFO() << "opening FilesystemPageDevice at " << parent_dir;
   {
     std::ifstream ifs(parent_dir / ".llfs");
     ifs >> capacity >> device_id >> page_size;
     if (ifs.bad()) {
-      PLOG(ERROR) << "page device config could not be read: " << (parent_dir / ".llfs");
+      LLFS_PLOG_ERROR() << "page device config could not be read: " << (parent_dir / ".llfs");
       return nullptr;
     }
   }
@@ -138,7 +138,7 @@ void FilesystemPageDevice::read(PageId id, ReadHandler&& handler)
 
     std::ifstream ifs(page_file_from_id(id));
     if (!ifs.good()) {
-      PLOG(FATAL) << "read of page: " << page_file_from_id(id) << " failed";
+      LLFS_PLOG_ERROR() << "read of page: " << page_file_from_id(id) << " failed";
       return Status{batt::StatusCode::kInternal};  // TODO [tastolfi 2021-10-20]  "I/O error opening
                                                    // page in filesystem"
     }
@@ -167,14 +167,14 @@ void FilesystemPageDevice::drop(PageId id, WriteHandler&& handler)
     fs::path page_file = page_file_from_id(id);
 
     if (!fs::remove(page_file, ec)) {
-      DLOG(WARNING) << "failed to delete file: " << page_file
-                    << " (is_live=" << this->live_.count(id) << ")";
+      LLFS_DLOG_WARNING() << "failed to delete file: " << page_file
+                          << " (is_live=" << this->live_.count(id) << ")";
       metrics().drop_false_count++;
       pre_dropped_.emplace(id);
     } else if (ec) {
       metrics().drop_error_count++;
-      DLOG(WARNING) << "drop page error: value=" << ec.value() << " message='" << ec.message()
-                    << "'";
+      LLFS_DLOG_WARNING() << "drop page error: value=" << ec.value() << " message='" << ec.message()
+                          << "'";
       return Status{
           batt::StatusCode::kInternal};  // TODO [tastolfi 2021-10-20]  "remove error; see log"
     }

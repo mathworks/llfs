@@ -54,8 +54,8 @@ Status PageCache::PageDeleterImpl::delete_pages(const Slice<const PageToRecycle>
   // Add the page to the job's delete list; this will load the page to verify
   // we can trace its refs.
   //
-  VLOG(1) << "[PageDeleterImpl::delete_pages] deleting: "
-          << batt::dump_range(to_delete, batt::Pretty::True);
+  LLFS_VLOG(1) << "[PageDeleterImpl::delete_pages] deleting: "
+               << batt::dump_range(to_delete, batt::Pretty::True);
 
   for (const PageToRecycle& next_page : to_delete) {
     Status pre_delete_status = job->delete_page(next_page.page_id);
@@ -238,7 +238,7 @@ StatusOr<std::shared_ptr<PageBuffer>> PageCache::allocate_page_of_size_log2(
 
       BATT_CHECK_EQ(PageIdFactory::get_device_id(*page_id), arena.id());
 
-      VLOG(1) << "allocated page " << *page_id;
+      LLFS_VLOG(1) << "allocated page " << *page_id;
 
       this->track_new_page_event(NewPageTracker{
           .ts = 0,
@@ -258,7 +258,7 @@ StatusOr<std::shared_ptr<PageBuffer>> PageCache::allocate_page_of_size_log2(
     }
   }
 
-  LOG(WARNING) << "No arena with free space could be found";
+  LLFS_LOG_WARNING() << "No arena with free space could be found";
   return Status{batt::StatusCode::kUnavailable};  // TODO [tastolfi 2021-10-20]
 }
 
@@ -266,7 +266,7 @@ StatusOr<std::shared_ptr<PageBuffer>> PageCache::allocate_page_of_size_log2(
 //
 void PageCache::deallocate_page(PageId page_id, u64 callers, u64 job_id)
 {
-  VLOG(1) << "deallocated page " << std::hex << page_id;
+  LLFS_VLOG(1) << "deallocated page " << std::hex << page_id;
 
   this->track_new_page_event(NewPageTracker{
       .ts = 0,
@@ -294,7 +294,8 @@ Status PageCache::attach(const boost::uuids::uuid& user_id, slot_offset_type slo
     for (const PageArena* p_arena : attached_arenas) {
       auto detach_status = p_arena->allocator().detach_user(user_id, slot_offset);
       if (!detach_status.ok()) {
-        LOG(ERROR) << "Failed to detach after failed attachement: " << BATT_INSPECT(p_arena->id());
+        LLFS_LOG_ERROR() << "Failed to detach after failed attachement: "
+                         << BATT_INSPECT(p_arena->id());
       }
     }
   });
@@ -526,11 +527,11 @@ auto PageCache::find_page_in_cache(PageId page_id, const Optional<PageLayoutId>&
 
           auto latch = std::move(captured_latch);
           if (!result.ok()) {
-            LOG(WARNING) << "recent events for" << BATT_INSPECT(page_id)
-                         << " (now=" << this->history_end_ << "):"
-                         << batt::dump_range(
-                                this->find_new_page_events(page_id) | seq::collect_vec(),
-                                batt::Pretty::True);
+            LLFS_LOG_WARNING() << "recent events for" << BATT_INSPECT(page_id)
+                               << " (now=" << this->history_end_ << "):"
+                               << batt::dump_range(
+                                      this->find_new_page_events(page_id) | seq::collect_vec(),
+                                      batt::Pretty::True);
             latch->set_value(result.status());
             return;
           }

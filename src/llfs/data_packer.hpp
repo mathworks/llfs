@@ -177,7 +177,7 @@ class DataPacker
   Optional<ArrayPacker<R>> pack_seq(Seq&& seq)
   {
     if (full_ || this->space() < packed_array_size<R>(batt::make_copy(seq) | seq::count())) {
-      DLOG(INFO) << "pack_seq - space check failed";
+      LLFS_DLOG_INFO() << "pack_seq - space check failed";
       return None;
     }
 

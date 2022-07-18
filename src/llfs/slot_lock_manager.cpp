@@ -191,7 +191,7 @@ void SlotLockManager::update_lower_bound_locked(batt::Mutex<State>::Lock& locked
 {
   if (!locked->lock_heap_.empty()) {
     const slot_offset_type trim_pos = get_slot_offset(locked->lock_heap_.top());
-    DVLOG(1) << BATT_INSPECT((void*)this) << BATT_INSPECT(trim_pos);
+    LLFS_DVLOG(1) << BATT_INSPECT((void*)this) << BATT_INSPECT(trim_pos);
     BATT_CHECK_GE(trim_pos, this->lower_bound_.get_value())
         << "the locked lower bound must never move backwards!";
     this->lower_bound_.set_value(trim_pos);

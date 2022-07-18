@@ -73,7 +73,7 @@ class VolumeTest : public ::testing::Test
 
   void reset_cache()
   {
-    VLOG(1) << "creating PageCache";
+    LLFS_VLOG(1) << "creating PageCache";
 
     llfs::StatusOr<batt::SharedPtr<llfs::PageCache>> page_cache_created =
         llfs::make_memory_page_cache(batt::Runtime::instance().default_scheduler(),
@@ -224,7 +224,7 @@ class VolumeTest : public ::testing::Test
       const llfs::PageArena& arena = this->page_cache->arena_for_page_id(page_id);
       const i32 ref_count = arena.allocator().get_ref_count(page_id).first;
 
-      VLOG(1) << BATT_INSPECT(page_id) << BATT_INSPECT(ref_count);
+      LLFS_VLOG(1) << BATT_INSPECT(page_id) << BATT_INSPECT(ref_count);
 
       EXPECT_EQ(ref_count, *expected_ref_count);
       if (ref_count != *expected_ref_count) {
@@ -248,7 +248,7 @@ class VolumeTest : public ::testing::Test
 
     const usize required_size = test_volume.calculate_grant_size(*appendable_job);
 
-    VLOG(1) << BATT_INSPECT(required_size);
+    LLFS_VLOG(1) << BATT_INSPECT(required_size);
 
     llfs::StatusOr<batt::Grant> grant =
         test_volume.reserve(required_size, batt::WaitForResource::kFalse);
@@ -281,7 +281,7 @@ class VolumeTest : public ::testing::Test
 TEST_F(VolumeTest, RecoverEmptyVolume)
 {
   {
-    VLOG(1) << "creating Volume";
+    LLFS_VLOG(1) << "creating Volume";
 
     for (int i = 0; i < 10; ++i) {
       auto fake_root_log = llfs::testing::make_fake_log_device_factory(*this->root_log);
@@ -299,10 +299,10 @@ TEST_F(VolumeTest, RecoverEmptyVolume)
         this->validate_uuids(*test_volume);
       }
 
-      VLOG(1) << "destroying Volume";
+      LLFS_VLOG(1) << "destroying Volume";
     }
   }
-  VLOG(1) << "done";
+  LLFS_VLOG(1) << "done";
 }
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
@@ -395,12 +395,12 @@ TEST_F(VolumeTest, ReadWriteEvents)
 
     // Trim the log to erase some data.
     //
-    VLOG(1) << "Trimming volume to " << upsert_slots[4];
+    LLFS_VLOG(1) << "Trimming volume to " << upsert_slots[4];
     llfs::Status trim_set = test_volume->trim(upsert_slots[4]);
 
     ASSERT_TRUE(trim_set.ok());
 
-    VLOG(1) << "Awaiting trim offset " << upsert_slots[4];
+    LLFS_VLOG(1) << "Awaiting trim offset " << upsert_slots[4];
     llfs::Status trimmed = test_volume->await_trim(upsert_slots[4]);
 
     ASSERT_TRUE(trimmed.ok());
@@ -500,7 +500,7 @@ TEST_F(VolumeTest, PageJobs)
 
           ASSERT_TRUE(reader.ok());
 
-          VLOG(1) << BATT_INSPECT(reader->slot_range());
+          LLFS_VLOG(1) << BATT_INSPECT(reader->slot_range());
 
           usize job_i = 0;
           llfs::StatusOr<usize> n_slots_read = reader->consume_slots(
@@ -510,8 +510,8 @@ TEST_F(VolumeTest, PageJobs)
 
                 EXPECT_TRUE(slot.depends_on_offset);
 
-                VLOG(1) << "Visiting slot: " << BATT_INSPECT(slot)
-                        << " user_data=" << batt::c_str_literal(user_data);
+                LLFS_VLOG(1) << "Visiting slot: " << BATT_INSPECT(slot)
+                             << " user_data=" << batt::c_str_literal(user_data);
 
                 // Parse the event at this slot and verify its contents.
                 //
@@ -554,8 +554,8 @@ TEST_F(VolumeTest, PageJobs)
         }
         return /*total=*/(page_ids.size() - j) - /*released_so_far=*/(i - j);
       }();
-      VLOG(1) << "waiting for ref count; " << BATT_INSPECT(new_page_slot[i]) << BATT_INSPECT(i)
-              << BATT_INSPECT(j) << BATT_INSPECT(id) << BATT_INSPECT(target);
+      LLFS_VLOG(1) << "waiting for ref count; " << BATT_INSPECT(new_page_slot[i]) << BATT_INSPECT(i)
+                   << BATT_INSPECT(j) << BATT_INSPECT(id) << BATT_INSPECT(target);
       ASSERT_TRUE(arena.allocator().await_ref_count(id, target));
 
       if (target > 1) {
@@ -564,8 +564,8 @@ TEST_F(VolumeTest, PageJobs)
     }
   }
 
-  VLOG(1) << BATT_INSPECT(fake_root_log.state()->device_time);
-  VLOG(1) << BATT_INSPECT(fake_recycler_log.state()->device_time);
+  LLFS_VLOG(1) << BATT_INSPECT(fake_root_log.state()->device_time);
+  LLFS_VLOG(1) << BATT_INSPECT(fake_recycler_log.state()->device_time);
 }
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
@@ -642,7 +642,7 @@ class VolumeCrashTestModel
     }
 
     usize volume_log_fail_ts = this->pick_int(0, 10);
-    VLOG(1) << volume_log_fail_ts;
+    LLFS_VLOG(1) << volume_log_fail_ts;
     //
     // ^^^ TODO [tastolfi 2022-04-05] do something useful with this value
   }
@@ -688,7 +688,7 @@ TEST_F(VolumeTest, CrashRecovery)
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 TEST_F(VolumeTest, ReaderInterruptedByVolumeClose)
 {
-  VLOG(1) << "creating Volume";
+  LLFS_VLOG(1) << "creating Volume";
 
   auto fake_root_log = llfs::testing::make_fake_log_device_factory(*this->root_log);
   auto fake_recycler_log = llfs::testing::make_fake_log_device_factory(*this->recycler_log);
@@ -704,13 +704,13 @@ TEST_F(VolumeTest, ReaderInterruptedByVolumeClose)
   batt::Task reader_task{
       io.get_executor(),
       [&] {
-        VLOG(1) << "inside reader task";
+        LLFS_VLOG(1) << "inside reader task";
 
         llfs::StatusOr<llfs::VolumeReader> reader = test_volume->reader(
             llfs::SlotRangeSpec{llfs::None, llfs::None}, llfs::LogReadMode::kSpeculative);
         BATT_CHECK_OK(reader);
 
-        VLOG(1) << "reader created";
+        LLFS_VLOG(1) << "reader created";
 
         llfs::StatusOr<usize> result = reader->consume_slots(
             batt::WaitForResource::kTrue,
@@ -719,29 +719,29 @@ TEST_F(VolumeTest, ReaderInterruptedByVolumeClose)
               return llfs::OkStatus();
             });
 
-        VLOG(1) << "consume_slots returned " << result;
+        LLFS_VLOG(1) << "consume_slots returned " << result;
 
         BATT_CHECK_EQ(result.status(), batt::StatusCode::kClosed);
       },
       "test reader task"};
 
-  VLOG(1) << "before first poll";
+  LLFS_VLOG(1) << "before first poll";
 
   io.poll();
   io.reset();
 
-  VLOG(1) << "after first poll; calling volume halt";
+  LLFS_VLOG(1) << "after first poll; calling volume halt";
 
   test_volume->halt();
   this->root_log->close().IgnoreError();
   this->recycler_log->close().IgnoreError();
 
-  VLOG(1) << "after volume halt; before second poll";
+  LLFS_VLOG(1) << "after volume halt; before second poll";
 
   io.poll();
   io.reset();
 
-  VLOG(1) << "after second poll";
+  LLFS_VLOG(1) << "after second poll";
 
   reader_task.join();
   test_volume->join();

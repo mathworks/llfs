@@ -258,13 +258,16 @@ class ScopedIoRing
   static StatusOr<ScopedIoRing> make_new(MaxQueueDepth entries, ThreadPoolSize n_threads) noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
-
+  // move-only, default constructible
+  //
+  ScopedIoRing() = default;
+  //
   ScopedIoRing(const ScopedIoRing&) = delete;
   ScopedIoRing& operator=(const ScopedIoRing&) = delete;
-
+  //
   ScopedIoRing(ScopedIoRing&&) = default;
   ScopedIoRing& operator=(ScopedIoRing&&) = default;
-
+  //
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   // Returns true iff this object is valid; a ScopedIoRing object is valid until its value is

@@ -103,6 +103,12 @@ class DataPacker
   [[nodiscard]] Optional<std::string_view> pack_string_to(PackedBytes* rec,
                                                           const std::string_view& s);
 
+  // If there is sufficient space, copy `size` bytes from `data` to the beginning of the available
+  // region WITHOUT a PackedBytes header, returning a std::string_view of the copied data; if there
+  // is insufficient space, set the full flag to true and return None.
+  //
+  [[nodiscard]] Optional<std::string_view> pack_raw_data(const void* data, usize size);
+
   template <typename U>
   [[nodiscard]] bool pack_u64(U val)
   {

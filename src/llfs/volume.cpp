@@ -9,13 +9,13 @@
 #include <llfs/volume.hpp>
 //
 
+#include <llfs/pack_as_raw.hpp>
 #include <llfs/volume_reader.hpp>
 #include <llfs/volume_recovery_visitor.hpp>
 
 #include <boost/uuid/random_generator.hpp>
 
 namespace llfs {
-
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 const VolumeOptions& Volume::options() const
@@ -55,7 +55,10 @@ u64 Volume::calculate_grant_size(const PackableRef& payload) const
 //
 u64 Volume::calculate_grant_size(const std::string_view& payload) const
 {
-  return packed_sizeof_slot(payload);
+  // We must use `pack_as_raw` here so that when/if the payload is passed to a slot visitor, it will
+  // not include a PackedBytes header; rather it should be exactly the same bytes as `payload`.
+  //
+  return packed_sizeof_slot(pack_as_raw(payload));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -110,8 +113,8 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
                               return log_reader.slot_offset();
                             }));
 
-  // Put the main log in a clean state.  This means all configuration data must be recorded, device
-  // attachments created, and pending jobs resolved.
+  // Put the main log in a clean state.  This means all configuration data must be recorded,
+  // device attachments created, and pending jobs resolved.
   {
     TypedSlotWriter<VolumeEventVariant> slot_writer{*root_log};
     batt::Grant grant = BATT_OK_RESULT_OR_PANIC(
@@ -355,7 +358,10 @@ StatusOr<SlotRange> Volume::append(const PackableRef& payload, batt::Grant& gran
 //
 StatusOr<SlotRange> Volume::append(const std::string_view& payload, batt::Grant& grant)
 {
-  return this->append(PackableRef{payload}, grant);
+  // We must use `pack_as_raw` here so that when/if the payload is passed to a slot visitor, it will
+  // not include a PackedBytes header; rather it should be exactly the same bytes as `payload`.
+  //
+  return this->append(PackableRef{pack_as_raw(payload)}, grant);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

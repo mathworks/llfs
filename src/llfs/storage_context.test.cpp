@@ -20,6 +20,7 @@
 
 #include <boost/uuid/random_generator.hpp>
 
+#include <filesystem>
 #include <thread>
 
 namespace {
@@ -30,6 +31,9 @@ using namespace llfs::int_types;
 TEST(StorageContextTest, GetPageCache)
 {
   const char* storage_file_name = "/tmp/llfs_StorageContextTest_GetPageCache_storage_file.llfs";
+
+  llfs::delete_file(storage_file_name).IgnoreError();
+  EXPECT_FALSE(std::filesystem::exists(std::filesystem::path{storage_file_name}));
 
   llfs::StatusOr<llfs::ScopedIoRing> io =
       llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{64}, llfs::ThreadPoolSize{1});

@@ -45,6 +45,8 @@ u64 ieee_754_encode_64(f64 v);
 //
 f64 ieee_754_decode_64(u64 v);
 
+namespace float_types {
+
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 class little_f32
@@ -161,6 +163,7 @@ class big_f64
 
 BATT_STATIC_ASSERT_EQ(sizeof(big_f64), 8);
 
+}  // namespace float_types
 }  // namespace llfs
 
 #endif  // LLFS_PACKED_FLOAT_HPP

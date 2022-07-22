@@ -62,6 +62,11 @@ class little_f32
 
   operator f32() const noexcept
   {
+    return this->value();
+  }
+
+  f32 value() const noexcept
+  {
     return ieee_754_decode_32(this->packed_bits_);
   }
 
@@ -90,6 +95,11 @@ class big_f32
   }
 
   operator f32() const noexcept
+  {
+    return this->value();
+  }
+
+  f32 value() const noexcept
   {
     return ieee_754_decode_32(this->packed_bits_);
   }
@@ -120,6 +130,11 @@ class little_f64
 
   operator f64() const noexcept
   {
+    return this->value();
+  }
+
+  f64 value() const noexcept
+  {
     return ieee_754_decode_64(this->packed_bits_);
   }
 
@@ -148,6 +163,11 @@ class big_f64
   }
 
   operator f64() const noexcept
+  {
+    return this->value();
+  }
+
+  f64 value() const noexcept
   {
     return ieee_754_decode_64(this->packed_bits_);
   }

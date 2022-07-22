@@ -134,6 +134,8 @@ struct PackedVariantInstance<PackedVariant<Ts...>, T> {
 // Wrapper for type `T` that causes the object to be packed as an instance of the given
 // PackedVariant.
 //
+// NOTE: `T` is the unpacked type!
+//
 template <typename PackedVarT, typename T>
 struct PackAsVariant;
 

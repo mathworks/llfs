@@ -166,7 +166,7 @@ std::function<void(std::ostream&)> SlotLockManager::debug_info_locked(
 
   return [locked_slots_copy = std::move(locked_slots_copy),
           lower_bound_copy = this->lower_bound_.get_value(), top_copy](std::ostream& out) {
-    out << "SlotLockManager{.acquired=[";
+    out << "SlotLockManager{.lower_bound=" << lower_bound_copy << ", .acquired=[";
     {
       int limit = 10;
       for (const auto& slots : locked_slots_copy) {

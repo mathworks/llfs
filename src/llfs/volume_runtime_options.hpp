@@ -20,6 +20,10 @@ namespace llfs {
 // Options used to recover a Volume from a StorageContext.
 //
 struct VolumeRuntimeOptions {
+  static VolumeRuntimeOptions with_default_values();
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   // A slot visitor that will be invoked to rebuild the application-specific Volume state by
   // replaying the events found in the root log.
   //

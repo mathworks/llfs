@@ -85,6 +85,8 @@ struct PackedVolumeConfig : PackedConfigSlotHeader {
   //
   boost::uuids::uuid recycler_log_uuid;
 
+  u8 pad0_[4];
+
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
   PackedConfigSlotBase slot_1;
@@ -99,10 +101,11 @@ struct PackedVolumeConfig : PackedConfigSlotHeader {
 
   // Reserved for future use.
   //
-  u8 pad1_[48];
+  u8 pad1_[44];
 };
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedVolumeConfig), PackedVolumeConfig::kSize);
+BATT_STATIC_ASSERT_EQ(offsetof(PackedVolumeConfig, slot_1), PackedConfigSlot::kSize);
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 

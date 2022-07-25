@@ -24,7 +24,7 @@ install:
 	(cd build/$(BUILD_TYPE) && conan install ../.. -s build_type=$(BUILD_TYPE) --build=missing)
 
 create:
-	(cd build/$(BUILD_TYPE) && conan create ../.. -s build_type=$(BUILD_TYPE))
+	(conan remove -f "llfs/$(shell batteries/script/get-version.sh)" && cd build/$(BUILD_TYPE) && conan create ../.. -s build_type=$(BUILD_TYPE))
 
 
 publish: | test build

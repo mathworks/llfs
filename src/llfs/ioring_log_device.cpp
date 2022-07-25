@@ -16,6 +16,7 @@
 #include <llfs/metrics.hpp>
 
 #include <batteries/async/runtime.hpp>
+#include <batteries/metrics/metric_collectors.hpp>
 #include <batteries/seq/boxed.hpp>
 #include <batteries/stream_util.hpp>
 
@@ -128,9 +129,11 @@ Status IoRingLogDriver::read_log_data()
   BATT_CHECK_EQ(block_buffer.size(), this->config_.block_size());
   BATT_CHECK_EQ(block_payload.size(), this->config_.block_capacity());
 
+  LLFS_VLOG(1) << "initial log recovery started";
+
   u64 file_offset = this->config_.physical_offset;
   for (usize block_i = 0; block_i < this->config_.block_count(); ++block_i) {
-    LLFS_VLOG(1) << "reading log; " << BATT_INSPECT(block_i) << BATT_INSPECT(file_offset)
+    LLFS_VLOG(2) << "reading log; " << BATT_INSPECT(block_i) << BATT_INSPECT(file_offset)
                  << BATT_INSPECT(this->config_.block_size()) << BATT_INSPECT(block_buffer.size())
                  << BATT_INSPECT(this->file_.get_fd());
 
@@ -157,6 +160,9 @@ Status IoRingLogDriver::read_log_data()
 
     file_offset += this->config_.block_size();
   }
+
+  LLFS_VLOG(1) << "log recovery complete; total: "
+               << (this->config_.block_size() * this->config_.block_count());
 
   // After opening, there is no unflushed data so commit_pos == flush_pos.
   //

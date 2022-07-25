@@ -39,6 +39,11 @@ class IoRing::File
 
   ~File() noexcept;
 
+  IoRing& get_io_ring() const
+  {
+    return *this->io_;
+  }
+
   // Asynchronously reads data from the file starting at the given offset, copying read data into
   // the memory pointed to by `buffers`. Invokes `handler` from within `IoRing::run()` with error
   // status or the number of bytes successfully read.
@@ -84,6 +89,11 @@ class IoRing::File
   // call (using batt::Task::await).
   //
   Status write_all(i64 offset, ConstBuffer buffer);
+
+  // Writes the entire contents of `buffer` to the file at the given byte `offset`.  Blocking
+  // call (using batt::Task::await).
+  //
+  Status write_all_fixed(i64 offset, ConstBuffer buffer, int buf_index);
 
   // Fills `buffer` with data read from the file at the given byte `offset`.  Blocking call
   // (using batt::Task::await).

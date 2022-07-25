@@ -67,6 +67,7 @@ class IoRing
     std::mutex mutex_;
     struct io_uring ring_;
     bool ring_init_{false};
+    bool buffers_registered_{false};
     std::atomic<isize> work_count_{0};
     std::atomic<bool> needs_reset_{false};
     int event_fd_{-1};

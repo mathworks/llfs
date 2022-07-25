@@ -207,9 +207,22 @@ Status IoRing::register_buffers(BoxedSeq<MutableBuffer>&& buffers)
                                     return v;
                                   }) |
                                   seq::collect_vec();
+  {
+    std::unique_lock<std::mutex> lock{this->impl_->mutex_};
 
-  const int retval = io_uring_register_buffers(&this->impl_->ring_, iov.data(), iov.size());
-  return status_from_retval(retval);
+    if (this->impl_->buffers_registered_) {
+      const int retval = io_uring_unregister_buffers(&this->impl_->ring_);
+      BATT_REQUIRE_OK(status_from_retval(retval));
+
+      this->impl_->buffers_registered_ = false;
+    }
+
+    const int retval = io_uring_register_buffers(&this->impl_->ring_, iov.data(), iov.size());
+    BATT_REQUIRE_OK(status_from_retval(retval));
+
+    this->impl_->buffers_registered_ = true;
+    return OkStatus();
+  }
 }
 
 //#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++

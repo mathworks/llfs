@@ -22,6 +22,10 @@ namespace llfs {
 class IoRingLogDriverOptions
 {
  public:
+  static IoRingLogDriverOptions with_default_values();
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   IoRingLogDriverOptions() noexcept
   {
   }

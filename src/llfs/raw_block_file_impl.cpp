@@ -61,11 +61,12 @@ StatusOr<i64> IoRingRawBlockFile::write_some(i64 offset, const ConstBuffer& data
   });
   BATT_REQUIRE_OK(result);
 
+  /*
   const int retval = batt::syscall_retry([&] {
     return ::fdatasync(this->file_.get_fd());
   });
   BATT_REQUIRE_OK(batt::status_from_retval(retval));
-
+  */
   return result;
 }
 

@@ -12,6 +12,7 @@
 
 #include <llfs/buffer.hpp>
 #include <llfs/int_types.hpp>
+#include <llfs/ioring.hpp>
 #include <llfs/status.hpp>
 
 #include <batteries/status.hpp>
@@ -84,6 +85,11 @@ class RawBlockFile
   virtual Status truncate_at_least(i64 /*minimum_size*/)
   {
     return batt::StatusCode::kUnimplemented;
+  }
+
+  virtual IoRing::File* get_io_ring_file()
+  {
+    return nullptr;
   }
 
  protected:

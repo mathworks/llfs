@@ -44,6 +44,11 @@ class IoRingRawBlockFile : public RawBlockFile
 
   Status close();
 
+  IoRing::File* get_io_ring_file() override
+  {
+    return &file_;
+  }
+
  private:
   IoRing::File file_;
 };

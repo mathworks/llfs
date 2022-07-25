@@ -55,8 +55,13 @@ class PageRecycler
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  static PageCount default_max_buffered_page_count(MaxRefsPerPage max_refs_per_page);
+
   static u64 calculate_log_size(MaxRefsPerPage max_refs_per_page,
                                 Optional<PageCount> max_buffered_page_count = None);
+
+  static PageCount calculate_max_buffered_page_count(MaxRefsPerPage max_refs_per_page,
+                                                     u64 log_size);
 
   static StatusOr<std::unique_ptr<PageRecycler>> recover(batt::TaskScheduler& scheduler,
                                                          std::string_view name,

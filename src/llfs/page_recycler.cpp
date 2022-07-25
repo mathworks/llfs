@@ -61,6 +61,13 @@ StatusOr<SlotRange> refresh_recycler_info_slot(TypedSlotWriter<PageRecycleEvent>
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+/*static*/ PageCount PageRecycler::default_max_buffered_page_count(MaxRefsPerPage max_refs_per_page)
+{
+  return PageCount{max_refs_per_page.value()};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 /*static*/ u64 PageRecycler::calculate_log_size(MaxRefsPerPage max_refs_per_page,
                                                 Optional<PageCount> max_buffered_page_count)
 {
@@ -71,9 +78,29 @@ StatusOr<SlotRange> refresh_recycler_info_slot(TypedSlotWriter<PageRecycleEvent>
   options.max_refs_per_page = max_refs_per_page;
 
   return options.total_page_grant_size() *
-             (1 + max_buffered_page_count.value_or(PageCount{max_refs_per_page.value()})) +
+             (1 + max_buffered_page_count.value_or(
+                      PageRecycler::default_max_buffered_page_count(max_refs_per_page))) +
          options.recycle_task_target() +
          packed_sizeof_slot(info) * (options.info_refresh_rate + 1) + 1 * kKiB;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*static*/ PageCount PageRecycler::calculate_max_buffered_page_count(
+    MaxRefsPerPage max_refs_per_page, u64 log_size)
+{
+  PageRecyclerOptions options;
+
+  options.max_refs_per_page = max_refs_per_page;
+
+  const u64 required_log_size = PageRecycler::calculate_log_size(max_refs_per_page, PageCount{0});
+  if (log_size <= required_log_size) {
+    return PageCount{0};
+  }
+
+  const u64 extra_capacity = log_size - required_log_size;
+
+  return PageCount{extra_capacity / options.total_page_grant_size()};
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

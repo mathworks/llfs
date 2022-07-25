@@ -91,7 +91,14 @@ class VolumeTest : public ::testing::Test
   void reset_logs()
   {
     this->root_log.emplace(1 * kMiB);
-    this->recycler_log.emplace(llfs::PageRecycler::calculate_log_size(max_refs_per_page));
+
+    const u64 recycler_log_size = llfs::PageRecycler::calculate_log_size(max_refs_per_page);
+
+    EXPECT_EQ(llfs::PageRecycler::default_max_buffered_page_count(max_refs_per_page),
+              ::llfs::PageRecycler::calculate_max_buffered_page_count(max_refs_per_page,
+                                                                      recycler_log_size));
+
+    this->recycler_log.emplace(recycler_log_size);
   }
 
   void save_uuids(const llfs::Volume& test_volume)

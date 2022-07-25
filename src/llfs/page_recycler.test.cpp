@@ -323,6 +323,10 @@ void PageRecyclerTest::run_crash_recovery_test()
     const u64 log_size = PageRecycler::calculate_log_size(MaxRefsPerPage{max_branching_factor});
     LLFS_VLOG(1) << BATT_INSPECT(log_size);
 
+    EXPECT_EQ(PageRecycler::calculate_max_buffered_page_count(MaxRefsPerPage{max_branching_factor},
+                                                              log_size),
+              PageRecycler::default_max_buffered_page_count(MaxRefsPerPage{max_branching_factor}));
+
     MemoryLogDevice mem_log{log_size};
 
     auto fake_log_state = std::make_shared<FakeLogDevice::State>();

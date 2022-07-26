@@ -64,7 +64,7 @@ class VolumeConfigTest : public ::testing::Test
   void create_ioring()
   {
     llfs::StatusOr<llfs::ScopedIoRing> io =
-        llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{64}, llfs::ThreadPoolSize{1});
+        llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{1024}, llfs::ThreadPoolSize{1});
     ASSERT_TRUE(io.ok()) << BATT_INSPECT(io.status());
 
     this->ioring_ = std::move(*io);

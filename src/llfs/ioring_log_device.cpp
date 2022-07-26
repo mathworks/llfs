@@ -13,6 +13,7 @@
 
 #ifndef LLFS_DISABLE_IO_URING
 
+#include <llfs/ioring_log_initializer.hpp>
 #include <llfs/metrics.hpp>
 
 #include <batteries/async/runtime.hpp>
@@ -380,92 +381,38 @@ Status initialize_ioring_log_device(RawBlockFile& file, const IoRingLogDriver::C
   {
     batt::LatencyTimer block_write_timer{block_write_latency, config.block_count()};
 
-    constexpr u64 block_i_step = 16;
-
-    std::array<IoRingLogDriver::PackedPageHeaderBuffer, block_i_step> buffers;
-
     IoRing::File* ioring_file = file.get_io_ring_file();
+
     if (ioring_file) {
-      Status buffers_status =
-          ioring_file->get_io_ring().register_buffers(as_seq(buffers) | seq::map([](auto& buffer) {
-                                                        return buffer.as_mutable_buffer();
-                                                      }) |
-                                                      seq::boxed());
-      LLFS_VLOG(2) << "register_buffers status=" << buffers_status;
-      BATT_REQUIRE_OK(buffers_status);
+      IoRingLogInitializer initializer{/*n_tasks=*/std::min<usize>(1024, config.block_count()),
+                                       *ioring_file, config};
+
+      batt::Status init_status = initializer.run();
+
+      BATT_REQUIRE_OK(init_status);
+
+    } else {
+      LLFS_LOG_INFO() << "Using slow path for log device initialization";
+
+      IoRingLogDriver::PackedPageHeaderBuffer buffer;
+      buffer.clear();
+      buffer.header.magic = IoRingLogDriver::PackedPageHeader::kMagic;
+      buffer.header.commit_size = 0;
+      buffer.header.crc64 = 0;  // TODO [tastolfi 2022-02-09] implement me
+      buffer.header.trim_pos = 0;
+      buffer.header.flush_pos = 0;
+
+      u64 file_offset = config.physical_offset;
+      for (u64 block_i = 0; block_i < config.block_count(); ++block_i) {
+        LLFS_VLOG(2) << "writing initial block header; " << BATT_INSPECT(buffer.header.slot_offset)
+                     << BATT_INSPECT(file_offset);
+        Status write_status = write_all(file, file_offset, buffer.as_const_buffer());
+        BATT_REQUIRE_OK(write_status);
+        buffer.header.slot_offset += config.block_capacity();
+        file_offset += config.block_size();
+      }
     }
-
-    std::array<Optional<batt::Task>, block_i_step> tasks;
-    std::array<Status, block_i_step> task_status;
-
-    const u64 slot_offset_step = config.block_capacity() * block_i_step;
-    const u64 file_offset_step = config.block_size() * block_i_step;
-
-    u64 start_file_offset = config.physical_offset;
-    u64 start_block_i = 0;
-    auto executor = batt::Runtime::instance().default_scheduler().schedule_task();
-    for (auto& task : tasks) {
-      LLFS_VLOG(1) << "Launching task " << start_block_i;
-      task.emplace(
-          executor, [start_file_offset, start_block_i, slot_offset_step, file_offset_step,
-                     &buffer = buffers[start_block_i], &file, &config, &task_status, ioring_file] {
-            task_status[start_block_i] = [&]() -> Status {
-              buffer.clear();
-
-              buffer.header.magic = IoRingLogDriver::PackedPageHeader::kMagic;
-              buffer.header.slot_offset = start_block_i * config.block_capacity();
-              buffer.header.commit_size = 0;
-              buffer.header.crc64 = 0;  // TODO [tastolfi 2022-02-09] implement me
-              buffer.header.trim_pos = 0;
-              buffer.header.flush_pos = 0;
-
-              u64 file_offset = start_file_offset;
-              for (u64 block_i = start_block_i; block_i < config.block_count();
-                   block_i += block_i_step) {
-                LLFS_VLOG(2) << "writing initial block header; "
-                             << BATT_INSPECT(buffer.header.slot_offset) << BATT_INSPECT(file_offset)
-                             << (ioring_file ? " (IoRing::File)" : " (RawBlockFile)");
-
-                if (ioring_file) {
-                  Status write_status = ioring_file->write_all_fixed(
-                      file_offset, buffer.as_const_buffer(), start_block_i);
-                  BATT_REQUIRE_OK(write_status);
-                } else {
-                  Status write_status = write_all(file, file_offset, buffer.as_const_buffer());
-                  BATT_REQUIRE_OK(write_status);
-                }
-                buffer.header.slot_offset += slot_offset_step;
-                file_offset += file_offset_step;
-              }
-
-              return OkStatus();
-            }();
-          });
-
-      start_file_offset += config.block_size();
-      ++start_block_i;
-    }
-
-    for (auto& task : tasks) {
-      task->join();
-    }
-
-    for (Status& status : task_status) {
-      BATT_REQUIRE_OK(status);
-    }
-
-    /*
-    u64 file_offset = config.physical_offset;
-    for (u64 block_i = 0; block_i < config.block_count(); ++block_i) {
-      LLFS_VLOG(2) << "writing initial block header; " << BATT_INSPECT(buffer.header.slot_offset)
-                   << BATT_INSPECT(file_offset);
-      Status write_status = write_all(file, file_offset, buffer.as_const_buffer());
-      BATT_REQUIRE_OK(write_status);
-      buffer.header.slot_offset += config.block_capacity();
-      file_offset += config.block_size();
-    }
-    */
-  }
+  }  // LatencyTimer
 
   LLFS_VLOG(1) << "Success! " << block_write_latency.rate_per_second() << " blocks/sec";
 

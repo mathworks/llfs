@@ -176,14 +176,22 @@ class IoRing
 
   Status register_buffers(batt::BoxedSeq<MutableBuffer>&& buffers);
 
+  Status unregister_buffers();
+
  private:
   explicit IoRing(std::unique_ptr<Impl>&& impl) noexcept;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   template <typename Fn, typename BufferSequence>
   static batt::HandlerImpl</*HandlerFn=*/OpHandler<std::decay_t<Fn>>, /*Args...=*/StatusOr<i32>>*
   wrap_handler(Fn&& fn, BufferSequence&& bufs);
 
   void invoke_handler(struct io_uring_cqe* cqe);
+
+  Status unregister_buffers_with_lock();
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   std::unique_ptr<Impl> impl_;
 };

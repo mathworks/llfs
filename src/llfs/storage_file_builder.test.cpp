@@ -159,7 +159,7 @@ TEST_F(StorageFileBuilderTest, PageDeviceConfig_Flush)
 TEST_F(StorageFileBuilderTest, WriteReadFile)
 {
   llfs::StatusOr<llfs::ScopedIoRing> ioring =
-      llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{64}, llfs::ThreadPoolSize{1});
+      llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{1024}, llfs::ThreadPoolSize{1});
 
   ASSERT_TRUE(ioring.ok()) << BATT_INSPECT(ioring.status());
 

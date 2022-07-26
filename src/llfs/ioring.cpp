@@ -198,6 +198,8 @@ void IoRing::reset()
   this->impl_->needs_reset_ = false;
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 Status IoRing::register_buffers(BoxedSeq<MutableBuffer>&& buffers)
 {
   std::vector<struct iovec> iov = std::move(buffers) | seq::map([](const MutableBuffer& b) {
@@ -210,12 +212,9 @@ Status IoRing::register_buffers(BoxedSeq<MutableBuffer>&& buffers)
   {
     std::unique_lock<std::mutex> lock{this->impl_->mutex_};
 
-    if (this->impl_->buffers_registered_) {
-      const int retval = io_uring_unregister_buffers(&this->impl_->ring_);
-      BATT_REQUIRE_OK(status_from_retval(retval));
-
-      this->impl_->buffers_registered_ = false;
-    }
+    Status unregistered = this->unregister_buffers_with_lock();
+    BATT_REQUIRE_OK(unregistered);
+    BATT_CHECK(!this->impl_->buffers_registered_);
 
     const int retval = io_uring_register_buffers(&this->impl_->ring_, iov.data(), iov.size());
     BATT_REQUIRE_OK(status_from_retval(retval));
@@ -223,6 +222,29 @@ Status IoRing::register_buffers(BoxedSeq<MutableBuffer>&& buffers)
     this->impl_->buffers_registered_ = true;
     return OkStatus();
   }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status IoRing::unregister_buffers()
+{
+  std::unique_lock<std::mutex> lock{this->impl_->mutex_};
+
+  return this->unregister_buffers_with_lock();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status IoRing::unregister_buffers_with_lock()
+{
+  if (this->impl_->buffers_registered_) {
+    const int retval = io_uring_unregister_buffers(&this->impl_->ring_);
+    BATT_REQUIRE_OK(status_from_retval(retval));
+
+    this->impl_->buffers_registered_ = false;
+  }
+
+  return OkStatus();
 }
 
 //#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++

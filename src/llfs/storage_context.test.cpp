@@ -36,7 +36,7 @@ TEST(StorageContextTest, GetPageCache)
   EXPECT_FALSE(std::filesystem::exists(std::filesystem::path{storage_file_name}));
 
   llfs::StatusOr<llfs::ScopedIoRing> io =
-      llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{64}, llfs::ThreadPoolSize{1});
+      llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{1024}, llfs::ThreadPoolSize{1});
 
   ASSERT_TRUE(io.ok()) << BATT_INSPECT(io.status());
 

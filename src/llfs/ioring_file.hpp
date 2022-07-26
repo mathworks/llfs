@@ -111,6 +111,10 @@ class IoRing::File
   //
   Status register_fd();
 
+  // Unregisters the file descriptor, if it was previously registered with the ioring.
+  //
+  Status unregister_fd();
+
   // Closes the file.  Releases ownership of the file descriptor (fd) and cancels any ongoing I/O.
   //
   Status close();

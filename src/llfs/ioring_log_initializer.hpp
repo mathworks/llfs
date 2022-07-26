@@ -36,6 +36,8 @@ class IoRingLogInitializer
     void handle_write(const batt::StatusOr<i32>& n_written);
 
     void finish(const batt::Status& status);
+
+    usize self_index() const;
   };
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -

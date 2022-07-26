@@ -71,6 +71,9 @@ class IoRing
     std::atomic<isize> work_count_{0};
     std::atomic<bool> needs_reset_{false};
     int event_fd_{-1};
+    bool fds_registered_{false};
+    std::vector<i32> registered_fds_;
+    std::vector<i32> free_fds_;
 
     ~Impl() noexcept;
   };
@@ -178,6 +181,18 @@ class IoRing
 
   Status unregister_buffers();
 
+  // Registers the given file descriptor with the io_uring in kernel space, speeding performance for
+  // repeated access to the same file.  Returns the "user_fd" that should be used to achieve faster
+  // syscalls in the future.
+  //
+  StatusOr<i32> register_fd(i32 system_fd);
+
+  // Unregisters the given "user_fd" that was previously returned by a call to
+  // `IoRing::register_fd`.  Behavior is undefined if a user_fd obtained from one IoRing is handed
+  // to another!
+  //
+  Status unregister_fd(i32 user_fd);
+
  private:
   explicit IoRing(std::unique_ptr<Impl>&& impl) noexcept;
 
@@ -190,6 +205,11 @@ class IoRing
   void invoke_handler(struct io_uring_cqe* cqe);
 
   Status unregister_buffers_with_lock();
+
+  // Removes the specified user_fd from the registered fds table, returning the previously
+  // registered system fd that was in that slot.
+  //
+  i32 free_user_fd(i32 user_fd);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

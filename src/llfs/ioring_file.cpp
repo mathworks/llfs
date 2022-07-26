@@ -49,6 +49,10 @@ auto IoRing::File::operator=(File&& that) noexcept -> File&
 IoRing::File::~File() noexcept
 {
   if (this->fd_ != -1) {
+    if (this->registered_fd_ != -1) {
+      this->unregister_fd().IgnoreError();
+    }
+
     batt::syscall_retry([&] {
       return ::close(this->fd_);
     });
@@ -111,6 +115,11 @@ Status IoRing::File::read_all(i64 offset, MutableBuffer buffer)
 //
 int IoRing::File::release()
 {
+  if (this->registered_fd_ != -1) {
+    this->unregister_fd().IgnoreError();
+    this->registered_fd_ = -1;
+  }
+
   int released = -1;
   std::swap(released, this->fd_);
   return released;
@@ -120,15 +129,35 @@ int IoRing::File::release()
 //
 Status IoRing::File::register_fd()
 {
-  i32 fd_array[1] = {this->fd_};
-  int retval = io_uring_register_files(&this->io_->impl_->ring_, /*arg=*/fd_array,
-                                       /*nr_args=*/1);
-  if (retval != 0) {
-    return batt::status_from_errno(-retval);
+  if (this->registered_fd_ != -1) {
+    return OkStatus();
   }
 
-  this->registered_fd_ = 0;
-  return batt::OkStatus();
+  StatusOr<i32> rfd = this->io_->register_fd(this->fd_);
+  if (!rfd.ok()) {
+    LLFS_LOG_ERROR() << "register_fd failed! " << BATT_INSPECT(rfd.status());
+  }
+  BATT_REQUIRE_OK(rfd);
+
+  this->registered_fd_ = *rfd;
+
+  return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status IoRing::File::unregister_fd()
+{
+  if (this->registered_fd_ == -1) {
+    return OkStatus();
+  }
+
+  Status status = this->io_->unregister_fd(this->registered_fd_);
+  BATT_REQUIRE_OK(status);
+
+  this->registered_fd_ = -1;
+
+  return OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

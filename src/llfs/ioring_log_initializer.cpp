@@ -6,8 +6,6 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-// VolumeConfigTest.ConfigRestore
-
 #include <llfs/ioring_log_initializer.hpp>
 //
 
@@ -47,6 +45,13 @@ batt::Status IoRingLogInitializer::run()
     LLFS_VLOG(1) << "memory = " << (const void*)memory.data() << ".."
                  << (const void*)(this->subtasks_.data() + this->subtasks_.size());
 
+    // Cache the file descriptor information in the kernel for faster access.
+    //
+    Status fd_status = this->file_.register_fd();
+    BATT_REQUIRE_OK(fd_status);
+
+    // Map our memory buffer to the kernel for faster I/O.
+    //
     Status buffers_status = this->file_.get_io_ring().register_buffers(
         seq::single_item(std::move(memory)) | seq::boxed());
 
@@ -77,7 +82,8 @@ batt::Status IoRingLogInitializer::run()
 //
 void IoRingLogInitializer::Subtask::start_write()
 {
-  LLFS_VLOG(2) << "IoRingLogInitializer::Subtask::start_write()"
+  LLFS_VLOG(2) << "[Subtask:" << this->self_index()
+               << "] IoRingLogInitializer::Subtask::start_write()"
                << BATT_INSPECT(this->block_progress) << BATT_INSPECT(this->file_offset);
 
   IoRingLogInitializer* const that = this->that;
@@ -89,7 +95,7 @@ void IoRingLogInitializer::Subtask::start_write()
 
     const usize block_i = that->next_block_i_.fetch_add(1);
 
-    LLFS_VLOG(2) << " -- " << BATT_INSPECT(block_i);
+    LLFS_VLOG(2) << " -- " << BATT_INSPECT(block_i) << "/" << config.block_count();
 
     // If `block_i` is at or past the end of the log, we are done!  Increment the finished count
     // and return.
@@ -123,7 +129,8 @@ void IoRingLogInitializer::Subtask::start_write()
 //
 void IoRingLogInitializer::Subtask::handle_write(const batt::StatusOr<i32>& n_written)
 {
-  LLFS_VLOG(2) << "IoRingLogInitializer::Subtask::handle_write(status=" << n_written.status()
+  LLFS_VLOG(2) << "[Subtask:" << this->self_index()
+               << "] IoRingLogInitializer::Subtask::handle_write(status=" << n_written.status()
                << ", n_written=" << (n_written.ok() ? *n_written : -1) << ")";
 
   if (!n_written.ok()) {
@@ -149,6 +156,13 @@ void IoRingLogInitializer::Subtask::finish(const batt::Status& status)
   const auto prior_finished_count = this->that->finished_count_.fetch_add(1);
 
   LLFS_VLOG(2) << BATT_INSPECT(prior_finished_count);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+usize IoRingLogInitializer::Subtask::self_index() const
+{
+  return this - this->that->subtasks_.data();
 }
 
 }  // namespace llfs

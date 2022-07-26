@@ -247,6 +247,113 @@ Status IoRing::unregister_buffers_with_lock()
   return OkStatus();
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<i32> IoRing::register_fd(i32 system_fd)
+{
+  std::unique_lock<std::mutex> lock{this->impl_->mutex_};
+
+  i32 user_fd = -1;
+
+  if (this->impl_->free_fds_.empty()) {
+    user_fd = this->impl_->registered_fds_.size();
+    this->impl_->registered_fds_.push_back(system_fd);
+  } else {
+    user_fd = this->impl_->free_fds_.back();
+    this->impl_->free_fds_.pop_back();
+    BATT_CHECK_EQ(this->impl_->registered_fds_[user_fd], -1);
+    this->impl_->registered_fds_[user_fd] = system_fd;
+  }
+
+  auto revert_fd_update = batt::finally([&] {
+    this->free_user_fd(user_fd);
+  });
+
+  LLFS_VLOG(1) << "IoRing::register_fd() " << batt::dump_range(this->impl_->registered_fds_);
+
+  const int retval = [&] {
+    if (this->impl_->fds_registered_) {
+      return io_uring_register_files_update(&this->impl_->ring_, /*off=*/0,
+                                            /*files=*/this->impl_->registered_fds_.data(),
+                                            /*nr_files=*/this->impl_->registered_fds_.size());
+    } else {
+      return io_uring_register_files(&this->impl_->ring_,
+                                     /*files=*/this->impl_->registered_fds_.data(),
+                                     /*nr_files=*/this->impl_->registered_fds_.size());
+    }
+  }();
+
+  if (retval != 0) {
+    return batt::status_from_errno(-retval);
+  }
+
+  this->impl_->fds_registered_ = true;
+
+  revert_fd_update.cancel();
+
+  return user_fd;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status IoRing::unregister_fd(i32 user_fd)
+{
+  BATT_CHECK_GE(user_fd, 0);
+
+  std::unique_lock<std::mutex> lock{this->impl_->mutex_};
+
+  BATT_CHECK(this->impl_->fds_registered_);
+
+  const i32 system_fd = this->free_user_fd(user_fd);
+
+  const int retval = [&] {
+    if (this->impl_->registered_fds_.empty()) {
+      return io_uring_unregister_files(&this->impl_->ring_);
+    } else {
+      return io_uring_register_files_update(&this->impl_->ring_, /*off=*/0,
+                                            /*files=*/this->impl_->registered_fds_.data(),
+                                            /*nr_files=*/this->impl_->registered_fds_.size());
+    }
+  }();
+
+  if (retval != 0) {
+    // Revert the change in the tables.
+    //
+    while (static_cast<usize>(user_fd) >= this->impl_->registered_fds_.size()) {
+      this->impl_->registered_fds_.emplace_back(-1);
+    }
+    this->impl_->registered_fds_[user_fd] = system_fd;
+    if (!this->impl_->free_fds_.empty() && this->impl_->free_fds_.back() == user_fd) {
+      this->impl_->free_fds_.pop_back();
+    }
+
+    return batt::status_from_errno(-retval);
+  }
+
+  this->impl_->fds_registered_ = !this->impl_->registered_fds_.empty();
+
+  return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+i32 IoRing::free_user_fd(i32 user_fd)
+{
+  BATT_CHECK_GE(user_fd, 0);
+  BATT_CHECK_LT(static_cast<usize>(user_fd), this->impl_->registered_fds_.size());
+
+  const i32 system_fd = this->impl_->registered_fds_[user_fd];
+
+  if (static_cast<usize>(user_fd) + 1 == this->impl_->registered_fds_.size()) {
+    this->impl_->registered_fds_.pop_back();
+  } else {
+    this->impl_->registered_fds_[user_fd] = -1;
+    this->impl_->free_fds_.push_back(user_fd);
+  }
+
+  return system_fd;
+}
+
 //#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

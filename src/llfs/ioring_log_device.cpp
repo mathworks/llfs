@@ -185,9 +185,12 @@ Status IoRingLogDriver::set_trim_pos(slot_offset_type trim_pos)
 //
 void IoRingLogDriver::halt()
 {
-  this->trim_pos_.close();
-  this->flush_pos_.close();
-  this->commit_pos_.close();
+  const bool previously_halted = this->halt_requested_.exchange(true);
+  if (!previously_halted) {
+    this->trim_pos_.close();
+    this->flush_pos_.close();
+    this->commit_pos_.close();
+  }
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -218,11 +221,11 @@ void IoRingLogDriver::flush_task_main()
 {
   Status status = [&]() -> Status {
     const u64 total_size = (this->log_end_ - this->log_start_);
-    LLFS_LOG_INFO() << "(driver=" << this->name_ << ") log physical size=0x" << std::hex
-                    << total_size << " block_size=0x" << this->block_size() << " block_capacity=0x"
-                    << this->block_capacity() << " queue_depth=" << std::dec << this->queue_depth();
-    LLFS_LOG_INFO() << "(driver=" << this->name_
-                    << ") buffer delay=" << this->options_.page_write_buffer_delay_usec << "usec";
+    LLFS_VLOG(1) << "(driver=" << this->name_ << ") log physical size=0x" << std::hex << total_size
+                 << " block_size=0x" << this->block_size() << " block_capacity=0x"
+                 << this->block_capacity() << " queue_depth=" << std::dec << this->queue_depth();
+    LLFS_VLOG(1) << "(driver=" << this->name_
+                 << ") buffer delay=" << this->options_.page_write_buffer_delay_usec << "usec";
 
     // Now tell the ops to start flushing data.  They will write in parallel but only one at a time
     // will perform an async_wait on `commit_pos_`, to prevent thundering herd bottlenecks.
@@ -240,7 +243,7 @@ void IoRingLogDriver::flush_task_main()
     //
     batt::Watch<bool> done{false};
     std::thread io_thread{[this, &done] {
-      LLFS_LOG_INFO() << "(driver=" << this->name_ << ") invoking IoRing::run()";
+      LLFS_VLOG(1) << "(driver=" << this->name_ << ") invoking IoRing::run()";
       Status io_status = this->ioring_.run();
       if (!io_status.ok()) {
         LLFS_LOG_WARNING() << "(driver=" << this->name_
@@ -255,7 +258,12 @@ void IoRingLogDriver::flush_task_main()
     return OkStatus();
   }();
 
-  LLFS_LOG_INFO() << "[IoRingLogDriver::flush_task] exited with status=" << status;
+  if (!this->halt_requested_.load()) {
+    LLFS_LOG_WARNING() << "[IoRingLogDriver::flush_task] exited unexpectedly with status="
+                       << status;
+  } else {
+    LLFS_VLOG(1) << "[IoRingLogDriver::flush_task] exited with status=" << status;
+  }
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

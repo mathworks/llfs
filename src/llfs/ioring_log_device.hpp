@@ -35,6 +35,7 @@ BATT_SUPPRESS("-Wunused-parameter")
 
 BATT_UNSUPPRESS()
 
+#include <atomic>
 #include <vector>
 
 namespace llfs {
@@ -318,6 +319,8 @@ class IoRingLogDriver
 
   IoRing ioring_;
   IoRing::File file_;
+
+  std::atomic<bool> halt_requested_{false};
 
   batt::Watch<slot_offset_type> trim_pos_{0};
   batt::Watch<slot_offset_type> flush_pos_{0};

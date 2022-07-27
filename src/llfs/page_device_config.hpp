@@ -25,12 +25,28 @@
 #include <boost/uuid/uuid.hpp>
 
 #include <ostream>
+#include <variant>
 
 namespace llfs {
 
 class PageDevice;
-
 struct PackedPageDeviceConfig;
+struct PageDeviceConfigOptions;
+
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+
+Status configure_storage_object(StorageFileBuilder::Transaction&,
+                                FileOffsetPtr<PackedPageDeviceConfig&> p_config,
+                                const PageDeviceConfigOptions& options);
+
+#ifndef LLFS_DISABLE_IO_URING
+
+StatusOr<std::unique_ptr<PageDevice>> recover_storage_object(
+    const batt::SharedPtr<StorageContext>& storage_context, const std::string& file_name,
+    const FileOffsetPtr<const PackedPageDeviceConfig&>& p_config,
+    const IoRingFileRuntimeOptions& file_options);
+
+#endif  // LLFS_DISABLE_IO_URING
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
@@ -71,6 +87,76 @@ struct PageDeviceConfigOptions {
     BATT_CHECK_EQ(this->page_size(), n);
   }
 };
+
+inline bool operator==(const PageDeviceConfigOptions& l, const PageDeviceConfigOptions& r)
+{
+  return l.uuid == r.uuid                 //
+         && l.device_id == r.device_id    //
+         && l.page_count == r.page_count  //
+         && l.page_size_log2 == r.page_size_log2;
+}
+
+inline bool operator!=(const PageDeviceConfigOptions& l, const PageDeviceConfigOptions& r)
+{
+  return !(l == r);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// These types are provided for the convenience of more complex configs that nest one or more
+// LogDevice configs.
+//
+
+struct CreateNewPageDevice {
+  PageDeviceConfigOptions options;
+};
+
+inline bool operator==(const CreateNewPageDevice& l, const CreateNewPageDevice& r)
+{
+  return l.options == r.options;
+}
+
+inline bool operator!=(const CreateNewPageDevice& l, const CreateNewPageDevice& r)
+{
+  return !(l == r);
+}
+
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+
+struct LinkToExistingPageDevice {
+  boost::uuids::uuid uuid;
+  page_device_id_int device_id;
+};
+
+inline bool operator==(const LinkToExistingPageDevice& l, const LinkToExistingPageDevice& r)
+{
+  return l.uuid == r.uuid  //
+         && l.device_id == r.device_id;
+}
+
+inline bool operator!=(const LinkToExistingPageDevice& l, const LinkToExistingPageDevice& r)
+{
+  return !(l == r);
+}
+
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+
+struct LinkToNewPageDevice {
+};
+
+inline bool operator==(const LinkToNewPageDevice&, const LinkToNewPageDevice&)
+{
+  return false;
+}
+
+inline bool operator!=(const LinkToNewPageDevice& l, const LinkToNewPageDevice& r)
+{
+  return !(l == r);
+}
+
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+
+using NestedPageDeviceConfig =
+    std::variant<CreateNewPageDevice, LinkToExistingPageDevice, LinkToNewPageDevice>;
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
@@ -117,19 +203,6 @@ struct PackedConfigTagFor<PackedPageDeviceConfig> {
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
 std::ostream& operator<<(std::ostream& out, const PackedPageDeviceConfig& t);
-
-Status configure_storage_object(StorageFileBuilder::Transaction&,
-                                FileOffsetPtr<PackedPageDeviceConfig&> p_config,
-                                const PageDeviceConfigOptions& options);
-
-#ifndef LLFS_DISABLE_IO_URING
-
-StatusOr<std::unique_ptr<PageDevice>> recover_storage_object(
-    const batt::SharedPtr<StorageContext>& storage_context, const std::string& file_name,
-    const FileOffsetPtr<const PackedPageDeviceConfig&>& p_config,
-    const IoRingFileRuntimeOptions& file_options);
-
-#endif  // LLFS_DISABLE_IO_URING
 
 }  // namespace llfs
 

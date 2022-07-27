@@ -23,9 +23,24 @@
 
 #include <boost/uuid/uuid.hpp>
 
+#include <ostream>
+#include <variant>
+
 namespace llfs {
 
+struct LogDeviceConfigOptions;
 struct PackedLogDeviceConfig;
+
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+
+Status configure_storage_object(StorageFileBuilder::Transaction&,
+                                FileOffsetPtr<PackedLogDeviceConfig&> p_config,
+                                const LogDeviceConfigOptions& options);
+
+StatusOr<std::unique_ptr<LogDeviceFactory>> recover_storage_object(
+    const batt::SharedPtr<StorageContext>& storage_context, const std::string& file_name,
+    const FileOffsetPtr<const PackedLogDeviceConfig&>& p_config,
+    const IoRingLogDriverOptions& options);
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
@@ -75,6 +90,80 @@ struct LogDeviceConfigOptions {
         << BATT_INSPECT(n_bytes) << BATT_INSPECT(n_pages) << BATT_INSPECT(kLogPageSize);
   }
 };
+
+inline bool operator==(const LogDeviceConfigOptions& l, const LogDeviceConfigOptions& r)
+{
+  return l.uuid == r.uuid                                     //
+         && l.pages_per_block_log2 == r.pages_per_block_log2  //
+         && l.log_size == r.log_size;
+}
+
+inline bool operator!=(const LogDeviceConfigOptions& l, const LogDeviceConfigOptions& r)
+{
+  return !(l == r);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// These types are provided for the convenience of more complex configs that nest one or more
+// LogDevice configs.
+//
+
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+struct CreateNewLogDevice {
+  LogDeviceConfigOptions options;
+};
+
+inline bool operator==(const CreateNewLogDevice& l, const CreateNewLogDevice& r)
+{
+  return l.options == r.options;
+}
+
+inline bool operator!=(const CreateNewLogDevice& l, const CreateNewLogDevice& r)
+{
+  return !(l == r);
+}
+
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+struct CreateNewLogDeviceWithDefaultSize {
+  Optional<boost::uuids::uuid> uuid;
+  Optional<u16> pages_per_block_log2;
+};
+
+inline bool operator==(const CreateNewLogDeviceWithDefaultSize& l,
+                       const CreateNewLogDeviceWithDefaultSize& r)
+{
+  return l.uuid == r.uuid  //
+         && l.pages_per_block_log2 == r.pages_per_block_log2;
+}
+
+inline bool operator!=(const CreateNewLogDeviceWithDefaultSize& l,
+                       const CreateNewLogDeviceWithDefaultSize& r)
+{
+  return !(l == r);
+}
+
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+struct LinkToExistingLogDevice {
+  boost::uuids::uuid uuid;
+};
+
+inline bool operator==(const LinkToExistingLogDevice& l, const LinkToExistingLogDevice& r)
+{
+  return l.uuid == r.uuid;
+}
+
+inline bool operator!=(const LinkToExistingLogDevice& l, const LinkToExistingLogDevice& r)
+{
+  return !(l == r);
+}
+
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+
+using NestedLogDeviceConfig =
+    std::variant<CreateNewLogDevice, CreateNewLogDeviceWithDefaultSize, LinkToExistingLogDevice>;
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
@@ -126,15 +215,6 @@ struct PackedConfigTagFor<PackedLogDeviceConfig> {
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
 std::ostream& operator<<(std::ostream& out, const PackedLogDeviceConfig& t);
-
-Status configure_storage_object(StorageFileBuilder::Transaction&,
-                                FileOffsetPtr<PackedLogDeviceConfig&> p_config,
-                                const LogDeviceConfigOptions& options);
-
-StatusOr<std::unique_ptr<LogDeviceFactory>> recover_storage_object(
-    const batt::SharedPtr<StorageContext>& storage_context, const std::string& file_name,
-    const FileOffsetPtr<const PackedLogDeviceConfig&>& p_config,
-    const IoRingLogDriverOptions& options);
 
 }  // namespace llfs
 

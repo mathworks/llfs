@@ -16,15 +16,34 @@
 #include <llfs/packed_config.hpp>
 #include <llfs/packed_pointer.hpp>
 #include <llfs/page_allocator_runtime_options.hpp>
+#include <llfs/page_device_config.hpp>
 #include <llfs/page_size.hpp>
 
 #include <batteries/static_assert.hpp>
 
 #include <boost/uuid/uuid.hpp>
 
+#include <iostream>
+#include <variant>
+
 namespace llfs {
 
+class PageAllocator;
 struct PackedPageAllocatorConfig;
+struct PageAllocatorConfigOptions;
+
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+
+Status configure_storage_object(StorageFileBuilder::Transaction&,
+                                FileOffsetPtr<PackedPageAllocatorConfig&> p_config,
+                                const PageAllocatorConfigOptions& options);
+
+StatusOr<std::unique_ptr<PageAllocator>> recover_storage_object(
+    const batt::SharedPtr<StorageContext>& storage_context,           //
+    const std::string& file_name,                                     //
+    const FileOffsetPtr<const PackedPageAllocatorConfig&>& p_config,  //
+    const PageAllocatorRuntimeOptions& options,                       //
+    const IoRingLogDriverOptions& log_options);
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
@@ -45,16 +64,69 @@ struct PageAllocatorConfigOptions {
 
   // Options for the log device that stores the state of this page allocator.
   //
-  LogDeviceConfigOptions log_device;
+  NestedLogDeviceConfig log_device;
 
   // (Sanity check) The page size (log2) of the page device managed by this allocator.
   //
   PageSizeLog2 page_size_log2;
 
-  // The device sequence number.
+  // The page device managed by this allocator.
   //
-  Optional<u32> page_device_id;
+  NestedPageDeviceConfig page_device;
 };
+
+inline bool operator==(const PageAllocatorConfigOptions& l, const PageAllocatorConfigOptions& r)
+{
+  return l.uuid == r.uuid                           //
+         && l.max_attachments == r.max_attachments  //
+         && l.page_count == r.page_count            //
+         && l.log_device == r.log_device            //
+         && l.page_size_log2 == r.page_size_log2    //
+         && l.page_device == r.page_device;
+}
+
+inline bool operator!=(const PageAllocatorConfigOptions& l, const PageAllocatorConfigOptions& r)
+{
+  return !(l == r);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// These types are provided for the convenience of more complex configs that nest one or more
+// PageAllocator configs.
+
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+struct CreateNewPageAllocator {
+  PageAllocatorConfigOptions options;
+};
+
+inline bool operator==(const CreateNewPageAllocator& l, const CreateNewPageAllocator& r)
+{
+  return l.options == r.options;
+}
+
+inline bool operator!=(const CreateNewPageAllocator& l, const CreateNewPageAllocator& r)
+{
+  return !(l == r);
+}
+
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+struct LinkToExistingPageAllocator {
+  boost::uuids::uuid uuid;
+};
+
+inline bool operator==(const LinkToExistingPageAllocator& l, const LinkToExistingPageAllocator& r)
+{
+  return l.uuid == r.uuid;
+}
+
+inline bool operator!=(const LinkToExistingPageAllocator& l, const LinkToExistingPageAllocator& r)
+{
+  return !(l == r);
+}
+
+using NestedPageAllocatorConfig = std::variant<CreateNewPageAllocator, LinkToExistingPageAllocator>;
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
@@ -102,19 +174,6 @@ struct PackedConfigTagFor<PackedPageAllocatorConfig> {
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
 std::ostream& operator<<(std::ostream& out, const PackedPageAllocatorConfig& t);
-
-Status configure_storage_object(StorageFileBuilder::Transaction&,
-                                FileOffsetPtr<PackedPageAllocatorConfig&> p_config,
-                                const PageAllocatorConfigOptions& options);
-
-class PageAllocator;
-
-StatusOr<std::unique_ptr<PageAllocator>> recover_storage_object(
-    const batt::SharedPtr<StorageContext>& storage_context,           //
-    const std::string& file_name,                                     //
-    const FileOffsetPtr<const PackedPageAllocatorConfig&>& p_config,  //
-    const PageAllocatorRuntimeOptions& options,                       //
-    const IoRingLogDriverOptions& log_options);
 
 }  // namespace llfs
 

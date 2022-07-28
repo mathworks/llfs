@@ -166,6 +166,13 @@ inline slot_offset_type get_slot_offset(slot_offset_type slot_offset)
   return slot_offset;
 }
 
+inline slot_offset_type get_slot_offset(PackedSlotOffset packed)
+{
+  return packed.value();
+}
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+
 struct SlotOffsetOrder {
   template <typename First, typename Second>
   bool operator()(const First& first, const Second& second) const

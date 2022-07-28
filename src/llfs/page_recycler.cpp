@@ -421,18 +421,26 @@ void PageRecycler::refresh_grants()
   LLFS_VLOG(1) << " -- " << BATT_INSPECT(available) << " (after reserving for recycle_task)";
 
   if (available > 0) {
+    const auto observed_recycle_task_grant_size = this->recycle_task_grant_.size();
+    const auto observed_recycle_task_target = options.recycle_task_target();
+
     if (this->stop_requested_) {
       return;
     }
 
-    BATT_CHECK_EQ(this->recycle_task_grant_.size(), options.recycle_task_target())
+    BATT_CHECK_EQ(observed_recycle_task_grant_size, observed_recycle_task_target)
         << "The recycle task grant must take priority over the insert grant pool!"
         << BATT_INSPECT(this->stop_requested_);
 
-    batt::Grant grant =
-        ok_result_or_panic(this->slot_writer_.reserve(available, batt::WaitForResource::kFalse));
-    BATT_CHECK_EQ(this->insert_grant_pool_.get_issuer(), grant.get_issuer());
-    this->insert_grant_pool_.subsume(std::move(grant));
+    StatusOr<batt::Grant> grant =
+        this->slot_writer_.reserve(available, batt::WaitForResource::kFalse);
+    if (!grant.ok()) {
+      BATT_CHECK(this->stop_requested_);
+      return;
+    }
+
+    BATT_CHECK_EQ(this->insert_grant_pool_.get_issuer(), grant->get_issuer());
+    this->insert_grant_pool_.subsume(std::move(*grant));
   }
 
   LLFS_VLOG(1) << " -- " << BATT_INSPECT(this->insert_grant_pool_);

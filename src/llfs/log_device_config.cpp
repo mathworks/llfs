@@ -42,7 +42,7 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
   const i64 physical_size =
       IoRingLogDriver::disk_size_required_for_log_size(logical_size, block_size);
 
-  Interval<i64> blocks_offset = txn.reserve_aligned(/*bits=*/12, physical_size);
+  Interval<i64> blocks_offset = txn.reserve_aligned(/*bits=*/kLogPageSizeLog2, physical_size);
 
   BATT_CHECK_EQ(blocks_offset.size(), physical_size)
       << BATT_INSPECT(logical_size) << BATT_INSPECT(block_size) << BATT_INSPECT(options.log_size);

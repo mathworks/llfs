@@ -114,7 +114,7 @@ StatusOr<SlotParse> SlotReader::parse_next(batt::WaitForResource wait_for_data)
     BATT_CHECK_NE(*slot_body_size, 0u)
         << BATT_INSPECT(bytes_available_before) << BATT_INSPECT(bytes_available_after)
         << BATT_INSPECT(current_slot) << BATT_INSPECT(data.size())
-        << BATT_INSPECT(current_slot + data.size());
+        << BATT_INSPECT(current_slot + data.size()) << BATT_INSPECT(this->slots_parsed_count_);
 
     // Calculate the header (varint) size from bytes available before and after.
     //

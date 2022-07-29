@@ -141,7 +141,7 @@ void IoRingLogFlushOp::start_flush()
 {
   BATT_CHECK_NE(this->ready_to_write_.size(), 0u);
   BATT_CHECK_EQ(this->ready_to_write_.size(),
-                batt::round_down_bits(kLogAtomicWriteBits, this->ready_to_write_.size()));
+                batt::round_down_bits(kLogAtomicWriteSizeLog2, this->ready_to_write_.size()));
 
   const usize progress = this->next_write_offset_ - this->file_offset_;
 
@@ -312,7 +312,7 @@ bool IoRingLogFlushOp::fill_buffer(slot_offset_type known_commit_pos)
   //
   this->ready_to_write_ = ConstBuffer{
       this->page_block_.get(),
-      batt::round_up_bits(kLogAtomicWriteBits, sizeof(PackedPageHeader) + header->commit_size)};
+      batt::round_up_bits(kLogAtomicWriteSizeLog2, sizeof(PackedPageHeader) + header->commit_size)};
 
   this->next_write_offset_ = this->file_offset_;
 
@@ -333,7 +333,7 @@ bool IoRingLogFlushOp::fill_buffer(slot_offset_type known_commit_pos)
         << BATT_INSPECT(this->driver_->block_capacity());
 
     offset = batt::round_down_bits(
-        kLogAtomicWriteBits,
+        kLogAtomicWriteSizeLog2,
         sizeof(PackedPageHeader) + slot_distance(header->slot_offset, this->flush_pos_));
   }
   offset = std::max(kLogAtomicWriteSize, offset);

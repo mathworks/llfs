@@ -49,7 +49,8 @@ struct IoRingLogConfig {
   static constexpr usize kDefaultBlockSize = 16 * kKiB;
   static constexpr usize kDefaultPagesPerBlockLog2 = 5;
 
-  static_assert((1ull << (kDefaultPagesPerBlockLog2 + kLogAtomicWriteBits)) == kDefaultBlockSize,
+  static_assert((1ull << (kDefaultPagesPerBlockLog2 + kLogAtomicWriteSizeLog2)) ==
+                    kDefaultBlockSize,
                 "");
 
   // The in-memory (logical) size in bytes of the log.

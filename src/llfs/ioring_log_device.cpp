@@ -108,7 +108,7 @@ Status IoRingLogDriver::read_log_data()
   // Shut down the ioring and reset when we leave this scope.
   //
   const auto stop_ioring_thread = batt::finally([&] {
-    LLFS_VLOG(1) << "Stopping ioring";
+    LLFS_VLOG(1) << "Stopping ioring (IoRingLogDrvier::read_log_data)";
     this->ioring_.on_work_finished();
     ioring_thread.join();
     this->ioring_.reset();
@@ -131,6 +131,8 @@ Status IoRingLogDriver::read_log_data()
   BATT_CHECK_EQ(block_payload.size(), this->config_.block_capacity());
 
   LLFS_VLOG(1) << "initial log recovery started";
+
+  u64 bytes_copied = 0;
 
   u64 file_offset = this->config_.physical_offset;
   for (usize block_i = 0; block_i < this->config_.block_count(); ++block_i) {
@@ -157,17 +159,21 @@ Status IoRingLogDriver::read_log_data()
     if (block_header.commit_size > 0) {
       MutableBuffer dst = this->context_.buffer_.get_mut(block_header.slot_offset);
       std::memcpy(dst.data(), block_payload.data(), block_header.commit_size);
+      bytes_copied += block_header.commit_size;
     }
 
     file_offset += this->config_.block_size();
   }
 
-  LLFS_VLOG(1) << "log recovery complete; total: "
-               << (this->config_.block_size() * this->config_.block_count());
-
   // After opening, there is no unflushed data so commit_pos == flush_pos.
   //
   this->commit_pos_.set_value(this->flush_pos_.get_value());
+
+  LLFS_VLOG(1) << "log recovery complete; total: "
+               << (this->config_.block_size() * this->config_.block_count()) << ";"
+               << BATT_INSPECT(this->trim_pos_.get_value())
+               << BATT_INSPECT(this->flush_pos_.get_value())
+               << BATT_INSPECT(this->commit_pos_.get_value()) << BATT_INSPECT(bytes_copied);
 
   return OkStatus();
 }
@@ -176,6 +182,9 @@ Status IoRingLogDriver::read_log_data()
 //
 Status IoRingLogDriver::set_trim_pos(slot_offset_type trim_pos)
 {
+  LLFS_VLOG(1) << "IoRingLogDriver::set_trim_pos(" << trim_pos << ")"
+               << BATT_INSPECT(this->trim_pos_.get_value());
+
   clamp_min_slot(this->trim_pos_, trim_pos);
 
   return OkStatus();
@@ -187,6 +196,10 @@ void IoRingLogDriver::halt()
 {
   const bool previously_halted = this->halt_requested_.exchange(true);
   if (!previously_halted) {
+    LLFS_VLOG(1) << "IoRingLogDriver::halt() - (trim=" << this->trim_pos_.get_value()
+                 << " flush=" << this->flush_pos_.get_value()
+                 << " commit=" << this->commit_pos_.get_value() << ")";
+
     this->trim_pos_.close();
     this->flush_pos_.close();
     this->commit_pos_.close();
@@ -279,7 +292,7 @@ void IoRingLogDriver::poll_commit_state()
 {
   if (!this->waiting_for_commit_.empty()) {
     slot_offset_type known_commit_pos = this->commit_pos_.get_value();
-    LLFS_VLOG(1) << "(driver=" << this->name_ << ") read commit_pos=" << known_commit_pos;
+    LLFS_VLOG(2) << "(driver=" << this->name_ << ") observed commit_pos=" << known_commit_pos;
     do {
       slot_offset_type next_wait_pos = this->waiting_for_commit_.top();
       if (slot_less_than(known_commit_pos, next_wait_pos)) {
@@ -292,7 +305,7 @@ void IoRingLogDriver::poll_commit_state()
       //
       const usize op_index =
           ((next_wait_pos - 1) / this->block_capacity()) & this->queue_depth_mask_;
-      LLFS_VLOG(1) << "(driver=" << this->name_ << ") commit_pos=" << known_commit_pos
+      LLFS_VLOG(2) << "(driver=" << this->name_ << ") commit_pos=" << known_commit_pos
                    << " waking op[" << op_index
                    << "], which was waiting on commit_pos >= " << next_wait_pos;
 
@@ -306,7 +319,7 @@ void IoRingLogDriver::poll_commit_state()
 void IoRingLogDriver::wait_for_commit_pos(slot_offset_type last_seen)
 {
   if (!this->commit_pos_listener_active_) {
-    LLFS_VLOG(1) << "(driver=" << this->name_ << ") wait_for_commit_pos(last_seen=" << last_seen
+    LLFS_VLOG(2) << "(driver=" << this->name_ << ") wait_for_commit_pos(last_seen=" << last_seen
                  << ")";
     this->commit_pos_listener_active_ = true;
     this->commit_pos_.async_wait(
@@ -322,7 +335,7 @@ void IoRingLogDriver::wait_for_commit_pos(slot_offset_type last_seen)
                                  this->ioring_.stop();
                                  return;
                                }
-                               LLFS_VLOG(1)
+                               LLFS_VLOG(2)
                                    << "(driver=" << this->name_
                                    << ") commit_pos listener invoked: " << updated_commit_pos;
                                this->poll_commit_state();

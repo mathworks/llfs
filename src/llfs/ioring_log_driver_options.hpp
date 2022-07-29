@@ -12,6 +12,9 @@
 
 #include <llfs/int_types.hpp>
 
+#include <batteries/stream_util.hpp>
+
+#include <atomic>
 #include <string>
 
 namespace llfs {
@@ -24,6 +27,12 @@ class IoRingLogDriverOptions
  public:
   static IoRingLogDriverOptions with_default_values();
 
+  static int next_id()
+  {
+    static std::atomic<int> n{1};
+    return n.fetch_add(1);
+  }
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   IoRingLogDriverOptions() noexcept
@@ -32,7 +41,7 @@ class IoRingLogDriverOptions
 
   // The debug name of this log.
   //
-  std::string name = "(anonymous log driver)";
+  std::string name = batt::to_string("(anonymous log ", next_id(), ")");
 
   // How long to wait for a full page worth of log data before flushing to disk.
   //

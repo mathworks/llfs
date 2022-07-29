@@ -96,6 +96,8 @@ class SlotReader
       }
       BATT_REQUIRE_OK(parsed);
 
+      this->slots_parsed_count_ += 1;
+
       Status visitor_status = visitor(*parsed);
       BATT_REQUIRE_OK(visitor_status);
 
@@ -128,6 +130,8 @@ class SlotReader
   // `consume` after each slot.
   //
   batt::Watch<slot_offset_type> consumed_upper_bound_;
+
+  u64 slots_parsed_count_ = 0;
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

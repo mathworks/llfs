@@ -68,9 +68,9 @@ inline std::atomic<bool>& suppress_log_output_for_test()
 
 // The device-level log page size and max atomic write size.
 //
-constexpr usize kLogPageSize = 4 * kKiB;
-constexpr usize kLogAtomicWriteSize = 4 * kKiB;
-constexpr usize kLogAtomicWriteBits = 12;
+constexpr usize kLogPageSize = 512;
+constexpr usize kLogAtomicWriteSize = 512;
+constexpr usize kLogAtomicWriteBits = 9;
 
 BATT_STATIC_ASSERT_EQ(usize{1} << kLogAtomicWriteBits, kLogAtomicWriteSize);
 

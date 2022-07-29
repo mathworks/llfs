@@ -62,6 +62,8 @@ void SlotWriter::halt()
 auto SlotWriter::prepare(batt::Grant& caller_grant, usize slot_body_size,
                          Optional<std::string_view> name) -> StatusOr<Append>
 {
+  BATT_CHECK_NE(slot_body_size, 0);
+
   const usize slot_header_size = packed_sizeof_varint(slot_body_size);
   const usize slot_size = slot_header_size + slot_body_size;
 

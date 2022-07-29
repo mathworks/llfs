@@ -23,6 +23,8 @@ namespace llfs {
 #define THIS_LOG(lvl)                                                                              \
   LOG(lvl) << "(driver=" << this->driver_->name_ << ") LogFlushOp[" << this->self_index() << "] "
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void IoRingLogFlushOp::initialize(IoRingLogDriver* driver)
 {
   BATT_CHECK_NOT_NULLPTR(driver);
@@ -51,6 +53,8 @@ void IoRingLogFlushOp::initialize(IoRingLogDriver* driver)
 #undef ADD_METRIC_
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 IoRingLogFlushOp::~IoRingLogFlushOp() noexcept
 {
   global_metric_registry()  //
@@ -58,6 +62,8 @@ IoRingLogFlushOp::~IoRingLogFlushOp() noexcept
       .remove(this->metrics_.bytes_written);
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void IoRingLogFlushOp::activate()
 {
   const usize my_index = this->self_index();
@@ -73,16 +79,22 @@ void IoRingLogFlushOp::activate()
   this->poll_commit_pos(this->driver_->commit_pos_.get_value());
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 IoRing& IoRingLogFlushOp::get_ioring()
 {
   return this->driver_->ioring_;
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void IoRingLogFlushOp::poll_commit_state()
 {
   this->driver_->poll_commit_state();
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void IoRingLogFlushOp::poll_commit_pos(slot_offset_type known_commit_pos)
 {
   PackedPageHeader* header = this->get_header();
@@ -109,6 +121,8 @@ void IoRingLogFlushOp::poll_commit_pos(slot_offset_type known_commit_pos)
   this->start_flush();
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void IoRingLogFlushOp::wait_for_commit(slot_offset_type known_commit_pos,
                                        slot_offset_type min_required)
 {
@@ -121,6 +135,8 @@ void IoRingLogFlushOp::wait_for_commit(slot_offset_type known_commit_pos,
   this->driver_->waiting_for_commit_.push(min_required);
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void IoRingLogFlushOp::start_flush()
 {
   BATT_CHECK_NE(this->ready_to_write_.size(), 0u);
@@ -147,6 +163,8 @@ void IoRingLogFlushOp::start_flush()
                                               (int)this->self_index(), this->get_flush_handler());
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void IoRingLogFlushOp::finish_flush()
 {
   THIS_VLOG(1) << "finish_flush()";
@@ -166,6 +184,8 @@ void IoRingLogFlushOp::finish_flush()
                                               (int)this->self_index(), this->get_flush_handler());
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void IoRingLogFlushOp::handle_flush(const StatusOr<i32>& result)
 {
   this->write_timer_ = None;
@@ -237,21 +257,29 @@ void IoRingLogFlushOp::handle_flush(const StatusOr<i32>& result)
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 usize IoRingLogFlushOp::self_index()
 {
   return std::distance(this->driver_->flush_ops_.data(), this);
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 auto IoRingLogFlushOp::get_header() const -> PackedPageHeader*
 {
   return reinterpret_cast<PackedPageHeader*>(this->page_block_.get());
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 MutableBuffer IoRingLogFlushOp::get_buffer() const
 {
   return MutableBuffer{this->page_block_.get(), this->driver_->block_size()};
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 bool IoRingLogFlushOp::fill_buffer(slot_offset_type known_commit_pos)
 {
   PackedPageHeader* header = this->get_header();

@@ -35,7 +35,8 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
                                 const LogDeviceConfigOptions& options)
 {
   const i64 logical_size = round_up_to_page_size_multiple(options.log_size);
-  const u32 pages_per_block_log2 = options.pages_per_block_log2.value_or(2);
+  const u32 pages_per_block_log2 =
+      options.pages_per_block_log2.value_or(IoRingLogConfig::kDefaultPagesPerBlockLog2);
   const u64 pages_per_block = u64{1} << pages_per_block_log2;
   const u64 block_size = pages_per_block * kLogPageSize;
   const i64 physical_size =

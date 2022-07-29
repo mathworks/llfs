@@ -9,6 +9,7 @@
 #include <llfs/volume_config.hpp>
 //
 
+#include <llfs/ioring_log_device.hpp>
 #include <llfs/page_recycler.hpp>
 #include <llfs/uuid.hpp>
 
@@ -43,7 +44,7 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
 
   const LogDeviceConfigOptions recycler_log_options{
       .uuid = random_uuid(),
-      .pages_per_block_log2 = 2,
+      .pages_per_block_log2 = IoRingLogConfig::kDefaultPagesPerBlockLog2 + 1,
       .log_size = PageRecycler::calculate_log_size(options.base.max_refs_per_page,
                                                    options.recycler_max_buffered_page_count),
   };

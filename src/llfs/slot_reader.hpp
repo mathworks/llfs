@@ -44,6 +44,8 @@ class SlotReader
 
   StatusOr<slot_offset_type> await_consumed_upper_bound(slot_offset_type min_offset);
 
+  // Skips over the specified number of bytes.
+  //
   void skip(slot_offset_type byte_count);
 
   // Set a function to be called immediately before each slot parse attempt.

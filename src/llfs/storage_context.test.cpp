@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 
 #include <llfs/constants.hpp>
+#include <llfs/ioring_log_device.hpp>
 #include <llfs/page_arena_config.hpp>
 #include <llfs/raw_block_file_impl.hpp>
 #include <llfs/uuid.hpp>
@@ -53,70 +54,70 @@ TEST(StorageContextTest, GetPageCache)
   llfs::Status file_create_status = storage_context->add_new_file(
       storage_file_name, [&](llfs::StorageFileBuilder& builder) -> llfs::Status {
         llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageArenaConfig&>> config_4kb =
-            builder.add_object(
-                llfs::PageArenaConfigOptions{
-                    .uuid = arena_uuid_4kb,
-                    .page_allocator =
-                        llfs::CreateNewPageAllocator{
-                            .options =
-                                llfs::PageAllocatorConfigOptions{
-                                    .uuid = llfs::None,
-                                    .max_attachments = 32,
-                                    .page_count = llfs::PageCount{32},
-                                    .log_device =
-                                        llfs::CreateNewLogDeviceWithDefaultSize{
-                                            .uuid = llfs::None,
-                                            .pages_per_block_log2 = 1,
-                                        },
-                                    .page_size_log2 = llfs::PageSizeLog2{12},
-                                    .page_device = llfs::LinkToNewPageDevice{},
-                                },
-                        },
-                    .page_device =
-                        llfs::CreateNewPageDevice{
-                            .options =
-                                llfs::PageDeviceConfigOptions{
-                                    .uuid = llfs::None,
-                                    .device_id = llfs::None,
-                                    .page_count = llfs::PageCount{32},
-                                    .page_size_log2 = llfs::PageSizeLog2{12},
-                                },
-                        },
-                });
+            builder.add_object(llfs::PageArenaConfigOptions{
+                .uuid = arena_uuid_4kb,
+                .page_allocator =
+                    llfs::CreateNewPageAllocator{
+                        .options =
+                            llfs::PageAllocatorConfigOptions{
+                                .uuid = llfs::None,
+                                .max_attachments = 32,
+                                .page_count = llfs::PageCount{32},
+                                .log_device =
+                                    llfs::CreateNewLogDeviceWithDefaultSize{
+                                        .uuid = llfs::None,
+                                        .pages_per_block_log2 =
+                                            llfs::IoRingLogConfig::kDefaultPagesPerBlockLog2 + 1,
+                                    },
+                                .page_size_log2 = llfs::PageSizeLog2{12},
+                                .page_device = llfs::LinkToNewPageDevice{},
+                            },
+                    },
+                .page_device =
+                    llfs::CreateNewPageDevice{
+                        .options =
+                            llfs::PageDeviceConfigOptions{
+                                .uuid = llfs::None,
+                                .device_id = llfs::None,
+                                .page_count = llfs::PageCount{32},
+                                .page_size_log2 = llfs::PageSizeLog2{12},
+                            },
+                    },
+            });
 
         BATT_REQUIRE_OK(config_4kb);
 
         llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageArenaConfig&>> config_2mb =
-            builder.add_object(
-                llfs::PageArenaConfigOptions{
-                    .uuid = arena_uuid_2mb,
-                    .page_allocator =
-                        llfs::CreateNewPageAllocator{
-                            .options =
-                                llfs::PageAllocatorConfigOptions{
-                                    .uuid = llfs::None,
-                                    .max_attachments = 32,
-                                    .page_count = llfs::PageCount{32},
-                                    .log_device =
-                                        llfs::CreateNewLogDeviceWithDefaultSize{
-                                            .uuid = llfs::None,
-                                            .pages_per_block_log2 = 1,
-                                        },
-                                    .page_size_log2 = llfs::PageSizeLog2{21},
-                                    .page_device = llfs::LinkToNewPageDevice{},
-                                },
-                        },
-                    .page_device =
-                        llfs::CreateNewPageDevice{
-                            .options =
-                                llfs::PageDeviceConfigOptions{
-                                    .uuid = llfs::None,
-                                    .device_id = llfs::None,
-                                    .page_count = llfs::PageCount{32},
-                                    .page_size_log2 = llfs::PageSizeLog2{21},
-                                },
-                        },
-                });
+            builder.add_object(llfs::PageArenaConfigOptions{
+                .uuid = arena_uuid_2mb,
+                .page_allocator =
+                    llfs::CreateNewPageAllocator{
+                        .options =
+                            llfs::PageAllocatorConfigOptions{
+                                .uuid = llfs::None,
+                                .max_attachments = 32,
+                                .page_count = llfs::PageCount{32},
+                                .log_device =
+                                    llfs::CreateNewLogDeviceWithDefaultSize{
+                                        .uuid = llfs::None,
+                                        .pages_per_block_log2 =
+                                            llfs::IoRingLogConfig::kDefaultPagesPerBlockLog2 + 1,
+                                    },
+                                .page_size_log2 = llfs::PageSizeLog2{21},
+                                .page_device = llfs::LinkToNewPageDevice{},
+                            },
+                    },
+                .page_device =
+                    llfs::CreateNewPageDevice{
+                        .options =
+                            llfs::PageDeviceConfigOptions{
+                                .uuid = llfs::None,
+                                .device_id = llfs::None,
+                                .page_count = llfs::PageCount{32},
+                                .page_size_log2 = llfs::PageSizeLog2{21},
+                            },
+                    },
+            });
 
         BATT_REQUIRE_OK(config_2mb);
 

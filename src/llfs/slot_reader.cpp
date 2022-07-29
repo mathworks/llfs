@@ -109,11 +109,15 @@ StatusOr<SlotParse> SlotReader::parse_next(batt::WaitForResource wait_for_data)
       min_bytes_needed = data.size() + 1;
       continue;
     }
-    BATT_CHECK_NE(*slot_body_size, 0u);
+    const usize bytes_available_after = data_reader.bytes_available();
+
+    BATT_CHECK_NE(*slot_body_size, 0u)
+        << BATT_INSPECT(bytes_available_before) << BATT_INSPECT(bytes_available_after)
+        << BATT_INSPECT(current_slot) << BATT_INSPECT(data.size())
+        << BATT_INSPECT(current_slot + data.size());
 
     // Calculate the header (varint) size from bytes available before and after.
     //
-    const usize bytes_available_after = data_reader.bytes_available();
     BATT_CHECK_GT(bytes_available_before, bytes_available_after);
     const usize slot_header_size = bytes_available_before - bytes_available_after;
     const usize slot_size = slot_header_size + *slot_body_size;

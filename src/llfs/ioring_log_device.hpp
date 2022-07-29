@@ -46,6 +46,12 @@ class IoRingLogFlushOp;
 // Physical configuration of the log.
 //
 struct IoRingLogConfig {
+  static constexpr usize kDefaultBlockSize = 16 * kKiB;
+  static constexpr usize kDefaultPagesPerBlockLog2 = 5;
+
+  static_assert((1ull << (kDefaultPagesPerBlockLog2 + kLogAtomicWriteBits)) == kDefaultBlockSize,
+                "");
+
   // The in-memory (logical) size in bytes of the log.
   //
   u64 logical_size;
@@ -63,13 +69,16 @@ struct IoRingLogConfig {
   //
   //  | flush_block_pages_log2   | flush write buffer size   |
   //  |--------------------------|---------------------------|
-  //  | 0                        | 4kb                       |
-  //  | 1                        | 8kb                       |
-  //  | 2                        | 16kb                      |
-  //  | 3                        | 32kb                      |
-  //  | 4                        | 64kb                      |
+  //  | 0                        | 512                       |
+  //  | 1                        | 1kb                       |
+  //  | 2                        | 2kb                       |
+  //  | 3                        | 4kb                       |
+  //  | 4                        | 8kb                       |
+  //  | 5                        | 16kb                      |
+  //  | 6                        | 32kb                      |
+  //  | 7                        | 64kb                      |
   //
-  usize pages_per_block_log2 = 1;
+  usize pages_per_block_log2 = kDefaultPagesPerBlockLog2;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -119,7 +128,7 @@ class IoRingLogDriver
  public:
   friend class IoRingLogFlushOp;
 
-  using AlignedUnit = std::aligned_storage_t<4 * kKiB, 512>;
+  using AlignedUnit = std::aligned_storage_t<kLogPageSize, 512>;
 
   using PackedPageHeader = IoRingLogFlushOp::PackedPageHeader;
 
@@ -144,7 +153,7 @@ class IoRingLogDriver
       return MutableBuffer{this, sizeof(PackedPageHeaderBuffer)};
     }
   };
-  static_assert(sizeof(PackedPageHeaderBuffer) == 4 * kKiB, "");
+  static_assert(sizeof(PackedPageHeaderBuffer) == kLogPageSize, "");
 
   using Config = IoRingLogConfig;
 

@@ -199,7 +199,7 @@ struct PackedLogDeviceConfig : PackedConfigSlotHeader {
 
   usize block_size() const
   {
-    return 4 * kKiB * this->pages_per_block();
+    return kLogPageSize * this->pages_per_block();
   }
 };
 

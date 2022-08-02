@@ -6,19 +6,19 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-#include <llfs/ioring_log_flush_op.hpp>
+#include <llfs/packed_log_page_header.hpp>
 //
-
-#ifndef LLFS_DISABLE_IO_URING
-
-#include <llfs/ioring_log_device.hpp>
-#include <llfs/ioring_log_flush_op.ipp>
-#include <llfs/metrics.hpp>
 
 namespace llfs {
 
-template class BasicIoRingLogFlushOp<IoRingLogDriver>;
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void PackedLogPageHeader::reset(u64 slot_offset) noexcept
+{
+  this->magic = PackedLogPageHeader::kMagic;
+  this->slot_offset = slot_offset;
+  this->commit_size = 0;
+  this->crc64 = -1;  // TODO [tastolfi 2022-02-09] implement me
+}
 
 }  // namespace llfs
-
-#endif  // LLFS_DISABLE_IO_URING

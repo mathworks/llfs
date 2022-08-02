@@ -10,6 +10,7 @@
 //
 
 #include <llfs/ioring_log_device.hpp>
+#include <llfs/ioring_log_initializer.hpp>
 #include <llfs/raw_block_file.hpp>
 
 #include <batteries/checked_cast.hpp>

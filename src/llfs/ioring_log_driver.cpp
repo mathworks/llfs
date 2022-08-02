@@ -6,15 +6,13 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-#include <llfs/ioring_log_device.hpp>
+#include <llfs/ioring_log_driver.hpp>
 //
 
-#include <llfs/config.hpp>
-
-#ifndef LLFS_DISABLE_IO_URING
+#include <llfs/ioring_log_driver.ipp>
 
 namespace llfs {
 
-}  // namespace llfs
+template class BasicIoRingLogDriver<BasicIoRingLogFlushOp>;
 
-#endif  // LLFS_DISABLE_IO_URING
+}  // namespace llfs

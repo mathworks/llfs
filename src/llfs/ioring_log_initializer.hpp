@@ -10,27 +10,75 @@
 #ifndef LLFS_IORING_LOG_INITIALIZER_HPP
 #define LLFS_IORING_LOG_INITIALIZER_HPP
 
-#include <llfs/ioring_log_device.hpp>
+#include <llfs/confirm.hpp>
+#include <llfs/int_types.hpp>
+#include <llfs/ioring.hpp>
+#include <llfs/ioring_log_config.hpp>
+#include <llfs/packed_log_page_buffer.hpp>
+#include <llfs/raw_block_file.hpp>
 
 #include <batteries/async/handler.hpp>
+#include <batteries/async/watch.hpp>
+#include <batteries/status.hpp>
 
 #include <atomic>
 #include <vector>
 
 namespace llfs {
 
-class IoRingLogInitializer
+// Write an empty log device to the given fd.
+//
+Status initialize_ioring_log_device(RawBlockFile& file, const IoRingLogConfig& config,
+                                    ConfirmThisWillEraseAllMyData confirm);
+
+template <typename IoRingImpl>
+class BasicIoRingLogInitializer;
+
+using IoRingLogInitializer = BasicIoRingLogInitializer<IoRing>;
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
+template <typename IoRingImpl>
+class BasicIoRingLogInitializer
 {
  public:
+  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+  //
   struct Subtask {
-    IoRingLogDriver::PackedPageHeaderBuffer buffer;
-    IoRingLogInitializer* that = nullptr;
+    // Must be first (to guarantee that each Subtask state is cpu-cache-line-isolated); the buffer
+    // to hold log page header information.
+    //
+    PackedLogPageBuffer buffer;
+
+    // The BasicIoRingLogInitializer object to which this Subtask belongs.
+    //
+    BasicIoRingLogInitializer* that = nullptr;
+
+    // The current destination file offset to which this Subtask is writing information.
+    //
     i64 file_offset = 0;
+
+    // The number of bytes that have been written in the current block.
+    //
     i32 block_progress = sizeof(this->buffer);
-    batt::HandlerMemory<64> handler_memory;
+
+    // Embedded memory for handler-related allocation.
+    //
+    batt::HandlerMemory<128> handler_memory;
+
+    // Used to aggregate the success/error disposition of the initializer.  Should be set only once
+    // per Subtask.
+    //
     batt::Status final_status;
+
+    // Set to `true` once the Subtask finishes.
+    //
     bool done = false;
 
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+    //
+    //
     void start_write();
 
     void handle_write(const batt::StatusOr<i32>& n_written);
@@ -42,16 +90,33 @@ class IoRingLogInitializer
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  explicit IoRingLogInitializer(usize n_tasks, IoRing::File& file,
-                                const IoRingLogDriver::Config& config) noexcept;
+  explicit BasicIoRingLogInitializer(usize n_tasks, typename IoRingImpl::File& file,
+                                     const IoRingLogConfig& config) noexcept;
 
   batt::Status run();
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
-  IoRing::File& file_;
-  IoRingLogDriver::Config config_;
+  // The file to which this initializer is writing log information.
+  //
+  typename IoRingImpl::File& file_;
+
+  // The configuration of the log which this object is initializing.
+  //
+  IoRingLogConfig config_;
+
+  // The next log block index which hasn't been assigned to a Subtask; used by the Subtasks to
+  // coordinate the distribution of work.
+  //
   std::atomic<usize> next_block_i_{0};
+
+  // Subtasks are responsible to increment this variable by 1 when they are finished; this is how
+  // the initializer knows when we are done.
+  //
   batt::Watch<usize> finished_count_{0};
+
+  // The Subtask states.
+  //
   std::vector<Subtask> subtasks_;
 };
 

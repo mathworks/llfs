@@ -17,6 +17,8 @@
 #include <llfs/data_layout.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/ioring.hpp>
+#include <llfs/packed_log_page_buffer.hpp>
+#include <llfs/packed_log_page_header.hpp>
 #include <llfs/page_buffer.hpp>
 #include <llfs/slot.hpp>
 #include <llfs/status.hpp>
@@ -28,11 +30,29 @@
 
 namespace llfs {
 
-using LogPageBuffer = std::aligned_storage_t<kLogPageSize, 512>;
+template <typename DriverImpl>
+class BasicIoRingLogFlushOp;
 
-class IoRingLogDriver;
+template <template <typename> class FlushOpImpl>
+class BasicIoRingLogDriver;
 
-class IoRingLogFlushOp
+using IoRingLogFlushOp = BasicIoRingLogFlushOp<BasicIoRingLogDriver<BasicIoRingLogFlushOp>>;
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+// Type requirements for `DriverImpl`:
+//
+//  std::string_view name() const
+//  usize pages_per_block() const
+//  usize block_size() const
+//  usize block_capacity() const
+//  u64 block_0_file_offset() const
+//  usize index_of_flush_op(const BasicIoRingLogFlushOp&) const;
+//  slot_offset_type get_commit_pos() const;
+//
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+
+template <typename DriverImpl>
+class BasicIoRingLogFlushOp
 {
  public:
   struct Metrics {
@@ -41,65 +61,23 @@ class IoRingLogFlushOp
   };
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-  // Used internally to frame on-disk pages of log data.
-  //
-  struct PackedPageHeader {
-    static constexpr u64 kMagic = 0xc3392dfb394e0349ull;
 
-    // Must be `kMagic`.
-    //
-    big_u64 magic;
+  BasicIoRingLogFlushOp() = default;
 
-    // The slot offset of the first payload byte in this block.
-    //
-    little_u64 slot_offset;
+  BasicIoRingLogFlushOp(const BasicIoRingLogFlushOp&) = delete;
+  BasicIoRingLogFlushOp& operator=(const BasicIoRingLogFlushOp&) = delete;
 
-    // The number of valid bytes in the payload section of this block.
-    //
-    little_u64 commit_size;
-
-    // The crc64 of this page, with this field set to 0.
-    //
-    little_u64 crc64;  // TODO [tastolfi 2021-06-16] implement me
-
-    // The current last known trim pos for the log.
-    //
-    little_u64 trim_pos;
-
-    // The current last known flush pos for the log.
-    //
-    little_u64 flush_pos;
-
-    // Reserved for future use.
-    //
-    little_u8 reserved_[16];
-  };
-  static_assert(sizeof(PackedPageHeader) == 64, "");
-
-  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-
-  IoRingLogFlushOp() = default;
-
-  IoRingLogFlushOp(const IoRingLogFlushOp&) = delete;
-  IoRingLogFlushOp& operator=(const IoRingLogFlushOp&) = delete;
-
-  ~IoRingLogFlushOp() noexcept;
+  ~BasicIoRingLogFlushOp() noexcept;
 
   //-----
 
-  void initialize(IoRingLogDriver* driver);
+  void initialize(DriverImpl* driver);
 
   void activate();
 
-  IoRing& get_ioring();
-
-  void poll_commit_state();
-
   //-----
 
-  void poll_commit_pos(slot_offset_type known_commit_pos);
-
-  void wait_for_commit(slot_offset_type known_commit_pos, slot_offset_type min_required);
+  void handle_commit(slot_offset_type known_commit_pos);
 
   //-----
 
@@ -111,21 +89,20 @@ class IoRingLogFlushOp
   {
     return make_custom_alloc_handler(this->handler_memory_, [this](const StatusOr<i32>& result) {
       this->handle_flush(result);
-      this->poll_commit_state();
     });
   }
 
   //-----
 
-  usize self_index();
+  usize self_index() const;
 
-  PackedPageHeader* get_header() const;
+  PackedLogPageHeader* get_header() const;
 
   // Copy data from the device ring buffer to this->page_block; return true if some data was copied.
   //
   bool fill_buffer(slot_offset_type known_commit_pos);
 
-  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   slot_offset_type flush_pos() const
   {
@@ -142,11 +119,13 @@ class IoRingLogFlushOp
  private:
   void finish_flush();
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   Metrics metrics_;
 
-  IoRingLogDriver* driver_ = nullptr;
+  DriverImpl* driver_ = nullptr;
 
-  std::unique_ptr<LogPageBuffer[]> page_block_;
+  std::unique_ptr<PackedLogPageBuffer[]> page_block_;
 
   slot_offset_type flush_pos_ = 0;
 
@@ -167,7 +146,7 @@ class IoRingLogFlushOp
   Optional<LatencyTimer> write_timer_;
 };
 
-BATT_STATIC_ASSERT_EQ(sizeof(IoRingLogFlushOp::PackedPageHeader), 64);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedLogPageHeader), 64);
 
 }  // namespace llfs
 

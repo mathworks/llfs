@@ -46,7 +46,7 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::initialize(DriverImpl* driver)
   const usize next_commit_op_index =
       driver->flush_op_index_for_slot_upper_bound(next_commit_slot_offset);
 
-  BATT_CHECK_LT(next_commmit_op_index, driver->queue_depth());
+  BATT_CHECK_LT(next_commit_op_index, driver->queue_depth());
 
   const SlotRange next_commit_block_slot_range =
       driver->block_slot_range_for_upper_bound(next_commit_slot_offset);
@@ -71,6 +71,8 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::initialize(DriverImpl* driver)
 
     if (ahead_of_next == 0) {
       header->commit_size = driver->get_commit_pos() - header->slot_offset;
+      BATT_CHECK_LT(header->commit_size, driver->block_capacity());
+
       const ConstBuffer src = driver->get_data(header->slot_offset);
       const MutableBuffer dst{header + 1, driver->block_capacity()};
       std::memcpy(dst.data(), src.data(), header->commit_size);

@@ -15,6 +15,7 @@
 #include <llfs/ioring_log_config.hpp>
 #include <llfs/ioring_log_driver_options.hpp>
 #include <llfs/ioring_log_flush_op.hpp>
+#include <llfs/log_block_calculator.hpp>
 #include <llfs/metrics.hpp>
 #include <llfs/optional.hpp>
 #include <llfs/packed_log_page_header.hpp>
@@ -52,11 +53,7 @@ class BasicIoRingLogDriver
 
   static usize disk_size_required_for_log_size(u64 logical_size, u64 block_size)
   {
-    const u64 block_capacity = block_size - sizeof(PackedLogPageHeader);
-    const u64 block_count =
-        (logical_size + block_capacity - 1) / block_capacity + (1 /* for wrap-around */);
-
-    return block_size * block_count;
+    return LogBlockCalculator::disk_size_required_for_log_size(logical_size, block_size);
   }
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -144,39 +141,9 @@ class BasicIoRingLogDriver
     return this->metrics_;
   }
 
-  usize pages_per_block() const
+  const LogBlockCalculator& calculate() const
   {
-    return this->config_.pages_per_block();
-  }
-
-  usize block_size() const
-  {
-    return this->block_size_;
-  }
-
-  usize block_capacity() const
-  {
-    return this->block_capacity_;
-  }
-
-  usize block_count() const
-  {
-    return this->block_count_;
-  }
-
-  u64 physical_size() const
-  {
-    return this->log_end_ - this->log_start_;
-  }
-
-  usize queue_depth() const
-  {
-    return this->queue_depth_;
-  }
-
-  u64 block_0_file_offset() const
-  {
-    return this->log_start_;
+    return this->calculate_;
   }
 
   usize index_of_flush_op(const FlushOp& flush_op) const
@@ -184,37 +151,13 @@ class BasicIoRingLogDriver
     return std::distance(this->flush_ops_.data(), &flush_op);
   }
 
-  u64 file_offset_from_slot(slot_offset_type offset) const
+  // Returns the known upper bound flush position for the given flush operation.
+  //
+  slot_offset_type get_flush_op_durable_upper_bound(usize flush_op_index) const
   {
-    const u64 logical_block_index = offset / this->block_capacity();
-    const u64 physical_block_index = logical_block_index % this->block_count();
-
-    return this->block_0_file_offset() + physical_block_index * this->block_size();
+    BATT_CHECK_LT(flush_op_index, this->flush_ops_.size());
+    return this->flush_ops_[flush_op_index].flush_pos();
   }
-
-  // Return the index of the highest-offset logical block that is bounded by `slot_upper_bound`.
-  //
-  usize logical_block_for_slot_upper_bound(slot_offset_type slot_upper_bound) const;
-
-  // Return the index of the highest-offset physical block that is bounded by `slot_upper_bound`.
-  //
-  usize physical_block_for_slot_upper_bound(slot_offset_type slot_upper_bound) const;
-
-  // Return the SlotRange of the highest-offset block that is bounded by `slot_upper_bound`.
-  //
-  SlotRange block_slot_range_for_upper_bound(slot_offset_type slot_upper_bound) const;
-
-  // Return the index of the flush op object assigned to handle flushing from the given log offset.
-  //
-  usize flush_op_index_for_slot_upper_bound(slot_offset_type slot_upper_bound) const;
-
-  // Return the known upper bound flush position for the given flush operation.
-  //
-  slot_offset_type get_flush_op_durable_upper_bound(usize flush_op_index) const;
-
-  // Return the next flush_op index.
-  //
-  usize get_next_flush_op_index(usize index) const;
 
   void wait_for_commit(slot_offset_type least_upper_bound);
 
@@ -253,7 +196,7 @@ class BasicIoRingLogDriver
 
    private:
     slot_offset_type flushed_upper_bound_;
-    usize next_flush_op_index_;
+    LogBlockCalculator::FlushOpIndex next_flush_op_index_;
     slot_offset_type flush_op_slot_upper_bound_;
   };
 
@@ -278,18 +221,15 @@ class BasicIoRingLogDriver
   // The physical log configuration plus cached derived values.
   //
   const IoRingLogConfig config_;
-  const u64 log_start_ = this->config_.physical_offset;
-  const u64 log_end_ = this->config_.physical_offset + this->config_.physical_size;
-  const usize block_size_ = this->config_.block_size();
-  const usize block_capacity_ = this->config_.block_capacity();
-  const usize block_count_ = this->config_.block_count();
 
   // Runtime options for the log driver plus cached derived values.
   //
   const IoRingLogDriverOptions options_;
   const std::string& name_ = this->options_.name;
-  const usize queue_depth_ = this->options_.queue_depth();
-  const usize queue_depth_mask_ = this->options_.queue_depth_mask();
+
+  // Calculator for all derived values that depend on the config and options.
+  //
+  const LogBlockCalculator calculate_;
 
   // The IoRing and file used to do log flushing.
   //

@@ -17,6 +17,7 @@
 #include <llfs/data_layout.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/ioring.hpp>
+#include <llfs/log_block_calculator.hpp>
 #include <llfs/packed_log_page_buffer.hpp>
 #include <llfs/packed_log_page_header.hpp>
 #include <llfs/page_buffer.hpp>
@@ -37,19 +38,6 @@ template <template <typename> class FlushOpImpl>
 class BasicIoRingLogDriver;
 
 using IoRingLogFlushOp = BasicIoRingLogFlushOp<BasicIoRingLogDriver<BasicIoRingLogFlushOp>>;
-
-//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-// Type requirements for `DriverImpl`:
-//
-//  std::string_view name() const
-//  usize pages_per_block() const
-//  usize block_size() const
-//  usize block_capacity() const
-//  u64 block_0_file_offset() const
-//  usize index_of_flush_op(const BasicIoRingLogFlushOp&) const;
-//  slot_offset_type get_commit_pos() const;
-//
-//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
 template <typename DriverImpl>
 class BasicIoRingLogFlushOp

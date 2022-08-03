@@ -12,6 +12,7 @@
 
 #include <llfs/int_types.hpp>
 
+#include <batteries/math.hpp>
 #include <batteries/stream_util.hpp>
 
 #include <atomic>
@@ -25,6 +26,8 @@ namespace llfs {
 class IoRingLogDriverOptions
 {
  public:
+  using Self = IoRingLogDriverOptions;
+
   static IoRingLogDriverOptions with_default_values();
 
   static int next_id()
@@ -56,6 +59,13 @@ class IoRingLogDriverOptions
   usize queue_depth() const
   {
     return usize{1} << this->queue_depth_log2;
+  }
+
+  Self& set_queue_depth(usize n)
+  {
+    this->queue_depth_log2 = batt::log2_ceil(n);
+    BATT_CHECK_EQ(this->queue_depth(), n) << "The queue depth must be a power of 2!";
+    return *this;
   }
 
   usize queue_depth_mask() const

@@ -31,9 +31,10 @@ inline BasicIoRingLogDriver<FlushOpImpl>::BasicIoRingLogDriver(
     : context_{context}
     , config_{config}
     , options_{options}
-    , ioring_{*IoRing::make_new(MaxQueueDepth{this->queue_depth() * 2})}
+    , calculate_{config, options}
+    , ioring_{*IoRing::make_new(MaxQueueDepth{this->calculate().queue_depth() * 2})}
     , file_{this->ioring_, fd}
-    , flush_ops_(this->queue_depth())
+    , flush_ops_(this->calculate().queue_depth())
 
 {
   const auto metric_name = [this](const std::string_view& property) {
@@ -70,7 +71,8 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::open()
   Status fd_registered = this->file_.register_fd();
   BATT_REQUIRE_OK(fd_registered);
 
-  // First initialize all ops in the queue pipeline to point back at this driver.
+  // First initialize all ops in the queue pipeline to point back at this driver.  IMPORTANT: this
+  // must be done before we allow the commit_pos to change!
   //
   for (auto& op : this->flush_ops_) {
     op.initialize(this);
@@ -171,7 +173,7 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::read_log_data()
       clamp_min_slot(this->flush_pos_, block_header.flush_pos);
       clamp_min_slot(this->flush_pos_, block_header.slot_offset + block_header.commit_size);
 
-      if (block_header.commit_size < this->block_capacity()) {
+      if (block_header.commit_size < this->calculate().block_capacity()) {
         end_of_data = true;
       }
     }
@@ -247,66 +249,6 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::read_log_data()
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <template <typename> class FlushOpImpl>
-inline usize BasicIoRingLogDriver<FlushOpImpl>::logical_block_for_slot_upper_bound(
-    slot_offset_type slot_upper_bound) const
-{
-  return (slot_upper_bound - 1) / this->block_capacity();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-template <template <typename> class FlushOpImpl>
-inline usize BasicIoRingLogDriver<FlushOpImpl>::physical_block_for_slot_upper_bound(
-    slot_offset_type slot_upper_bound) const
-{
-  return this->logical_block_for_slot_upper_bound(slot_upper_bound) % this->block_count();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-template <template <typename> class FlushOpImpl>
-inline SlotRange BasicIoRingLogDriver<FlushOpImpl>::block_slot_range_for_upper_bound(
-    slot_offset_type slot_upper_bound) const
-{
-  const slot_offset_type lower_bound =
-      this->logical_block_for_slot_upper_bound(slot_upper_bound) * this->block_capacity();
-
-  return SlotRange{
-      .lower_bound = lower_bound,
-      .upper_bound = lower_bound + this->block_capacity(),
-  };
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-template <template <typename> class FlushOpImpl>
-inline usize BasicIoRingLogDriver<FlushOpImpl>::flush_op_index_for_slot_upper_bound(
-    slot_offset_type slot_upper_bound) const
-{
-  return this->logical_block_for_slot_upper_bound(slot_upper_bound) & this->queue_depth_mask_;
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-template <template <typename> class FlushOpImpl>
-inline slot_offset_type BasicIoRingLogDriver<FlushOpImpl>::get_flush_op_durable_upper_bound(
-    usize flush_op_index) const
-{
-  BATT_CHECK_LT(flush_op_index, this->flush_ops_.size());
-  return this->flush_ops_[flush_op_index].flush_pos();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-template <template <typename> class FlushOpImpl>
-inline usize BasicIoRingLogDriver<FlushOpImpl>::get_next_flush_op_index(usize index) const
-{
-  return (index + 1) & this->queue_depth_mask_;
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-template <template <typename> class FlushOpImpl>
 inline Status BasicIoRingLogDriver<FlushOpImpl>::set_trim_pos(slot_offset_type trim_pos)
 {
   LLFS_VLOG(1) << "BasicIoRingLogDriver<FlushOpImpl>::set_trim_pos(" << trim_pos << ")"
@@ -374,10 +316,11 @@ template <template <typename> class FlushOpImpl>
 inline void BasicIoRingLogDriver<FlushOpImpl>::flush_task_main()
 {
   Status status = [&]() -> Status {
-    const u64 total_size = (this->log_end_ - this->log_start_);
+    const u64 total_size = this->calculate().physical_size();
     LLFS_VLOG(1) << "(driver=" << this->name_ << ") log physical size=0x" << std::hex << total_size
-                 << " block_size=0x" << this->block_size() << " block_capacity=0x"
-                 << this->block_capacity() << " queue_depth=" << std::dec << this->queue_depth();
+                 << " block_size=0x" << this->calculate().block_size() << " block_capacity=0x"
+                 << this->calculate().block_capacity() << " queue_depth=" << std::dec
+                 << this->calculate().queue_depth();
     LLFS_VLOG(1) << "(driver=" << this->name_
                  << ") buffer delay=" << this->options_.page_write_buffer_delay_usec << "usec";
 
@@ -488,7 +431,7 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::poll_commit_state()
 
     // Figure out which op must have been waiting on the given pos.
     //
-    const usize op_index = this->flush_op_index_for_slot_upper_bound(next_wait_pos);
+    const usize op_index = this->calculate().flush_op_index_from(SlotUpperBoundAt{next_wait_pos});
 
     LLFS_VLOG(2) << "(driver=" << this->name_ << ") commit_pos=" << known_commit_pos
                  << " waking op[" << op_index
@@ -540,10 +483,16 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::handle_commit_pos_update(
 template <template <typename> class FlushOpImpl>
 inline BasicIoRingLogDriver<FlushOpImpl>::FlushState::FlushState(IoRingLogDriver* driver) noexcept
     : flushed_upper_bound_{driver->get_flush_pos()}
-    , next_flush_op_index_{driver->flush_op_index_for_slot_upper_bound(this->flushed_upper_bound_ +
-                                                                       1)}
-    , flush_op_slot_upper_bound_{
-          driver->block_slot_range_for_upper_bound(this->flushed_upper_bound_ + 1).upper_bound}
+
+    , next_flush_op_index_{driver->calculate().flush_op_index_from(SlotUpperBoundAt{
+          .offset = this->flushed_upper_bound_ + 1,
+      })}
+
+    , flush_op_slot_upper_bound_{driver->calculate()
+                                     .block_slot_range_from(SlotUpperBoundAt{
+                                         .offset = this->flushed_upper_bound_ + 1,
+                                     })
+                                     .upper_bound}
 {
 }
 
@@ -568,8 +517,10 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::FlushState::poll(IoRingLogDriver*
       break;
     }
 
-    this->next_flush_op_index_ = driver->get_next_flush_op_index(this->next_flush_op_index_);
-    this->flush_op_slot_upper_bound_ += driver->block_capacity();
+    this->next_flush_op_index_ =
+        driver->calculate().next_flush_op_index(this->next_flush_op_index_);
+
+    this->flush_op_slot_upper_bound_ += driver->calculate().block_capacity();
   }
   if (update) {
     LLFS_LOG_INFO() << "(driver=" << driver->name_ << ") FlushState update=true;"

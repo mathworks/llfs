@@ -294,7 +294,7 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::handle_flush(const StatusOr<i32>&
 template <typename DriverImpl>
 inline usize BasicIoRingLogFlushOp<DriverImpl>::self_index() const
 {
-  return this->driver_->index_of_flush_op(*this);
+  return this->driver_->index_of_flush_op(this);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

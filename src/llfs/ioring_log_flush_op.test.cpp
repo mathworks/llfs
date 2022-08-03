@@ -83,9 +83,11 @@ class MockDriver
   MOCK_METHOD(std::string_view, name, (), (const));
 
   MOCK_METHOD(usize, index_of_flush_op,
-              (const llfs::BasicIoRingLogFlushOp<::testing::StrictMock<MockDriver>>& flush_op),
+              (const llfs::BasicIoRingLogFlushOp<::testing::StrictMock<MockDriver>>* flush_op),
               (const));
 };
+
+const std::string_view kFakeDriverName = "TheFakeDriver";
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
@@ -113,53 +115,101 @@ class IoRingLogFlushOpModel
     //
     const usize queue_depth = this->pick_one_of({1, 2, 4});
 
+    const usize op_index = [&]() -> usize {
+      if (queue_depth == 0) {
+        return 0;
+      }
+      if (queue_depth <= 2) {
+        return this->pick_int(0, 1);
+      }
+      switch (this->pick_int(0, 2)) {
+        case 0:
+          return 0;
+
+        case 1:
+          return (queue_depth + 1) / 2;
+
+        case 2:
+          return queue_depth - 1;
+
+        default:
+          break;
+      }
+      BATT_PANIC() << "out of range!";
+      BATT_UNREACHABLE();
+    }();
+
     const usize pages_per_block = this->pick_one_of({1, 2, 4});
+
+    const usize pages_per_block_log2 = batt::log2_ceil(pages_per_block);
+    ASSERT_EQ(1ull << pages_per_block_log2, pages_per_block);
 
     const usize block_size = llfs::kLogPageSize * pages_per_block;
 
-    const usize block_capacity = block_size - 64;
+    const usize block_capacity = block_size - sizeof(llfs::PackedLogPageHeader);
 
-    const usize log_size = this->pick_one_of({
-        queue_depth * block_capacity - llfs::kLogPageSize,
-        queue_depth * block_capacity,
-        queue_depth * block_capacity * 2,
-        queue_depth * block_capacity * 3,
-        queue_depth * block_capacity * 4,
-    });
+    const usize log_size = [&] {
+      if (block_capacity > llfs::kLogPageSize && this->pick_branch()) {
+        return queue_depth * block_capacity - llfs::kLogPageSize;
+      } else {
+        return this->pick_one_of({
+            queue_depth * block_capacity,
+            queue_depth * block_capacity * 2,
+            queue_depth * block_capacity * 3,
+            queue_depth * block_capacity * 4,
+        });
+      }
+    }();
 
     const i64 base_file_offset = this->pick_one_of({0, 7777 * 512});
 
-    LLFS_LOG_INFO() << BATT_INSPECT(queue_depth) << BATT_INSPECT(block_size)
-                    << BATT_INSPECT(block_capacity) << BATT_INSPECT(log_size)
-                    << BATT_INSPECT(base_file_offset);
+    const u64 physical_size =
+        llfs::LogBlockCalculator::disk_size_required_for_log_size(log_size, block_size);
 
-    const llfs::LogBlockCalculator calculate{
-        llfs::IoRingLogConfig{
-            .logical_size = log_size,
-            .physical_offset = base_file_offset,
-            .physical_size =
-                llfs::LogBlockCalculator::disk_size_required_for_log_size(log_size, block_size)},
-        llfs::IoRingLogDriverOptions::with_default_values().set_queue_depth(queue_depth)};
+    LLFS_VLOG(1) << BATT_INSPECT(queue_depth) << BATT_INSPECT(op_index) << BATT_INSPECT(block_size)
+                 << BATT_INSPECT(block_capacity) << BATT_INSPECT(log_size)
+                 << BATT_INSPECT(base_file_offset) << BATT_INSPECT(physical_size);
+
+    const llfs::LogBlockCalculator calculate{llfs::IoRingLogConfig{
+                                                 .logical_size = log_size,
+                                                 .physical_offset = base_file_offset,
+                                                 .physical_size = physical_size,
+                                                 .pages_per_block_log2 = pages_per_block_log2,
+                                             },
+                                             llfs::IoRingLogDriverOptions::with_default_values()  //
+                                                 .set_queue_depth(queue_depth)};
 
     // Driver variables (state).
     //
-    // llfs::slot_offset_type trim_pos = 0;
-    // llfs::slot_offset_type flush_pos = 0;
+    llfs::slot_offset_type trim_pos = 0;
+    llfs::slot_offset_type flush_pos = 0;
     llfs::slot_offset_type commit_pos = 0;
 
     // Create and configure the driver mock.
     //
+    llfs::Optional<llfs::BasicIoRingLogFlushOp<::testing::StrictMock<MockDriver>>> op;
     ::testing::StrictMock<MockDriver> driver;
 
     EXPECT_CALL(driver, calculate())  //
         .WillRepeatedly(::testing::ReturnRef(calculate));
 
+    EXPECT_CALL(driver, get_trim_pos())  //
+        .WillRepeatedly(::testing::ReturnPointee(&trim_pos));
+
+    EXPECT_CALL(driver, get_flush_pos())  //
+        .WillRepeatedly(::testing::ReturnPointee(&flush_pos));
+
     EXPECT_CALL(driver, get_commit_pos())  //
         .WillRepeatedly(::testing::ReturnPointee(&commit_pos));
 
+    EXPECT_CALL(driver, name())  //
+        .WillRepeatedly(::testing::Return(kFakeDriverName));
+
+    EXPECT_CALL(driver, index_of_flush_op(&*op))  //
+        .WillRepeatedly(::testing::Return(op_index));
+
     // Instantiate the system-under-test.
     //
-    llfs::Optional<llfs::BasicIoRingLogFlushOp<::testing::StrictMock<MockDriver>>> op;
     op.emplace();
     op->initialize(&driver);
 

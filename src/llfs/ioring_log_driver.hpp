@@ -146,9 +146,9 @@ class BasicIoRingLogDriver
     return this->calculate_;
   }
 
-  usize index_of_flush_op(const FlushOp& flush_op) const
+  usize index_of_flush_op(const FlushOp* flush_op) const
   {
-    return std::distance(this->flush_ops_.data(), &flush_op);
+    return std::distance(this->flush_ops_.data(), flush_op);
   }
 
   // Returns the known upper bound flush position for the given flush operation.

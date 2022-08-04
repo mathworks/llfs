@@ -31,6 +31,7 @@ using namespace llfs::int_types;
 using namespace llfs::constants;
 
 using llfs::ConstBuffer;
+using llfs::None;
 using llfs::Optional;
 using llfs::slot_offset_type;
 using llfs::Status;
@@ -270,6 +271,13 @@ class IoRingLogFlushOpModel
       const slot_offset_type old_flush_pos = flush_pos;
       const slot_offset_type old_commit_pos = commit_pos;
       const usize old_failure_count = failure_count;
+
+      const bool op_is_waiting = actual_wait_commit_pos != None;
+      if (op_is_waiting) {
+        // TODO [tastolfi 2022-08-04] choose the completion modality
+      } else {
+        // TODO [tastolfi 2022-08-04] assert ongoing write
+      }
 
       // If we fail to make any kind of progress, end the simulation.
       //

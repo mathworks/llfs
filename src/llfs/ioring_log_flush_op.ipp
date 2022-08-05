@@ -66,6 +66,9 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::initialize(DriverImpl* driver)
   {
     PackedLogPageHeader* const header = this->get_header();
 
+    header->magic = PackedLogPageHeader::kMagic;
+    header->crc64 = -1;
+
     header->slot_offset = next_commit_block_slot_range.lower_bound +
                           driver->calculate().block_capacity() * ahead_of_next;
 
@@ -91,6 +94,8 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::initialize(DriverImpl* driver)
 
     this->flush_pos_ = driver->get_flush_pos();
   }
+
+  this->block_capacity_ = driver->calculate().block_capacity();
 
   THIS_VLOG(1) << "initialized";
 
@@ -122,11 +127,6 @@ inline BasicIoRingLogFlushOp<DriverImpl>::~BasicIoRingLogFlushOp() noexcept
 template <typename DriverImpl>
 inline void BasicIoRingLogFlushOp<DriverImpl>::activate()
 {
-  const usize my_index = this->self_index();
-
-  PackedLogPageHeader* header = this->get_header();
-  header->reset(/*slot_offset=*/my_index * this->driver_->calculate().block_capacity());
-
   THIS_VLOG(1) << "activated; slot_offset=" << this->get_header()->slot_offset;
 
   this->handle_commit(this->driver_->get_commit_pos());
@@ -137,17 +137,12 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::activate()
 template <typename DriverImpl>
 inline void BasicIoRingLogFlushOp<DriverImpl>::handle_commit(slot_offset_type known_commit_pos)
 {
-  PackedLogPageHeader* header = this->get_header();
+  PackedLogPageHeader* const header = this->get_header();
 
-  // The end of the committed range in the current page is the known flush position because
-  // `ready_to_write` is empty, and every time we fill it we immediately flush.
-  //
   const slot_offset_type known_flush_pos = header->slot_offset + header->commit_size;
 
   THIS_VLOG(1) << "poll_commit_pos(known_commit_pos=" << known_commit_pos
                << "), known_flush_pos=" << known_flush_pos;
-
-  BATT_CHECK_EQ(this->ready_to_write_.size(), 0u);
 
   if (!slot_less_than(known_flush_pos, known_commit_pos)) {
     THIS_VLOG(1) << "caught up; waiting for commit_pos to advance..."
@@ -168,29 +163,133 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::handle_commit(slot_offset_type kn
 template <typename DriverImpl>
 inline void BasicIoRingLogFlushOp<DriverImpl>::start_flush()
 {
-  BATT_CHECK_NE(this->ready_to_write_.size(), 0u);
-  BATT_CHECK_EQ(this->ready_to_write_.size(),
-                batt::round_down_bits(kLogAtomicWriteSizeLog2, this->ready_to_write_.size()));
-
-  const usize progress = this->next_write_offset_ - this->file_offset_;
-
-  THIS_VLOG(1) << "start_flush(); progress=" << progress
-               << " commit_size=" << this->get_header()->commit_size << "/"
-               << this->driver_->calculate().block_capacity()
-               << " ready_to_write.size()=" << this->ready_to_write_.size() << "; async_write("
-               << std::hex << "0x" << this->file_offset_ + progress << ", [0x"
-               << this->ready_to_write_.size() << "])";
-  {
-    auto* header = this->get_header();
-    header->trim_pos = this->driver_->get_trim_pos();
-    header->flush_pos = this->driver_->get_flush_pos();
-    header->commit_pos = this->driver_->get_commit_pos();
+  if (this->get_header()->commit_size > kLogAtomicWriteSize) {
+    this->flush_tail();
+  } else {
+    this->flush_head();
   }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename DriverImpl>
+inline ConstBuffer BasicIoRingLogFlushOp<DriverImpl>::data() const
+{
+  const usize byte_count = batt::round_up_bits(
+      kLogAtomicWriteSizeLog2, sizeof(PackedLogPageHeader) + this->get_header()->commit_size);
+
+  return ConstBuffer{this->page_block_.get(), byte_count};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename DriverImpl>
+inline void BasicIoRingLogFlushOp<DriverImpl>::flush_tail()
+{
+  isize unflushed_tail_offset = batt::round_down_bits(
+      kLogAtomicWriteSizeLog2, kLogAtomicWriteSize + this->flush_tail_progress_);
+
+  auto unflushed_tail_data = this->data() + unflushed_tail_offset;
+  this->flush_tail_remaining_ = unflushed_tail_data.size();
+
+  BATT_CHECK_GT(tail_data.size(), 0u);
+
+  const i64 dst_file_offset = this->file_offset_ + unflushed_tail_offset;
 
   this->write_timer_.emplace(this->metrics_.write_latency);
 
-  this->driver_->async_write_some(this->next_write_offset_, this->ready_to_write_,
-                                  (i32)this->self_index(), this->get_flush_handler());
+  this->driver_->async_write_some(dst_file_offset, unflushed_tail_data,
+                                  /*buf_index=*/this->self_index(), this->get_flush_tail_handler());
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename DriverImpl>
+inline void BasicIoRingLogFlushOp<DriverImpl>::handle_flush_tail(const StatusOr<i32>& result)
+{
+  if (this->check_for_fatal_failure(result)) {
+    return;
+  }
+
+  this->flush_tail_progress_ += *result;
+  this->flush_tail_remaining_ -= *result;
+
+  // If there is still some space in this block, try to fill the buffer; if that succeeds or we
+  // still had some data to write, then flush the tail again.
+  //
+  if (this->get_header()->commit_size < this->driver_.calculate().block_capacity() &&
+      (this->fill_buffer() || (this->flush_tail_remaining_ > 0))) {
+    this->flush_tail();
+    return;
+  }
+
+  // Flush the head so we can record our progress.
+  //
+  this->flush_head();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename DriverImpl>
+inline void BasicIoRingLogFlushOp<DriverImpl>::flush_head()
+{
+  auto head_data = ConstBuffer{this->page_block_.get(), kLogAtomicWriteSize};
+
+  this->write_timer_.emplace(this->metrics_.write_latency);
+
+  this->driver_->async_write_some(this->file_offset_, head_data, /*buf_index=*/this->self_index(),
+                                  this->get_flush_head_handler());
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename DriverImpl>
+inline void BasicIoRingLogFlushOp<DriverImpl>::handle_flush_head(const StatusOr<i32>& result)
+{
+  if (this->check_for_fatal_failure(result)) {
+    return;
+  }
+
+  PackedLogPageHeader* const header = this->get_header();
+
+  this->flush_pos_ = header->slot_offset + header->commit_size;
+  this->driver_->poll_flush_state();
+
+  if (header->commit_size == this->driver_.calculate().block_capacity()) {
+    header->commit_size = 0;
+
+    header->slot_offset +=
+        this->driver_->calculate().block_capacity() * this->driver_->calculate().queue_depth();
+
+    this->file_offset_ = this->driver_->calculate().block_start_file_offset_from(
+        SlotLowerBoundAt{header->slot_offset});
+
+    this->flush_tail_progress_ = 0;
+  } else {
+    this->handle_commit(this->driver_->get_commit_pos());
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename DriverImpl>
+inline bool BasicIoRingLogFlushOp<DriverImpl>::check_for_fatal_failure(const StatusOr<i32>& result)
+{
+  this->write_timer_ = None;
+
+  if (!result.ok()) {
+    if (batt::status_is_retryable(result.status())) {
+      THIS_VLOG(1) << "EAGAIN; retrying...";
+      this->start_flush();
+      return false;
+    }
+    LLFS_LOG_INFO() << "flush failed: " << result.status();
+    return true;
+  }
+
+  this->metrics_.bytes_written.fetch_add(*result);
+
+  return false;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -202,14 +301,13 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::finish_flush()
 
   this->ready_to_write_ = ConstBuffer{this->page_block_.get(), kLogAtomicWriteSize};
   this->next_write_offset_ = this->file_offset_;
+  THIS_VLOG(1) << " -- Updated " << BATT_INSPECT(this->next_write_offset_);
   {
     auto* header = this->get_header();
     header->trim_pos = this->driver_->get_trim_pos();
     header->flush_pos =
         slot_max(header->slot_offset + header->commit_size, this->driver_->get_flush_pos());
   }
-
-  this->write_timer_.emplace(this->metrics_.write_latency);
 
   this->driver_->async_write_some(this->file_offset_, this->ready_to_write_,
                                   (int)this->self_index(), this->get_flush_handler());
@@ -239,7 +337,8 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::handle_flush(const StatusOr<i32>&
 
   this->ready_to_write_ += *result;
   this->next_write_offset_ += *result;
-  this->metrics_.bytes_written.fetch_add(*result);
+
+  THIS_VLOG(1) << " -- Updated " << BATT_INSPECT(this->next_write_offset_);
 
   // Handle short write.
   //
@@ -308,86 +407,46 @@ inline auto BasicIoRingLogFlushOp<DriverImpl>::get_header() const -> PackedLogPa
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <typename DriverImpl>
-inline MutableBuffer BasicIoRingLogFlushOp<DriverImpl>::get_buffer() const
-{
-  return MutableBuffer{
-      this->page_block_.get(),
-      this->driver_->calculate().block_size(),
-  };
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-template <typename DriverImpl>
 inline bool BasicIoRingLogFlushOp<DriverImpl>::fill_buffer(slot_offset_type known_commit_pos)
 {
-  PackedLogPageHeader* header = this->get_header();
-  slot_offset_type prior_commit_pos = header->slot_offset + header->commit_size;
+  PackedLogPageHeader* const header = this->get_header();
+  const slot_offset_type prior_commit_pos = header->slot_offset + header->commit_size;
+
+  header->trim_pos = this->driver_->get_trim_pos();
+  header->flush_pos = this->driver_->get_flush_pos();
+  header->commit_pos = known_commit_pos;
 
   BATT_CHECK(!slot_less_than(known_commit_pos, prior_commit_pos))
       << "commit_pos should never go backwards!";
 
-  auto buffer =
+  auto dst =
       MutableBuffer{
           header + 1,
           this->driver_->calculate().block_capacity(),
       } +
       header->commit_size;
 
-  usize n_to_copy = std::min(known_commit_pos - prior_commit_pos, buffer.size());
+  const usize n_to_copy = std::min(known_commit_pos - prior_commit_pos, dst.size());
+
   THIS_VLOG(1) << "fill_buffer() -> [" << n_to_copy
                << " bytes], commit_size=" << header->commit_size << "->"
                << (header->commit_size + n_to_copy) << "/"
                << this->driver_->calculate().block_capacity();
+
   if (n_to_copy == 0) {
     return false;
   }
 
   // Copy from the ring buffer to this block.
   //
-  std::memcpy(buffer.data(), this->driver_->get_data(prior_commit_pos).data(), n_to_copy);
+  auto src = this->driver_->get_data(prior_commit_pos);
+  std::memcpy(dst.data(), src.data(), n_to_copy);
 
   // This should be the ONLY place where commit_size is increased!
   //
   header->commit_size += n_to_copy;
 
-  // If we appended new data to the buffer, which forces an update to the header, then we must
-  // re-write the whole page.
-  //
-  this->ready_to_write_ = ConstBuffer{
-      this->page_block_.get(),
-      batt::round_up_bits(kLogAtomicWriteSizeLog2, sizeof(PackedPageHeader) + header->commit_size)};
-
-  this->next_write_offset_ = this->file_offset_;
-
-  // If we're only writing one atomic page worth of data, don't change the buffer.
-  //
-  if (this->ready_to_write_.size() <= kLogAtomicWriteSize) {
-    header->flush_pos =
-        slot_max(header->slot_offset + header->commit_size, this->driver_->get_flush_pos());
-    return true;
-  }
-
-  // Since we are going to rewrite the header afterwards anyhow, skip any previously written data.
-  //
-  u64 offset = 0;
-  if (slot_less_than(header->slot_offset, this->flush_pos_)) {
-    BATT_CHECK(slot_less_than(this->flush_pos_, header->slot_offset + header->commit_size))
-        << BATT_INSPECT(this->flush_pos_) << BATT_INSPECT(header->slot_offset)
-        << BATT_INSPECT(this->driver_->calculate().block_capacity());
-
-    offset = batt::round_down_bits(
-        kLogAtomicWriteSizeLog2,
-        sizeof(PackedLogPageHeader) + slot_distance(header->slot_offset, this->flush_pos_));
-  }
-  offset = std::max(kLogAtomicWriteSize, offset);
-
-  BATT_CHECK_LE(offset, this->ready_to_write_.size());
-
-  this->ready_to_write_ += offset;
-  this->next_write_offset_ += offset;
-
-  return this->ready_to_write_.size() > 0;
+  return true;
 }
 
 #undef THIS_LOG

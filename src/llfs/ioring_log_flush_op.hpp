@@ -71,15 +71,6 @@ class BasicIoRingLogFlushOp
 
   void start_flush();
 
-  void handle_flush(const StatusOr<i32>& result);
-
-  auto get_flush_handler()
-  {
-    return make_custom_alloc_handler(this->handler_memory_, [this](const StatusOr<i32>& result) {
-      this->handle_flush(result);
-    });
-  }
-
   //-----
 
   usize self_index() const;
@@ -97,15 +88,49 @@ class BasicIoRingLogFlushOp
     return this->flush_pos_;
   }
 
-  MutableBuffer get_buffer() const;
-
   const Metrics& metrics() const
   {
     return this->metrics_;
   }
 
  private:
-  void finish_flush();
+  // Return the committed data portion of the block buffer, aligned to 512-byte boundaries.
+  //
+  ConstBuffer get_data() const;
+
+  // Update the log offset pointers from the driver.
+  //
+  void update_log_positions();
+
+  // Start writing the first atomic write block.
+  //
+  void flush_head();
+
+  void handle_flush_head(const StatusOr<i32>& result);
+
+  auto get_flush_head_handler()
+  {
+    return make_custom_alloc_handler(this->handler_memory_, [this](const StatusOr<i32>& result) {
+      this->handle_flush_head(result);
+    });
+  }
+
+  ConstBuffer unflushed_tail_data() const;
+
+  // Start writing everything after the first atomic write block.
+  //
+  void flush_tail();
+
+  void handle_flush_tail(const StatusOr<i32>& result);
+
+  auto get_flush_tail_handler()
+  {
+    return make_custom_alloc_handler(this->handler_memory_, [this](const StatusOr<i32>& result) {
+      this->handle_flush_tail(result);
+    });
+  }
+
+  bool check_for_fatal_failure(const StatusOr<i32>& result);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -117,17 +142,25 @@ class BasicIoRingLogFlushOp
 
   slot_offset_type flush_pos_ = 0;
 
-  ConstBuffer ready_to_write_{nullptr, 0};
-
   // Dedicated static memory buffer to lower the overhead of asynchronous calls.
   //
   batt::HandlerMemory<128> handler_memory_;
 
   // The offset within the log file to which this op's current page should be flushed.
   //
-  u64 file_offset_ = 0;
+  i64 file_offset_ = 0;
 
-  u64 next_write_offset_ = 0;
+  // The number of bytes in the tail of the block that have been successfully written.
+  //
+  u64 flush_tail_progress_ = 0;
+
+  // The number of bytes in the tail of the block that have not yet been flushed.
+  //
+  u64 flush_tail_remaining_ = 0;
+
+  // Cached value from the driver.
+  //
+  u64 block_capacity_ = 0;
 
   // Active only during an asynchronous write (flush) operation.
   //

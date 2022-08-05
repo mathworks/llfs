@@ -78,7 +78,14 @@ class LogBlockCalculator
     return this->block_count_;
   }
 
-  // Returns the size in bytes of the entire log.
+  // Returns the size (capacity) in bytes of the log.
+  //
+  u64 logical_size() const
+  {
+    return this->config_.logical_size;
+  }
+
+  // Returns the size in bytes of the on-disk image of the log.
   //
   u64 physical_size() const
   {
@@ -90,6 +97,20 @@ class LogBlockCalculator
   usize queue_depth() const
   {
     return this->queue_depth_;
+  }
+
+  // The starting offset within the file of the beginning of the log blocks.
+  //
+  i64 begin_file_offset() const
+  {
+    return this->log_start_;
+  }
+
+  // The file offset that is one past the last byte of the last log block.
+  //
+  i64 end_file_offset() const
+  {
+    return this->log_end_;
   }
 
   // Returns the index of the logical block that contains the given slot offset.
@@ -125,6 +146,16 @@ class LogBlockCalculator
   PhysicalBlockIndex physical_block_index_from(SlotUpperBoundAt slot_upper_bound) const
   {
     return this->physical_block_index_from(this->logical_block_index_from(slot_upper_bound));
+  }
+
+  // Returns the index of the physical block containing the passed file offset.
+  //
+  PhysicalBlockIndex physical_block_index_from(PhysicalFileOffset file_offset) const
+  {
+    BATT_CHECK_GE(file_offset, this->log_start_.value());
+    BATT_CHECK_LT(file_offset, this->log_end_.value());
+
+    return PhysicalBlockIndex{(file_offset - this->log_start_.value()) / this->block_size()};
   }
 
   // Returns the SlotRange of the specified block.
@@ -207,6 +238,11 @@ class LogBlockCalculator
   PhysicalFileOffset block_start_file_offset_from(SlotUpperBoundAt slot_upper_bound) const
   {
     return this->block_start_file_offset_from(this->physical_block_index_from(slot_upper_bound));
+  }
+
+  PhysicalFileOffset block_start_file_offset_from(PhysicalFileOffset file_offset) const
+  {
+    return block_start_file_offset_from(this->physical_block_index_from(file_offset));
   }
 
  private:

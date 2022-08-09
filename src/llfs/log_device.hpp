@@ -28,6 +28,19 @@ struct BytesAvailable {
   slot_offset_type size;
 };
 
+inline std::ostream& operator<<(std::ostream& out, const SlotUpperBoundAt& t)
+{
+  return out << "SlotUpperBoundAt{.offset=" << t.offset << ",}";
+}
+inline std::ostream& operator<<(std::ostream& out, const SlotLowerBoundAt& t)
+{
+  return out << "SlotLowerBoundAt{.offset=" << t.offset << ",}";
+}
+inline std::ostream& operator<<(std::ostream& out, const BytesAvailable& t)
+{
+  return out << "BytesAvailable{.size=" << t.size << ",}";
+}
+
 enum struct LogReadMode : unsigned {
   kInconsistent = 0,
   kSpeculative = 1,

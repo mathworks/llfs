@@ -33,15 +33,47 @@ constexpr u64 kMaxSlotDistance = kSlotDistanceUpperBound - 1;
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
+// Returns true iff `first` is strictly less than `second`.
+//
 inline bool slot_less_than(slot_offset_type first, slot_offset_type second)
 {
   const u64 intra_distance = second - first - 1;
   return intra_distance < kSlotDistanceUpperBound;
 }
 
+// Returns true iff `first` is strictly greater than `second`.
+//
 inline bool slot_greater_than(slot_offset_type first, slot_offset_type second)
 {
   return slot_less_than(second, first);
+}
+
+// Returns true iff `first` is less than or equal to `second`.
+//
+inline bool slot_less_or_equal(slot_offset_type first, slot_offset_type second)
+{
+  return !slot_greater_than(first, second);
+}
+
+// Returns true iff `first` is less than or equal to `second`.
+//
+inline bool slot_at_most(slot_offset_type first, slot_offset_type second)
+{
+  return slot_less_or_equal(first, second);
+}
+
+// Returns true iff `first` is greater than or equal to `second`.
+//
+inline bool slot_greater_or_equal(slot_offset_type first, slot_offset_type second)
+{
+  return !slot_less_than(first, second);
+}
+
+// Returns true iff `first` is greater than or equal to `second`.
+//
+inline bool slot_at_least(slot_offset_type first, slot_offset_type second)
+{
+  return slot_greater_or_equal(first, second);
 }
 
 struct SlotLess {

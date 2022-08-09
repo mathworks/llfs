@@ -62,6 +62,8 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::initialize(DriverImpl* driver)
     }
   }();
 
+  this->flushed_tail_range_.lower_bound = kLogAtomicWriteSize;
+
   // Initialize the log page header.
   {
     PackedLogPageHeader* const header = this->get_header();
@@ -78,6 +80,12 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::initialize(DriverImpl* driver)
       header->commit_size = 0;
     }
     BATT_CHECK_LT(header->commit_size, driver->calculate().block_capacity());
+
+    if (header->commit_size > kLogAtomicWriteSize) {
+      this->flushed_tail_range_.upper_bound = header->commit_size - kLogAtomicWriteSize;
+    } else {
+      this->flushed_tail_range_.upper_bound = kLogAtomicWriteSize;
+    }
 
     if (header->commit_size > 0) {
       const ConstBuffer src = driver->get_data(header->slot_offset);
@@ -141,8 +149,9 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::handle_commit(slot_offset_type kn
 
   const slot_offset_type known_flush_pos = header->slot_offset + header->commit_size;
 
-  THIS_VLOG(1) << "poll_commit_pos(known_commit_pos=" << known_commit_pos
-               << "), known_flush_pos=" << known_flush_pos;
+  THIS_VLOG(1) << "handle_commit(known_commit_pos=" << known_commit_pos << ")"
+               << BATT_INSPECT(header->slot_offset) << BATT_INSPECT(header->commit_size)
+               << BATT_INSPECT(known_flush_pos);
 
   if (!slot_less_than(known_flush_pos, known_commit_pos)) {
     THIS_VLOG(1) << "caught up; waiting for commit_pos to advance..."
@@ -155,15 +164,7 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::handle_commit(slot_offset_type kn
   const bool data_copied = this->fill_buffer(known_commit_pos);
   BATT_CHECK(data_copied);
 
-  this->start_flush();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-template <typename DriverImpl>
-inline void BasicIoRingLogFlushOp<DriverImpl>::start_flush()
-{
-  if (this->get_header()->commit_size > kLogAtomicWriteSize) {
+  if (this->get_header()->commit_size > kLogAtomicWriteSize - sizeof(PackedLogPageHeader)) {
     this->flush_tail();
   } else {
     this->flush_head();
@@ -173,7 +174,7 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::start_flush()
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <typename DriverImpl>
-inline ConstBuffer BasicIoRingLogFlushOp<DriverImpl>::data() const
+inline ConstBuffer BasicIoRingLogFlushOp<DriverImpl>::get_writable_data() const
 {
   const usize byte_count = batt::round_up_bits(
       kLogAtomicWriteSizeLog2, sizeof(PackedLogPageHeader) + this->get_header()->commit_size);
@@ -186,13 +187,23 @@ inline ConstBuffer BasicIoRingLogFlushOp<DriverImpl>::data() const
 template <typename DriverImpl>
 inline void BasicIoRingLogFlushOp<DriverImpl>::flush_tail()
 {
-  isize unflushed_tail_offset = batt::round_down_bits(
-      kLogAtomicWriteSizeLog2, kLogAtomicWriteSize + this->flush_tail_progress_);
+  THIS_VLOG(1) << "flush_tail()";
 
-  auto unflushed_tail_data = this->data() + unflushed_tail_offset;
-  this->flush_tail_remaining_ = unflushed_tail_data.size();
+  BATT_CHECK(!this->tail_write_range_);
 
-  BATT_CHECK_GT(tail_data.size(), 0u);
+  const ConstBuffer writable_data = this->get_writable_data();
+
+  this->tail_write_range_.emplace();
+  this->tail_write_range_->lower_bound = this->flushed_tail_range_.upper_bound;
+  this->tail_write_range_->upper_bound =
+      sizeof(PackedLogPageHeader) + this->get_header()->commit_size;
+
+  const usize unflushed_tail_offset =
+      batt::round_down_bits(kLogAtomicWriteSizeLog2, this->tail_write_range_->lower_bound);
+
+  const ConstBuffer unflushed_tail_data = writable_data + unflushed_tail_offset;
+
+  BATT_CHECK_GT(unflushed_tail_data.size(), 0u);
 
   const i64 dst_file_offset = this->file_offset_ + unflushed_tail_offset;
 
@@ -207,25 +218,45 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::flush_tail()
 template <typename DriverImpl>
 inline void BasicIoRingLogFlushOp<DriverImpl>::handle_flush_tail(const StatusOr<i32>& result)
 {
-  if (this->check_for_fatal_failure(result)) {
-    return;
+  THIS_VLOG(1) << "handle_flush_tail(result=" << result << ")";
+
+  auto* const header = this->get_header();
+  {
+    auto on_scope_exit = batt::finally([&] {
+      this->tail_write_range_ = None;
+    });
+
+    if (this->check_for_fatal_failure(result, WritingPart::kTail)) {
+      return;
+    }
+
+    BATT_CHECK_GT(*result, 0);
+    BATT_CHECK(this->tail_write_range_);
+
+    const usize confirmed_upper_bound =
+        batt::round_down_bits(kLogAtomicWriteSizeLog2, this->tail_write_range_->lower_bound) +
+        *result;
+
+    this->flushed_tail_range_.upper_bound =
+        std::min(confirmed_upper_bound, this->tail_write_range_->upper_bound);
   }
 
-  this->flush_tail_progress_ += *result;
-  this->flush_tail_remaining_ -= *result;
-
-  // If there is still some space in this block, try to fill the buffer; if that succeeds or we
-  // still had some data to write, then flush the tail again.
+  // Try to fetch more data from the driver now.
   //
-  if (this->get_header()->commit_size < this->driver_.calculate().block_capacity() &&
-      (this->fill_buffer() || (this->flush_tail_remaining_ > 0))) {
+  if (header->commit_size < this->driver_->calculate().block_capacity()) {
+    const slot_offset_type known_commit_pos = this->driver_->get_commit_pos();
+    if (slot_less_than(header->slot_offset + header->commit_size, known_commit_pos)) {
+      this->fill_buffer(known_commit_pos);
+    }
+  }
+
+  // If we can, flush more tail data; otherwise write the head to make writes durable.
+  //
+  if (this->flushed_tail_range_.upper_bound < sizeof(PackedLogPageHeader) + header->commit_size) {
     this->flush_tail();
-    return;
+  } else {
+    this->flush_head();
   }
-
-  // Flush the head so we can record our progress.
-  //
-  this->flush_head();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -233,6 +264,8 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::handle_flush_tail(const StatusOr<
 template <typename DriverImpl>
 inline void BasicIoRingLogFlushOp<DriverImpl>::flush_head()
 {
+  THIS_VLOG(1) << "flush_head()";
+
   auto head_data = ConstBuffer{this->page_block_.get(), kLogAtomicWriteSize};
 
   this->write_timer_.emplace(this->metrics_.write_latency);
@@ -246,16 +279,25 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::flush_head()
 template <typename DriverImpl>
 inline void BasicIoRingLogFlushOp<DriverImpl>::handle_flush_head(const StatusOr<i32>& result)
 {
-  if (this->check_for_fatal_failure(result)) {
+  THIS_VLOG(1) << "handle_flush_head(result=" << result << ")";
+
+  if (this->check_for_fatal_failure(result, WritingPart::kHead)) {
     return;
   }
 
+  BATT_CHECK_EQ(*result, kLogAtomicWriteSize);
+
   PackedLogPageHeader* const header = this->get_header();
 
+  // THIS SHOULD BE THE ONLY PLACE WE UPDATE `this->flush_pos_`!
+  //
   this->flush_pos_ = header->slot_offset + header->commit_size;
+  THIS_VLOG(1) << " -- " << BATT_INSPECT(this->flush_pos_);
   this->driver_->poll_flush_state();
 
-  if (header->commit_size == this->driver_.calculate().block_capacity()) {
+  // Check to see whether we can advance to the next block.
+  //
+  if (header->commit_size == this->driver_->calculate().block_capacity()) {
     header->commit_size = 0;
 
     header->slot_offset +=
@@ -264,23 +306,29 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::handle_flush_head(const StatusOr<
     this->file_offset_ = this->driver_->calculate().block_start_file_offset_from(
         SlotLowerBoundAt{header->slot_offset});
 
-    this->flush_tail_progress_ = 0;
-  } else {
-    this->handle_commit(this->driver_->get_commit_pos());
+    this->flushed_tail_range_.lower_bound = kLogAtomicWriteSize;
+    this->flushed_tail_range_.upper_bound = kLogAtomicWriteSize;
   }
+
+  this->handle_commit(this->driver_->get_commit_pos());
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <typename DriverImpl>
-inline bool BasicIoRingLogFlushOp<DriverImpl>::check_for_fatal_failure(const StatusOr<i32>& result)
+inline bool BasicIoRingLogFlushOp<DriverImpl>::check_for_fatal_failure(const StatusOr<i32>& result,
+                                                                       WritingPart writing_part)
 {
   this->write_timer_ = None;
 
   if (!result.ok()) {
     if (batt::status_is_retryable(result.status())) {
       THIS_VLOG(1) << "EAGAIN; retrying...";
-      this->start_flush();
+      if (writing_part == WritingPart::kHead) {
+        this->flush_head();
+      } else {
+        this->flush_tail();
+      }
       return false;
     }
     LLFS_LOG_INFO() << "flush failed: " << result.status();
@@ -291,102 +339,6 @@ inline bool BasicIoRingLogFlushOp<DriverImpl>::check_for_fatal_failure(const Sta
 
   return false;
 }
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-template <typename DriverImpl>
-inline void BasicIoRingLogFlushOp<DriverImpl>::finish_flush()
-{
-  THIS_VLOG(1) << "finish_flush()";
-
-  this->ready_to_write_ = ConstBuffer{this->page_block_.get(), kLogAtomicWriteSize};
-  this->next_write_offset_ = this->file_offset_;
-  THIS_VLOG(1) << " -- Updated " << BATT_INSPECT(this->next_write_offset_);
-  {
-    auto* header = this->get_header();
-    header->trim_pos = this->driver_->get_trim_pos();
-    header->flush_pos =
-        slot_max(header->slot_offset + header->commit_size, this->driver_->get_flush_pos());
-  }
-
-  this->driver_->async_write_some(this->file_offset_, this->ready_to_write_,
-                                  (int)this->self_index(), this->get_flush_handler());
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-template <typename DriverImpl>
-inline void BasicIoRingLogFlushOp<DriverImpl>::handle_flush(const StatusOr<i32>& result)
-{
-  this->write_timer_ = None;
-
-  THIS_VLOG(1) << "async_write() -> " << result;
-
-  if (!result.ok()) {
-    if (batt::status_is_retryable(result.status())) {
-      THIS_VLOG(1) << "EAGAIN; retrying...";
-      this->start_flush();
-      return;
-    }
-    LLFS_LOG_INFO() << "flush failed: " << result.status();
-    return;
-  }
-  BATT_CHECK_EQ(*result & 511, 0u)
-      << "We expect that I/O will complete in disk block aligned chunks";
-  BATT_CHECK_GE(*result, 0);
-
-  this->ready_to_write_ += *result;
-  this->next_write_offset_ += *result;
-
-  THIS_VLOG(1) << " -- Updated " << BATT_INSPECT(this->next_write_offset_);
-
-  // Handle short write.
-  //
-  if (this->ready_to_write_.size() != 0) {
-    // Top off the buffer, if possible.
-    //
-    (void)this->fill_buffer(this->driver_->get_commit_pos());
-
-    // Retry.
-    //
-    this->start_flush();
-    return;
-  }
-
-  PackedLogPageHeader* header = this->get_header();
-
-  // Make sure the on-device flush_pos reflects the flushed data.
-  //
-  if (slot_less_than(header->flush_pos, header->slot_offset + header->commit_size)) {
-    this->finish_flush();
-    return;
-  }
-
-  // We've completed flushing the page.  Update the local flush_pos.
-  // THIS SHOULD BE THE ONLY PLACE WE UPDATE `this->flush_pos_`!
-  //
-  THIS_VLOG(1) << "flushed entire buffer; header->commit_size=" << header->commit_size << "/"
-               << this->driver_->calculate().block_capacity();
-
-  this->flush_pos_ = header->slot_offset + header->commit_size;
-  this->driver_->poll_flush_state();
-
-  // We are done with this generation.  Advance slot offset by one complete window
-  // (kPageCapacity * kQueueDepth).
-  //
-  if (header->commit_size == this->driver_->calculate().block_capacity()) {
-    header->commit_size = 0;
-    header->slot_offset +=
-        this->driver_->calculate().block_capacity() * this->driver_->calculate().queue_depth();
-
-    this->file_offset_ = this->driver_->calculate().block_start_file_offset_from(
-        SlotLowerBoundAt{header->slot_offset});
-  }
-
-  this->handle_commit(this->driver_->get_commit_pos());
-}
-
-//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
@@ -402,6 +354,17 @@ template <typename DriverImpl>
 inline auto BasicIoRingLogFlushOp<DriverImpl>::get_header() const -> PackedLogPageHeader*
 {
   return reinterpret_cast<PackedLogPageHeader*>(this->page_block_.get());
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename DriverImpl>
+inline MutableBuffer BasicIoRingLogFlushOp<DriverImpl>::get_buffer() const
+{
+  return MutableBuffer{
+      this->page_block_.get(),
+      this->driver_->calculate().block_size(),
+  };
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

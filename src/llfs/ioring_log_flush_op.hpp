@@ -43,6 +43,11 @@ template <typename DriverImpl>
 class BasicIoRingLogFlushOp
 {
  public:
+  enum struct WritingPart {
+    kHead = 0,
+    kTail = 1,
+  };
+
   struct Metrics {
     LatencyMetric write_latency;
     CountMetric<u64> bytes_written{0};
@@ -69,10 +74,6 @@ class BasicIoRingLogFlushOp
 
   //-----
 
-  void start_flush();
-
-  //-----
-
   usize self_index() const;
 
   PackedLogPageHeader* get_header() const;
@@ -88,6 +89,8 @@ class BasicIoRingLogFlushOp
     return this->flush_pos_;
   }
 
+  MutableBuffer get_buffer() const;
+
   const Metrics& metrics() const
   {
     return this->metrics_;
@@ -96,7 +99,7 @@ class BasicIoRingLogFlushOp
  private:
   // Return the committed data portion of the block buffer, aligned to 512-byte boundaries.
   //
-  ConstBuffer get_data() const;
+  ConstBuffer get_writable_data() const;
 
   // Update the log offset pointers from the driver.
   //
@@ -130,7 +133,10 @@ class BasicIoRingLogFlushOp
     });
   }
 
-  bool check_for_fatal_failure(const StatusOr<i32>& result);
+  // Should be called first after each async write... returns true if there was a failure that
+  // forces this object to stop.
+  //
+  bool check_for_fatal_failure(const StatusOr<i32>& result, WritingPart writing_part);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -150,13 +156,13 @@ class BasicIoRingLogFlushOp
   //
   i64 file_offset_ = 0;
 
-  // The number of bytes in the tail of the block that have been successfully written.
+  // `flushed_tail_range_` and `tail_write_range_` are byte offsets relative to the start of the
+  // current block.
   //
-  u64 flush_tail_progress_ = 0;
+  batt::Interval<usize> flushed_tail_range_{0, 0};
+  Optional<batt::Interval<usize>> tail_write_range_ = None;
 
-  // The number of bytes in the tail of the block that have not yet been flushed.
-  //
-  u64 flush_tail_remaining_ = 0;
+  u64 most_recent_tail_flush_size_ = 0;
 
   // Cached value from the driver.
   //

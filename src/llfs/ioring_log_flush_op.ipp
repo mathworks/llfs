@@ -41,24 +41,24 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::initialize(DriverImpl* driver)
   // Figure out which flush op will be responsible for writing the next committed byte.  If that's
   // us, we need to seed our page buffer with data from the log.
   //
-  const auto next_commit_slot_offset = SlotUpperBoundAt{driver->get_commit_pos() + 1};
+  const auto next_flush_slot_offset = SlotUpperBoundAt{driver->get_flush_pos() + 1};
 
-  const LogBlockCalculator::FlushOpIndex next_commit_op_index =
-      driver->calculate().flush_op_index_from(next_commit_slot_offset);
+  const LogBlockCalculator::FlushOpIndex next_flush_op_index =
+      driver->calculate().flush_op_index_from(next_flush_slot_offset);
 
-  BATT_CHECK_LT(next_commit_op_index, driver->calculate().queue_depth());
+  BATT_CHECK_LT(next_flush_op_index, driver->calculate().queue_depth());
 
-  const SlotRange next_commit_block_slot_range =
-      driver->calculate().block_slot_range_from(next_commit_slot_offset);
+  const SlotRange next_flush_block_slot_range =
+      driver->calculate().block_slot_range_from(next_flush_slot_offset);
 
   // Calculate how many blocks ahead of the current commit point this op is... (0 == we are the op
   // responsible for the next flushed data).
   //
   const usize ahead_of_next = [&] {
-    if (my_index < next_commit_op_index) {
-      return my_index + driver->calculate().queue_depth() - next_commit_op_index;
+    if (my_index < next_flush_op_index) {
+      return my_index + driver->calculate().queue_depth() - next_flush_op_index;
     } else {
-      return my_index - next_commit_op_index;
+      return my_index - next_flush_op_index;
     }
   }();
 
@@ -71,21 +71,18 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::initialize(DriverImpl* driver)
     header->magic = PackedLogPageHeader::kMagic;
     header->crc64 = -1;
 
-    header->slot_offset = next_commit_block_slot_range.lower_bound +
+    header->slot_offset = next_flush_block_slot_range.lower_bound +
                           driver->calculate().block_capacity() * ahead_of_next;
 
     if (ahead_of_next == 0) {
-      header->commit_size = driver->get_commit_pos() - header->slot_offset;
+      header->commit_size = driver->get_flush_pos() - header->slot_offset;
     } else {
       header->commit_size = 0;
     }
     BATT_CHECK_LT(header->commit_size, driver->calculate().block_capacity());
 
-    if (header->commit_size > kLogAtomicWriteSize) {
-      this->flushed_tail_range_.upper_bound = header->commit_size - kLogAtomicWriteSize;
-    } else {
-      this->flushed_tail_range_.upper_bound = kLogAtomicWriteSize;
-    }
+    this->flushed_tail_range_.upper_bound =
+        std::max<usize>(kLogAtomicWriteSize, header->commit_size + sizeof(PackedLogPageHeader));
 
     if (header->commit_size > 0) {
       const ConstBuffer src = driver->get_data(header->slot_offset);
@@ -101,6 +98,10 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::initialize(DriverImpl* driver)
         driver->calculate().block_start_file_offset_from(SlotLowerBoundAt{header->slot_offset});
 
     this->flush_pos_ = driver->get_flush_pos();
+
+    THIS_VLOG(1) << "initialize() -" << BATT_INSPECT(ahead_of_next)
+                 << BATT_INSPECT(header->slot_offset) << BATT_INSPECT(header->commit_size)
+                 << BATT_INSPECT(this->flushed_tail_range_);
   }
 
   this->block_capacity_ = driver->calculate().block_capacity();
@@ -331,7 +332,11 @@ inline bool BasicIoRingLogFlushOp<DriverImpl>::check_for_fatal_failure(const Sta
       }
       return false;
     }
-    LLFS_LOG_INFO() << "flush failed: " << result.status();
+    if (!this->quiet_failure_logging) {
+      LLFS_LOG_INFO() << "flush failed: " << result.status();
+    } else {
+      LLFS_VLOG(1) << "flush failed: " << result.status();
+    }
     return true;
   }
 

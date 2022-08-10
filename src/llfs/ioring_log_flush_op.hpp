@@ -96,6 +96,10 @@ class BasicIoRingLogFlushOp
     return this->metrics_;
   }
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  std::atomic<bool> quiet_failure_logging{false};
+
  private:
   // Return the committed data portion of the block buffer, aligned to 512-byte boundaries.
   //

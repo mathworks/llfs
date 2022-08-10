@@ -23,10 +23,38 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <boost/preprocessor/stringize.hpp>
+
 #include <functional>
 #include <string_view>
 
 namespace llfs {
+
+#define REQUIRE_EQ(a, b)                                                                           \
+  if (![&](auto&& a_value, auto&& b_value) -> bool {                                               \
+        if (BATT_HINT_FALSE(a_value != b_value)) {                                                 \
+          LLFS_LOG_ERROR() << "Requirement Failure (" << __FILE__ << ":" << __LINE__ << ")"        \
+                           << std::endl                                                            \
+                           << " Expected:" << std::endl                                            \
+                           << "  "                                                                 \
+                           << BOOST_PP_STRINGIZE(a) << " == "                                                     \
+                                     << BOOST_PP_STRINGIZE(b) << std::endl                                        \
+                                               << " Actual:" << std::endl                          \
+                                               << "  "                                             \
+                                               << BOOST_PP_STRINGIZE(a)                            \
+                                                      << " == " << batt::make_printable(a_value)   \
+                                                      << std::endl                                 \
+                                                      << "  "                                      \
+                                                      << BOOST_PP_STRINGIZE(b) << " == "                          \
+                                                                << batt::make_printable(b_value);  \
+          return false;                                                                            \
+        }                                                                                          \
+        return true;                                                                               \
+      }((a), (b)))                                                                                 \
+  return batt::detail::NotOkStatusWrapper{__FILE__,                                                \
+                                          __LINE__,                                                \
+                                          {::batt::StatusCode::kFailedPrecondition}}               \
+         << batt::LogLevel::kError
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
@@ -78,13 +106,40 @@ class FakeLogState
   static const u8 kUninitializedMemoryByte = 0xfe;
   static const u8 kUninitializedDiskByte = 0xba;
 
+  static Status verify_log_data(slot_offset_type slot_offset, ConstBuffer actual)
+  {
+    u64 expected_value = slot_offset / sizeof(u64);
+    const little_u64* next_actual = (const little_u64*)(actual.data());
+    for (usize i = 0; i < actual.size(); i += sizeof(u64), ++next_actual, ++expected_value) {
+      if (i + sizeof(u64) > actual.size()) {
+        little_u64 tmp_new = *next_actual;
+        little_u64 tmp_old = expected_value;
+        usize valid_bytes = (actual.size() - i);
+        BATT_CHECK_EQ(valid_bytes, actual.size() % sizeof(u64));
+        std::memcpy(&tmp_new, &tmp_old, valid_bytes);
+        expected_value = tmp_new;
+      }
+      if (expected_value != *next_actual) {
+        LLFS_LOG_ERROR() << "The data is wrong at slot_offset=" << (i + slot_offset)
+                         << BATT_INSPECT(actual.size()) << BATT_INSPECT(expected_value)
+                         << BATT_INSPECT(*next_actual) << std::hex << BATT_INSPECT(expected_value)
+                         << std::hex << BATT_INSPECT(*next_actual);
+        return batt::StatusCode::kDataLoss;
+      }
+    }
+    return batt::OkStatus();
+  }
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   // Create a fake log with the specified configuration.
   //
-  explicit FakeLogState(const llfs::LogBlockCalculator& calculate) noexcept
+  explicit FakeLogState(const llfs::LogBlockCalculator& calculate, ConstBuffer fake_data) noexcept
       : calculate_{calculate}
       , trim_pos_{0}
       , flush_pos_{0}
       , commit_pos_{0}
+      , fake_data_{fake_data}
       , ring_buffer_{llfs::RingBuffer::TempFile{
             .byte_size = this->calculate_.logical_size(),
         }}
@@ -142,18 +197,9 @@ class FakeLogState
     BATT_CHECK_GE(slot_upper_bound, this->commit_pos_) << "Commit pos must not go backwards!";
     {
       const usize n_to_commit = std::max(this->commit_pos_, slot_upper_bound) - this->commit_pos_;
-      const usize skew = this->commit_pos_ % sizeof(little_u64);
-      std::vector<u8> src(n_to_commit + sizeof(little_u64) * 2);
-      {
-        u64 value = (this->commit_pos_ - skew) / sizeof(u64);
-        for (usize i = 0; i < src.size(); i += sizeof(little_u64), ++value) {
-          *((little_u64*)(src.data() + i)) = value;
-        }
-      }
-      LLFS_VLOG(2) << "Committed data:" << batt::dump_hex(src.data(), src.size());
       MutableBuffer dst = this->ring_buffer_.get_mut(this->commit_pos_);
       if (n_to_commit <= dst.size()) {
-        std::memcpy(dst.data(), src.data() + skew, n_to_commit);
+        std::memcpy(dst.data(), (this->fake_data_ + this->commit_pos_).data(), n_to_commit);
       } else {
         BATT_PANIC() << "gcc can't figure out that the condition above is impossible...";
         BATT_UNREACHABLE();
@@ -243,9 +289,65 @@ class FakeLogState
           return batt::StatusCode::kInvalidArgument;
         }
 
+        if (header->commit_size == 0) {
+          LLFS_LOG_ERROR() << "Flush op wrote page with commit_size 0!";
+          return batt::StatusCode::kInvalidArgument;
+        }
+
+        //----- --- -- -  -  -   -
         // If we are writing the header, then the entire block must be correct.  Reconstruct it here
         // and verify.
+        //----- --- -- -  -  -   -
+#if 1
+        // Grab the payload section of the head page (src).
         //
+        const ConstBuffer head_payload =
+            resize_buffer(src, std::min(usize{header->commit_size}, llfs::kLogAtomicWriteSize)) +
+            sizeof(llfs::PackedLogPageHeader);
+
+#if 1
+        if (std::memcmp(head_payload.data(), (this->fake_data_ + header->slot_offset).data(),
+                        head_payload.size()) != 0) {
+          LLFS_LOG_ERROR() << "The data is wrong (within the head payload)";
+          return batt::StatusCode::kDataLoss;
+        }
+#else
+        Status head_payload_match = verify_log_data(header->slot_offset, head_payload);
+        BATT_REQUIRE_OK(head_payload_match);
+#endif
+
+        // If the committed portion of the block extends beyond the initial page, then compare the
+        // on-disk data with the expected data within that range.
+        //
+        if (header->commit_size > llfs::kLogAtomicWriteSize - sizeof(llfs::PackedLogPageHeader)) {
+          const ConstBuffer block_on_disk{
+              this->disk_.data() + (block_file_offset - this->calculate_.begin_file_offset()),
+              header->commit_size};
+          const ConstBuffer tail_payload = block_on_disk + llfs::kLogAtomicWriteSize;
+          const slot_offset_type tail_slot_offset =
+              header->slot_offset + llfs::kLogAtomicWriteSize - sizeof(llfs::PackedLogPageHeader);
+
+#if 0
+          if (std::memcmp(tail_payload.data(), (this->fake_data_ + tail_slot_offset).data(),
+                          tail_payload.size()) != 0) {
+            static std::mutex m;
+            std::unique_lock<std::mutex> lock{m};
+            LLFS_LOG_ERROR() << "The data is wrong (within the tail payload) Expected:";
+            std::cerr << batt::dump_hex((this->fake_data_ + tail_slot_offset).data(),
+                                        tail_payload.size())
+                      << std::endl
+                      << "Actual: " << batt::dump_hex(tail_payload.data(), tail_payload.size())
+                      << std::endl
+                      << "Head Payload: "
+                      << batt::dump_hex(head_payload.data(), head_payload.size()) << std::endl;
+            return batt::StatusCode::kDataLoss;
+          }
+#else
+          Status tail_payload_match = verify_log_data(tail_slot_offset, tail_payload);
+          BATT_REQUIRE_OK(tail_payload_match);
+#endif
+        }
+#else
         std::vector<u8> expected(this->calculate_.block_size(), kUninitializedDiskByte);
 
         std::memcpy(expected.data(),
@@ -285,6 +387,7 @@ class FakeLogState
             return batt::StatusCode::kDataLoss;
           }
         }
+#endif
 
         updated_flush_pos = header->slot_offset + header->commit_size;
 
@@ -332,6 +435,7 @@ class FakeLogState
   slot_offset_type trim_pos_;
   slot_offset_type flush_pos_;
   slot_offset_type commit_pos_;
+  ConstBuffer fake_data_;
   RingBuffer ring_buffer_;
   std::vector<u8> disk_;
 };
@@ -380,19 +484,21 @@ class ExpectedFlushOpState
   {
   }
 
-  void verify(const FlushOp& actual) const
+  Status verify(const FlushOp& actual) const
   {
     const PackedLogPageHeader* const header = actual.get_header();
 
-    ASSERT_EQ(PackedLogPageHeader::kMagic, header->magic);
-    ASSERT_EQ(this->slot_offset, header->slot_offset);
-    ASSERT_EQ(this->commit_size, header->commit_size);
-    ASSERT_EQ(this->trim_pos, header->trim_pos);
-    ASSERT_EQ(this->flush_pos, header->flush_pos);
-    ASSERT_EQ(this->commit_pos, header->commit_pos);
+    REQUIRE_EQ(PackedLogPageHeader::kMagic, header->magic);
+    REQUIRE_EQ(this->slot_offset, header->slot_offset);
+    REQUIRE_EQ(this->commit_size, header->commit_size);
+    REQUIRE_EQ(this->trim_pos, header->trim_pos);
+    REQUIRE_EQ(this->flush_pos, header->flush_pos);
+    REQUIRE_EQ(this->commit_pos, header->commit_pos + 1) << "And why should it????";
+
+    return batt::OkStatus();
   }
 
-  void on_initialize()
+  void on_initialize(FakeLogState& fake_log)
   {
     const auto block_capacity = this->driver.calculate().block_capacity();
 
@@ -414,13 +520,19 @@ class ExpectedFlushOpState
     while (this->slot_offset + block_capacity <= active_range.lower_bound) {
       this->slot_offset += window_size;
     }
+    this->commit_size = 0;
 
-    // Now that we've caught up, we can accurately set expected `commit_size` and `flush_pos`.
-    //
-    if (this->slot_offset < this->driver.get_flush_pos()) {
-      this->commit_size = this->driver.get_flush_pos() - this->slot_offset;
-    } else {
-      this->commit_size = 0;
+    if (slot_less_than(this->slot_offset, this->driver.get_flush_pos())) {
+      LLFS_VLOG(1) << "EXPECT: get_data() - recover flushed data";
+
+      EXPECT_CALL(this->driver, get_data(this->slot_offset))  //
+          .WillOnce(::testing::Invoke([&fake_log](slot_offset_type requested_offset) {
+            LLFS_VLOG(1) << "MockDriver::get_data()";
+            return fake_log.get_data(requested_offset);
+          }));
+
+      this->commit_size = std::min(fake_log.flush_pos() - this->slot_offset,
+                                   this->driver.calculate().block_capacity());
     }
 
     this->trim_pos = this->driver.get_trim_pos();
@@ -428,10 +540,10 @@ class ExpectedFlushOpState
     this->commit_pos = this->driver.get_commit_pos();
   }
 
-  void on_activate(FakeLogState& fake_log)
+  Status on_activate(FakeLogState& fake_log)
   {
-    ASSERT_FALSE(this->waiting_for_commit);
-    ASSERT_FALSE(this->pending_write);
+    REQUIRE_EQ(this->waiting_for_commit, None);
+    REQUIRE_EQ(this->pending_write, None);
 
     if (slot_less_than(this->slot_offset + this->commit_size, this->driver.get_commit_pos())) {
       this->expect_fill_buffer(fake_log);
@@ -439,6 +551,8 @@ class ExpectedFlushOpState
     } else {
       this->expect_wait_for_commit();
     }
+
+    return OkStatus();
   }
 
   void on_wait_for_commit(slot_offset_type least_upper_bound)
@@ -453,16 +567,18 @@ class ExpectedFlushOpState
     });
   }
 
-  void on_complete_wait_for_commit(FakeLogState& fake_log)
+  Status on_complete_wait_for_commit(FakeLogState& fake_log)
   {
-    ASSERT_TRUE(this->waiting_for_commit);
-    ASSERT_FALSE(this->pending_write);
+    REQUIRE_EQ(bool{this->waiting_for_commit}, true);
+    REQUIRE_EQ(this->pending_write, None);
     ASSERT_GE(this->driver.get_commit_pos(), this->waiting_for_commit->offset);
 
     this->waiting_for_commit = None;
 
     this->expect_fill_buffer(fake_log);
     this->expect_async_write_some();
+
+    return OkStatus();
   }
 
   void on_async_write_some(i64 file_offset, ConstBuffer buffer, i32 buf_index,
@@ -485,8 +601,8 @@ class ExpectedFlushOpState
     auto local_handler = std::move(this->pending_write->handler);
     this->pending_write = None;
 
-    // If the result is a simulated fatal failure, then don't expect any further activity from the
-    // op.
+    // If the result is a simulated fatal failure, then don't expect any further activity from
+    // the op.
     //
     if (!result.ok() && !batt::status_is_retryable(result.status())) {
       local_handler(result);
@@ -565,7 +681,8 @@ class ExpectedFlushOpState
 
     ASSERT_FALSE(this->pending_write);
     ASSERT_FALSE(slot_less_than(this->driver.get_commit_pos(), this->slot_offset))
-        << "If the driver commit_pos is less than the starting slot range for this op, then the op "
+        << "If the driver commit_pos is less than the starting slot range for this op, then "
+           "the op "
            "should not be writing anything.";
 
     const i64 op_file_offset =
@@ -603,7 +720,7 @@ class ExpectedFlushOpState
           this->on_wait_for_commit(least_upper_bound);
         }));
   }
-};
+};  // namespace llfs
 
 }  // namespace llfs
 

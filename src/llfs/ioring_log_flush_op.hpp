@@ -46,6 +46,7 @@ class BasicIoRingLogFlushOp
   enum struct WritingPart {
     kHead = 0,
     kTail = 1,
+    kTrimPos = 2,
   };
 
   struct Metrics {
@@ -84,9 +85,9 @@ class BasicIoRingLogFlushOp
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  slot_offset_type flush_pos() const
+  slot_offset_type durable_flush_pos() const
   {
-    return this->flush_pos_;
+    return this->durable_flush_pos_;
   }
 
   MutableBuffer get_buffer() const;
@@ -137,10 +138,31 @@ class BasicIoRingLogFlushOp
     });
   }
 
-  // Should be called first after each async write... returns true if there was a failure that
-  // forces this object to stop.
+  // Should be called first after each async write... returns true if the caller should NOT continue
+  // processing the result.
   //
-  bool check_for_fatal_failure(const StatusOr<i32>& result, WritingPart writing_part);
+  bool handle_errors(const StatusOr<i32>& result, WritingPart writing_part);
+
+  // If the trim_pos needs to be updated for this block before writing tail pages in order to avoid
+  // possible data loss, this function will return the trim_pos value to be written.  If there is no
+  // risk of such data loss, it returns `None`.
+  //
+  Optional<slot_offset_type> need_to_update_trim_pos();
+
+  // Start writing the first (head) block for the sake of updating the durable trim pos.  This
+  // function will temporarily set the commit_size of this block to zero and, if successful, call
+  // flush_tail() afterwards.
+  //
+  void flush_trim_pos(slot_offset_type known_trim_pos);
+
+  void handle_flush_trim_pos(const StatusOr<i32>& result);
+
+  auto get_flush_trim_pos_handler()
+  {
+    return make_custom_alloc_handler(this->handler_memory_, [this](const StatusOr<i32>& result) {
+      this->handle_flush_trim_pos(result);
+    });
+  }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -150,7 +172,9 @@ class BasicIoRingLogFlushOp
 
   std::unique_ptr<PackedLogPageBuffer[]> page_block_;
 
-  slot_offset_type flush_pos_ = 0;
+  // The highest slot number confirmed to be written to device by this op.
+  //
+  slot_offset_type durable_flush_pos_ = 0;
 
   // Dedicated static memory buffer to lower the overhead of asynchronous calls.
   //
@@ -175,6 +199,11 @@ class BasicIoRingLogFlushOp
   // Active only during an asynchronous write (flush) operation.
   //
   Optional<LatencyTimer> write_timer_;
+
+  // Temporary storage to save the `commit_size` field of the header while writing on behalf of
+  // flush_trim_pos().
+  //
+  Optional<u64> saved_commit_size_;
 };
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedLogPageHeader), 64);

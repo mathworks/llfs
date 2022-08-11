@@ -156,7 +156,7 @@ class BasicIoRingLogDriver
   slot_offset_type get_flush_op_durable_upper_bound(usize flush_op_index) const
   {
     BATT_CHECK_LT(flush_op_index, this->flush_ops_.size());
-    return this->flush_ops_[flush_op_index].flush_pos();
+    return this->flush_ops_[flush_op_index].durable_flush_pos();
   }
 
   void wait_for_commit(slot_offset_type least_upper_bound);
@@ -177,6 +177,16 @@ class BasicIoRingLogDriver
   }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  void update_durable_trim_pos(slot_offset_type pos)
+  {
+    clamp_min_slot(this->durable_trim_pos_, pos);
+  }
+
+  slot_offset_type get_durable_trim_pos() const
+  {
+    return this->durable_trim_pos_.get_value();
+  }
 
  private:
   using SlotOffsetHeap = boost::heap::d_ary_heap<slot_offset_type,                   //
@@ -246,6 +256,10 @@ class BasicIoRingLogDriver
   batt::Watch<slot_offset_type> trim_pos_{0};
   batt::Watch<slot_offset_type> flush_pos_{0};
   batt::Watch<slot_offset_type> commit_pos_{0};
+
+  // The highest trim_pos confirmed to be durably written to the log file by one of the flush ops.
+  //
+  batt::Watch<slot_offset_type> durable_trim_pos_{0};
 
   // The log is segmented into blocks of 512-byte pages; these blocks are flushed in parallel, by
   // the FlushOp objects below.

@@ -30,7 +30,9 @@
 #include <boost/functional/hash.hpp>
 #include <boost/operators.hpp>
 
+#include <memory>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace llfs {
@@ -80,6 +82,7 @@ using llfs::ConstBuffer;
 using llfs::IoRingLogFlushOpState;
 using llfs::MutableBuffer;
 using llfs::None;
+using llfs::OkStatus;
 using llfs::Optional;
 using llfs::slot_offset_type;
 using llfs::Status;
@@ -143,6 +146,8 @@ class IoRingLogFlushOpModel
 
   void step() override
   {
+    batt::require_fail_thread_default_log_level() = batt::LogLevel::kError;
+
     if (this->state_.is_terminal()) {
       return;
     }
@@ -152,69 +157,68 @@ class IoRingLogFlushOpModel
 
     step_count.fetch_add(1);
 
-    // Pick the params we will be using for this test.
-    //
-    this->pick_test_params();
-
-    // Driver variables (state).
-    //
-    this->fake_log_.emplace(*this->calculate_, this->fake_data_);
-
-    // Create and configure the driver mock.
-    //
-    this->initialize_mock_driver();
-
-    // Instantiate the system-under-test.
-    //
-    this->op_.emplace();
-    this->op_->quiet_failure_logging = true;
-
-    // Initialize and verify.
-    //
-    this->expected_state_->on_initialize(*this->fake_log_);
-    this->op_->initialize(&*this->driver_);
-
-    this->check_failed_ = !this->expected_state_->verify(*this->op_).ok();
-    if (this->check_failed_) {
-      return;
-    }
-
-    // Activate.
-    //
-    this->check_failed_ = !this->expected_state_->on_activate(*this->fake_log_).ok();
-    if (this->check_failed_) {
-      return;
-    }
-    this->op_->activate();
-
-    usize step_i = 0;
-    bool finished = false;
-    for (; step_i < kMaxSteps; ++step_i) {
-      // Verify that the expected and actual flush op state match.
+    Status step_status = [&]() -> Status {
+      // Pick the params we will be using for this test.
       //
-      this->check_failed_ = !this->expected_state_->verify(*this->op_).ok();
-      if (this->check_failed_) {
-        return;
+      this->pick_test_params();
+
+      // Driver variables (state).
+      //
+      this->fake_log_.emplace(
+          *this->calculate_, this->fake_data_,
+          this->get_ring_buffer(/*byte_size=*/this->calculate_->logical_size()));
+
+      // Create and configure the driver mock.
+      //
+      this->initialize_mock_driver();
+
+      // Instantiate the system-under-test.
+      //
+      this->op_.emplace();
+      this->op_->quiet_failure_logging = true;
+
+      // Initialize and verify.
+      //
+      this->expected_state_->on_initialize(*this->fake_log_);
+      this->op_->initialize(&*this->driver_);
+
+      BATT_REQUIRE_OK(this->expected_state_->verify(*this->op_));
+
+      // Activate.
+      //
+      BATT_REQUIRE_OK(this->expected_state_->on_activate(*this->fake_log_));
+      this->op_->activate();
+
+      usize step_i = 0;
+      bool finished = false;
+      for (; step_i < kMaxSteps; ++step_i) {
+        BATT_REQUIRE_OK(this->expected_state_->async_write_some_status);
+        BATT_REQUIRE_OK(this->expected_state_->wait_for_commit_status);
+
+        // Verify that the expected and actual flush op state match.
+        //
+        BATT_REQUIRE_OK(this->expected_state_->verify(*this->op_));
+
+        batt::SmallVec<ActionFn, 3> actions;
+        this->generate_actions(&actions);
+
+        if (actions.empty()) {
+          finished = true;
+          break;
+        }
+
+        const usize action_i = this->pick_int(0, actions.size() - 1);
+        BATT_REQUIRE_OK(actions[action_i]());
       }
 
-      batt::SmallVec<ActionFn, 3> actions;
-      this->generate_actions(&actions);
-
-      if (actions.empty()) {
-        finished = true;
-        break;
+      if (this->failure_count_ == 0 && finished) {
+        BATT_CHECK_EQ(this->fake_log_->flush_pos(), this->max_flush_pos_) << BATT_INSPECT(step_i);
       }
 
-      const usize action_i = this->pick_int(0, actions.size() - 1);
-      this->check_failed_ = !actions[action_i]().ok();
-      if (this->check_failed_) {
-        return;
-      }
-    }
+      return OkStatus();
+    }();
 
-    if (this->failure_count_ == 0 && finished) {
-      BATT_CHECK_EQ(this->fake_log_->flush_pos(), this->max_flush_pos_) << BATT_INSPECT(step_i);
-    }
+    this->check_failed_ = !step_status.ok();
   }
 
   IoRingLogFlushOpState leave_state() override
@@ -229,7 +233,7 @@ class IoRingLogFlushOpModel
 
   bool check_invariants() override
   {
-    return this->check_failed_;
+    return !this->check_failed_;
   }
 
   IoRingLogFlushOpState normalize(const IoRingLogFlushOpState& s) override
@@ -239,7 +243,8 @@ class IoRingLogFlushOpModel
 
   usize max_concurrency() const override
   {
-    return std::thread::hardware_concurrency();
+    return 1;  // std::thread::hardware_concurrency();
+    // TODO [tastolfi 2022-08-11] figure out why this isn't scaling...
   }
 
   void report_progress(const batt::StateMachineResult& r) override
@@ -250,7 +255,8 @@ class IoRingLogFlushOpModel
   AdvancedOptions advanced_options() const override
   {
     auto options = AdvancedOptions::with_default_values();
-    options.min_running_time_ms = 10 * 1000;
+    options.min_running_time_ms = 15 * 60 * 1000;
+    options.starting_seed = 0;
     return options;
   }
 
@@ -279,10 +285,9 @@ class IoRingLogFlushOpModel
     // Pick the log size; include the case where there are more flush ops than log capacity, so
     // long as it doesn't lead to a "negative" log size.
     //
-    this->log_size_ = [&] {
-      if (this->queue_depth_ > 1 && this->block_capacity_ > llfs::kLogPageSize &&
-          this->pick_branch()) {
-        return this->queue_depth_ * this->block_capacity_ - llfs::kLogPageSize;
+    this->log_size_ = batt::round_up_bits(12, [&] {
+      if (this->queue_depth_ > 1 && this->block_capacity_ > 4096 && this->pick_branch()) {
+        return this->queue_depth_ * this->block_capacity_ - 4096;
       } else {
         return this->pick_one_of({
             this->queue_depth_ * this->block_capacity_,
@@ -291,7 +296,7 @@ class IoRingLogFlushOpModel
             this->queue_depth_ * this->block_capacity_ * 4,
         });
       }
-    }();
+    }());
 
     this->max_flush_pos_ = (this->queue_depth_ + this->op_index_ + 1) * this->block_capacity_;
 
@@ -355,6 +360,16 @@ class IoRingLogFlushOpModel
 
     EXPECT_CALL(*this->driver_, index_of_flush_op(&*this->op_))  //
         .WillRepeatedly(::testing::Return(this->op_index_));
+
+    EXPECT_CALL(*this->driver_, update_durable_trim_pos(::testing::_))  //
+        .WillRepeatedly(::testing::Invoke([this](slot_offset_type trim_pos) {
+          llfs::clamp_min_slot(this->fake_log_->durable_trim_pos, trim_pos);
+        }));
+
+    EXPECT_CALL(*this->driver_, get_durable_trim_pos())  //
+        .WillRepeatedly(::testing::Invoke([this]() {
+          return this->fake_log_->durable_trim_pos.get_value();
+        }));
 
     //----- --- -- -  -  -   -
 
@@ -493,8 +508,7 @@ class IoRingLogFlushOpModel
         if (this->expected_state_->waiting_for_commit &&
             llfs::slot_greater_or_equal(new_commit_pos,
                                         this->expected_state_->waiting_for_commit->offset)) {
-          ASSERT_NO_FATAL_FAILURE(
-              this->expected_state_->on_complete_wait_for_commit(*this->fake_log_));
+          BATT_REQUIRE_OK(this->expected_state_->on_complete_wait_for_commit(*this->fake_log_));
 
           this->op_->handle_commit(new_commit_pos);
         }
@@ -516,6 +530,21 @@ class IoRingLogFlushOpModel
         return batt::OkStatus();
       });
     }
+  }
+
+  llfs::RingBuffer& get_ring_buffer(usize byte_size)
+  {
+    auto iter = this->ring_buffer_cache_.find(byte_size);
+
+    if (iter == this->ring_buffer_cache_.end()) {
+      iter = this->ring_buffer_cache_
+                 .emplace(byte_size, std::make_unique<llfs::RingBuffer>(llfs::RingBuffer::TempFile{
+                                         .byte_size = byte_size,
+                                     }))
+                 .first;
+    }
+    BATT_CHECK_NOT_NULLPTR(iter->second);
+    return *iter->second;
   }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -548,6 +577,8 @@ class IoRingLogFlushOpModel
 
   Optional<llfs::LogBlockCalculator> calculate_;
 
+  std::unordered_map<usize, std::unique_ptr<llfs::RingBuffer>> ring_buffer_cache_;
+
   Optional<llfs::FakeLogState> fake_log_;
 
   Optional<llfs::BasicIoRingLogFlushOp<::testing::StrictMock<llfs::MockIoRingLogDriver>>> op_;
@@ -559,6 +590,8 @@ class IoRingLogFlushOpModel
 
 TEST(IoRingLogFlushOpTest, StateMachineSimulation)
 {
+  batt::require_fail_thread_default_log_level() = batt::LogLevel::kError;
+
   IoRingLogFlushOpModel model;
 
   IoRingLogFlushOpModel::Result result =

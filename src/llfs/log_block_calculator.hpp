@@ -71,7 +71,7 @@ class LogBlockCalculator
     return this->block_capacity_;
   }
 
-  // Returns the total number of blocks in the log.g
+  // Returns the total number of blocks in the log.
   //
   usize block_count() const
   {
@@ -90,6 +90,14 @@ class LogBlockCalculator
   u64 physical_size() const
   {
     return this->log_end_ - this->log_start_;
+  }
+
+  // Returns the slot delta between successive generations of data written to the same physical
+  // block.
+  //
+  slot_offset_type physical_window_size() const
+  {
+    return this->block_capacity() * this->block_count();
   }
 
   // Returns the number of concurrent flush operations configured for this log.

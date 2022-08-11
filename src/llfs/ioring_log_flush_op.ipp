@@ -97,7 +97,7 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::initialize(DriverImpl* driver)
     this->file_offset_ =
         driver->calculate().block_start_file_offset_from(SlotLowerBoundAt{header->slot_offset});
 
-    this->flush_pos_ = driver->get_flush_pos();
+    this->durable_flush_pos_ = driver->get_flush_pos();
 
     THIS_VLOG(1) << "initialize() -" << BATT_INSPECT(ahead_of_next)
                  << BATT_INSPECT(header->slot_offset) << BATT_INSPECT(header->commit_size)
@@ -186,9 +186,65 @@ inline ConstBuffer BasicIoRingLogFlushOp<DriverImpl>::get_writable_data() const
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <typename DriverImpl>
+inline Optional<slot_offset_type> BasicIoRingLogFlushOp<DriverImpl>::need_to_update_trim_pos()
+{
+  PackedLogPageHeader* const header = this->get_header();
+
+  const slot_offset_type window_size = this->driver_->calculate().physical_window_size();
+
+  const SlotRange current_range =
+      this->driver_->calculate().block_slot_range_from(SlotLowerBoundAt{header->slot_offset});
+
+  const SlotRange prior_range{
+      .lower_bound = current_range.lower_bound - window_size,
+      .upper_bound = current_range.upper_bound - window_size,
+  };
+
+  slot_offset_type durable_trim_pos = this->driver_->get_durable_trim_pos();
+
+  // If there is no overlap between the durable trim pos and the prior range for the current block,
+  // then there is no need to flush the current trim before writing new data.
+  //
+  if (slot_at_least(durable_trim_pos, prior_range.upper_bound)) {
+    return None;
+  }
+
+  // We need to write the current trim_pos from the driver to our block header before
+  // continuing.  This essentially invalidates this block so that if we crash midway through the
+  // write, we won't falsely recover a "torn" write (tail data from newer range, head data from
+  // older).
+  //
+  slot_offset_type known_trim_pos = this->driver_->get_trim_pos();
+
+  THIS_VLOG(1) << "Need to flush trim_pos;" << BATT_INSPECT(durable_trim_pos)
+               << BATT_INSPECT(current_range) << BATT_INSPECT(prior_range)
+               << BATT_INSPECT(known_trim_pos);
+
+  BATT_CHECK(slot_at_most(durable_trim_pos, known_trim_pos))
+      << "The durable trim pos should never get ahead of the in-memory trim_pos!";
+
+  BATT_CHECK(!slot_less_than(known_trim_pos, prior_range.upper_bound))
+      << "Log data is being overwritten before it is trimmed!  Something isn't configured "
+         "correctly or there is a bug!";
+
+  return known_trim_pos;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename DriverImpl>
 inline void BasicIoRingLogFlushOp<DriverImpl>::flush_tail()
 {
   THIS_VLOG(1) << "flush_tail()";
+
+  // Make sure we are not overwriting trimmed data *before* the fact that it has been trimmed is
+  // durably preserved.
+  //
+  Optional<slot_offset_type> trim_pos_to_flush = this->need_to_update_trim_pos();
+  if (trim_pos_to_flush) {
+    this->flush_trim_pos(*trim_pos_to_flush);
+    return;
+  }
 
   BATT_CHECK(!this->tail_write_range_);
 
@@ -227,7 +283,7 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::handle_flush_tail(const StatusOr<
       this->tail_write_range_ = None;
     });
 
-    if (this->check_for_fatal_failure(result, WritingPart::kTail)) {
+    if (this->handle_errors(result, WritingPart::kTail)) {
       return;
     }
 
@@ -263,6 +319,66 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::handle_flush_tail(const StatusOr<
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <typename DriverImpl>
+inline void BasicIoRingLogFlushOp<DriverImpl>::flush_trim_pos(slot_offset_type known_trim_pos)
+{
+  THIS_VLOG(1) << "flush_trim_pos(" << known_trim_pos << ")";
+
+  PackedLogPageHeader* const header = this->get_header();
+
+  BATT_CHECK(!this->saved_commit_size_);
+  this->saved_commit_size_ = header->commit_size;
+
+  header->commit_size = 0;
+  header->trim_pos = known_trim_pos;
+  header->flush_pos = this->driver_->get_flush_pos();
+  header->commit_pos = this->driver_->get_commit_pos();
+
+  auto head_data = ConstBuffer{this->page_block_.get(), kLogAtomicWriteSize};
+
+  this->write_timer_.emplace(this->metrics_.write_latency);
+
+  this->driver_->async_write_some(this->file_offset_, head_data, /*buf_index=*/this->self_index(),
+                                  this->get_flush_trim_pos_handler());
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename DriverImpl>
+inline void BasicIoRingLogFlushOp<DriverImpl>::handle_flush_trim_pos(const StatusOr<i32>& result)
+{
+  THIS_VLOG(1) << "handle_flush_trim_pos(result=" << result << ")";
+
+  PackedLogPageHeader* const header = this->get_header();
+
+  BATT_CHECK(this->saved_commit_size_);
+  header->commit_size = *this->saved_commit_size_;
+  this->saved_commit_size_ = None;
+
+  if (this->handle_errors(result, WritingPart::kTrimPos)) {
+    return;
+  }
+
+  BATT_CHECK_EQ(*result, kLogAtomicWriteSize);
+
+  // Update the driver's durable trim pos.
+  //
+  this->driver_->update_durable_trim_pos(header->trim_pos);
+
+  // See if we can grab more data while we're here...
+  //
+  const slot_offset_type latest_commit_pos = this->driver_->get_commit_pos();
+  if (slot_less_than(header->slot_offset + header->commit_size, latest_commit_pos)) {
+    this->fill_buffer(latest_commit_pos);
+  }
+
+  // Continue where we left off...
+  //
+  this->flush_tail();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename DriverImpl>
 inline void BasicIoRingLogFlushOp<DriverImpl>::flush_head()
 {
   THIS_VLOG(1) << "flush_head()";
@@ -282,7 +398,7 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::handle_flush_head(const StatusOr<
 {
   THIS_VLOG(1) << "handle_flush_head(result=" << result << ")";
 
-  if (this->check_for_fatal_failure(result, WritingPart::kHead)) {
+  if (this->handle_errors(result, WritingPart::kHead)) {
     return;
   }
 
@@ -290,10 +406,15 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::handle_flush_head(const StatusOr<
 
   PackedLogPageHeader* const header = this->get_header();
 
-  // THIS SHOULD BE THE ONLY PLACE WE UPDATE `this->flush_pos_`!
+  // Update the driver's durable trim pos.  We do this first (before updating the driver on flush
+  // pos) because it can unblock other flush ops.
   //
-  this->flush_pos_ = header->slot_offset + header->commit_size;
-  THIS_VLOG(1) << " -- " << BATT_INSPECT(this->flush_pos_);
+  this->driver_->update_durable_trim_pos(header->trim_pos);
+
+  // THIS SHOULD BE THE ONLY PLACE WE UPDATE `this->durable_flush_pos_`!
+  //
+  this->durable_flush_pos_ = header->slot_offset + header->commit_size;
+  THIS_VLOG(1) << " -- " << BATT_INSPECT(this->durable_flush_pos_);
   this->driver_->poll_flush_state();
 
   // Check to see whether we can advance to the next block.
@@ -317,8 +438,8 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::handle_flush_head(const StatusOr<
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <typename DriverImpl>
-inline bool BasicIoRingLogFlushOp<DriverImpl>::check_for_fatal_failure(const StatusOr<i32>& result,
-                                                                       WritingPart writing_part)
+inline bool BasicIoRingLogFlushOp<DriverImpl>::handle_errors(const StatusOr<i32>& result,
+                                                             WritingPart writing_part)
 {
   this->write_timer_ = None;
 
@@ -327,10 +448,13 @@ inline bool BasicIoRingLogFlushOp<DriverImpl>::check_for_fatal_failure(const Sta
       THIS_VLOG(1) << "EAGAIN; retrying...";
       if (writing_part == WritingPart::kHead) {
         this->flush_head();
-      } else {
+      } else if (writing_part == WritingPart::kTail) {
         this->flush_tail();
+      } else {
+        BATT_CHECK_EQ(writing_part, WritingPart::kTrimPos);
+        this->flush_trim_pos(this->get_header()->trim_pos);
       }
-      return false;
+      return true;
     }
     if (!this->quiet_failure_logging) {
       LLFS_LOG_INFO() << "flush failed: " << result.status();

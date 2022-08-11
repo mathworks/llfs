@@ -245,17 +245,17 @@ class FakeLogState
           return batt::StatusCode::kInvalidArgument;
         }
 
-        if (header->trim_pos > this->trim_pos_) {
+        if (slot_greater_than(header->trim_pos, this->trim_pos_)) {
           LLFS_LOG_ERROR() << "The log page header's trim_pos is too high!";
           return batt::StatusCode::kInvalidArgument;
         }
 
-        if (header->flush_pos > this->flush_pos_) {
+        if (slot_greater_than(header->flush_pos, this->flush_pos_)) {
           LLFS_LOG_ERROR() << "The log page header's flush_pos is too high!";
           return batt::StatusCode::kInvalidArgument;
         }
 
-        if (header->commit_pos > this->commit_pos_) {
+        if (slot_greater_than(header->commit_pos, this->commit_pos_)) {
           LLFS_LOG_ERROR() << "The log page header's commit_pos is too high!";
           return batt::StatusCode::kInvalidArgument;
         }

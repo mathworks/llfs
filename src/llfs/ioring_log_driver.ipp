@@ -139,6 +139,15 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::read_log_data()
 
   LLFS_VLOG(1) << "initial log recovery started";
 
+  Optional<slot_offset_type> trim_upper_bound;
+  Optional<slot_offset_type> flush_upper_bound;
+  Optional<slot_offset_type> commit_upper_bound;
+
+  // Map from ring buffer intervals to starting logical slot offset.  This is used to make sure that
+  // older data never overwrites newer data.
+  //
+  std::map<llfs::SlotRange, llfs::slot_offset_type, llfs::SlotRange::LinearOrder> latest_slot_range;
+
   u64 bytes_copied = 0;
   bool end_of_data = false;
 

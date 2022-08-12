@@ -146,14 +146,17 @@ class IoRingLogFlushOpModel
 
   void step() override
   {
-    batt::require_fail_thread_default_log_level() = batt::LogLevel::kError;
-
     if (this->state_.is_terminal()) {
       return;
     }
-    auto on_scope_exit = batt::finally([&] {
-      this->state_.done = true;
-    });
+
+    auto on_scope_exit =
+        batt::finally([saved_level = batt::require_fail_thread_default_log_level(), this] {
+          this->state_.done = true;
+          batt::require_fail_thread_default_log_level() = saved_level;
+        });
+
+    batt::require_fail_thread_default_log_level() = batt::LogLevel::kError;
 
     step_count.fetch_add(1);
 
@@ -249,13 +252,13 @@ class IoRingLogFlushOpModel
 
   void report_progress(const batt::StateMachineResult& r) override
   {
-    LLFS_VLOG(1) << r;
+    LLFS_LOG_INFO() << r;
   }
 
   AdvancedOptions advanced_options() const override
   {
     auto options = AdvancedOptions::with_default_values();
-    options.min_running_time_ms = 15 * 60 * 1000;
+    options.min_running_time_ms = 10 * 1000;
     options.starting_seed = 0;
     return options;
   }
@@ -438,6 +441,15 @@ class IoRingLogFlushOpModel
           return {this->expected_state_->pending_write->buffer.size()};
         }();
 
+        auto on_scope_exit =
+            batt::finally([saved_level = batt::require_fail_thread_default_log_level()] {
+              batt::require_fail_thread_default_log_level() = saved_level;
+            });
+
+        if (page_will_fail.any()) {
+          batt::require_fail_thread_default_log_level() = batt::LogLevel::kVerbose;
+        }
+
         Status complete_write_status =
             this->expected_state_->on_complete_async_write(result, *this->fake_log_);
 
@@ -590,6 +602,10 @@ class IoRingLogFlushOpModel
 
 TEST(IoRingLogFlushOpTest, StateMachineSimulation)
 {
+  auto on_scope_exit = batt::finally([saved_level = batt::require_fail_thread_default_log_level()] {
+    batt::require_fail_thread_default_log_level() = saved_level;
+  });
+
   batt::require_fail_thread_default_log_level() = batt::LogLevel::kError;
 
   IoRingLogFlushOpModel model;

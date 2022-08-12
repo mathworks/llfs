@@ -1,0 +1,14 @@
+1: [==========] Running 1 test from 1 test suite.
+1: [----------] Global test environment set-up.
+1: [----------] 1 test from IoRingLogFlushOpTest
+1: [ RUN      ] IoRingLogFlushOpTest.StateMachineSimulation
+1: WARNING: Logging before InitGoogleLogging() is written to STDERR
+1: I20220812 03:48:55.613447 982888 ioring_log_flush_op.test.cpp:601] StateMachineResult{.ok=1, .branch_push_count=106391433, .branch_pop_count=106391433, .branch_miss_count=0, .state_count=2, .self_branch_count=106391433, .states_per_second=6.94792e-05, .branch_push_per_second=3694.15, .branch_pop_per_second=3694.15, .elapsed_ms=28800000, .shards=0000000000000000000000000000000000000000000000000000000000000000, .seed=--,} step_count == 106391433
+1: [       OK ] IoRingLogFlushOpTest.StateMachineSimulation (28800000 ms)
+1: [----------] 1 test from IoRingLogFlushOpTest (28800000 ms total)
+1: 
+1: [----------] Global test environment tear-down
+1: I20220812 03:48:55.614789 982888 dump_tasks.hpp:74] signal handlers cancelled
+1: [==========] 1 test from 1 test suite ran. (28800001 ms total)
+1: [  PASSED  ] 1 test.
+1/1 Test #1: llfs_Test ........................   Passed  28800.00 sec

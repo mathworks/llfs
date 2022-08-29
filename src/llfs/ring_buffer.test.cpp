@@ -36,6 +36,22 @@ TEST(RingBufferTest, Test)
   auto b2 = rb.get(rb.size() * 19 - 10);
 
   EXPECT_EQ(0, std::memcmp(b2.data(), kTestData, std::strlen(kTestData)));
+
+  using Interval = ::batt::Interval<::batt::isize>;
+
+  for (batt::isize wrap_count = 0; wrap_count < 3; ++wrap_count) {
+    EXPECT_THAT(
+        rb.physical_offsets_from_logical(Interval{59 + wrap_count * 4096, 298 + wrap_count * 4096}),
+        ::testing::ElementsAre(Interval{59, 298}));
+
+    EXPECT_THAT(rb.physical_offsets_from_logical(
+                    Interval{789 + wrap_count * 4096, 4096 + wrap_count * 4096}),
+                ::testing::ElementsAre(Interval{789, 4096}));
+
+    EXPECT_THAT(rb.physical_offsets_from_logical(
+                    Interval{789 + wrap_count * 4096, 4100 + wrap_count * 4096}),
+                ::testing::ElementsAre(Interval{789, 4096}, Interval{0, 4}));
+  }
 }
 
 }  // namespace

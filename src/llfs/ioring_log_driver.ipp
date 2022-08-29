@@ -14,6 +14,7 @@
 #include <llfs/ioring_log_driver.hpp>
 #include <llfs/ioring_log_initializer.hpp>
 #include <llfs/metrics.hpp>
+#include <llfs/slot_interval_map.hpp>
 
 #include <batteries/async/runtime.hpp>
 #include <batteries/metrics/metric_collectors.hpp>
@@ -146,7 +147,7 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::read_log_data()
   // Map from ring buffer intervals to starting logical slot offset.  This is used to make sure that
   // older data never overwrites newer data.
   //
-  std::map<llfs::SlotRange, llfs::slot_offset_type, llfs::SlotRange::LinearOrder> latest_slot_range;
+  SlotIntervalMap latest_slot_range;
 
   u64 bytes_copied = 0;
   bool end_of_data = false;
@@ -188,9 +189,39 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::read_log_data()
     }
 
     if (block_header.commit_size > 0) {
-      MutableBuffer dst = this->context_.buffer_.get_mut(block_header.slot_offset);
-      std::memcpy(dst.data(), block_payload.data(), block_header.commit_size);
-      bytes_copied += block_header.commit_size;
+      const auto begin_offset = block_header.slot_offset;
+      const auto end_offset = begin_offset + block_header.commit_size;
+
+      const batt::Interval<isize> logical_slots{
+          .lower_bound = BATT_CHECKED_CAST(isize, begin_offset),
+          .upper_bound = BATT_CHECKED_CAST(isize, end_offset),
+      };
+
+      // Update the map and then read back our physical interval to see which parts contain
+      // up-to-date data that should be copied to the ring buffer.
+      //
+      const ConstBuffer data = resize_buffer(block_payload, block_header.commit_size);
+
+      // It may seem cumbersome to explicitly account for buffer wrap-around here, potentially
+      // splitting our logical data slice into multiple parts, but handling that here helps prevent
+      // SlotIntervalMap from getting too complicated.
+      //
+      for (const batt::Interval<isize> slice :
+           this->context_.buffer_.physical_offsets_from_logical(logical_slots)) {
+        //
+        latest_slot_range.update(slice, block_header.slot_offset);
+
+        for (const SlotIntervalMap::Entry& entry : latest_slot_range.query(slice)) {
+          if (entry.slot == block_header.slot_offset) {
+            MutableBuffer dst = this->context_.buffer_.get_mut(entry.offset_range.lower_bound);
+            ConstBuffer src = slice_buffer(data, entry.slot_range.shift_down(slice.lower_bound));
+            std::memcpy(dst.data(), src.data(), src.size());
+            bytes_copied += src.size();
+          }
+        }
+
+        data += slice.size();
+      }
     }
 
     file_offset += this->config_.block_size();

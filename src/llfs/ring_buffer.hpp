@@ -19,6 +19,8 @@
 
 #include <batteries/assert.hpp>
 #include <batteries/case_of.hpp>
+#include <batteries/interval.hpp>
+#include <batteries/small_vec.hpp>
 
 #include <stdio.h>
 #include <unistd.h>
@@ -113,6 +115,12 @@ class RingBuffer
   // Synchronize mapped region to backing file, **DATA ONLY** (no metadata).
   //
   Status datasync();
+
+  /*! \brief Returns the list of physical buffer offsets for a given logical offset interval,
+   * splitting the interval if necessary to account for wrap-around.
+   */
+  batt::SmallVec<batt::Interval<isize>, 2> physical_offsets_from_logical(
+      const batt::Interval<isize>& logical_offsets);
 
  private:
   const usize size_;

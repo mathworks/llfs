@@ -9,6 +9,8 @@
 #include <llfs/ring_buffer.hpp>
 //
 
+#include <batteries/checked_cast.hpp>
+
 #include <sys/mman.h>
 
 namespace llfs {
@@ -142,6 +144,23 @@ Status RingBuffer::datasync()
 {
   const int retval = fdatasync(this->fd_);
   return batt::status_from_retval(retval);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+batt::SmallVec<batt::Interval<isize>, 2> RingBuffer::physical_offsets_from_logical(
+    const batt::Interval<isize>& logical_offsets)
+{
+  const isize physical_begin = logical_offsets.lower_bound % this->size_;
+  const isize physical_end_no_wrap = physical_begin + logical_offsets.size();
+  const isize physical_size = BATT_CHECKED_CAST(isize, this->size_);
+
+  if (physical_end_no_wrap <= physical_size) {
+    return {batt::Interval<isize>{physical_begin, physical_end_no_wrap}};
+  } else {
+    return {batt::Interval<isize>{physical_begin, physical_size},
+            batt::Interval<isize>{0, physical_end_no_wrap - physical_size}};
+  }
 }
 
 }  // namespace llfs

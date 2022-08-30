@@ -70,6 +70,9 @@ Status IoRingLogRecovery::run()
 
   // Done!
   //
+  LLFS_VLOG(1) << "finished log recovery;" << BATT_INSPECT(this->trim_pos_)
+               << BATT_INSPECT(this->flush_pos_);
+
   return batt::OkStatus();
 }
 
@@ -213,16 +216,19 @@ void IoRingLogRecovery::recover_flush_pos()
         << "SlotIntervalMap should have merged these two intervals!";
   }
 
+  constexpr usize kUpdateCadence = 500;
+
   ConstBuffer committed_bytes = resize_buffer(this->ring_buffer_.get(slot_offset),
                                               committed_ranges.front().offset_range.size());
   for (;;) {
-    LLFS_VLOG(1) << " -- attempting to recover log entry at " << BATT_INSPECT(slot_offset);
+    LLFS_VLOG_EVERY_N(1, kUpdateCadence)
+        << " -- attempting to recover log entry at " << BATT_INSPECT(slot_offset);
 
     DataReader reader{committed_bytes};
     const usize bytes_available_before = reader.bytes_available();
     Optional<u64> slot_body_size = reader.read_varint();
 
-    LLFS_VLOG(1) << " -- " << BATT_INSPECT(slot_body_size);
+    LLFS_VLOG_EVERY_N(1, kUpdateCadence) << " -- " << BATT_INSPECT(slot_body_size);
 
     if (!slot_body_size) {
       // Partially committed slot (couldn't even read a whole varint for the slot header!)  Break
@@ -236,7 +242,8 @@ void IoRingLogRecovery::recover_flush_pos()
     const usize slot_header_size = bytes_available_before - bytes_available_after;
     const usize slot_size = slot_header_size + *slot_body_size;
 
-    LLFS_VLOG(1) << " -- " << BATT_INSPECT(slot_size) << BATT_INSPECT(committed_bytes.size());
+    LLFS_VLOG_EVERY_N(1, kUpdateCadence)
+        << " -- " << BATT_INSPECT(slot_size) << BATT_INSPECT(committed_bytes.size());
 
     if (slot_size > committed_bytes.size()) {
       // Partially committed slot; break out of the loop without updating slot_offset (we're

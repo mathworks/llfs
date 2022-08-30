@@ -21,12 +21,19 @@ std::ostream& operator<<(std::ostream& out, const SlotIntervalMap& t)
   out << "{";
 
   t.to_seq() | seq::for_each([&out](const auto& entry) {
-    out << entry.offset_range << " => " << entry.slot << ", ";
+    out << entry << ", ";
   });
 
   out << "}";
 
   return out;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+std::ostream& operator<<(std::ostream& out, const SlotIntervalMap::Entry& entry)
+{
+  return out << entry.offset_range << " => " << entry.slot;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

@@ -198,9 +198,9 @@ class BasicIoRingLogDriver
   class FlushState
   {
    public:
-    explicit FlushState(IoRingLogDriver* driver) noexcept;
+    explicit FlushState(BasicIoRingLogDriver* driver) noexcept;
 
-    void poll(IoRingLogDriver* driver);
+    void poll(BasicIoRingLogDriver* driver);
 
     slot_offset_type get_flushed_upper_bound() const;
 

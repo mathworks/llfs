@@ -13,6 +13,7 @@
 #include <llfs/data_reader.hpp>
 #include <llfs/ioring_log_driver.hpp>
 #include <llfs/ioring_log_initializer.hpp>
+#include <llfs/ioring_log_recovery.hpp>
 #include <llfs/metrics.hpp>
 #include <llfs/slot_interval_map.hpp>
 
@@ -122,156 +123,20 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::read_log_data()
     this->ioring_.reset();
   });
 
-  // TODO [tastolfi 2022-02-09] this can be made more efficient; the block headers contain clues
-  // that allow us to skip some work.  Also, we don't have to read entire blocks always, since
-  // commit_size may be less than block_capacity.
+  IoRingLogRecovery recovery{
+      this->config_, this->context_.buffer_,
+      /*read_data_fn=*/[this](i64 file_offset, MutableBuffer buffer) -> Status {
+        return this->file_.read_all(file_offset + this->config_.physical_offset, buffer);
+      }};
 
-  BATT_CHECK_EQ(this->config_.block_size() % sizeof(PackedLogPageBuffer), 0u);
+  LLFS_VLOG(1) << "Starting log recovery...";
+  Status recovery_status = recovery.run();
+  LLFS_VLOG(1) << "Log recovery finished: " << BATT_INSPECT(recovery_status);
+  BATT_REQUIRE_OK(recovery_status);
 
-  std::unique_ptr<PackedLogPageBuffer[]> block_storage{
-      new PackedLogPageBuffer[this->config_.block_size() / sizeof(PackedLogPageBuffer)]};
-
-  auto& block_header = block_storage[0].header;
-  MutableBuffer block_buffer{(void*)block_storage.get(), this->config_.block_size()};
-  ConstBuffer block_payload = block_buffer + sizeof(PackedLogPageHeader);
-
-  BATT_CHECK_EQ(block_buffer.size(), this->config_.block_size());
-  BATT_CHECK_EQ(block_payload.size(), this->config_.block_capacity());
-
-  LLFS_VLOG(1) << "initial log recovery started";
-
-  Optional<slot_offset_type> trim_upper_bound;
-  Optional<slot_offset_type> flush_upper_bound;
-  Optional<slot_offset_type> commit_upper_bound;
-
-  // Map from ring buffer intervals to starting logical slot offset.  This is used to make sure that
-  // older data never overwrites newer data.
-  //
-  SlotIntervalMap latest_slot_range;
-
-  u64 bytes_copied = 0;
-  bool end_of_data = false;
-
-  u64 file_offset = this->config_.physical_offset;
-  std::vector<llfs::slot_offset_type> recovered_commit_points;
-  for (usize block_i = 0; block_i < this->config_.block_count(); ++block_i) {
-    {
-      const auto& hdr = block_header;
-      LLFS_VLOG(1) << "reading log; " << BATT_INSPECT(block_i) << "/" << this->config_.block_count()
-                   << BATT_INSPECT(file_offset) << BATT_INSPECT(this->config_.block_size())
-                   << BATT_INSPECT(block_buffer.size()) << BATT_INSPECT(hdr.trim_pos)
-                   << BATT_INSPECT(hdr.flush_pos) << BATT_INSPECT(hdr.commit_size)
-                   << BATT_INSPECT(hdr.slot_offset);
-    }
-
-    Status read_status = this->file_.read_all(file_offset, block_buffer);
-    BATT_REQUIRE_OK(read_status);
-
-    if (block_header.magic != PackedLogPageHeader::kMagic) {
-      // TODO [tastolfi 2022-02-09] specific error message/code
-      return {batt::StatusCode::kDataLoss};
-    }
-    if (block_header.commit_size > this->config_.block_capacity()) {
-      // TODO [tastolfi 2022-02-09] specific error message/code
-      return {batt::StatusCode::kDataLoss};
-    }
-    // TODO [tastolfi 2022-02-09] validate CRC
-
-    recovered_commit_points.emplace_back(block_header.commit_pos);
-    if (!end_of_data) {
-      clamp_min_slot(this->trim_pos_, block_header.trim_pos);
-      clamp_min_slot(this->flush_pos_, block_header.flush_pos);
-      clamp_min_slot(this->flush_pos_, block_header.slot_offset + block_header.commit_size);
-
-      if (block_header.commit_size < this->calculate().block_capacity()) {
-        end_of_data = true;
-      }
-    }
-
-    if (block_header.commit_size > 0) {
-      const auto begin_offset = block_header.slot_offset;
-      const auto end_offset = begin_offset + block_header.commit_size;
-
-      const batt::Interval<isize> logical_slots{
-          .lower_bound = BATT_CHECKED_CAST(isize, begin_offset),
-          .upper_bound = BATT_CHECKED_CAST(isize, end_offset),
-      };
-
-      // Update the map and then read back our physical interval to see which parts contain
-      // up-to-date data that should be copied to the ring buffer.
-      //
-      const ConstBuffer data = resize_buffer(block_payload, block_header.commit_size);
-
-      // It may seem cumbersome to explicitly account for buffer wrap-around here, potentially
-      // splitting our logical data slice into multiple parts, but handling that here helps prevent
-      // SlotIntervalMap from getting too complicated.
-      //
-      for (const batt::Interval<isize> slice :
-           this->context_.buffer_.physical_offsets_from_logical(logical_slots)) {
-        //
-        latest_slot_range.update(slice, block_header.slot_offset);
-
-        for (const SlotIntervalMap::Entry& entry : latest_slot_range.query(slice)) {
-          if (entry.slot == block_header.slot_offset) {
-            MutableBuffer dst = this->context_.buffer_.get_mut(entry.offset_range.lower_bound);
-            ConstBuffer src = slice_buffer(data, entry.slot_range.shift_down(slice.lower_bound));
-            std::memcpy(dst.data(), src.data(), src.size());
-            bytes_copied += src.size();
-          }
-        }
-
-        data += slice.size();
-      }
-    }
-
-    file_offset += this->config_.block_size();
-  }
-
-  // After opening, there is no unflushed data so commit_pos == flush_pos.
-  //
-  this->commit_pos_.set_value(this->flush_pos_.get_value());
-
-  // Step forward through the log reading slot size headers until we find the true flushed upper
-  // bound.
-  //
-  {
-    slot_offset_type slots_upper_bound = this->trim_pos_.get_value();
-
-    // If we can use a recovered commit point to skip ahead, do so.  (Sorting the recovered commit
-    // points will take at least O(n), so just do a single pass scan through the offsets).
-    //
-    for (const slot_offset_type known_commit : recovered_commit_points) {
-      // We are looking for the greatest commit offset that is not greater than the flushed upper
-      // bound.
-      //
-      if (llfs::slot_less_than(slots_upper_bound, known_commit) &&
-          !llfs::slot_less_than(this->flush_pos_.get_value(), known_commit)) {
-        slots_upper_bound = known_commit;
-      }
-    }
-
-    usize bytes_remaining = this->flush_pos_.get_value() - slots_upper_bound;
-    for (;;) {
-      DataReader reader{resize_buffer(this->get_data(slots_upper_bound), bytes_remaining)};
-      const usize bytes_available_before = reader.bytes_available();
-      Optional<u64> slot_body_size = reader.read_varint();
-      if (!slot_body_size) {
-        break;
-      }
-      const usize bytes_available_after = reader.bytes_available();
-      const usize slot_header_size = bytes_available_before - bytes_available_after;
-      const usize slot_size = slot_header_size + *slot_body_size;
-
-      if (slot_size > bytes_remaining) {
-        break;
-      }
-      slots_upper_bound += slot_size;
-      bytes_remaining -= slot_size;
-    }
-    BATT_CHECK_LE(slots_upper_bound, this->flush_pos_.get_value())
-        << "flush_pos should never increase as a result of this scan!";
-    this->flush_pos_.set_value(slots_upper_bound);
-  }
+  this->trim_pos_.set_value(recovery.get_trim_pos());
+  this->flush_pos_.set_value(recovery.get_flush_pos());
+  this->commit_pos_.set_value(recovery.get_flush_pos());
 
   // Initialize state according to recovered values.
   //
@@ -281,7 +146,7 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::read_log_data()
                << (this->config_.block_size() * this->config_.block_count()) << ";"
                << BATT_INSPECT(this->trim_pos_.get_value())
                << BATT_INSPECT(this->flush_pos_.get_value())
-               << BATT_INSPECT(this->commit_pos_.get_value()) << BATT_INSPECT(bytes_copied);
+               << BATT_INSPECT(this->commit_pos_.get_value());
 
   return OkStatus();
 }
@@ -521,7 +386,8 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::handle_commit_pos_update(
 // class FlushState
 //
 template <template <typename> class FlushOpImpl>
-inline BasicIoRingLogDriver<FlushOpImpl>::FlushState::FlushState(IoRingLogDriver* driver) noexcept
+inline BasicIoRingLogDriver<FlushOpImpl>::FlushState::FlushState(
+    BasicIoRingLogDriver* driver) noexcept
     : flushed_upper_bound_{driver->get_flush_pos()}
 
     , next_flush_op_index_{driver->calculate().flush_op_index_from(SlotUpperBoundAt{
@@ -539,7 +405,7 @@ inline BasicIoRingLogDriver<FlushOpImpl>::FlushState::FlushState(IoRingLogDriver
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <template <typename> class FlushOpImpl>
-inline void BasicIoRingLogDriver<FlushOpImpl>::FlushState::poll(IoRingLogDriver* driver)
+inline void BasicIoRingLogDriver<FlushOpImpl>::FlushState::poll(BasicIoRingLogDriver* driver)
 {
   bool update = false;
 

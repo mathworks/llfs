@@ -49,6 +49,8 @@ class SlotIntervalMap
   std::map<OffsetRange, slot_offset_type, OffsetRange::LinearOrder> map_;
 };
 
+std::ostream& operator<<(std::ostream& out, const SlotIntervalMap::Entry& t);
+
 }  // namespace llfs
 
 #endif  // LLFS_SLOT_INTERVAL_MAP_HPP

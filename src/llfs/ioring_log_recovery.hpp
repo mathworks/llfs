@@ -24,6 +24,8 @@
 
 namespace llfs {
 
+/*! \brief Manages log data and state recovery from on-disk information.
+ */
 class IoRingLogRecovery
 {
  public:
@@ -67,12 +69,20 @@ class IoRingLogRecovery
   //
   RingBuffer& ring_buffer_;
 
+  // Callback used to read data into the block storage buffer; passed in at creation time.
+  //
   ReadDataFn read_data_;
 
+  // The maximum trim_pos field value read from all valid block headers.
+  //
   Optional<slot_offset_type> trim_pos_;
 
+  // The true slot upper bound for valid flushed data.
+  //
   Optional<slot_offset_type> flush_pos_;
 
+  // The memory used to load individual log blocks.
+  //
   std::unique_ptr<PackedLogPageBuffer[]> block_storage_;
 
   SlotIntervalMap latest_slot_range_;

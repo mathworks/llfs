@@ -32,10 +32,12 @@ Status IoRingLogRecovery::run()
 {
   LLFS_VLOG(1) << "IoRingLogRecovery::run()";
   i64 file_offset = 0;
+  Optional<slot_offset_type> old_trim_pos = this->trim_pos_;
+
   for (usize block_i = 0; block_i < this->config_.block_count();
        ++block_i, file_offset += this->config_.block_size()) {
     //----- --- -- -  -  -   -
-    LLFS_VLOG(1) << "reading " << BATT_INSPECT(block_i) << " from " << BATT_INSPECT(file_offset);
+    LLFS_VLOG(2) << "reading " << BATT_INSPECT(block_i) << " from " << BATT_INSPECT(file_offset);
 
     // Read the next block into the buffer.
     //
@@ -50,7 +52,12 @@ Status IoRingLogRecovery::run()
     // Update the trim position (this must be valid later when we find the "true" flush_pos).
     //
     clamp_min_slot(&this->trim_pos_, this->block_header().trim_pos);
-    LLFS_VLOG(1) << BATT_INSPECT(this->trim_pos_);
+    if (this->trim_pos_ != old_trim_pos) {
+      LLFS_VLOG(1) << "updating trim_pos: " << old_trim_pos << " => " << this->trim_pos_;
+      old_trim_pos = this->trim_pos_;
+    } else {
+      LLFS_VLOG(2) << BATT_INSPECT(this->trim_pos_);
+    }
 
     // Copy data from this block into the ring buffer, if possible.
     //
@@ -100,9 +107,9 @@ const PackedLogPageHeader& IoRingLogRecovery::block_header() const
 //
 void IoRingLogRecovery::recover_block_data()
 {
-  LLFS_VLOG(1) << "IoRingLogRecovery::recover_block_data()";
+  LLFS_VLOG(2) << "IoRingLogRecovery::recover_block_data()";
 
-  auto& header = this->block_header();
+  const auto& header = this->block_header();
 
   // Record this slot interval so we know how much contiguous data we have starting at the trim pos
   // upper bound when we are done.
@@ -111,17 +118,19 @@ void IoRingLogRecovery::recover_block_data()
       .lower_bound = (isize)header.slot_offset,
       .upper_bound = (isize)(header.slot_offset + header.commit_size),
   };
-  LLFS_VLOG(1) << " -- " << BATT_INSPECT(slot_offset_range);
+  LLFS_VLOG(2) << " -- " << BATT_INSPECT(slot_offset_range);
 
   this->committed_data_.update(slot_offset_range, 1);
-  LLFS_VLOG(1) << " -- " << BATT_INSPECT(this->committed_data_);
+  LLFS_VLOG(2) << " -- " << BATT_INSPECT(this->committed_data_);
 
   // If there is no committed data in this block, we are done here.
   //
   if (header.commit_size == 0) {
-    LLFS_VLOG(1) << " -- (no data; returning)";
+    LLFS_VLOG(2) << " -- (no data; returning)";
     return;
   }
+
+  LLFS_VLOG(1) << "Found committed data;" << BATT_INSPECT(slot_offset_range);
 
   const u64 begin_offset = header.slot_offset;
   const u64 end_offset = begin_offset + header.commit_size;
@@ -160,6 +169,8 @@ void IoRingLogRecovery::recover_block_data()
 
     data += slice.size();
   }
+
+  LLFS_VLOG(1) << "Updated " << BATT_INSPECT(this->committed_data_);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

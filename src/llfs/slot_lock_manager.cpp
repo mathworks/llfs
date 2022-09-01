@@ -25,7 +25,7 @@ SlotLockManager::~SlotLockManager() noexcept
 
   auto locked = this->state_.lock();
 
-  BATT_CHECK(locked->lock_heap_.empty());
+  BATT_CHECK(locked->lock_heap_.empty()) << this->debug_info_locked(locked);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

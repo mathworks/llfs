@@ -38,6 +38,7 @@ StatusOr<NoneType> VolumeRecoveryVisitor::on_volume_detach(const SlotParse& /*sl
   PackedVolumeAttachEvent attach{{
       .client_uuid = detach.client_uuid,
       .device_id = detach.device_id,
+      .user_slot_offset = 0 /* doesn't matter; this field doesn't affect equality groups */,
   }};
   this->device_attachments.erase(attach);
   return None;

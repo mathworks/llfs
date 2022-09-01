@@ -429,9 +429,9 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::FlushState::poll(BasicIoRingLogDr
     this->flush_op_slot_upper_bound_ += driver->calculate().block_capacity();
   }
   if (update) {
-    LLFS_LOG_INFO() << "(driver=" << driver->name_ << ") FlushState update=true;"
-                    << BATT_INSPECT(flushed_upper_bound_)
-                    << BATT_INSPECT(driver->flush_pos_.get_value());
+    LLFS_VLOG(1) << "(driver=" << driver->name_ << ") FlushState update=true;"
+                 << BATT_INSPECT(flushed_upper_bound_)
+                 << BATT_INSPECT(driver->flush_pos_.get_value());
 
     clamp_min_slot(driver->flush_pos_, this->flushed_upper_bound_);
   }

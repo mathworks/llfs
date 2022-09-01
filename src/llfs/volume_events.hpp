@@ -30,18 +30,19 @@ namespace llfs {
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
-template <typename T>
+template <typename Derived>
 struct PackedVolumeAttachmentEvent;
 
-template <typename T>
-std::ostream& operator<<(std::ostream& out, const PackedVolumeAttachmentEvent<T>& t);
+template <typename Derived>
+std::ostream& operator<<(std::ostream& out, const PackedVolumeAttachmentEvent<Derived>& t);
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-template <typename T>
+template <typename Derived>
 struct PackedVolumeAttachmentEvent {
   boost::uuids::uuid client_uuid;
   little_page_id_int device_id;
+  little_u64 user_slot_offset;
 
   struct Hash {
     u64 operator()(const PackedVolumeAttachmentEvent& event) const
@@ -49,37 +50,55 @@ struct PackedVolumeAttachmentEvent {
       u64 seed = 0;
       boost::hash_combine(seed, boost::hash<boost::uuids::uuid>{}(event.client_uuid));
       boost::hash_combine(seed, event.device_id.value());
+      /* user_slot_offset intentionally omitted */
       return seed;
     }
   };
 };
 
-template <typename T>
-inline std::ostream& operator<<(std::ostream& out, const PackedVolumeAttachmentEvent<T>& t)
+template <typename Derived>
+inline std::ostream& operator<<(std::ostream& out, const PackedVolumeAttachmentEvent<Derived>& t)
 {
-  return out << batt::name_of<T>() << "{.client_uuid=" << t.client_uuid
-             << ", .device_id=" << t.device_id << ",}";
+  return out << batt::name_of<Derived>() <<               //
+         "{.client_uuid=" << t.client_uuid <<             //
+         ", .device_id=" << t.device_id <<                //
+         ", .user_slot_offset=" << t.user_slot_offset <<  //
+         ",}";
 }
 
+template <typename Derived>
+inline bool operator==(const PackedVolumeAttachmentEvent<Derived>& l,
+                       const PackedVolumeAttachmentEvent<Derived>& r)
+{
+  return l.client_uuid == r.client_uuid  //
+         && l.device_id == r.device_id   //
+      /* user_slot_offset intentionally omitted */;
+}
+
+BATT_EQUALITY_COMPARABLE((template <typename Derived> inline), PackedVolumeAttachmentEvent<Derived>,
+                         PackedVolumeAttachmentEvent<Derived>)
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
 struct PackedVolumeAttachEvent : PackedVolumeAttachmentEvent<PackedVolumeAttachEvent> {
 };
 
-inline bool operator==(const PackedVolumeAttachEvent& l, const PackedVolumeAttachEvent& r)
-{
-  return l.client_uuid == r.client_uuid && l.device_id == r.device_id;
-}
-
-BATT_EQUALITY_COMPARABLE((inline), PackedVolumeAttachEvent, PackedVolumeAttachEvent)
-
 BATT_STATIC_ASSERT_EQ(sizeof(PackedVolumeAttachEvent),
-                      sizeof(boost::uuids::uuid) + sizeof(page_device_id_int));
+                      sizeof(boost::uuids::uuid) + sizeof(page_device_id_int) + 8);
 
-BATT_STATIC_ASSERT_EQ(sizeof(PackedVolumeAttachEvent), 24);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedVolumeAttachEvent), 32);
 
 LLFS_SIMPLE_PACKED_TYPE(PackedVolumeAttachEvent);
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
 struct PackedVolumeDetachEvent : PackedVolumeAttachmentEvent<PackedVolumeDetachEvent> {
 };
+
+BATT_STATIC_ASSERT_EQ(sizeof(PackedVolumeDetachEvent),
+                      sizeof(boost::uuids::uuid) + sizeof(page_device_id_int) + 8);
+
+BATT_STATIC_ASSERT_EQ(sizeof(PackedVolumeDetachEvent), 32);
 
 LLFS_SIMPLE_PACKED_TYPE(PackedVolumeDetachEvent);
 

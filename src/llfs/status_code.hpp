@@ -10,6 +10,8 @@
 #ifndef LLFS_CACHE_STATUS_CODE_HPP
 #define LLFS_CACHE_STATUS_CODE_HPP
 
+#include <batteries/status.hpp>
+
 namespace llfs {
 
 enum struct StatusCode {
@@ -38,9 +40,20 @@ enum struct StatusCode {
   kFileLogDeviceConfigWriteFailed = 22,
   kFileLogDeviceConfigReadFailed = 23,
   kStorageObjectTypeError = 24,
+  kTransferAllBadAlignment = 25,
+  kPageCacheConfigFileBadMagic = 26,
+  kFakeLogDeviceExpectedFailure = 27,
+  kNoReaderForPageViewType = 28,
+  kIoRingLogFlushOpExpectedFailure = 29,
+  kFilesystemPageWriteFailed = 30,
+  kFilesystemPageOpenFailed = 31,
+  kFilesystemPageReadFailed = 32,
+  kFilesystemRemoveFailed = 33,
 };
 
 bool initialize_status_codes();
+
+::batt::Status make_status(StatusCode code);
 
 }  // namespace llfs
 

@@ -169,11 +169,13 @@ class Volume
   // Acquires a read lock on a the given slot offset range within the log, to prevent premature
   // trimming while that segment is being read.
   //
-  StatusOr<SlotReadLock> lock_slots(const SlotRangeSpec& slot_range, LogReadMode mode);
+  StatusOr<SlotReadLock> lock_slots(const SlotRangeSpec& slot_range, LogReadMode mode,
+                                    Optional<const char*> lock_holder);
 
   // Convenience.
   //
-  StatusOr<SlotReadLock> lock_slots(const SlotRange& slot_range, LogReadMode mode);
+  StatusOr<SlotReadLock> lock_slots(const SlotRange& slot_range, LogReadMode mode,
+                                    Optional<const char*> lock_holder);
 
   // Returns the number of free bytes in the root log.
   //

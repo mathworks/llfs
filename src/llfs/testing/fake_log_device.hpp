@@ -12,6 +12,7 @@
 
 #include <llfs/log_device.hpp>
 #include <llfs/memory_log_device.hpp>
+#include <llfs/status_code.hpp>
 
 #include <limits>
 
@@ -141,7 +142,7 @@ class FakeLogDevice : public LogDevice
   {
     this->state_->device_time++;
     if (this->state_->device_time >= this->state_->failure_time) {
-      return batt::StatusCode::kInternal;
+      return make_status(StatusCode::kFakeLogDeviceExpectedFailure);
     }
     if (this->state_->closed.load()) {
       return batt::StatusCode::kClosed;

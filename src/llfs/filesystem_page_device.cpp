@@ -10,6 +10,7 @@
 //
 
 #include <llfs/logging.hpp>
+#include <llfs/status_code.hpp>
 
 namespace llfs {
 
@@ -106,9 +107,7 @@ void FilesystemPageDevice::write(std::shared_ptr<const PageBuffer>&& page_buffer
 
     const ConstBuffer buf = page_buffer->const_buffer();
     if (!ofs.write((const char*)buf.data(), buf.size()).good()) {
-      return Status{
-          batt::StatusCode::kInternal};  // TODO [tastolfi 2021-10-20] custom error message:
-                                         // "I/O error writing page to filesystem"
+      return make_status(StatusCode::kFilesystemPageWriteFailed);
     }
 
     auto add_to_live_set = batt::finally([&] {
@@ -139,13 +138,11 @@ void FilesystemPageDevice::read(PageId id, ReadHandler&& handler)
     std::ifstream ifs(page_file_from_id(id));
     if (!ifs.good()) {
       LLFS_PLOG_ERROR() << "read of page: " << page_file_from_id(id) << " failed";
-      return Status{batt::StatusCode::kInternal};  // TODO [tastolfi 2021-10-20]  "I/O error opening
-                                                   // page in filesystem"
+      return make_status(StatusCode::kFilesystemPageOpenFailed);
     }
 
     if (!ifs.read(reinterpret_cast<char*>(page.get()), page->size()).good()) {
-      return Status{batt::StatusCode::kInternal};  // TODO [tastolfi 2021-10-20]  "I/O error reading
-                                                   // page in filesystem"
+      return make_status(StatusCode::kFilesystemPageReadFailed);
     }
 
     return {std::move(page)};
@@ -175,8 +172,7 @@ void FilesystemPageDevice::drop(PageId id, WriteHandler&& handler)
       metrics().drop_error_count++;
       LLFS_DLOG_WARNING() << "drop page error: value=" << ec.value() << " message='" << ec.message()
                           << "'";
-      return Status{
-          batt::StatusCode::kInternal};  // TODO [tastolfi 2021-10-20]  "remove error; see log"
+      return make_status(StatusCode::kFilesystemRemoveFailed);
     }
     return OkStatus();
   }();

@@ -554,9 +554,7 @@ auto PageCache::find_page_in_cache(PageId page_id, const Optional<PageLayoutId>&
             auto locked = page_readers->lock();
             auto iter = locked->find(layout_id);
             if (iter == locked->end()) {
-              latch->set_value(Status{
-                  batt::StatusCode::kInternal});  // TODO [tastolfi 2021-10-20] "No reader
-                                                  // registered for the specified page view type"
+              latch->set_value(make_status(StatusCode::kNoReaderForPageViewType));
               return;
             }
             reader_for_layout = iter->second;

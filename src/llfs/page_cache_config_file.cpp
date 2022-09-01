@@ -92,7 +92,7 @@ StatusOr<PageCacheConfigFile> unpack_object(const PackedPageCacheConfigFile& pac
                                             DataReader* src)
 {
   if (packed.magic != PackedPageCacheConfigFile::kMagic) {
-    return {batt::StatusCode::kInternal};
+    return make_status(StatusCode::kPageCacheConfigFileBadMagic);
   }
 
   PageCacheConfigFile obj;

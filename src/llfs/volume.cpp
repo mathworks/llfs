@@ -55,8 +55,9 @@ u64 Volume::calculate_grant_size(const PackableRef& payload) const
 //
 u64 Volume::calculate_grant_size(const std::string_view& payload) const
 {
-  // We must use `pack_as_raw` here so that when/if the payload is passed to a slot visitor, it will
-  // not include a PackedBytes header; rather it should be exactly the same bytes as `payload`.
+  // We must use `pack_as_raw` here so that when/if the payload is passed to a
+  // slot visitor, it will not include a PackedBytes header; rather it should be
+  // exactly the same bytes as `payload`.
   //
   return packed_sizeof_slot(pack_as_raw(payload));
 }
@@ -113,8 +114,8 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
                               return log_reader.slot_offset();
                             }));
 
-  // Put the main log in a clean state.  This means all configuration data must be recorded,
-  // device attachments created, and pending jobs resolved.
+  // Put the main log in a clean state.  This means all configuration data must
+  // be recorded, device attachments created, and pending jobs resolved.
   {
     TypedSlotWriter<VolumeEventVariant> slot_writer{*root_log};
     batt::Grant grant = BATT_OK_RESULT_OR_PANIC(
@@ -148,22 +149,26 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
     }
     LLFS_VLOG(1) << BATT_INSPECT(visitor.ids->payload);
 
-    // Attach the main uuid, recycler uuid, and trimmer uuid to each device in the cache storage
-    // pool.
+    // Attach the main uuid, recycler uuid, and trimmer uuid to each device in
+    // the cache storage pool.
     //
     {
       // Loop through all combinations of uuid, device_id.
       //
       LLFS_VLOG(1) << "Recovered attachments: " << batt::dump_range(visitor.device_attachments);
+
       for (const auto& uuid : {
                visitor.ids->payload.main_uuid,
                visitor.ids->payload.recycler_uuid,
                visitor.ids->payload.trimmer_uuid,
            }) {
         for (const PageArena& arena : cache->all_arenas()) {
+          const slot_offset_type slot_offset = slot_writer.slot_offset();
+
           auto attach_event = PackedVolumeAttachEvent{{
               .client_uuid = uuid,
               .device_id = arena.device().get_id(),
+              .user_slot_offset = slot_offset,
           }};
 
           if (visitor.device_attachments.count(attach_event)) {
@@ -174,7 +179,7 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
                        << arena.device().get_id();
 
           StatusOr<slot_offset_type> sync_slot =
-              arena.allocator().attach_user(uuid, /*user_slot=*/0u);
+              arena.allocator().attach_user(uuid, /*user_slot=*/slot_offset);
 
           BATT_UNTESTED_COND(!sync_slot.ok());
           BATT_REQUIRE_OK(sync_slot);
@@ -196,15 +201,20 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
           BATT_REQUIRE_OK(flush_status);
         }
       }
+
+      LLFS_VLOG(1) << "Page devices attached";
     }
 
     // Resolve any jobs with a PrepareJob slot but no CommitJob or RollbackJob.
     //
+    LLFS_VLOG(1) << "Resolving pending jobs...";
     Status jobs_resolved = visitor.resolve_pending_jobs(
         *cache, *recycler, /*volume_uuid=*/visitor.ids->payload.main_uuid, slot_writer, grant);
 
     BATT_UNTESTED_COND(!jobs_resolved.ok());
     BATT_REQUIRE_OK(jobs_resolved);
+
+    LLFS_VLOG(1) << "Pending jobs resolved";
   }
 
   std::unique_ptr<Volume> volume{
@@ -247,48 +257,6 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status Volume::trim(slot_offset_type slot_lower_bound)
-{
-  return this->trim_lock_.with_lock([slot_lower_bound, this](SlotReadLock& trim_lock) -> Status {
-    SlotRange target_range = trim_lock.slot_range();
-    target_range.lower_bound = slot_max(target_range.lower_bound, slot_lower_bound);
-
-    BATT_ASSIGN_OK_RESULT(trim_lock, this->trim_control_->update_lock(
-                                         std::move(trim_lock), target_range, "Volume::trim"));
-
-    return OkStatus();
-  });
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-StatusOr<SlotRange> Volume::sync(LogReadMode mode, SlotUpperBoundAt event)
-{
-  Status status = this->root_log_->sync(mode, event);
-  BATT_REQUIRE_OK(status);
-
-  return this->root_log_->slot_range(mode);
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-StatusOr<SlotReadLock> Volume::lock_slots(const SlotRangeSpec& slot_range_spec, LogReadMode mode)
-{
-  const SlotRange slot_range = [&] {
-    if (slot_range_spec.lower_bound == None || slot_range_spec.upper_bound == None) {
-      const SlotRange default_range = this->root_log_->slot_range(mode);
-      return SlotRange{slot_range_spec.lower_bound.value_or(default_range.lower_bound),
-                       slot_range_spec.upper_bound.value_or(default_range.upper_bound)};
-    } else {
-      return SlotRange{*slot_range_spec.lower_bound, *slot_range_spec.upper_bound};
-    }
-  }();
-
-  return this->trim_control_->lock_slots(slot_range, "Volume::lock_slots");
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
 Volume::~Volume() noexcept
 {
   this->root_log_->flush().IgnoreError();
@@ -305,13 +273,13 @@ void Volume::start()
   }
 
   if (!this->trimmer_task_) {
-    this->trimmer_task_.emplace(/*executor=*/batt::Runtime::instance().schedule_task(),
-                                [this] {
-                                  Status result = this->trimmer_.run();
-                                  LLFS_VLOG(1)
-                                      << "Volume::trimmer_task_ exited with status=" << result;
-                                },
-                                "Volume::trimmer_task_");
+    this->trimmer_task_.emplace(
+        /*executor=*/batt::Runtime::instance().schedule_task(),
+        [this] {
+          Status result = this->trimmer_.run();
+          LLFS_VLOG(1) << "Volume::trimmer_task_ exited with status=" << result;
+        },
+        "Volume::trimmer_task_");
   }
 }
 
@@ -343,6 +311,57 @@ void Volume::join()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+Status Volume::trim(slot_offset_type slot_lower_bound)
+{
+  return this->trim_lock_.with_lock([slot_lower_bound, this](SlotReadLock& trim_lock) -> Status {
+    SlotRange target_range = trim_lock.slot_range();
+    target_range.lower_bound = slot_max(target_range.lower_bound, slot_lower_bound);
+
+    BATT_ASSIGN_OK_RESULT(trim_lock, this->trim_control_->update_lock(
+                                         std::move(trim_lock), target_range, "Volume::trim"));
+
+    return OkStatus();
+  });
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<SlotRange> Volume::sync(LogReadMode mode, SlotUpperBoundAt event)
+{
+  Status status = this->root_log_->sync(mode, event);
+  BATT_REQUIRE_OK(status);
+
+  return this->root_log_->slot_range(mode);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<SlotReadLock> Volume::lock_slots(const SlotRangeSpec& slot_range_spec, LogReadMode mode,
+                                          Optional<const char*> lock_holder)
+{
+  const SlotRange slot_range = [&] {
+    if (slot_range_spec.lower_bound == None || slot_range_spec.upper_bound == None) {
+      const SlotRange default_range = this->root_log_->slot_range(mode);
+      return SlotRange{slot_range_spec.lower_bound.value_or(default_range.lower_bound),
+                       slot_range_spec.upper_bound.value_or(default_range.upper_bound)};
+    } else {
+      return SlotRange{*slot_range_spec.lower_bound, *slot_range_spec.upper_bound};
+    }
+  }();
+
+  return this->trim_control_->lock_slots(slot_range, lock_holder.value_or("Volume::lock_slots"));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<SlotReadLock> Volume::lock_slots(const SlotRange& slot_range, LogReadMode mode,
+                                          Optional<const char*> lock_holder)
+{
+  return this->lock_slots(SlotRangeSpec::from(slot_range), mode, lock_holder);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 StatusOr<batt::Grant> Volume::reserve(u64 size, batt::WaitForResource wait_for_log_space)
 {
   return this->slot_writer_.reserve(size, wait_for_log_space);
@@ -359,8 +378,9 @@ StatusOr<SlotRange> Volume::append(const PackableRef& payload, batt::Grant& gran
 //
 StatusOr<SlotRange> Volume::append(const std::string_view& payload, batt::Grant& grant)
 {
-  // We must use `pack_as_raw` here so that when/if the payload is passed to a slot visitor, it will
-  // not include a PackedBytes header; rather it should be exactly the same bytes as `payload`.
+  // We must use `pack_as_raw` here so that when/if the payload is passed to a
+  // slot visitor, it will not include a PackedBytes header; rather it should be
+  // exactly the same bytes as `payload`.
   //
   return this->append(PackableRef{pack_as_raw(payload)}, grant);
 }
@@ -373,11 +393,13 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
 {
   const auto check_sequencer_is_resolved = batt::finally([&sequencer] {
     BATT_CHECK_IMPLIES(bool{sequencer}, sequencer->is_resolved())
-        << "If a SlotSequencer is passed, it must be resolved even on failure paths.";
+        << "If a SlotSequencer is passed, it must be resolved even on failure "
+           "paths.";
   });
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
-  // Phase 0: Wait for the previous slot in the sequence to be appended to the log.
+  // Phase 0: Wait for the previous slot in the sequence to be appended to the
+  // log.
   //
   if (sequencer) {
     BATT_DEBUG_INFO("awaiting previous slot in sequence; "
@@ -390,9 +412,9 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
     }
     BATT_REQUIRE_OK(prev_slot);
 
-    // We only need to do a speculative sync here, because flushing later slots in the log implies
-    // that all earlier ones are flushed, and we are going to do a durable sync (flush) for our
-    // prepare event below.
+    // We only need to do a speculative sync here, because flushing later slots
+    // in the log implies that all earlier ones are flushed, and we are going to
+    // do a durable sync (flush) for our prepare event below.
     //
     BATT_DEBUG_INFO("awaiting flush of previous slot: " << *prev_slot);
 
@@ -405,7 +427,8 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
   }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
-  // Phase 1: Write a prepare slot to the write-ahead log and flush it to durable storage.
+  // Phase 1: Write a prepare slot to the write-ahead log and flush it to
+  // durable storage.
   //
   BATT_DEBUG_INFO("appending PrepareJob slot to the WAL");
 
@@ -434,8 +457,8 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
   BATT_REQUIRE_OK(sync_prepare);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
-  // Phase 2a: Commit the job; this writes new pages, updates ref counts, and deletes dropped
-  // pages.
+  // Phase 2a: Commit the job; this writes new pages, updates ref counts, and
+  // deletes dropped pages.
   //
   BATT_DEBUG_INFO("committing PageCacheJob");
 
@@ -549,13 +572,6 @@ StatusOr<SlotRange> Volume::sync(StatusOr<SlotRange> slot_range)
   return this->sync(LogReadMode::kDurable, SlotUpperBoundAt{
                                                .offset = slot_range->upper_bound,
                                            });
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-StatusOr<SlotReadLock> Volume::lock_slots(const SlotRange& slot_range, LogReadMode mode)
-{
-  return this->lock_slots(SlotRangeSpec::from(slot_range), mode);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

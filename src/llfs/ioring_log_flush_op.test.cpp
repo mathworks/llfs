@@ -436,7 +436,7 @@ class IoRingLogFlushOpModel
 
         auto result = [&]() -> StatusOr<i32> {
           if (page_will_fail.any()) {
-            return {batt::StatusCode::kInternal};
+            return llfs::make_status(llfs::StatusCode::kIoRingLogFlushOpExpectedFailure);
           }
           return {this->expected_state_->pending_write->buffer.size()};
         }();

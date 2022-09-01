@@ -14,6 +14,7 @@
 #include <llfs/int_types.hpp>
 #include <llfs/ioring.hpp>
 #include <llfs/status.hpp>
+#include <llfs/status_code.hpp>
 
 #include <batteries/status.hpp>
 
@@ -120,7 +121,7 @@ Status transfer_all(i64 offset, const BufferT& buffer, TransferOp&& transfer_som
 
       *n_transferred = RawBlockFile::align_down(*n_transferred);
       if (*n_transferred == 0) {
-        return batt::StatusCode::kInternal;
+        return make_status(StatusCode::kTransferAllBadAlignment);
       }
 
       offset += *n_transferred;

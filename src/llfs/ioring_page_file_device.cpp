@@ -119,8 +119,12 @@ void IoRingPageFileDevice::write_some(i64 page_offset_in_file,
 //
 void IoRingPageFileDevice::read(PageId page_id, ReadHandler&& handler)
 {
+  LLFS_VLOG(1) << "IoRingPageFileDevice::read(page_id=" << page_id << ")";
+
   StatusOr<i64> page_offset_in_file = this->get_file_offset_of_page(page_id);
   if (!page_offset_in_file.ok()) {
+    LLFS_VLOG(1) << "bad page offset: " << BATT_INSPECT(page_id)
+                 << BATT_INSPECT(page_offset_in_file.status());
     handler(page_offset_in_file.status());
     return;
   }

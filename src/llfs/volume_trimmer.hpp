@@ -19,6 +19,7 @@
 
 #include <atomic>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace llfs {
 
@@ -64,7 +65,20 @@ class VolumeTrimmer
   TypedSlotWriter<VolumeEventVariant>& slot_writer_;
   std::unordered_map<slot_offset_type /*prepare_slot*/, std::vector<PageId>> roots_per_pending_job_;
   std::vector<PageId> obsolete_roots_;
+
+  // Volume metadata found in the last GC'ed log segment that must be refreshed before trimming.
+  //
   Optional<PackedVolumeIds> ids_to_refresh_;
+
+  // PageDevice attachments found in the last GC'ed log segment that must be refreshed before
+  // trimming.
+  //
+  std::unordered_set<PackedVolumeAttachEvent, PackedVolumeAttachEvent::Hash>
+      attachments_to_refresh_;
+
+  std::unordered_set<PackedVolumeDetachEvent, PackedVolumeDetachEvent::Hash>
+      detachments_to_refresh_;
+
   batt::Grant id_refresh_grant_;
   std::atomic<bool> halt_requested_{false};
 };

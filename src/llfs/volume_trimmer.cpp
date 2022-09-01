@@ -280,23 +280,30 @@ Status VolumeTrimmer::visit_slot(const SlotParse& /*slot*/, const PackedRollback
 //
 Status VolumeTrimmer::visit_slot(const SlotParse& /*slot*/, const PackedVolumeIds& ids)
 {
+  LLFS_VLOG(1) << "Found ids to refresh: " << ids;
   this->ids_to_refresh_ = ids;
   return OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status VolumeTrimmer::visit_slot(const SlotParse& /*slot*/,
-                                 const PackedVolumeAttachEvent& /*attach*/)
+Status VolumeTrimmer::visit_slot(const SlotParse& /*slot*/, const PackedVolumeAttachEvent& attach)
 {
+  const auto& [iter, inserted] = this->attachments_to_refresh_.emplace(attach);
+  if (!inserted) {
+    BATT_CHECK_EQ(iter->user_slot_offset, attach.user_slot_offset);
+  }
   return OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status VolumeTrimmer::visit_slot(const SlotParse& /*slot*/,
-                                 const PackedVolumeDetachEvent& /*detach*/)
+Status VolumeTrimmer::visit_slot(const SlotParse& /*slot*/, const PackedVolumeDetachEvent& detach)
 {
+  const auto& [iter, inserted] = this->detachments_to_refresh_.emplace(detach);
+  if (!inserted) {
+    BATT_CHECK_EQ(iter->user_slot_offset, detach.user_slot_offset);
+  }
   return OkStatus();
 }
 

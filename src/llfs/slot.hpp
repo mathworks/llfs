@@ -249,7 +249,7 @@ struct SlotWithPayload {
 template <typename T>
 inline std::ostream& operator<<(std::ostream& out, const SlotWithPayload<T>& t)
 {
-  return "{.slot_range=" << t.slot_range <<                   //
+  return out << "{.slot_range=" << t.slot_range <<            //
          ", .payload=" << batt::make_printable(t.payload) <<  //
          ",}";
 }

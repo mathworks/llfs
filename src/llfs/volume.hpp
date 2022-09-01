@@ -40,7 +40,7 @@ struct VolumeRecoverParams {
   batt::SharedPtr<PageCache> cache;
   LogDeviceFactory* root_log_factory;
   LogDeviceFactory* recycler_log_factory;
-  std::unique_ptr<SlotLockManager> trim_control;
+  std::shared_ptr<SlotLockManager> trim_control;
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
@@ -200,7 +200,7 @@ class Volume
  private:
   explicit Volume(const VolumeOptions& options, const boost::uuids::uuid& volume_uuid,
                   batt::SharedPtr<PageCache>&& page_cache,
-                  std::unique_ptr<SlotLockManager>&& trim_control,
+                  std::shared_ptr<SlotLockManager>&& trim_control,
                   std::unique_ptr<PageCache::PageDeleterImpl>&& page_deleter,
                   std::unique_ptr<LogDevice>&& root_log, std::unique_ptr<PageRecycler>&& recycler,
                   const boost::uuids::uuid& trimmer_uuid) noexcept;
@@ -229,7 +229,7 @@ class Volume
 
   // Tracks all readers so that we don't prematurely trim the log.
   //
-  std::unique_ptr<SlotLockManager> trim_control_;
+  std::shared_ptr<SlotLockManager> trim_control_;
 
   // Links to `cache_` on behalf of `recycler_`.
   //

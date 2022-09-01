@@ -40,7 +40,7 @@ struct VolumeRuntimeOptions {
   // (Optional) The SlotLockManager to use for trimming the recovered Volume's root log.  If
   // `nullptr`, a new SlotLockManager will be created.
   //
-  std::unique_ptr<SlotLockManager> trim_control;
+  std::shared_ptr<SlotLockManager> trim_control;
 };
 
 }  // namespace llfs

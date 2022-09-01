@@ -83,7 +83,7 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
   LogDeviceFactory& recycler_log_factory = *params.recycler_log_factory;
 
   if (!params.trim_control) {
-    params.trim_control = std::make_unique<SlotLockManager>();
+    params.trim_control = std::make_shared<SlotLockManager>();
   }
 
   auto page_deleter = std::make_unique<PageCache::PageDeleterImpl>(*cache);
@@ -231,7 +231,7 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
 //
 /*explicit*/ Volume::Volume(const VolumeOptions& options, const boost::uuids::uuid& volume_uuid,
                             batt::SharedPtr<PageCache>&& page_cache,
-                            std::unique_ptr<SlotLockManager>&& trim_control,
+                            std::shared_ptr<SlotLockManager>&& trim_control,
                             std::unique_ptr<PageCache::PageDeleterImpl>&& page_deleter,
                             std::unique_ptr<LogDevice>&& root_log,
                             std::unique_ptr<PageRecycler>&& recycler,

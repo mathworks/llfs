@@ -17,6 +17,7 @@
 #include <batteries/async/watch.hpp>
 #include <batteries/buffer.hpp>
 #include <batteries/static_assert.hpp>
+#include <batteries/stream_util.hpp>
 #include <batteries/suppress.hpp>
 
 namespace llfs {
@@ -244,6 +245,14 @@ struct SlotWithPayload {
   T payload;
 };
 // TODO [tastolfi 2022-01-04] SlotReader should pass `SlotWithPayload` ?
+
+template <typename T>
+inline std::ostream& operator<<(std::ostream& out, const SlotWithPayload<T>& t)
+{
+  return "{.slot_range=" << t.slot_range <<                   //
+         ", .payload=" << batt::make_printable(t.payload) <<  //
+         ",}";
+}
 
 constexpr usize kMaxSlotHeaderSize = kMaxVarInt32Size;
 

@@ -40,6 +40,16 @@ class SlotReader
 
   void halt();
 
+  /*! \brief The current LogReader position.
+   *
+   * \return The byte offset from the beginning of the log at which this reader will read its next
+   * slot
+   */
+  slot_offset_type next_slot_offset() const
+  {
+    return this->log_reader_.slot_offset();
+  }
+
   slot_offset_type get_consumed_upper_bound() const;
 
   StatusOr<slot_offset_type> await_consumed_upper_bound(slot_offset_type min_offset);

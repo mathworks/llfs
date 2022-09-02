@@ -261,11 +261,13 @@ void PageAllocator::checkpoint_task_main()
       StatusOr<batt::Grant> slice_grant =
           this->checkpoint_grant_.spend(kCheckpointGrantSize, batt::WaitForResource::kTrue);
 
-      BATT_REQUIRE_OK(slice_grant)
-          << "Could not spend checkpoint grant to make a new slice;"
-          << BATT_INSPECT(kCheckpointGrantSize) << BATT_INSPECT(this->checkpoint_grant_) << " ("
-          << BATT_INSPECT(this->stop_requested_.get_value())
-          << ") - this is not a problem if stop_requested == 1";
+      BATT_REQUIRE_OK(slice_grant) << [this](std::ostream& out) {
+        if (!this->stop_requested_.get_value()) {
+          out << "Could not spend checkpoint grant to make a new slice;"
+              << BATT_INSPECT(kCheckpointGrantSize) << BATT_INSPECT(this->checkpoint_grant_) << " ("
+              << BATT_INSPECT(this->stop_requested_.get_value()) << ")";
+        }
+      };
 
       // At the end of each loop iteration, recycle whatever part of the slice grant we didn't
       // use.

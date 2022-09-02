@@ -12,6 +12,8 @@
 #include <llfs/page_cache_job.hpp>
 #include <llfs/slot_reader.hpp>
 
+#include <batteries/stream_util.hpp>
+
 namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -85,7 +87,8 @@ Status VolumeTrimmer::run()
 
     slot_offset_type new_trim_target = trim_lower_bound;
 
-    LLFS_VLOG(1) << "new value for " << BATT_INSPECT(*trim_upper_bound) << "; scanning log slots";
+    LLFS_VLOG(1) << "new value for " << BATT_INSPECT(*trim_upper_bound) << "; scanning log slots ["
+                 << this->slot_reader_.next_slot_offset() << "," << (*trim_upper_bound) << ")";
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
     // Scan log slots up to the new unlocked slot offset, collecting page refs to release.
@@ -232,7 +235,7 @@ Status VolumeTrimmer::visit_slot(const SlotParse& slot, const Ref<const PackedPr
                                       }) |
                                       seq::collect_vec();
 
-  LLFS_VLOG(2) << "visit_slot(" << BATT_INSPECT(slot.offset)
+  LLFS_VLOG(1) << "visit_slot(" << BATT_INSPECT(slot.offset)
                << ", PrepareJob) root_page_ids=" << batt::dump_range(root_page_ids);
 
   const auto& [iter, inserted] =
@@ -258,6 +261,8 @@ Status VolumeTrimmer::visit_slot(const SlotParse& slot, const PackedCommitJob& c
     LLFS_LOG_WARNING() << "commit slot found for missing prepare: "
                        << BATT_INSPECT(commit.prepare_slot);
   } else {
+    LLFS_VLOG(1) << "Found obsolete PageId roots: " << batt::dump_range(iter->second);
+
     this->obsolete_roots_.insert(this->obsolete_roots_.end(),  //
                                  iter->second.begin(), iter->second.end());
 

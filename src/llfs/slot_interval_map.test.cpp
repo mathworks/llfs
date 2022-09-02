@@ -102,4 +102,153 @@ TEST(SlotIntervalMapTest, RandomUpdates)
   }
 }
 
+// Test Plan:
+//  1. update overlaps with only existing range
+//  2. update after only existing range
+//     a. is adjacent
+//     b. not adjacent
+//  3. update before only existing range
+//     a. is adjacent
+//     b. not adjacent
+//  4. update between the pair of existing ranges (doesn't overlap with any)
+//     a. is adjacent to first but not second
+//     b. is adjacent to second but not first
+//     c. is adjacent to both
+//     d. is adjacent to neither
+//
+TEST(SlotIntervalMapTest, MergeBeforeAfter)
+{
+  //  1. update overlaps with only existing range
+  {
+    llfs::SlotIntervalMap m;
+    m.update(llfs::OffsetRange{1, 3}, 1);
+
+    EXPECT_THAT(m.to_seq() | llfs::seq::collect_vec(),
+                ::testing::ElementsAre(llfs::SlotIntervalMap::Entry{{1, 3}, 1}));
+
+    m.update(llfs::OffsetRange{0, 2}, 1);
+
+    EXPECT_THAT(m.to_seq() | llfs::seq::collect_vec(),
+                ::testing::ElementsAre(llfs::SlotIntervalMap::Entry{{0, 3}, 1}));
+  }
+
+  //  2. update after only existing range
+  //     a. is adjacent
+  {
+    llfs::SlotIntervalMap m;
+    m.update(llfs::OffsetRange{1, 3}, 1);
+    m.update(llfs::OffsetRange{3, 5}, 1);
+
+    EXPECT_THAT(m.to_seq() | llfs::seq::collect_vec(),
+                ::testing::ElementsAre(llfs::SlotIntervalMap::Entry{{1, 5}, 1}));
+  }
+
+  //  2. update after only existing range
+  //     b. not adjacent
+  {
+    llfs::SlotIntervalMap m;
+    m.update(llfs::OffsetRange{1, 3}, 1);
+    m.update(llfs::OffsetRange{4, 5}, 1);
+
+    EXPECT_THAT(m.to_seq() | llfs::seq::collect_vec(),
+                ::testing::ElementsAre(llfs::SlotIntervalMap::Entry{{1, 3}, 1},
+                                       llfs::SlotIntervalMap::Entry{{4, 5}, 1}));
+  }
+
+  //  3. update before only existing range
+  //     a. is adjacent
+  {
+    llfs::SlotIntervalMap m;
+    m.update(llfs::OffsetRange{1, 3}, 1);
+    m.update(llfs::OffsetRange{-1, 1}, 1);
+
+    EXPECT_THAT(m.to_seq() | llfs::seq::collect_vec(),
+                ::testing::ElementsAre(llfs::SlotIntervalMap::Entry{{-1, 3}, 1}));
+  }
+
+  //  3. update before only existing range
+  //     b. not adjacent
+  {
+    llfs::SlotIntervalMap m;
+    m.update(llfs::OffsetRange{1, 3}, 1);
+    m.update(llfs::OffsetRange{-1, 0}, 1);
+
+    EXPECT_THAT(m.to_seq() | llfs::seq::collect_vec(),
+                ::testing::ElementsAre(llfs::SlotIntervalMap::Entry{{-1, 0}, 1},
+                                       llfs::SlotIntervalMap::Entry{{1, 3}, 1}));
+  }
+
+  //  4. update between the pair of existing ranges (doesn't overlap with any)
+  //     a. is adjacent to first but not second
+  {
+    llfs::SlotIntervalMap m;
+    m.update(llfs::OffsetRange{1, 3}, 1);
+    m.update(llfs::OffsetRange{7, 10}, 1);
+
+    EXPECT_THAT(m.to_seq() | llfs::seq::collect_vec(),
+                ::testing::ElementsAre(llfs::SlotIntervalMap::Entry{{1, 3}, 1},
+                                       llfs::SlotIntervalMap::Entry{{7, 10}, 1}));
+
+    m.update(llfs::OffsetRange{3, 5}, 1);
+
+    EXPECT_THAT(m.to_seq() | llfs::seq::collect_vec(),
+                ::testing::ElementsAre(llfs::SlotIntervalMap::Entry{{1, 5}, 1},
+                                       llfs::SlotIntervalMap::Entry{{7, 10}, 1}));
+  }
+
+  //  4. update between the pair of existing ranges (doesn't overlap with any)
+  //     b. is adjacent to second but not first
+  {
+    llfs::SlotIntervalMap m;
+    m.update(llfs::OffsetRange{1, 3}, 1);
+    m.update(llfs::OffsetRange{7, 10}, 1);
+
+    EXPECT_THAT(m.to_seq() | llfs::seq::collect_vec(),
+                ::testing::ElementsAre(llfs::SlotIntervalMap::Entry{{1, 3}, 1},
+                                       llfs::SlotIntervalMap::Entry{{7, 10}, 1}));
+
+    m.update(llfs::OffsetRange{4, 7}, 1);
+
+    EXPECT_THAT(m.to_seq() | llfs::seq::collect_vec(),
+                ::testing::ElementsAre(llfs::SlotIntervalMap::Entry{{1, 3}, 1},
+                                       llfs::SlotIntervalMap::Entry{{4, 10}, 1}));
+  }
+
+  //  4. update between the pair of existing ranges (doesn't overlap with any)
+  //     c. is adjacent to both
+  {
+    llfs::SlotIntervalMap m;
+    m.update(llfs::OffsetRange{1, 3}, 1);
+    m.update(llfs::OffsetRange{7, 10}, 1);
+
+    EXPECT_THAT(m.to_seq() | llfs::seq::collect_vec(),
+                ::testing::ElementsAre(llfs::SlotIntervalMap::Entry{{1, 3}, 1},
+                                       llfs::SlotIntervalMap::Entry{{7, 10}, 1}));
+
+    m.update(llfs::OffsetRange{3, 7}, 1);
+
+    EXPECT_THAT(m.to_seq() | llfs::seq::collect_vec(),
+                ::testing::ElementsAre(llfs::SlotIntervalMap::Entry{{1, 10}, 1}));
+  }
+
+  //  4. update between the pair of existing ranges (doesn't overlap with any)
+  //     d. is adjacent to neither
+  {
+    llfs::SlotIntervalMap m;
+    m.update(llfs::OffsetRange{1, 3}, 1);
+    m.update(llfs::OffsetRange{7, 10}, 1);
+
+    EXPECT_THAT(m.to_seq() | llfs::seq::collect_vec(),
+                ::testing::ElementsAre(llfs::SlotIntervalMap::Entry{{1, 3}, 1},
+                                       llfs::SlotIntervalMap::Entry{{7, 10}, 1}));
+
+    m.update(llfs::OffsetRange{4, 6}, 1);
+
+    EXPECT_THAT(m.to_seq() | llfs::seq::collect_vec(),
+                ::testing::ElementsAre(llfs::SlotIntervalMap::Entry{{1, 3}, 1},
+                                       llfs::SlotIntervalMap::Entry{{4, 6}, 1},
+                                       llfs::SlotIntervalMap::Entry{{7, 10}, 1}));
+  }
+}
+
 }  // namespace

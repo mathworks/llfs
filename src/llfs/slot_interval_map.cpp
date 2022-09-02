@@ -232,4 +232,12 @@ void SlotIntervalMap::update(OffsetRange update_offsets, slot_offset_type update
   }
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+bool operator==(const SlotIntervalMap::Entry& first, const SlotIntervalMap::Entry& second)
+{
+  return first.offset_range == second.offset_range  //
+         && first.slot == second.slot;
+}
+
 }  // namespace llfs

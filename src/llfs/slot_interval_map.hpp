@@ -13,6 +13,7 @@
 #include <llfs/seq.hpp>
 #include <llfs/slot.hpp>
 
+#include <batteries/bounds.hpp>
 #include <batteries/interval.hpp>
 #include <batteries/small_vec.hpp>
 
@@ -50,6 +51,10 @@ class SlotIntervalMap
 };
 
 std::ostream& operator<<(std::ostream& out, const SlotIntervalMap::Entry& t);
+
+bool operator==(const SlotIntervalMap::Entry& first, const SlotIntervalMap::Entry& second);
+
+BATT_EQUALITY_COMPARABLE((inline), SlotIntervalMap::Entry, SlotIntervalMap::Entry)
 
 }  // namespace llfs
 

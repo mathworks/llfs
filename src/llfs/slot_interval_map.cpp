@@ -111,6 +111,7 @@ void SlotIntervalMap::update(OffsetRange update_offsets, slot_offset_type update
   //
   LLFS_DVLOG(1) << " -- Checking for merge-with-prev";
   if (first != this->map_.begin()) {
+    BATT_CHECK(!this->map_.empty());
     auto prev = std::prev(first);
     LLFS_DVLOG(1) << " ---- prev: " << prev->first << " => " << prev->second;
     if (prev->first.upper_bound == update_offsets.lower_bound && prev->second == update_slot) {
@@ -127,11 +128,16 @@ void SlotIntervalMap::update(OffsetRange update_offsets, slot_offset_type update
   //
   LLFS_DVLOG(1) << " -- Checking for merge-with-next";
   if (last != this->map_.end()) {
+    BATT_CHECK(!this->map_.empty());
+    const bool first_is_last = (first == last);
     auto next = last;
     LLFS_DVLOG(1) << " ---- next: " << next->first << " => " << next->second;
     if (update_offsets.upper_bound == next->first.lower_bound && next->second == update_slot) {
       update_offsets.upper_bound = next->first.upper_bound;
       last = this->map_.erase(next);
+      if (first_is_last) {
+        first = last;
+      }
       LLFS_DVLOG(1) << " ---- Extending update_offsets: " << update_offsets;
     }
   } else {

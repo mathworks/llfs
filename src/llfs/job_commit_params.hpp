@@ -42,7 +42,7 @@ struct JobCommitParams {
   // recursive garbage collection.
   //
   batt::Grant* recycle_grant = nullptr;
-  u32 recycle_depth = 0;
+  i32 recycle_depth = -1;
 };
 
 }  // namespace llfs

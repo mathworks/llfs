@@ -176,7 +176,7 @@ class PageCacheJob : public PageLoader
   // Load the page, first checking the pinned pages and views in this job.
   //
   StatusOr<PinnedPage> get(PageId page_id, const Optional<PageLayoutId>& required_layout,
-                           PinPageToJob pin_page_to_job) override;
+                           PinPageToJob pin_page_to_job, OkIfNotFound ok_if_not_found) override;
   //
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -184,8 +184,8 @@ class PageCacheJob : public PageLoader
 
   void const_prefetch_hint(PageId page_id) const;
 
-  StatusOr<PinnedPage> const_get(PageId page_id,
-                                 const Optional<PageLayoutId>& required_layout) const;
+  StatusOr<PinnedPage> const_get(PageId page_id, const Optional<PageLayoutId>& required_layout,
+                                 OkIfNotFound ok_if_not_found) const;
 
   std::ostream& debug()
   {

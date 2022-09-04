@@ -100,7 +100,7 @@ class PageRecycler
   // (see `await_flush`).
   //
   StatusOr<slot_offset_type> recycle_pages(const Slice<const PageId>& page_ids,
-                                           batt::Grant* grant = nullptr, u32 depth = 0);
+                                           batt::Grant* grant = nullptr, i32 depth = 0);
 
   // Waits for the given slot to be flushed to durable storage.
   //
@@ -157,6 +157,7 @@ class PageRecycler
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
   struct Batch {
+    i32 depth;
     std::vector<PageToRecycle> to_recycle;
     slot_offset_type slot_offset;
   };
@@ -220,7 +221,7 @@ class PageRecycler
 
     PageToRecycle remove();
 
-    Optional<PageToRecycle> try_remove(u32 required_depth);
+    Optional<PageToRecycle> try_remove(i32 required_depth);
 
     Optional<slot_offset_type> get_lru_slot() const;
 
@@ -278,7 +279,7 @@ class PageRecycler
   //
   void refresh_grants();
 
-  StatusOr<slot_offset_type> insert_to_log(batt::Grant& grant, PageId page_id, u32 depth,
+  StatusOr<slot_offset_type> insert_to_log(batt::Grant& grant, PageId page_id, i32 depth,
                                            batt::Mutex<std::unique_ptr<State>>::Lock& locked_state);
 
   StatusOr<Batch> prepare_batch(std::vector<PageToRecycle>&& to_recycle);

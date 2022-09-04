@@ -151,6 +151,10 @@ class PageAllocator
     {
       auto& state = this->state_.no_lock();
 
+      // TODO [tastolfi 2022-09-04] This is not the best way to do this; we should instead gather
+      // this information (did page ref count go from >1 to 1?) during the atomic update of each
+      // page's count (in `PageAllocator::update` above).
+      //
       BATT_FORWARD(ref_count_updates) |
 
           // Notify any tasks awaiting updates for the passed page ids.
@@ -167,7 +171,8 @@ class PageAllocator
             BATT_CHECK_EQ(PageIdFactory::get_device_id(PageId{prc.page_id}),
                           state.page_ids().get_device_id());
             const auto info = state.get_ref_count_obj(PageId{prc.page_id});
-            if (info.ref_count == 1 && info.page_id == prc.page_id) {
+            if (info.ref_count == 1 && info.page_id == prc.page_id &&
+                prc.ref_count != kRefCount_1_to_0) {
               return {prc.page_id};
             }
             return None;

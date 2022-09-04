@@ -260,9 +260,12 @@ void PageRecycler::join()
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<slot_offset_type> PageRecycler::recycle_pages(const Slice<const PageId>& page_ids,
-                                                       batt::Grant* grant, u32 depth)
+                                                       batt::Grant* grant, i32 depth)
 {
-  LLFS_VLOG(1) << "PageRecycler::recycle_pages(page_ids=" << batt::dump_range(page_ids) << ") "
+  BATT_CHECK_GE(depth, 0);
+
+  LLFS_VLOG(1) << "PageRecycler::recycle_pages(page_ids=" << batt::dump_range(page_ids)
+               << ", grant=[" << (grant ? grant->size() : usize{0}) << "], depth=" << depth << ") "
                << this->name_;
 
   if (page_ids.empty()) {
@@ -270,6 +273,12 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(const Slice<const PageId>
   }
 
   Optional<slot_offset_type> sync_point = None;
+
+  if (depth == 0) {
+    BATT_CHECK_EQ(grant, nullptr) << "External callers to `PageRecycler::recycle_pages` should "
+                                     "specify depth == 0 and grant == nullptr; other values are "
+                                     "for PageRecycler internal use only.";
+  }
 
   if (grant == nullptr) {
     BATT_CHECK_EQ(depth, 0u);
@@ -306,7 +315,7 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(const Slice<const PageId>
       }
     }
   } else {
-    BATT_CHECK_LT(depth, kMaxPageRefDepth);
+    BATT_CHECK_LT(depth, (i32)kMaxPageRefDepth) << BATT_INSPECT_RANGE(page_ids);
 
     auto locked_state = this->state_.lock();
     for (PageId page_id : page_ids) {
@@ -325,7 +334,7 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(const Slice<const PageId>
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<slot_offset_type> PageRecycler::insert_to_log(
-    batt::Grant& grant, PageId page_id, u32 depth,
+    batt::Grant& grant, PageId page_id, i32 depth,
     batt::Mutex<std::unique_ptr<State>>::Lock& locked_state)
 {
   BATT_CHECK(locked_state.is_held());
@@ -529,7 +538,11 @@ StatusOr<PageRecycler::Batch> PageRecycler::prepare_batch(std::vector<PageToRecy
 
   const PageRecyclerOptions& options = this->state_.no_lock().options;
 
+  const i32 first_page_depth = to_recycle.empty() ? 0 : to_recycle.front().depth;
+
   Batch batch{
+      .depth = first_page_depth,
+
       .to_recycle = std::move(to_recycle),
 
       // This will be the slot used to guarantee that ref count updates are applied exactly once
@@ -541,6 +554,8 @@ StatusOr<PageRecycler::Batch> PageRecycler::prepare_batch(std::vector<PageToRecy
   Optional<slot_offset_type> sync_upper_bound;
 
   for (const PageToRecycle& next_page : batch.to_recycle) {
+    BATT_CHECK_EQ(next_page.depth, first_page_depth);
+
     if (this->stop_requested_) {
       return Status{batt::StatusCode::kCancelled};
     }
@@ -591,8 +606,9 @@ Status PageRecycler::commit_batch(const Batch& batch)
           return Status{StatusCode::kRecyclerStopped};
         }
         const usize page_count = batch.to_recycle.size();
-        Status delete_result = this->page_deleter_.delete_pages(
-            as_slice(batch.to_recycle), *this, batch.slot_offset, this->recycle_task_grant_);
+        Status delete_result =
+            this->page_deleter_.delete_pages(as_slice(batch.to_recycle), *this, batch.slot_offset,
+                                             this->recycle_task_grant_, batch.depth);
         if (delete_result.ok()) {
           this->metrics_.page_drop_ok_count.fetch_add(page_count);
         } else {
@@ -604,6 +620,7 @@ Status PageRecycler::commit_batch(const Batch& batch)
   BATT_REQUIRE_OK(commit_status);
 
   if (this->stop_requested_) {
+    LLFS_VLOG(1) << "[PageRecycler::commit_batch] stop requested; returning ";
     return Status{StatusCode::kRecyclerStopped};
   }
 

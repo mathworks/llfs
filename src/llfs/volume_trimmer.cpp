@@ -146,7 +146,7 @@ Status VolumeTrimmer::run()
                                      .caller_slot = new_trim_target,
                                      .recycler = as_ref(this->recycler_),
                                      .recycle_grant = nullptr,
-                                     .recycle_depth = 0,
+                                     .recycle_depth = -1,
                                  },
                                  Caller::Tablet_checkpoint_reaper_task_main);
 

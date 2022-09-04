@@ -78,10 +78,11 @@ void VolumeReader::prefetch_hint(PageId page_id) /*override*/
 //
 StatusOr<PinnedPage> VolumeReader::get(PageId page_id,
                                        const Optional<PageLayoutId>& required_layout,
-                                       PinPageToJob pin_page_to_job) /*override*/
+                                       PinPageToJob pin_page_to_job,
+                                       OkIfNotFound ok_if_not_found) /*override*/
 {
   BATT_UNTESTED_LINE();
-  return this->impl_->job_->get(page_id, required_layout, pin_page_to_job);
+  return this->impl_->job_->get(page_id, required_layout, pin_page_to_job, ok_if_not_found);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

@@ -467,7 +467,7 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
       .caller_slot = prepare_slot->lower_bound,
       .recycler = as_ref(*this->recycler_),
       .recycle_grant = nullptr,
-      .recycle_depth = 0,
+      .recycle_depth = -1,
   };
 
   Status commit_job_result = commit(std::move(appendable.job), params, Caller::Unknown);

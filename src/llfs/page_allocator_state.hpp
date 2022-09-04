@@ -212,9 +212,20 @@ class PageAllocatorStateNoLock
 
     const auto& iprc = this->page_ref_counts_[physical_page];
 
+    // Load count then generation, to avoid A-B-A race condition where we think we are observing a
+    // ref_count that goes down to 1 (which should indicate there are no races/concurrent updates
+    // going on to this page count since the caller is the sole owner), but that count is from a
+    // later generation.  If we load generation after count, then the caller observes the generation
+    // *not* to have changed, that means count was accurate for that generation in this case.
+    //
+    const auto physical_page_ref_count = iprc.get_count();
+    //  (^^^ count)  (generation vvv)
+    const auto physical_page_generation = iprc.get_generation();
+
     return PageRefCount{
-        .page_id = this->page_ids_.make_page_id(physical_page, iprc.get_generation()).int_value(),
-        .ref_count = iprc.get_count(),
+        .page_id =
+            this->page_ids_.make_page_id(physical_page, physical_page_generation).int_value(),
+        .ref_count = physical_page_ref_count,
     };
   }
 

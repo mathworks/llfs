@@ -85,8 +85,18 @@ void MemoryPageDevice::read(PageId page_id, ReadHandler&& handler)
     BATT_CHECK_LT(physical_page, batt::checked_cast<i64>(locked->page_recs.size()));
     auto& rec = locked->page_recs[physical_page];
     const auto current_generation_on_device = rec.generation;
-    if (requested_generation != current_generation_on_device || rec.page == nullptr) {
-      LLFS_LOG_INFO() << "failing read with `kNotFound` (generations do not match);"
+    bool not_found = false;
+    const char* not_found_reason = "";
+    if (requested_generation != current_generation_on_device) {
+      not_found = true;
+      not_found_reason = "generations do not match";
+    }
+    if (rec.page == nullptr) {
+      not_found = true;
+      not_found_reason = "page has been dropped";
+    }
+    if (not_found) {
+      LLFS_LOG_INFO() << "failing read with `kNotFound` (" << not_found_reason << ");"
                       << BATT_INSPECT(page_id) << BATT_INSPECT(requested_generation)
                       << BATT_INSPECT(current_generation_on_device)
                       << BATT_INSPECT((const void*)rec.page.get()) <<
@@ -94,6 +104,7 @@ void MemoryPageDevice::read(PageId page_id, ReadHandler&& handler)
             out << std::endl;
             batt::this_task_debug_info(out);
             out << std::endl;
+            out << std::endl << boost::stacktrace::stacktrace{} << std::endl << std::endl;
 
             for (PageId dropped_page_id : locked->recently_dropped) {
               const auto dropped_physical_page = this->page_ids_.get_physical_page(dropped_page_id);
@@ -127,6 +138,12 @@ void MemoryPageDevice::drop(PageId page_id, WriteHandler&& handler)
     BATT_CHECK_LT(physical_page, batt::checked_cast<i64>(locked->page_recs.size()));
     const auto generation_on_device = locked->page_recs[physical_page].generation;
     if (generation_on_device == generation_to_drop) {
+      if (locked->page_recs[physical_page].page == nullptr) {
+        LLFS_LOG_INFO() << "page dropped before it is written: " << BATT_INSPECT(page_id)
+                        << [&](std::ostream& out) {
+                             out << std::endl << boost::stacktrace::stacktrace{} << std::endl;
+                           };
+      }
       locked->page_recs[physical_page].page = nullptr;
     } else {
       // This is expected behavior; PageRecycler must update the PageAllocator to release its

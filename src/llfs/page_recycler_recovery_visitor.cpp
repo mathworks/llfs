@@ -6,6 +6,9 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+#include <batteries/suppress.hpp>
+BATT_SUPPRESS_IF_GCC("-Wmaybe-uninitialized");
+
 #include <llfs/page_recycler_recovery_visitor.hpp>
 //
 
@@ -56,6 +59,8 @@ std::vector<PageToRecycle> PageRecyclerRecoveryVisitor::recovered_pages() const
 //
 StatusOr<Optional<PageRecycler::Batch>> PageRecyclerRecoveryVisitor::consume_latest_batch()
 {
+  Optional<i32> depth = None;
+
   if (!this->latest_batch_slot_) {
     return {None};
   }
@@ -71,11 +76,20 @@ StatusOr<Optional<PageRecycler::Batch>> PageRecyclerRecoveryVisitor::consume_lat
       return Status{StatusCode::kBatchContainsUnknownPageDuringRecovery};
     }
 
+    if (!depth) {
+      depth.emplace(iter->second.depth);
+    } else {
+      const i32 actual_depth = depth.value_or(-1);
+      const i32 page_depth = iter->second.depth;
+      BATT_CHECK_EQ(actual_depth, page_depth);
+    }
+
     // Transfer the page from the recovered pages map to the batch.
     //
     batch.to_recycle.emplace_back(iter->second);
     this->recovered_pages_.erase(iter);
   }
+  batch.depth = depth.value_or(0);
   this->latest_batch_slot_ = None;
   this->latest_batch_pages_.clear();
 

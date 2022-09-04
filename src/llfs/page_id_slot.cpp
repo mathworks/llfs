@@ -29,7 +29,8 @@ namespace llfs {
 //
 StatusOr<PinnedPage> PageIdSlot::load_through(PageLoader& loader,
                                               const Optional<PageLayoutId>& required_layout,
-                                              PinPageToJob pin_page_to_job) const
+                                              PinPageToJob pin_page_to_job,
+                                              OkIfNotFound ok_if_not_found) const
 {
   PageIdSlot::metrics().load_total_count.fetch_add(1);
 
@@ -48,7 +49,8 @@ StatusOr<PinnedPage> PageIdSlot::load_through(PageLoader& loader,
   }
   PageIdSlot::metrics().load_slot_miss_count.fetch_add(1);
 
-  StatusOr<PinnedPage> pinned = loader.get(this->page_id, required_layout, pin_page_to_job);
+  StatusOr<PinnedPage> pinned =
+      loader.get(this->page_id, required_layout, pin_page_to_job, ok_if_not_found);
   if (pinned.ok()) {
     this->cache_slot_ref = pinned->get_cache_slot();
   }

@@ -10,6 +10,7 @@
 #ifndef LLFS_PAGE_ID_SLOT_HPP
 #define LLFS_PAGE_ID_SLOT_HPP
 
+#include <llfs/api_types.hpp>
 #include <llfs/cache.hpp>
 #include <llfs/page_id.hpp>
 #include <llfs/page_layout_id.hpp>
@@ -97,7 +98,8 @@ struct PageIdSlot {
 
   batt::StatusOr<PinnedPage> load_through(PageLoader& loader,
                                           const Optional<PageLayoutId>& required_layout,
-                                          PinPageToJob pin_page_to_job) const;
+                                          PinPageToJob pin_page_to_job,
+                                          OkIfNotFound ok_if_not_found) const;
 };
 
 }  // namespace llfs

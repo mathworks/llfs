@@ -154,7 +154,8 @@ class FakePageDeleter : public PageDeleter
   }
 
   Status delete_pages(const Slice<const PageToRecycle>& to_delete, PageRecycler& recycler,
-                      slot_offset_type caller_slot, batt::Grant& recycle_grant) override
+                      slot_offset_type caller_slot, batt::Grant& recycle_grant,
+                      i32 recycle_depth) override
   {
     BATT_CHECK_NOT_NULLPTR(this->test_->recycler_);
     BATT_CHECK_EQ(this->test_->recycler_, &recycler);
@@ -168,10 +169,10 @@ class FakePageDeleter : public PageDeleter
     // All pages to delete should have the same depth; save the depth of the first one here so we
     // can verify this below.
     //
-    const auto depth = to_delete.front().depth;
+    const auto depth = recycle_depth;
 
-    // We collect below the set of pages referenced by `to_delete` whose ref_count goes to 0 as a
-    // result of processing this delete; these are saved in `dead_pages`.
+    // We collect below the set of pages referenced by `to_delete` whose ref_count goes to 0 as
+    // a result of processing this delete; these are saved in `dead_pages`.
     //
     std::vector<PageId> dead_pages;
 

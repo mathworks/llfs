@@ -100,13 +100,14 @@ void FinalizedPageCacheJob::prefetch_hint(PageId page_id) /*override*/
 //
 StatusOr<PinnedPage> FinalizedPageCacheJob::get(PageId page_id,
                                                 const Optional<PageLayoutId>& required_layout,
-                                                PinPageToJob pin_page_to_job) /*override*/
+                                                PinPageToJob pin_page_to_job,
+                                                OkIfNotFound ok_if_not_found) /*override*/
 {
   if (bool_from(pin_page_to_job, /*default_value=*/false)) {
     return Status{batt::StatusCode::kUnimplemented};
   }
 
-  return this->finalized_get(page_id, required_layout);
+  return this->finalized_get(page_id, required_layout, ok_if_not_found);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -125,7 +126,8 @@ void FinalizedPageCacheJob::finalized_prefetch_hint(PageId page_id, PageCache& c
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<PinnedPage> FinalizedPageCacheJob::finalized_get(
-    PageId page_id, const Optional<PageLayoutId>& required_layout) const
+    PageId page_id, const Optional<PageLayoutId>& required_layout,
+    OkIfNotFound ok_if_not_found) const
 {
   const std::shared_ptr<const PageCacheJob> job = lock_job(this->tracker_.get());
   if (job == nullptr) {
@@ -142,7 +144,7 @@ StatusOr<PinnedPage> FinalizedPageCacheJob::finalized_get(
 
   // Use the base job if it is available.
   //
-  return job->const_get(page_id, required_layout);
+  return job->const_get(page_id, required_layout, ok_if_not_found);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -452,6 +454,9 @@ auto CommittablePageCacheJob::start_ref_count_updates(const JobCommitParams& par
     //
     this->hint_pages_obsolete(device_state.ref_count_updates);
 
+    LLFS_VLOG(1) << "calling PageAllocator::update_page_ref_counts for device " << device_id << ";"
+                 << BATT_INSPECT_RANGE(device_state.ref_count_updates);
+
     const PageArena& arena = this->job_->cache().arena_for_device_id(device_id);
     device_state.p_arena = &arena;
 
@@ -459,8 +464,10 @@ auto CommittablePageCacheJob::start_ref_count_updates(const JobCommitParams& par
         device_state.sync_point,
         arena.allocator().update_page_ref_counts(
             *params.caller_uuid, params.caller_slot, as_seq(device_state.ref_count_updates),
-            /*dead_page_fn=*/[&dead_pages](page_id_int dead_page_id) {
-              LLFS_VLOG(1) << "(recycle event) page is now dead: " << std::hex << dead_page_id;
+            /*dead_page_fn=*/
+            [&dead_pages, recycle_depth = params.recycle_depth](page_id_int dead_page_id) {
+              LLFS_VLOG(1) << "(recycle event) page is now dead: " << std::hex << dead_page_id
+                           << std::dec << " depth=" << recycle_depth;
               dead_pages.ids.emplace_back(PageId{dead_page_id});
             }));
     //
@@ -526,16 +533,19 @@ auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/) const
   for (const auto& p : this->job_->get_deleted_pages()) {
     // Sanity check; deleted pages should have a ref_count_delta of kRefCount_1_to_0.
     //
+    const PageId deleted_page_id = p.first;
     {
-      auto iter = ref_count_delta.find(p.first);
+      auto iter = ref_count_delta.find(deleted_page_id);
       BATT_CHECK_NE(iter, ref_count_delta.end());
       BATT_CHECK_EQ(iter->second, kRefCount_1_to_0);
     }
 
     // Decrement ref counts.
     //
-    p.second->trace_refs() | seq::for_each([&ref_count_delta](PageId id) {
+    p.second->trace_refs() | seq::for_each([&ref_count_delta, deleted_page_id](PageId id) {
       if (id) {
+        LLFS_VLOG(1) << " decrementing ref count for page " << id
+                     << " (because it was referenced from deleted page " << deleted_page_id << ")";
         ref_count_delta[id] -= 1;
       }
     });
@@ -582,9 +592,10 @@ Status CommittablePageCacheJob::recycle_dead_pages(const JobCommitParams& params
 
   BATT_CHECK_NOT_NULLPTR(params.recycler.pointer());
 
-  BATT_ASSIGN_OK_RESULT(slot_offset_type recycler_sync_point,
-                        params.recycler.recycle_pages(as_slice(dead_pages.ids),
-                                                      params.recycle_grant, params.recycle_depth));
+  BATT_ASSIGN_OK_RESULT(
+      slot_offset_type recycler_sync_point,
+      params.recycler.recycle_pages(as_slice(dead_pages.ids), params.recycle_grant,
+                                    params.recycle_depth + 1));
 
   LLFS_VLOG(1) << "commit(PageCacheJob): waiting for PageRecycler sync point";
 

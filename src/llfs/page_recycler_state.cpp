@@ -98,10 +98,11 @@ PageToRecycle PageRecycler::State::remove()
 {
   // Enforce depth-first discipline: search for the highest non-empty stack level.
   //
-  usize active_depth = this->stack_.size() - 1;
+  i32 active_depth = BATT_CHECKED_CAST(i32, this->stack_.size()) - 1;
   for (; active_depth > 0 && this->stack_[active_depth].empty(); active_depth -= 1) {
     continue;
   }
+  BATT_CHECK_GE(active_depth, 0);
 
   if (this->stack_[active_depth].empty()) {
     return PageToRecycle::make_invalid();
@@ -124,14 +125,17 @@ PageToRecycle PageRecycler::State::remove()
 //
 // TODO [tastolfi 2021-06-21] factor out duplicate code between this and remove() above.
 //
-Optional<PageToRecycle> PageRecycler::State::try_remove(u32 required_depth)
+Optional<PageToRecycle> PageRecycler::State::try_remove(i32 required_depth)
 {
+  BATT_CHECK_GE(required_depth, 0);
+
   // Enforce depth-first discipline: search for the highest non-empty stack level.
   //
-  usize active_depth = this->stack_.size() - 1;
+  i32 active_depth = BATT_CHECKED_CAST(i32, this->stack_.size()) - 1;
   for (; active_depth > 0 && this->stack_[active_depth].empty(); active_depth -= 1) {
     continue;
   }
+  BATT_CHECK_GE(active_depth, 0);
 
   if (active_depth != required_depth) {
     return None;
@@ -140,18 +144,19 @@ Optional<PageToRecycle> PageRecycler::State::try_remove(u32 required_depth)
   if (this->stack_[active_depth].empty()) {
     return None;
   }
+  {
+    WorkItem& item = this->stack_[active_depth].back();
+    this->stack_[active_depth].pop_back();
+    BATT_CHECK_EQ(item.to_recycle.depth, active_depth);
 
-  WorkItem& item = this->stack_[active_depth].back();
-  this->stack_[active_depth].pop_back();
-  BATT_CHECK_EQ(item.to_recycle.depth, active_depth);
+    const auto on_return = batt::finally([&] {
+      this->pending_.erase(item.to_recycle.page_id);
+      this->delete_work_item(item);
+      this->pending_count.fetch_sub(1);
+    });
 
-  const auto on_return = batt::finally([&] {
-    this->pending_.erase(item.to_recycle.page_id);
-    this->delete_work_item(item);
-    this->pending_count.fetch_sub(1);
-  });
-
-  return item.to_recycle;
+    return item.to_recycle;
+  }
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -195,7 +200,7 @@ void PageRecycler::State::init_work_item(WorkItem& item, const PageToRecycle& p)
 
   // The new item needs to go onto the stack and the LRU list.
   //
-  BATT_CHECK_LT(p.depth, this->stack_.size());
+  BATT_CHECK_LT(p.depth, BATT_CHECKED_CAST(i32, this->stack_.size()));
   BATT_CHECK(!item.PageListHook::is_linked());
   this->stack_[p.depth].push_back(item);
 
@@ -269,7 +274,8 @@ std::vector<PageToRecycle> PageRecycler::State::collect_batch(usize max_page_cou
       to_recycle.emplace_back(this->remove());
       BATT_CHECK_NE(to_recycle.back().page_id, PageId{kInvalidPageId});
     } else {
-      Optional<PageToRecycle> next = this->try_remove(/*required_depth=*/to_recycle.back().depth);
+      Optional<PageToRecycle> next =
+          this->try_remove(/*required_depth=*/BATT_CHECKED_CAST(i32, to_recycle.back().depth));
       if (!next) {
         break;
       }

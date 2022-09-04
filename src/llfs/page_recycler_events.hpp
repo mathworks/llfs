@@ -24,7 +24,7 @@ struct PageToRecycle {
   //
   PageId page_id;
   slot_offset_type slot_offset;
-  u32 depth;
+  i32 depth;
 
   bool is_valid() const
   {
@@ -111,7 +111,7 @@ std::ostream& operator<<(std::ostream& out, const PackedPageRecyclerInfo& t);
 struct PackedRecyclePageInserted {
   little_page_id_int page_id;
   little_u64 slot_offset;
-  little_u32 depth;
+  little_i32 depth;
   u8 reserved_[4];
 };
 

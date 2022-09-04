@@ -10,6 +10,7 @@
 #ifndef LLFS_PAGE_CACHE_HPP
 #define LLFS_PAGE_CACHE_HPP
 
+#include <llfs/api_types.hpp>
 #include <llfs/cache.hpp>
 #include <llfs/caller.hpp>
 #include <llfs/log_device.hpp>
@@ -100,7 +101,8 @@ class PageCache : public PageLoader
     explicit PageDeleterImpl(PageCache& page_cache) noexcept;
 
     Status delete_pages(const Slice<const PageToRecycle>& to_delete, PageRecycler& recycler,
-                        slot_offset_type caller_slot, batt::Grant& recycle_grant) override;
+                        slot_offset_type caller_slot, batt::Grant& recycle_grant,
+                        i32 recycle_depth) override;
 
    private:
     PageCache& page_cache_;
@@ -173,7 +175,7 @@ class PageCache : public PageLoader
   // Loads the specified page or retrieves from cache.
   //
   StatusOr<PinnedPage> get(PageId page_id, const Optional<PageLayoutId>& required_layout,
-                           PinPageToJob pin_page_to_job) override;
+                           PinPageToJob pin_page_to_job, OkIfNotFound ok_if_not_found) override;
   //
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -210,7 +212,7 @@ class PageCache : public PageLoader
   CacheImpl& impl_for_page(PageId page_id);
 
   batt::StatusOr<CacheImpl::PinnedSlot> find_page_in_cache(
-      PageId page_id, const Optional<PageLayoutId>& required_layout);
+      PageId page_id, const Optional<PageLayoutId>& required_layout, OkIfNotFound ok_if_not_found);
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 

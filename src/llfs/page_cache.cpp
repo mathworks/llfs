@@ -31,7 +31,8 @@ namespace llfs {
 Status PageCache::PageDeleterImpl::delete_pages(const Slice<const PageToRecycle>& to_delete,
                                                 PageRecycler& recycler,
                                                 slot_offset_type caller_slot,
-                                                batt::Grant& recycle_grant) /*override*/
+                                                batt::Grant& recycle_grant,
+                                                i32 recycle_depth) /*override*/
 {
   if (to_delete.empty()) {
     return OkStatus();
@@ -43,7 +44,7 @@ Status PageCache::PageDeleterImpl::delete_pages(const Slice<const PageToRecycle>
       .caller_slot = caller_slot,
       .recycler = as_ref(recycler),
       .recycle_grant = &recycle_grant,
-      .recycle_depth = to_delete.front().depth + 1,
+      .recycle_depth = recycle_depth,
   };
 
   // We must drop the page from the storage device and decrement ref counts
@@ -58,6 +59,7 @@ Status PageCache::PageDeleterImpl::delete_pages(const Slice<const PageToRecycle>
                << batt::dump_range(to_delete, batt::Pretty::True);
 
   for (const PageToRecycle& next_page : to_delete) {
+    BATT_CHECK_EQ(next_page.depth, params.recycle_depth);
     Status pre_delete_status = job->delete_page(next_page.page_id);
     BATT_REQUIRE_OK(pre_delete_status);
   }
@@ -329,7 +331,7 @@ Status PageCache::detach(const boost::uuids::uuid& user_id, slot_offset_type slo
 //
 void PageCache::prefetch_hint(PageId page_id)
 {
-  (void)this->find_page_in_cache(page_id, /*require_tag=*/None);
+  (void)this->find_page_in_cache(page_id, /*require_tag=*/None, OkIfNotFound{false});
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -437,7 +439,7 @@ void PageCache::purge(PageId page_id, u64 callers, u64 job_id)
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<PinnedPage> PageCache::get(PageId page_id, const Optional<PageLayoutId>& require_layout,
-                                    PinPageToJob pin_page_to_job)
+                                    PinPageToJob pin_page_to_job, OkIfNotFound ok_if_not_found)
 {
   if (bool_from(pin_page_to_job, /*default_value=*/false)) {
     return Status{batt::StatusCode::kUnimplemented};
@@ -450,7 +452,7 @@ StatusOr<PinnedPage> PageCache::get(PageId page_id, const Optional<PageLayoutId>
   }
 
   BATT_ASSIGN_OK_RESULT(CacheImpl::PinnedSlot cache_slot,  //
-                        this->find_page_in_cache(page_id, require_layout));
+                        this->find_page_in_cache(page_id, require_layout, ok_if_not_found));
 
   BATT_ASSIGN_OK_RESULT(StatusOr<std::shared_ptr<const PageView>> loaded,  //
                         cache_slot->await());
@@ -474,7 +476,8 @@ auto PageCache::impl_for_page(PageId page_id) -> CacheImpl&
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-auto PageCache::find_page_in_cache(PageId page_id, const Optional<PageLayoutId>& required_layout)
+auto PageCache::find_page_in_cache(PageId page_id, const Optional<PageLayoutId>& required_layout,
+                                   OkIfNotFound ok_if_not_found)
     -> batt::StatusOr<CacheImpl::PinnedSlot>
 {
   if (!page_id) {
@@ -516,7 +519,7 @@ auto PageCache::find_page_in_cache(PageId page_id, const Optional<PageLayoutId>&
                              // page data.
                              //
                              page_readers = this->page_readers_,  //
-                             required_layout, this, page_id
+                             required_layout, this, page_id, ok_if_not_found
 
     ](StatusOr<std::shared_ptr<const PageBuffer>>&& result) mutable {
           BATT_DEBUG_INFO("PageCache::find_page_in_cache - read handler");
@@ -528,7 +531,8 @@ auto PageCache::find_page_in_cache(PageId page_id, const Optional<PageLayoutId>&
           auto latch = std::move(captured_latch);
           if (!result.ok()) {
             LLFS_LOG_WARNING() << "recent events for" << BATT_INSPECT(page_id)
-                               << " (now=" << this->history_end_ << "):"
+                               << BATT_INSPECT(ok_if_not_found) << " (now=" << this->history_end_
+                               << "):"
                                << batt::dump_range(
                                       this->find_new_page_events(page_id) | seq::collect_vec(),
                                       batt::Pretty::True);

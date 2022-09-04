@@ -34,7 +34,8 @@ class PageDeleter
   virtual ~PageDeleter() = default;
 
   virtual Status delete_pages(const Slice<const PageToRecycle>& to_delete, PageRecycler& recycler,
-                              slot_offset_type caller_slot, batt::Grant& recycle_grant) = 0;
+                              slot_offset_type caller_slot, batt::Grant& recycle_grant,
+                              i32 recycle_depth) = 0;
 
   // Called to indicate that the PageRecycler identified by `caller_uuid` has drained its backlog of
   // pages to recycle.

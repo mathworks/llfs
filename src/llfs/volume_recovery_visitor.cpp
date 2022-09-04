@@ -100,7 +100,7 @@ Status VolumeRecoveryVisitor::resolve_pending_jobs(PageCache& cache, PageRecycle
                                         .caller_slot = prepare_slot,
                                         .recycler = as_ref(recycler),
                                         .recycle_grant = nullptr,
-                                        .recycle_depth = 0,
+                                        .recycle_depth = -1,
                                     },
                                     Caller::Unknown);
 

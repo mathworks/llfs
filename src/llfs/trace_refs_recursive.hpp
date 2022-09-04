@@ -44,7 +44,7 @@ inline batt::Status trace_refs_recursive(PageLoader& page_loader, IdTypePairSeq&
     const PageId next = pending.back();
     pending.pop_back();
 
-    batt::StatusOr<PinnedPage> status_or_page = page_loader.get(next);
+    batt::StatusOr<PinnedPage> status_or_page = page_loader.get(next, OkIfNotFound{false});
     BATT_REQUIRE_OK(status_or_page);
 
     PinnedPage& page = *status_or_page;

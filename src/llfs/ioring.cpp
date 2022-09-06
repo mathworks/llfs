@@ -37,15 +37,24 @@ StatusOr<IoRing> IoRing::make_new(MaxQueueDepth entries) noexcept
     return batt::status_from_retval(impl->event_fd_);
   }
 
-  int retval = io_uring_queue_init(entries, &impl->ring_, /*flags=*/0);
-  if (retval != 0) {
-    LLFS_LOG_ERROR() << "failed io_uring_queue_init: " << std::strerror(-retval);
-    return status_from_retval(retval);
+  {
+    BATT_CHECK(!impl->ring_init_);
+
+    int retval = io_uring_queue_init(entries, &impl->ring_, /*flags=*/0);
+    if (retval != 0) {
+      LLFS_LOG_ERROR() << "failed io_uring_queue_init: " << std::strerror(-retval);
+      return status_from_retval(retval);
+    }
+    impl->ring_init_ = true;
   }
 
-  retval = io_uring_register_eventfd(&impl->ring_, impl->event_fd_);
-  if (retval != 0) {
-    LLFS_LOG_ERROR() << "failed io_uring_register_eventfd: " << std::strerror(-retval);
+  {
+    BATT_CHECK_EQ(impl->event_fd_, -1);
+
+    retval = io_uring_register_eventfd(&impl->ring_, impl->event_fd_);
+    if (retval != 0) {
+      LLFS_LOG_ERROR() << "failed io_uring_register_eventfd: " << std::strerror(-retval);
+    }
   }
 
   return {IoRing{std::move(impl)}};
@@ -68,6 +77,8 @@ IoRing::Impl::~Impl() noexcept
 
 IoRing::IoRing(std::unique_ptr<Impl>&& impl) noexcept : impl_{std::move(impl)}
 {
+  BATT_CHECK(this->impl_->ring_init_);
+  BATT_CHECK_GE(this->impl_->event_fd_, 0);
 }
 
 Status IoRing::run()

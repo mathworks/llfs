@@ -9,7 +9,10 @@
 #include <llfs/ring_buffer.hpp>
 //
 
+#include <llfs/status.hpp>
+
 #include <batteries/checked_cast.hpp>
+#include <batteries/syscall_retry.hpp>
 
 #include <sys/mman.h>
 
@@ -94,8 +97,12 @@ namespace llfs {
 RingBuffer::~RingBuffer() noexcept
 {
   if (this->memory_ != nullptr) {
-    munmap(this->memory_, this->size_);
-    munmap(this->memory_ + this->size_, this->size_);
+    LLFS_WARN_IF_NOT_OK(batt::status_from_retval(batt::syscall_retry([&] {
+      return munmap(this->memory_, this->size_);
+    })));
+    LLFS_WARN_IF_NOT_OK(batt::status_from_retval(batt::syscall_retry([&] {
+      return munmap(this->memory_ + this->size_, this->size_);
+    })));
   }
   if (this->fd_ != -1 && this->close_fd_) {
     close(this->fd_);

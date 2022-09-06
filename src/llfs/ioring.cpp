@@ -31,29 +31,39 @@ StatusOr<IoRing> IoRing::make_new(MaxQueueDepth entries) noexcept
 {
   auto impl = std::make_unique<IoRing::Impl>();
 
-  impl->event_fd_ = eventfd(0, 0);
-  if (impl->event_fd_ < 0) {
-    LLFS_LOG_ERROR() << "failed to create eventfd: " << std::strerror(errno);
-    return batt::status_from_retval(impl->event_fd_);
+  // Create the event_fd so we can wake the ioring completion event loop.
+  {
+    BATT_CHECK_EQ(impl->event_fd_, -1);
+
+    impl->event_fd_ = eventfd(0, 0);
+    if (impl->event_fd_ < 0) {
+      LLFS_LOG_ERROR() << "failed to create eventfd: " << std::strerror(errno);
+      return batt::status_from_retval(impl->event_fd_);
+    }
+
+    BATT_CHECK_NE(impl->event_fd_, -1);
   }
 
+  // Initialize the io_uring.
   {
     BATT_CHECK(!impl->ring_init_);
 
-    int retval = io_uring_queue_init(entries, &impl->ring_, /*flags=*/0);
+    const int retval = io_uring_queue_init(entries, &impl->ring_, /*flags=*/0);
     if (retval != 0) {
       LLFS_LOG_ERROR() << "failed io_uring_queue_init: " << std::strerror(-retval);
-      return status_from_retval(retval);
+      return batt::status_from_retval(retval);
     }
     impl->ring_init_ = true;
   }
 
+  // Register the event_fd with the io_uring.
   {
-    BATT_CHECK_EQ(impl->event_fd_, -1);
+    BATT_CHECK_NE(impl->event_fd_, -1);
 
-    retval = io_uring_register_eventfd(&impl->ring_, impl->event_fd_);
+    const int retval = io_uring_register_eventfd(&impl->ring_, impl->event_fd_);
     if (retval != 0) {
       LLFS_LOG_ERROR() << "failed io_uring_register_eventfd: " << std::strerror(-retval);
+      return batt::status_from_errno(-retval);
     }
   }
 
@@ -418,8 +428,8 @@ void ScopedIoRing::join()
     , threads_{}
     , halted_{false}
 {
-  // IMPORTANT: we must call on_work_started before launching threads so that `IoRing::run` doesn't
-  // exit prematurely.
+  // IMPORTANT: we must call on_work_started before launching threads so that `IoRing::run`
+  // doesn't exit prematurely.
   //
   this->io_.on_work_started();
 

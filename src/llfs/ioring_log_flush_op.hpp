@@ -176,6 +176,10 @@ class BasicIoRingLogFlushOp
   //
   slot_offset_type durable_flush_pos_ = 0;
 
+  // The known commit_size written to the device by this op.
+  //
+  u64 durable_commit_size_ = 0;
+
   // Dedicated static memory buffer to lower the overhead of asynchronous calls.
   //
   batt::HandlerMemory<128> handler_memory_;

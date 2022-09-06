@@ -21,4 +21,18 @@ void PackedLogPageHeader::reset(u64 slot_offset) noexcept
   this->crc64 = -1;  // TODO [tastolfi 2022-02-09] implement me
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+std::ostream& operator<<(std::ostream& out, const PackedLogPageHeader& t)
+{
+  return out << "PackedLogPageHeader{.magic=" << std::hex << t.magic.value() << std::dec  //
+             << ", .slot_offset=" << t.slot_offset.value()                                //
+             << ", .commit_size=" << t.commit_size.value()                                //
+             << ", .crc64=" << std::hex << t.crc64.value() << std::dec                    //
+             << ", .trim_pos=" << t.trim_pos.value()                                      //
+             << ", .flush_pos=" << t.flush_pos.value()                                    //
+             << ", .commit_pos=" << t.commit_pos.value()                                  //
+             << ",}";
+}
+
 }  // namespace llfs

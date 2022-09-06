@@ -11,6 +11,8 @@
 #include <llfs/data_reader.hpp>
 #include <llfs/logging.hpp>
 
+#include <batteries/stream_util.hpp>
+
 namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -37,7 +39,7 @@ Status IoRingLogRecovery::run()
   for (usize block_i = 0; block_i < this->config_.block_count();
        ++block_i, file_offset += this->config_.block_size()) {
     //----- --- -- -  -  -   -
-    LLFS_VLOG(2) << "reading " << BATT_INSPECT(block_i) << " from " << BATT_INSPECT(file_offset);
+    LLFS_VLOG(2) << "Reading " << BATT_INSPECT(block_i) << " from " << BATT_INSPECT(file_offset);
 
     // Read the next block into the buffer.
     //
@@ -53,7 +55,7 @@ Status IoRingLogRecovery::run()
     //
     clamp_min_slot(&this->trim_pos_, this->block_header().trim_pos);
     if (this->trim_pos_ != old_trim_pos) {
-      LLFS_VLOG(1) << "updating trim_pos: " << old_trim_pos << " => " << this->trim_pos_;
+      LLFS_VLOG(1) << "Updating trim_pos: " << old_trim_pos << " => " << this->trim_pos_;
       old_trim_pos = this->trim_pos_;
     } else {
       LLFS_VLOG(2) << BATT_INSPECT(this->trim_pos_);
@@ -70,8 +72,10 @@ Status IoRingLogRecovery::run()
 
   // Done!
   //
-  LLFS_VLOG(1) << "finished log recovery;" << BATT_INSPECT(this->trim_pos_)
-               << BATT_INSPECT(this->flush_pos_);
+  LLFS_VLOG(1) << "Finished log recovery;" << BATT_INSPECT(this->trim_pos_)
+               << BATT_INSPECT(this->flush_pos_)
+               << " logical_size=" << batt::dump_size_exact(this->config_.logical_size)
+               << " ring_buffer.size=" << batt::dump_size_exact(this->ring_buffer_.size());
 
   return batt::OkStatus();
 }
@@ -110,9 +114,10 @@ const PackedLogPageHeader& IoRingLogRecovery::block_header() const
 //
 void IoRingLogRecovery::recover_block_data()
 {
-  LLFS_VLOG(2) << "IoRingLogRecovery::recover_block_data()";
-
   const auto& header = this->block_header();
+
+  LLFS_VLOG(1) << "IoRingLogRecovery::recover_block_data()" << BATT_INSPECT(header.slot_offset)
+               << BATT_INSPECT(header.commit_size);
 
   // Record this slot interval so we know how much contiguous data we have starting at the trim pos
   // upper bound when we are done.
@@ -167,6 +172,9 @@ void IoRingLogRecovery::recover_block_data()
         ConstBuffer src = slice_buffer(data, src_i);
         LLFS_VLOG(1) << " ---- " << BATT_INSPECT(src_i) << BATT_INSPECT(src.size());
         std::memcpy(dst.data(), src.data(), src.size());
+      } else {
+        LLFS_VLOG(1) << " ---- skipping entry;" << BATT_INSPECT(entry.slot)
+                     << BATT_INSPECT(header.slot_offset);
       }
     }
 
@@ -221,20 +229,21 @@ void IoRingLogRecovery::recover_flush_pos()
   ConstBuffer committed_bytes = resize_buffer(this->ring_buffer_.get(slot_offset),
                                               committed_ranges.front().offset_range.size());
   for (;;) {
-    LLFS_VLOG_EVERY_N(1, kUpdateCadence)
+    LLFS_VLOG_EVERY_N(2, kUpdateCadence)
         << " -- attempting to recover log entry at " << BATT_INSPECT(slot_offset);
 
     DataReader reader{committed_bytes};
     const usize bytes_available_before = reader.bytes_available();
     Optional<u64> slot_body_size = reader.read_varint();
 
-    LLFS_VLOG_EVERY_N(1, kUpdateCadence) << " -- " << BATT_INSPECT(slot_body_size);
+    LLFS_VLOG_EVERY_N(2, kUpdateCadence) << " -- " << BATT_INSPECT(slot_body_size);
 
     if (!slot_body_size) {
       // Partially committed slot (couldn't even read a whole varint for the slot header!)  Break
       // out of the loop.
       //
-      LLFS_VLOG(1) << " -- Incomplete slot header; exiting loop";
+      LLFS_VLOG(1) << " -- Incomplete slot header, exiting loop;" << BATT_INSPECT(slot_offset)
+                   << BATT_INSPECT(bytes_available_before);
       break;
     }
 
@@ -242,14 +251,17 @@ void IoRingLogRecovery::recover_flush_pos()
     const usize slot_header_size = bytes_available_before - bytes_available_after;
     const usize slot_size = slot_header_size + *slot_body_size;
 
-    LLFS_VLOG_EVERY_N(1, kUpdateCadence)
+    LLFS_VLOG_EVERY_N(2, kUpdateCadence)
         << " -- " << BATT_INSPECT(slot_size) << BATT_INSPECT(committed_bytes.size());
 
     if (slot_size > committed_bytes.size()) {
       // Partially committed slot; break out of the loop without updating slot_offset (we're
       // done!)
       //
-      LLFS_VLOG(1) << " -- Incomplete slot body; exiting loop";
+      LLFS_VLOG(1) << " -- Incomplete slot body, exiting loop;" << BATT_INSPECT(slot_offset)
+                   << BATT_INSPECT(bytes_available_before) << BATT_INSPECT(bytes_available_after)
+                   << BATT_INSPECT(slot_header_size) << BATT_INSPECT(slot_body_size)
+                   << BATT_INSPECT(slot_size);
       break;
     }
     committed_bytes += slot_size;

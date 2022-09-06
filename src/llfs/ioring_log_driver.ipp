@@ -137,6 +137,7 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::read_log_data()
   this->trim_pos_.set_value(recovery.get_trim_pos());
   this->flush_pos_.set_value(recovery.get_flush_pos());
   this->commit_pos_.set_value(recovery.get_flush_pos());
+  this->durable_trim_pos_.set_value(recovery.get_trim_pos());
 
   // Initialize state according to recovered values.
   //
@@ -199,6 +200,9 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::join()
   if (this->flush_task_) {
     this->flush_task_->join();
     this->flush_task_ = None;
+
+    LLFS_VLOG(1) << "IoRingLogDriver stopped;" << BATT_INSPECT(this->get_trim_pos())
+                 << BATT_INSPECT(this->get_flush_pos()) << BATT_INSPECT(this->get_commit_pos());
   }
 }
 

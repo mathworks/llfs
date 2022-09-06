@@ -1,4 +1,4 @@
-.PHONY: build build-nodoc install create test publish docker-build docker-push docker
+.PHONY: clean build build-nodoc install create test publish docker-build docker-push docker
 
 ifeq ($(BUILD_TYPE),)
 BUILD_TYPE := RelWithDebInfo
@@ -30,6 +30,9 @@ create:
 publish: | test build
 	batteries/script/publish-release.sh
 
+
+clean:
+	rm -rf build/$(BUILD_TYPE)
 
 docker-build:
 	(cd docker && docker build -t registry.gitlab.com/tonyastolfi/batteries .)

@@ -99,6 +99,11 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::initialize(DriverImpl* driver)
 
     this->durable_flush_pos_ = driver->get_flush_pos();
 
+    // Initially these are in sync, since we just recovered the log data and haven't started
+    // appending new slots.
+    //
+    this->durable_commit_size_ = header->commit_size;
+
     THIS_VLOG(1) << "initialize() -" << BATT_INSPECT(ahead_of_next)
                  << BATT_INSPECT(header->slot_offset) << BATT_INSPECT(header->commit_size)
                  << BATT_INSPECT(this->flushed_tail_range_);
@@ -328,7 +333,10 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::flush_trim_pos(slot_offset_type k
   BATT_CHECK(!this->saved_commit_size_);
   this->saved_commit_size_ = header->commit_size;
 
-  header->commit_size = 0;
+  BATT_CHECK_EQ(this->durable_commit_size_, 0u)
+      << "This flush op has already overwritten live data on device!";
+
+  header->commit_size = this->durable_commit_size_;
   header->trim_pos = known_trim_pos;
   header->flush_pos = this->driver_->get_flush_pos();
   header->commit_pos = this->driver_->get_commit_pos();
@@ -411,6 +419,10 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::handle_flush_head(const StatusOr<
   //
   this->driver_->update_durable_trim_pos(header->trim_pos);
 
+  // Update this op's durable commit_size, since we just got confirmation that a write succeeded.
+  //
+  this->durable_commit_size_ = header->commit_size;
+
   // THIS SHOULD BE THE ONLY PLACE WE UPDATE `this->durable_flush_pos_`!
   //
   this->durable_flush_pos_ = header->slot_offset + header->commit_size;
@@ -421,6 +433,7 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::handle_flush_head(const StatusOr<
   //
   if (header->commit_size == this->driver_->calculate().block_capacity()) {
     header->commit_size = 0;
+    this->durable_commit_size_ = 0;
 
     header->slot_offset +=
         this->driver_->calculate().block_capacity() * this->driver_->calculate().queue_depth();

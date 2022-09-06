@@ -63,6 +63,8 @@ struct PackedLogPageHeader {
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedLogPageHeader), 64);
 
+std::ostream& operator<<(std::ostream& out, const PackedLogPageHeader& t);
+
 }  // namespace llfs
 
 #endif  // LLFS_PACKED_LOG_PAGE_HEADER_HPP

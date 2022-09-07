@@ -96,6 +96,13 @@ Status StorageContext::add_existing_file(const batt::SharedPtr<StorageFile>& fil
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+void StorageContext::set_page_cache_options(const PageCacheOptions& options)
+{
+  this->page_cache_options_ = options;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 StatusOr<batt::SharedPtr<PageCache>> StorageContext::get_page_cache()
 {
   if (this->page_cache_) {
@@ -137,7 +144,7 @@ StatusOr<batt::SharedPtr<PageCache>> StorageContext::get_page_cache()
   }
 
   StatusOr<batt::SharedPtr<PageCache>> page_cache =
-      PageCache::make_shared(std::move(storage_pool), PageCacheOptions::with_default_values());
+      PageCache::make_shared(std::move(storage_pool), this->page_cache_options_);
 
   BATT_REQUIRE_OK(page_cache);
 

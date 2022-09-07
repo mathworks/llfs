@@ -198,6 +198,16 @@ class PageCache : public PageLoader
     return this->metrics_;
   }
 
+  const CacheImpl::Metrics& metrics_for_page_size(PageSize page_size) const
+  {
+    const i32 page_size_log2 = batt::log2_ceil(page_size);
+
+    BATT_CHECK_LT(static_cast<usize>(page_size_log2), this->impl_for_size_log2_.size());
+    BATT_CHECK_NOT_NULLPTR(this->impl_for_size_log2_[page_size_log2]);
+
+    return this->impl_for_size_log2_[page_size_log2]->metrics();
+  }
+
  private:
   //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
   using PageLayoutReaderMap = std::unordered_map<PageLayoutId, PageReader, PageLayoutId::Hash>;

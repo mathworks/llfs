@@ -10,13 +10,13 @@
 //
 
 namespace llfs {
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 PageCacheOptions PageCacheOptions::with_default_values()
 {
   PageCacheOptions opts;
 
-  opts.max_refs_per_page_ = 1 * kMiB;
   opts.default_log_size_ = 64 * kMiB;
   opts.max_cached_pages_per_size_log2.fill(0);
 
@@ -34,4 +34,5 @@ PageCacheOptions PageCacheOptions::with_default_values()
 
   return opts;
 }
+
 }  // namespace llfs

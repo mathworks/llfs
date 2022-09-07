@@ -27,17 +27,6 @@ class PageCacheOptions
  public:
   static PageCacheOptions with_default_values();
 
-  MaxRefsPerPage max_refs_per_page() const
-  {
-    return MaxRefsPerPage{this->max_refs_per_page_};
-  }
-
-  PageCacheOptions& set_max_refs_per_page(u32 n)
-  {
-    this->max_refs_per_page_ = n;
-    return *this;
-  }
-
   u64 default_log_size() const
   {
     return this->default_log_size_;
@@ -55,7 +44,6 @@ class PageCacheOptions
   std::array<usize, kMaxPageSizeLog2> max_cached_pages_per_size_log2;
 
  private:
-  u32 max_refs_per_page_;
   u64 default_log_size_;
 };
 

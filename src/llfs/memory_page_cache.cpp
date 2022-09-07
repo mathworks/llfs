@@ -26,8 +26,7 @@ batt::SharedPtr<PageCache> make_memory_page_cache(
     dedup[size] += count;
   }
 
-  auto cache_options = PageCacheOptions::with_default_values()  //
-                           .set_max_refs_per_page(max_refs_per_page);
+  auto cache_options = PageCacheOptions::with_default_values();
 
   std::vector<PageArena> arenas;
   page_device_id_int device_id = 0;

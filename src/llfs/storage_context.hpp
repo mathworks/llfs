@@ -13,6 +13,7 @@
 #include <llfs/ioring.hpp>
 #include <llfs/packed_config.hpp>
 #include <llfs/page_cache.hpp>
+#include <llfs/page_cache_options.hpp>
 #include <llfs/page_id_factory.hpp>
 #include <llfs/page_size.hpp>
 #include <llfs/storage_file.hpp>
@@ -58,6 +59,10 @@ class StorageContext : public batt::RefCounted<StorageContext>
   {
     return this->io_;
   }
+
+  /*! \brief Set runtime options for PageCache.
+   */
+  void set_page_cache_options(const PageCacheOptions& options);
 
   // Returns a PageCache object that can be used to access all PageDevices in the StorageContext.
   // The PageCache is created the first time this function is called, and cached to be returned on
@@ -136,6 +141,10 @@ class StorageContext : public batt::RefCounted<StorageContext>
   std::unordered_map<boost::uuids::uuid, batt::SharedPtr<StorageObjectInfo>,
                      boost::hash<boost::uuids::uuid>>
       index_;
+
+  // Options that will be used to instantiate `this->page_cache_`.
+  //
+  PageCacheOptions page_cache_options_ = PageCacheOptions::with_default_values();
 
   // The PageCache for this context; this is lazily created the first time
   // `StorageContext::get_page_cache()` is called.

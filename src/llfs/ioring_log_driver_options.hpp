@@ -72,6 +72,12 @@ class IoRingLogDriverOptions
   {
     return this->queue_depth() - 1;
   }
+
+  Self& set_name(std::string_view name)
+  {
+    this->name = name;
+    return *this;
+  }
 };
 
 }  // namespace llfs

@@ -11,10 +11,30 @@
 
 #include <llfs/varint.hpp>
 
+#include <batteries/checked_cast.hpp>
 #include <batteries/stream_util.hpp>
 #include <batteries/suppress.hpp>
 
 namespace llfs {
+
+namespace {
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+MutableBuffer buffer_from(const boost::iterator_range<u8*>& byte_range)
+{
+  return MutableBuffer{byte_range.begin(), byte_range.size()};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+boost::iterator_range<u8*> byte_range_from(const MutableBuffer& buffer)
+{
+  u8* const data = static_cast<u8*>(buffer.data());
+  return boost::iterator_range<u8*>{data, data + buffer.size()};
+}
+
+}  // namespace
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
@@ -26,8 +46,7 @@ DataPacker::DataPacker(const MutableBuffer& buffer) noexcept : buffer_{buffer}
 //
 DataPacker::DataPacker(DataPacker&& that) noexcept
     : buffer_{that.buffer_}
-    , avail_{that.avail_}
-    , full_{that.full_}
+    , arena_{this, that.arena_.avail_}
 {
   that.invalidate();
 }
@@ -38,8 +57,7 @@ DataPacker& DataPacker::operator=(DataPacker&& that) noexcept
 {
   if (BATT_HINT_TRUE(this != &that)) {
     this->buffer_ = that.buffer_;
-    this->avail_ = that.avail_;
-    this->full_ = that.full_;
+    this->arena_ = std::move(that.arena_);
     that.invalidate();
   }
   return *this;
@@ -50,8 +68,221 @@ DataPacker& DataPacker::operator=(DataPacker&& that) noexcept
 void DataPacker::invalidate()
 {
   this->buffer_ = MutableBuffer{nullptr, 0};
-  this->avail_ = boost::make_iterator_range<u8*>(nullptr, nullptr);
-  this->full_ = true;
+  this->arena_.invalidate();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const void* DataPacker::pack_data(const void* data, usize size)
+{
+  if (this->full() || this->space() < this->estimate_packed_data_size(size)) {
+    this->set_full();
+    return nullptr;
+  }
+
+  auto* rec = this->pack_record<PackedBytes>();
+  BATT_ASSERT_NOT_NULLPTR(rec);
+
+  return this->nocheck_pack_data_to(rec, data, size, &this->arena_,
+                                    batt::StaticType<AllocBackPolicy>{});
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const void* DataPacker::pack_data(const void* data, usize size, Arena* arena)
+{
+  if (BATT_HINT_FALSE(arena == &this->arena_)) {
+    return this->pack_data(data, size);
+  }
+
+  if (this->full() || arena->full() || this->space() < sizeof(PackedBytes) ||
+      arena->space() < (this->estimate_packed_data_size(size) - sizeof(PackedBytes))) {
+    this->set_full();
+    arena->set_full();
+    return nullptr;
+  }
+
+  auto* rec = this->pack_record<PackedBytes>();
+  BATT_ASSERT_NOT_NULLPTR(rec);
+
+  return this->nocheck_pack_data_to(rec, data, size, arena, batt::StaticType<AllocFrontPolicy>{});
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const void* DataPacker::pack_data_to(PackedBytes* rec, const void* data, usize size)
+{
+  if (this->full() || this->space() < this->estimate_packed_data_size(size) - sizeof(PackedBytes)) {
+    this->set_full();
+    return nullptr;
+  }
+  return this->nocheck_pack_data_to(rec, data, size, &this->arena_,
+                                    batt::StaticType<AllocBackPolicy>{});
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const void* DataPacker::pack_data_to(PackedBytes* rec, const void* data, usize size, Arena* arena)
+{
+  if (BATT_HINT_FALSE(arena == &this->arena_)) {
+    return this->pack_data_to(rec, data, size);
+  }
+
+  if (arena->full() ||
+      arena->space() < (this->estimate_packed_data_size(size) - sizeof(PackedBytes))) {
+    arena->set_full();
+    this->set_full();
+    return nullptr;
+  }
+  return this->nocheck_pack_data_to(rec, data, size, arena, batt::StaticType<AllocFrontPolicy>{});
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const PackedBytes* DataPacker::pack_data_copy(const PackedBytes& src)
+{
+  if (this->full() || this->space() < this->estimate_packed_data_size(src)) {
+    this->set_full();
+    return nullptr;
+  }
+
+  auto* dst = this->pack_record(batt::StaticType<PackedBytes>{});
+  if (!dst) {
+    return dst;
+  }
+
+  return this->nocheck_pack_data_copy_to(dst, src, &this->arena_,
+                                         batt::StaticType<AllocBackPolicy>{});
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const PackedBytes* DataPacker::pack_data_copy(const PackedBytes& src, Arena* arena)
+{
+  if (BATT_HINT_FALSE(arena == &this->arena_)) {
+    return this->pack_data_copy(src);
+  }
+
+  if (this->full() || arena->full() || this->space() < sizeof(PackedBytes) ||
+      arena->space() < (this->estimate_packed_data_size(src) - sizeof(PackedBytes))) {
+    this->set_full();
+    arena->set_full();
+    return nullptr;
+  }
+
+  auto* dst = this->pack_record(batt::StaticType<PackedBytes>{});
+  if (!dst) {
+    return dst;
+  }
+
+  return this->nocheck_pack_data_copy_to(dst, src, arena, batt::StaticType<AllocFrontPolicy>{});
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const PackedBytes* DataPacker::pack_data_copy_to(PackedBytes* dst, const PackedBytes& src)
+{
+  if (this->full() || this->space() < this->estimate_packed_data_size(src)) {
+    this->set_full();
+    return nullptr;
+  }
+
+  return this->nocheck_pack_data_copy_to(dst, src, &this->arena_,
+                                         batt::StaticType<AllocBackPolicy>{});
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const PackedBytes* DataPacker::pack_data_copy_to(PackedBytes* dst, const PackedBytes& src,
+                                                 Arena* arena)
+{
+  if (BATT_HINT_FALSE(arena == &this->arena_)) {
+    return this->pack_data_copy_to(dst, src);
+  }
+
+  if (arena->full() ||
+      arena->space() < (this->estimate_packed_data_size(src) - sizeof(PackedBytes))) {
+    this->set_full();
+    arena->set_full();
+    return nullptr;
+  }
+
+  return this->nocheck_pack_data_copy_to(dst, src, arena, batt::StaticType<AllocFrontPolicy>{});
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Optional<std::string_view> DataPacker::pack_string(const std::string_view& s)
+{
+  const void* packed = this->pack_data(s.data(), s.size());
+  if (this->full() || packed == nullptr) {
+    this->set_full();
+    return None;
+  }
+  return std::string_view(static_cast<const char*>(packed), s.size());
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Optional<std::string_view> DataPacker::pack_string(const std::string_view& s, Arena* arena)
+{
+  if (BATT_HINT_FALSE(arena == &this->arena_)) {
+    return this->pack_string(s);
+  }
+  const void* packed = this->pack_data(s.data(), s.size(), arena);
+  if (this->full() || packed == nullptr) {
+    this->set_full();
+    return None;
+  }
+  return std::string_view(static_cast<const char*>(packed), s.size());
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Optional<std::string_view> DataPacker::pack_string_to(PackedBytes* rec, const std::string_view& s)
+{
+  const void* packed = this->pack_data_to(rec, s.data(), s.size());
+  if (this->full() || packed == nullptr) {
+    this->set_full();
+    return None;
+  }
+  return std::string_view(static_cast<const char*>(packed), s.size());
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Optional<std::string_view> DataPacker::pack_string_to(PackedBytes* rec, const std::string_view& s,
+                                                      Arena* arena)
+{
+  if (BATT_HINT_FALSE(arena == &this->arena_)) {
+    return this->pack_string_to(rec, s);
+  }
+  const void* packed = this->pack_data_to(rec, s.data(), s.size(), arena);
+  if (this->full() || packed == nullptr) {
+    this->set_full();
+    return None;
+  }
+  return std::string_view(static_cast<const char*>(packed), s.size());
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Optional<std::string_view> DataPacker::pack_raw_data(const void* data, usize size)
+{
+  Optional<MutableBuffer> buf = this->arena_.allocate_front(size);
+  if (!buf) {
+    return None;
+  }
+  std::memcpy(buf->data(), data, size);
+
+  return std::string_view{static_cast<const char*>(buf->data()), buf->size()};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Optional<DataPacker::Arena> DataPacker::reserve_arena(usize size)
+{
+  return this->arena_.reserve_back(size);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -66,36 +297,22 @@ usize DataPacker::estimate_packed_data_size(usize size) const
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-const void* DataPacker::pack_data(const void* data, usize size)
+usize DataPacker::estimate_packed_data_size(const PackedBytes& src) const
 {
-  if (this->full_ || this->space() < this->estimate_packed_data_size(size)) {
-    this->full_ = true;
-    return nullptr;
+  if (src.data_offset < sizeof(PackedBytes)) {
+    return sizeof(PackedBytes);
   }
-
-  auto* rec = pack_record<PackedBytes>();
-  BATT_ASSERT_NOT_NULLPTR(rec);
-
-  return this->nocheck_pack_data_to(rec, data, size);
+  return sizeof(PackedBytes) + src.data_size;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-const void* DataPacker::pack_data_to(PackedBytes* rec, const void* data, usize size)
-{
-  if (this->full_ || this->space() < this->estimate_packed_data_size(size) - sizeof(PackedBytes)) {
-    this->full_ = true;
-    return nullptr;
-  }
-  return this->nocheck_pack_data_to(rec, data, size);
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-const void* DataPacker::nocheck_pack_data_to(PackedBytes* rec, const void* data, usize size)
+template <typename Policy>
+const void* DataPacker::nocheck_pack_data_to(PackedBytes* rec, const void* data, usize size,
+                                             Arena* arena, batt::StaticType<Policy> policy)
 {
   if (size > 4) {
-    return this->nocheck_pack_data_large(rec, data, size);
+    return this->nocheck_pack_data_large(rec, data, size, arena, policy);
   }
 
   rec->data_offset = sizeof(PackedBytes) - size;
@@ -114,11 +331,14 @@ const void* DataPacker::nocheck_pack_data_to(PackedBytes* rec, const void* data,
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-const void* DataPacker::nocheck_pack_data_large(PackedBytes* dst, const void* data, usize size)
+template <typename Policy>
+const void* DataPacker::nocheck_pack_data_large(PackedBytes* dst, const void* data, usize size,
+                                                Arena* arena, batt::StaticType<Policy>)
 {
-  u8* before = this->avail_.end();
-  this->avail_.advance_end(-std::ptrdiff_t(size));
-  u8* packed = this->avail_.end();
+  boost::iterator_range<u8*> buf = Policy::nocheck_alloc(arena, static_cast<isize>(size));
+
+  u8* const before = buf.end();
+  u8* const packed = buf.begin();
 
   BATT_CHECK_EQ(before - size, packed);
   BATT_CHECK_GE((const void*)packed, (const void*)dst);
@@ -126,8 +346,7 @@ const void* DataPacker::nocheck_pack_data_large(PackedBytes* dst, const void* da
   dst->data_offset = packed - reinterpret_cast<const u8*>(dst);
   dst->data_size = size;
 
-  BATT_CHECK_EQ(reinterpret_cast<const u8*>(dst) + dst->data_offset,
-                reinterpret_cast<const u8*>(packed));
+  BATT_CHECK_EQ(reinterpret_cast<const u8*>(dst) + dst->data_offset, const_cast<const u8*>(packed));
 
   std::memcpy(packed, data, size);
 
@@ -136,46 +355,10 @@ const void* DataPacker::nocheck_pack_data_large(PackedBytes* dst, const void* da
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-usize DataPacker::estimate_packed_data_size(const PackedBytes& src) const
-{
-  if (src.data_offset < sizeof(PackedBytes)) {
-    return sizeof(PackedBytes);
-  }
-  return sizeof(PackedBytes) + src.data_size;
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-const PackedBytes* DataPacker::pack_data_copy(const PackedBytes& src)
-{
-  if (this->full_ || this->space() < this->estimate_packed_data_size(src)) {
-    this->full_ = true;
-    return nullptr;
-  }
-
-  auto* dst = this->pack_record(batt::StaticType<PackedBytes>{});
-  if (!dst) {
-    return dst;
-  }
-
-  return this->nocheck_pack_data_copy_to(dst, src);
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-const PackedBytes* DataPacker::pack_data_copy_to(PackedBytes* dst, const PackedBytes& src)
-{
-  if (this->full_ || this->space() < this->estimate_packed_data_size(src)) {
-    this->full_ = true;
-    return nullptr;
-  }
-
-  return this->nocheck_pack_data_copy_to(dst, src);
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-const PackedBytes* DataPacker::nocheck_pack_data_copy_to(PackedBytes* dst, const PackedBytes& src)
+template <typename Policy>
+const PackedBytes* DataPacker::nocheck_pack_data_copy_to(PackedBytes* dst, const PackedBytes& src,
+                                                         Arena* arena,
+                                                         batt::StaticType<Policy> policy)
 {
   // If data offset is within the record itself, then just copy the struct and we're done.
   //
@@ -189,53 +372,135 @@ const PackedBytes* DataPacker::nocheck_pack_data_copy_to(PackedBytes* dst, const
     BATT_UNSUPPRESS_IF_GCC()
 
   } else {
-    (void)this->nocheck_pack_data_large(dst, src.data(), src.data_size);
+    const void* packed_data =
+        this->nocheck_pack_data_large(dst, src.data(), src.data_size, arena, policy);
+
+    BATT_CHECK_EQ(dst->data(), packed_data);
   }
   return dst;
 }
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+// class DataPacker::Arena
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Optional<std::string_view> DataPacker::pack_string(const std::string_view& s)
+/*explicit*/ DataPacker::Arena::Arena(DataPacker* packer, boost::iterator_range<u8*> avail) noexcept
+    : capacity_{avail.size()}
+    , packer_{packer}
+    , avail_{avail}
+    , full_{this->capacity_ == 0}
 {
-  const void* packed = pack_data(s.data(), s.size());
-  if (this->full_ || packed == nullptr) {
-    this->full_ = true;
-    return None;
-  }
-  return std::string_view(reinterpret_cast<const char*>(packed), s.size());
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Optional<std::string_view> DataPacker::pack_string_to(PackedBytes* rec, const std::string_view& s)
+DataPacker* DataPacker::Arena::get_packer() const
 {
-  const void* packed = pack_data_to(rec, s.data(), s.size());
-  if (this->full_ || packed == nullptr) {
-    this->full_ = true;
-    return None;
-  }
-  return std::string_view(reinterpret_cast<const char*>(packed), s.size());
+  return this->packer_.get();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Optional<std::string_view> DataPacker::pack_raw_data(const void* data, usize size)
+usize DataPacker::Arena::space() const
+{
+  return this->avail_.size();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+usize DataPacker::Arena::capacity() const
+{
+  return this->capacity_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+bool DataPacker::Arena::full() const
+{
+  return this->full_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Interval<isize> DataPacker::Arena::unused() const
+{
+  BATT_CHECK_NOT_NULLPTR(this->packer_.get());
+
+  u8* const buffer_begin = this->packer_->buffer_begin();
+
+  return Interval<isize>{
+      this->avail_.begin() - buffer_begin,
+      this->avail_.end() - buffer_begin,
+  };
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void DataPacker::Arena::invalidate()
+{
+  this->capacity_ = 0;
+  this->packer_.reset();
+  this->avail_ = boost::iterator_range<u8*>{nullptr, nullptr};
+  this->full_ = true;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void DataPacker::Arena::set_full()
+{
+  this->full_ = true;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Optional<DataPacker::Arena> DataPacker::Arena::reserve_front(usize size)
+{
+  Optional<MutableBuffer> buf = this->allocate_front(size);
+  if (!buf) {
+    return None;
+  }
+  return Arena{this->get_packer(), byte_range_from(*buf)};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Optional<DataPacker::Arena> DataPacker::Arena::reserve_back(usize size)
+{
+  Optional<MutableBuffer> buf = this->allocate_back(size);
+  if (!buf) {
+    return None;
+  }
+  return Arena{this->get_packer(), byte_range_from(*buf)};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Optional<MutableBuffer> DataPacker::Arena::allocate_front(usize size)
 {
   if (size > this->space()) {
     this->full_ = true;
     return None;
   }
 
-  std::memcpy(this->avail_.begin(), data, size);
-  this->avail_.advance_begin(size);
-
-  return std::string_view{reinterpret_cast<const char*>(this->avail_.begin()), size};
+  return buffer_from(this->nocheck_alloc_front(BATT_CHECKED_CAST(isize, size)));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-u8* DataPacker::pack_varint(u64 n)
+Optional<MutableBuffer> DataPacker::Arena::allocate_back(usize size)
+{
+  if (size > this->space()) {
+    this->full_ = true;
+    return None;
+  }
+
+  return buffer_from(this->nocheck_alloc_back(BATT_CHECKED_CAST(isize, size)));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+u8* DataPacker::Arena::pack_varint(u64 n)
 {
   if (this->full_) {
     return nullptr;
@@ -256,21 +521,28 @@ u8* DataPacker::pack_varint(u64 n)
   this->avail_ = boost::iterator_range<u8*>{dst_end, avail_end};
 
   return dst_end;
-  const usize bytes_required = packed_sizeof_varint(n);
-  if (this->full_ || this->space() < bytes_required) {
-    this->full_ = true;
-    return nullptr;
-  }
+}
 
-#ifdef LLFS_VERBOSE_DEBUG_LOGGING
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+boost::iterator_range<u8*> DataPacker::Arena::nocheck_alloc_front(isize size)
+{
+  u8* const buf_begin = this->avail_.begin();
+  this->avail_.advance_begin(size);
+  u8* const buf_end = this->avail_.begin();
 
-  LOG(INFO) << "pack_varint(" << std::dec << n_val << " (0x" << std::hex << n_val << std::dec
-            << ")) -> [@" << (const void*)dst_begin << "; " << std::dec << bytes_required << "] "
-            << batt::dump_range(as_slice(dst_begin, bytes_required));
+  return boost::iterator_range<u8*>{buf_begin, buf_end};
+}
 
-#endif  // LLFS_VERBOSE_DEBUG_LOGGING
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+boost::iterator_range<u8*> DataPacker::Arena::nocheck_alloc_back(isize size)
+{
+  u8* const buf_end = this->avail_.end();
+  this->avail_.advance_end(-size);
+  u8* const buf_begin = this->avail_.end();
 
-  return dst_begin;
+  return boost::iterator_range<u8*>{buf_begin, buf_end};
 }
 
 }  // namespace llfs

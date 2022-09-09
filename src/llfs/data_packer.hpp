@@ -19,6 +19,7 @@
 #include <llfs/seq.hpp>
 #include <llfs/slice.hpp>
 
+#include <batteries/pointers.hpp>
 #include <batteries/type_traits.hpp>
 
 #include <boost/range/iterator_range.hpp>
@@ -32,6 +33,123 @@ class DataPacker
  public:
   template <typename T>
   using ArrayPacker = BasicArrayPacker<T, DataPacker>;
+
+  struct AllocFrontPolicy;
+  struct AllocBackPolicy;
+
+  /*! \brief A sub-region of the buffer used for allocation/reservation.
+   *
+   * Arena is movable but not copyable.
+   */
+  class Arena
+  {
+    friend class DataPacker;
+
+   public:
+    //----- --- -- -  -  -   -
+    Arena(const Arena&) = delete;
+    Arena& operator=(const Arena&) = delete;
+
+    Arena(Arena&&) = default;
+    Arena& operator=(Arena&&) = default;
+    //----- --- -- -  -  -   -
+
+    /*! \brief The number of bytes available in this Arena for reservation/allocation.
+     */
+    usize space() const;
+
+    /*! \brief The original size of this arena.
+     */
+    usize capacity() const;
+
+    /*! \brief Returns true iff some prior reserve or allocate has failed
+     */
+    bool full() const;
+
+    /*! \brief Returns the available region of this arena as offsets relative to the packer's
+     * buffer.
+     */
+    Interval<isize> unused() const;
+
+    /*! \brief Clears this object, detaching it from its buffer and packer.
+     */
+    void invalidate();
+
+    /*! \brief Set the `full` flag to true, disabling future reservation/allocation.
+     */
+    void set_full();
+
+    /*! \brief Split this arena by removing `size` bytes from the front of the available region.
+     */
+    Optional<Arena> reserve_front(usize size);
+
+    /*! \brief Split this arena by removing `size` bytes from the back of the available region.
+     */
+    Optional<Arena> reserve_back(usize size);
+
+    /*! \brief Allocate `size` bytes at the front of the available region.
+     */
+    Optional<MutableBuffer> allocate_front(usize size);
+
+    /*! \brief Allocate `size` bytes at the back of the available region.
+     */
+    Optional<MutableBuffer> allocate_back(usize size);
+
+    /*! \brief Pack `n` as a variable-length integer at the front of this arena.
+     *
+     * \return nullptr if there isn't enough space to pack n; otherwise return pointer to the first
+     * byte of the packed var-int.
+     */
+    u8* pack_varint(u64 n);
+
+   private:
+    explicit Arena(DataPacker* packer, boost::iterator_range<u8*> avail) noexcept;
+
+    /*! \brief The DataPacker object with which this Arena is associated, for sanity checking.
+     */
+    DataPacker* get_packer() const;
+
+    boost::iterator_range<u8*> nocheck_alloc_front(isize size);
+
+    boost::iterator_range<u8*> nocheck_alloc_back(isize size);
+
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+    usize capacity_;
+    batt::UniqueNonOwningPtr<DataPacker> packer_;
+    boost::iterator_range<u8*> avail_;
+    bool full_ = false;
+  };
+
+  /*! \brief Allocates from Arena in front-to-back order.
+   */
+  struct AllocFrontPolicy {
+    static Optional<MutableBuffer> allocate_buffer(Arena* arena, usize size)
+    {
+      return arena->allocate_front(size);
+    }
+
+    static boost::iterator_range<u8*> nocheck_alloc(Arena* arena, isize size)
+    {
+      return arena->nocheck_alloc_front(size);
+    }
+  };
+
+  /*! \brief Allocates from Arena in back-to-front order.
+   */
+  struct AllocBackPolicy {
+    static Optional<MutableBuffer> allocate_buffer(Arena* arena, usize size)
+    {
+      return arena->allocate_back(size);
+    }
+
+    static boost::iterator_range<u8*> nocheck_alloc(Arena* arena, isize size)
+    {
+      return arena->nocheck_alloc_back(size);
+    }
+  };
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   explicit DataPacker(const MutableBuffer& buffer) noexcept;
 
@@ -50,22 +168,27 @@ class DataPacker
 
   usize space() const
   {
-    return avail_.size();
+    return this->arena_.space();
   }
 
   usize size() const
   {
-    return buffer_.size() - this->space();
+    return this->buffer_.size() - this->space();
   }
 
   bool full() const
   {
-    return full_;
+    return this->arena_.full();
   }
 
-  void reset_flags()
+  void set_full()
   {
-    full_ = false;
+    this->arena_.set_full();
+  }
+
+  void reset_flags_DEPRECATED()
+  {
+    // TODO [tastolfi 2022-09-09] figure this out...
   }
 
   template <typename T>
@@ -81,27 +204,41 @@ class DataPacker
   template <typename T>
   [[nodiscard]] T* pack_record(const batt::StaticType<T>& = {})
   {
-    if (full_ || space() < sizeof(T)) {
-      full_ = true;
+    Optional<MutableBuffer> buf = this->arena_.allocate_front(sizeof(T));
+    if (!buf) {
       return nullptr;
     }
-    T* s = reinterpret_cast<T*>(avail_.begin());
-    avail_.advance_begin(sizeof(T));
-    return s;
+    return reinterpret_cast<T*>(buf->data());
   }
 
+  /*! \brief Reserve space at the end of the buffer for later allocation.
+   *
+   * DataPacker functions that allocate trailing buffer space (pack_data, pack_string, etc.) can be
+   * passed a DataPacker::Arena to allocate portions of the reserved space later.
+   */
+  [[nodiscard]] Optional<Arena> reserve_arena(usize size);
+
   [[nodiscard]] const void* pack_data(const void* data, usize size);
+  [[nodiscard]] const void* pack_data(const void* data, usize size, Arena* arena);
 
   [[nodiscard]] const void* pack_data_to(PackedBytes* rec, const void* data, usize size);
+  [[nodiscard]] const void* pack_data_to(PackedBytes* rec, const void* data, usize size,
+                                         Arena* arena);
 
   [[nodiscard]] const PackedBytes* pack_data_copy(const PackedBytes& src);
+  [[nodiscard]] const PackedBytes* pack_data_copy(const PackedBytes& src, Arena* arena);
 
   [[nodiscard]] const PackedBytes* pack_data_copy_to(PackedBytes* dst, const PackedBytes& src);
+  [[nodiscard]] const PackedBytes* pack_data_copy_to(PackedBytes* dst, const PackedBytes& src,
+                                                     Arena* arena);
 
   [[nodiscard]] Optional<std::string_view> pack_string(const std::string_view& s);
+  [[nodiscard]] Optional<std::string_view> pack_string(const std::string_view& s, Arena* arena);
 
   [[nodiscard]] Optional<std::string_view> pack_string_to(PackedBytes* rec,
                                                           const std::string_view& s);
+  [[nodiscard]] Optional<std::string_view> pack_string_to(PackedBytes* rec,
+                                                          const std::string_view& s, Arena* arena);
 
   // If there is sufficient space, copy `size` bytes from `data` to the beginning of the available
   // region WITHOUT a PackedBytes header, returning a std::string_view of the copied data; if there
@@ -109,63 +246,60 @@ class DataPacker
   //
   [[nodiscard]] Optional<std::string_view> pack_raw_data(const void* data, usize size);
 
+  template <typename U, typename IntT, typename PackedIntT>
+  [[nodiscard]] bool pack_int_impl(U val)
+  {
+    static_assert(std::is_same_v<std::decay_t<U>, IntT>, "Must be called with exact type");
+
+    PackedIntT* dst = this->pack_record<PackedIntT>();
+    if (!dst) {
+      return false;
+    }
+    *dst = val;
+    return true;
+  }
+
   template <typename U>
   [[nodiscard]] bool pack_u64(U val)
   {
-    static_assert(std::is_same_v<std::decay_t<U>, u64>, "Must be called with u64");
-
-    if (full_ || space() < sizeof(little_u64)) {
-      full_ = true;
-      return false;
-    }
-    *pack_record<little_u64>() = val;
-    return true;
+    return this->pack_int_impl<U, u64, little_u64>(val);
   }
 
   template <typename U>
   [[nodiscard]] bool pack_u32(U val)
   {
-    static_assert(std::is_same_v<std::decay_t<U>, u32>, "Must be called with u32");
-
-    if (full_ || space() < sizeof(little_u32)) {
-      full_ = true;
-      return false;
-    }
-    *pack_record<little_u32>() = val;
-    return true;
-  }
-
-  template <typename U>
-  [[nodiscard]] bool pack_i32(U val)
-  {
-    static_assert(std::is_same_v<std::decay_t<U>, i32>, "Must be called with i32");
-
-    if (full_ || space() < sizeof(little_i32)) {
-      full_ = true;
-      return false;
-    }
-    *pack_record<little_i32>() = val;
-    return true;
+    return this->pack_int_impl<U, u32, little_u32>(val);
   }
 
   template <typename U>
   [[nodiscard]] bool pack_u16(U val)
   {
-    static_assert(std::is_same_v<std::decay_t<U>, u16>, "Must be called with u16");
+    return this->pack_int_impl<U, u16, little_u16>(val);
+  }
 
-    if (full_ || space() < sizeof(little_u16)) {
-      full_ = true;
-      return false;
-    }
-    *pack_record<little_u16>() = val;
-    return true;
+  template <typename U>
+  [[nodiscard]] bool pack_i64(U val)
+  {
+    return this->pack_int_impl<U, i64, little_i64>(val);
+  }
+
+  template <typename U>
+  [[nodiscard]] bool pack_i32(U val)
+  {
+    return this->pack_int_impl<U, i32, little_i32>(val);
+  }
+
+  template <typename U>
+  [[nodiscard]] bool pack_i16(U val)
+  {
+    return this->pack_int_impl<U, i16, little_i16>(val);
   }
 
   template <typename T>
   Optional<ArrayPacker<T>> pack_array()
   {
     PackedArray<T>* array = this->pack_record<PackedArray<T>>();
-    if (!array || full_) {
+    if (!array || this->full()) {
       return None;
     }
     array->initialize(0u);
@@ -176,7 +310,7 @@ class DataPacker
             typename R = std::conditional_t<std::is_same_v<T, void>, SeqItem<Seq>, T>>
   Optional<ArrayPacker<R>> pack_seq(Seq&& seq)
   {
-    if (full_ || this->space() < packed_array_size<R>(batt::make_copy(seq) | seq::count())) {
+    if (this->full() || this->space() < packed_array_size<R>(batt::make_copy(seq) | seq::count())) {
       LLFS_DLOG_INFO() << "pack_seq - space check failed";
       return None;
     }
@@ -198,14 +332,14 @@ class DataPacker
     auto last = std::end(r);
     auto item_count = std::distance(first, last);
 
-    if (full_ || this->space() < packed_array_size<T>(item_count)) {
+    if (this->full() || this->space() < packed_array_size<T>(item_count)) {
       return None;
     }
     PackedArray<T>* array = this->pack_record<PackedArray<T>>();
     BATT_CHECK_NOT_NULLPTR(array);
     array->initialize(item_count);
     std::copy(first, last, array->begin());
-    avail_.advance_begin(sizeof(T) * item_count);
+    BATT_CHECK(this->arena_.allocate_front(sizeof(T) * item_count));
 
     return ArrayPacker<T>{array, this};
   }
@@ -227,12 +361,14 @@ class DataPacker
     return instance;
   }
 
-  u8* pack_varint(u64 n);
-
-  Interval<std::ptrdiff_t> unused() const
+  u8* pack_varint(u64 n)
   {
-    return Interval<std::ptrdiff_t>{this->avail_.begin() - this->buffer_begin(),
-                                    this->avail_.end() - this->buffer_begin()};
+    return this->arena_.pack_varint(n);
+  }
+
+  Interval<isize> unused() const
+  {
+    return this->arena_.unused();
   }
 
   usize buffer_size() const
@@ -242,7 +378,7 @@ class DataPacker
 
   MutableBuffer avail_buffer() const
   {
-    return MutableBuffer{this->avail_.begin(), this->avail_.size()};
+    return MutableBuffer{this->arena_.avail_.begin(), this->arena_.avail_.size()};
   }
 
   u8* buffer_begin() const
@@ -259,7 +395,9 @@ class DataPacker
 
   usize estimate_packed_data_size(const PackedBytes& src) const;
 
-  const void* nocheck_pack_data_to(PackedBytes* rec, const void* data, usize size);
+  template <typename Policy>
+  const void* nocheck_pack_data_to(PackedBytes* rec, const void* data, usize size, Arena* arena,
+                                   batt::StaticType<Policy> = {});
 
   // Copy data into newly "allocated" space at the end of the avail range.
   //
@@ -267,13 +405,18 @@ class DataPacker
   //  - size >= 4
   //  - size <= this->space()
   //
-  const void* nocheck_pack_data_large(PackedBytes* dst, const void* data, usize size);
+  template <typename Policy>
+  const void* nocheck_pack_data_large(PackedBytes* dst, const void* data, usize size, Arena* arena,
+                                      batt::StaticType<Policy> = {});
 
-  const PackedBytes* nocheck_pack_data_copy_to(PackedBytes* dst, const PackedBytes& src);
+  template <typename Policy>
+  const PackedBytes* nocheck_pack_data_copy_to(PackedBytes* dst, const PackedBytes& src,
+                                               Arena* arena, batt::StaticType<Policy> = {});
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   MutableBuffer buffer_;
-  boost::iterator_range<u8*> avail_{this->buffer_begin(), this->buffer_end()};
-  bool full_ = false;
+  Arena arena_{this, boost::iterator_range<u8*>{this->buffer_begin(), this->buffer_end()}};
 };
 
 }  // namespace llfs

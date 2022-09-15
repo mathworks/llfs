@@ -389,7 +389,7 @@ const PackedBytes* DataPacker::nocheck_pack_data_copy_to(PackedBytes* dst, const
     : capacity_{avail.size()}
     , packer_{packer}
     , avail_{avail}
-    , full_{this->capacity_ == 0}
+    , full_{false}
 {
 }
 

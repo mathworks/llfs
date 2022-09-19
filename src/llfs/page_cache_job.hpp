@@ -81,6 +81,8 @@ class PageCacheJob : public PageLoader
     return counter_;
   }
 
+  static usize n_jobs_count();
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   const u64 job_id = counter().fetch_add(1);
@@ -163,6 +165,10 @@ class PageCacheJob : public PageLoader
   // Unpin a page from the job, possibly allowing it to be evicted from cache.
   //
   void unpin(PageId page_id);
+
+  // Unpin all pages pinned to this job.
+  //
+  void unpin_all();
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   // PageLoader interface

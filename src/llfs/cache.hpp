@@ -183,6 +183,10 @@ class Cache : public boost::intrusive_ref_counter<Cache<K, V>>
     Slot* lru_slot = this->evict_lru();
     if (!lru_slot) {
       this->metrics_.full_count.fetch_add(1);
+
+      // TODO [tastolfi 2022-09-19] Add a batt::WaitForResource parameter to this function so that
+      // instead of returning this status, we wait until there is a cache slot available.
+      //
       return batt::Status{StatusCode::kCacheSlotsFull};
     } else {
       this->metrics_.evict_count.fetch_add(1);
@@ -409,7 +413,7 @@ class CacheSlot
   //
   bool is_valid() const noexcept
   {
-    return this->is_pinned(this->state_.load(std::memory_order_acquire));
+    return this->is_valid(this->state_.load(std::memory_order_acquire));
   }
 
   // Returns true iff the slot is in a pinned state.

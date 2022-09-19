@@ -81,6 +81,8 @@ bool initialize_status_codes()
       CODE_WITH_MSG_(StatusCode::kFilesystemPageReadFailed,
                      "I/O error reading page in filesystem"),               // 32
       CODE_WITH_MSG_(StatusCode::kFilesystemRemoveFailed, "remove error"),  // 33
+      CODE_WITH_MSG_(StatusCode::kPinFailedPageEvicted,
+                     "PageIdSlot::try_pin failed; the requested page was evicted"),  // 34
   });
   return initialized;
 }

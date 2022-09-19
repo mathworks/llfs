@@ -32,12 +32,22 @@ class PageView
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  using UserDataDestructorFn = void(void*) noexcept;
+
   template <typename T>
   class UserDataKey
   {
    public:
     static_assert(std::is_same_v<std::decay_t<T>, T>,
                   "UserDataKey may only be used with non-ref, non-qualified types");
+
+    static void destroy_user_data(void* ptr) noexcept
+    {
+      T* typed_ptr = (T*)ptr;
+      typed_ptr->~T();
+    }
+
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
 
     explicit UserDataKey() noexcept : id_{PageView::next_unique_user_data_key_id()}
     {
@@ -54,9 +64,70 @@ class PageView
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  struct UserData {
+  struct __attribute__((packed)) __attribute__((aligned(64))) UserData {
+    static constexpr usize kSize = batt::kCpuCacheLineSize;
+    static constexpr usize kAlignment = kSize;
+    static constexpr usize kOverhead = sizeof(usize) + sizeof(UserDataDestructorFn*);
+    static constexpr usize kStorageSize = kSize - kOverhead;
+
+    UserData() = default;
+    UserData(const UserData&) = delete;
+    UserData& operator=(const UserData&) = delete;
+
+    std::aligned_storage_t<kStorageSize> storage;
     usize key_id{PageView::null_user_data_key_id()};
-    std::any value;
+    UserDataDestructorFn* destructor_fn = nullptr;
+
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+    // TODO [tastolfi 2022-09-17]
+    //
+    // New Design:
+    //
+    // - Make UserData cpu cache line aligned, equal in size to a cache line
+    // - Add C fn ptr for dtor of storage - make it a template instantiation
+    // - value is aligned_storage_t taking up the remainder of space
+    // - (in downstream code) call set_user_data when the PageView is constructed
+    //
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+    bool empty() const noexcept
+    {
+      return this->destructor_fn == nullptr;
+    }
+
+    template <typename T, typename... Args>
+    T& emplace(const UserDataKey<T>& key, Args&&... args) noexcept
+    {
+      BATT_STATIC_ASSERT_LE(sizeof(T), UserData::kStorageSize);
+
+      if (this->destructor_fn) {
+        this->destructor_fn(&this->storage);
+      }
+      this->destructor_fn = &UserDataKey<T>::destroy_user_data;
+      T* obj = new (&this->storage) T(BATT_FORWARD(args)...);
+      this->key_id = key.id();
+      return *obj;
+    }
+
+    template <typename T>
+    T& get_or_panic(const UserDataKey<T>& key) const noexcept
+    {
+      if (BATT_HINT_FALSE(key.id() != this->key_id)) {
+        BATT_PANIC() << "Wrong key id!";
+      }
+
+      return *((T*)&this->storage);
+    }
+
+    template <typename T>
+    T* get(const UserDataKey<T>& key) const noexcept
+    {
+      if (BATT_HINT_FALSE(key.id() != this->key_id)) {
+        return nullptr;
+      }
+
+      return (T*)&this->storage;
+    }
   };
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -65,6 +136,7 @@ class PageView
       : data_{std::move(data)}
       , user_data_{}
   {
+    BATT_STATIC_ASSERT_EQ(sizeof(UserData), UserData::kSize);
   }
 
   PageView(const PageView&) = delete;
@@ -120,8 +192,9 @@ class PageView
     Optional<T> value;
     {
       auto locked = this->user_data_.lock();
-      if (locked->key_id == key.id()) {
-        value.emplace(std::any_cast<T>(locked->value));
+      T* ptr = locked->get(key);
+      if (ptr != nullptr) {
+        value.emplace(*ptr);
       }
     }
     return value;
@@ -134,10 +207,28 @@ class PageView
   T set_user_data(const UserDataKey<T>& key, MakeValueFn&& make_value) const
   {
     auto locked = this->user_data_.lock();
-    if (locked->key_id != key.id()) {
-      locked->value = BATT_FORWARD(make_value)();
+    T* ptr = locked->get(key);
+    if (BATT_HINT_TRUE(ptr)) {
+      return *ptr;
     }
-    return std::any_cast<T>(locked->value);
+    return locked->emplace(key, BATT_FORWARD(make_value)());
+  }
+
+  // Like `set_user_data`, but never overwrites existing data stored under a different key (instead
+  // returns None in this case).
+  //
+  template <typename T, typename MakeValueFn>
+  Optional<T> init_user_data(const UserDataKey<T>& key, MakeValueFn&& make_value) const
+  {
+    auto locked = this->user_data_.lock();
+    T* ptr = locked->get(key);
+    if (BATT_HINT_TRUE(ptr)) {
+      return *ptr;
+    }
+    if (BATT_HINT_FALSE(!locked->empty())) {
+      return None;
+    }
+    return locked->emplace(key, BATT_FORWARD(make_value)());
   }
 
  private:

@@ -11,21 +11,60 @@
 
 #include <llfs/trace_refs_recursive.hpp>
 
+#include <batteries/async/backoff.hpp>
+
+#include <atomic>
+
 namespace llfs {
+
+namespace {
+
+// TODO [tastolfi 2022-09-19] turn these into proper metric counters.
+//
+std::atomic<usize> unpinned_page_count{0ull};
+std::atomic<usize> job_create_count{0ull};
+std::atomic<usize> job_destroy_count{0ull};
+
+}  // namespace
+
+usize get_active_page_cache_job_count()
+{
+  return job_create_count.load() - job_destroy_count.load();
+}
+
+usize get_created_page_cache_job_count()
+{
+  return job_create_count.load();
+}
+
+usize get_page_cache_job_unpin_count()
+{
+  return unpinned_page_count.load();
+}
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 // class PageCacheJob
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+/*static*/ usize PageCacheJob::n_jobs_count()
+{
+  return get_active_page_cache_job_count();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 PageCacheJob::PageCacheJob(PageCache* cache) noexcept : cache_{cache}
 {
+  job_create_count.fetch_add(1);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 PageCacheJob::~PageCacheJob()
 {
+  job_destroy_count.fetch_add(1);
+
   BATT_CHECK_EQ(0, binder_count);
 }
 
@@ -113,8 +152,26 @@ StatusOr<PinnedPage> PageCacheJob::pin_new(std::shared_ptr<PageView>&& page_view
   // Insert the page into the main cache.  Since page_ids are universally unique, there is no
   // problem doing this even before the page has been durably written to storage.
   //
-  StatusOr<PinnedPage> pinned_page = this->cache_->put_view(
-      std::move(page_view), callers | Caller::PageCacheJob_pin_new, this->job_id);
+  // TODO [tastolfi 2022-09-19] once WaitForResource param is added to Cache<T>::find_or_insert,
+  // remove this backoff polling loop.
+  //
+  StatusOr<PinnedPage> pinned_page = batt::with_retry_policy(
+      batt::ExponentialBackoff{
+          .max_attempts = 1000,
+          .initial_delay_usec = 100,
+          .backoff_factor = 2,
+          .backoff_divisor = 1,
+          .max_delay_usec = 100 * 1000,
+      },
+      "PageCacheJob::pin_new() - Cache::put_view",
+      [&] {
+        return this->cache_->put_view(batt::make_copy(page_view),
+                                      callers | Caller::PageCacheJob_pin_new, this->job_id);
+      },
+      batt::TaskSleepImpl{},
+      [](const batt::Status& status) {
+        return batt::status_is_retryable(status) || (status == StatusCode::kCacheSlotsFull);
+      });
 
   BATT_REQUIRE_OK(pinned_page) << batt::LogLevel::kInfo << "Failed to pin page " << id
                                << ", reason: " << pinned_page.status();
@@ -145,6 +202,22 @@ void PageCacheJob::unpin(PageId id)
 {
   LLFS_VLOG(1) << "PageCacheJob::unpin(" << id << ")";
   this->pinned_.erase(id);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void PageCacheJob::unpin_all()
+{
+  batt::SmallVec<PageId, 64> to_unpin;
+  for (auto& [page_id, pinned_page] : this->pinned_) {
+    if (!this->is_page_new(page_id)) {
+      to_unpin.emplace_back(page_id);
+    }
+  }
+  unpinned_page_count.fetch_add(to_unpin.size());
+  for (const PageId& page_id : to_unpin) {
+    this->unpin(page_id);
+  }
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

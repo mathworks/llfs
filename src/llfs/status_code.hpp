@@ -49,6 +49,7 @@ enum struct StatusCode {
   kFilesystemPageOpenFailed = 31,
   kFilesystemPageReadFailed = 32,
   kFilesystemRemoveFailed = 33,
+  kPinFailedPageEvicted = 34,
 };
 
 bool initialize_status_codes();

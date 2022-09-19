@@ -195,11 +195,25 @@ class PageAllocator
 
   bool await_ref_count(PageId page_id, i32 ref_count)
   {
+    for (;;) {
+      PageRefCount prc = this->state_->get_ref_count_obj(page_id);
+      if (prc.page_id != page_id.int_value()) {
+        return false;
+      }
+      if (prc.ref_count == ref_count) {
+        break;
+      }
+      batt::Task::sleep(boost::posix_time::milliseconds(1));
+    }
+    return true;
+
+#if 0  // TODO [tastolfi 2022-09-16] find a way to make this work...
     return batt::Runtime::instance().await_condition(
         [this, ref_count](PageId page_id) -> bool {
           return this->get_ref_count(page_id).first == ref_count;
         },
         page_id);
+#endif
   }
 
   // Create an attachment used to detect duplicate change requests.

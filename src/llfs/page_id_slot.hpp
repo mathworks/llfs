@@ -99,7 +99,9 @@ struct PageIdSlot {
   batt::StatusOr<PinnedPage> load_through(PageLoader& loader,
                                           const Optional<PageLayoutId>& required_layout,
                                           PinPageToJob pin_page_to_job,
-                                          OkIfNotFound ok_if_not_found) const;
+                                          OkIfNotFound ok_if_not_found) const noexcept;
+
+  batt::StatusOr<PinnedPage> try_pin() const noexcept;
 };
 
 }  // namespace llfs

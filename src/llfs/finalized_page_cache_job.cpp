@@ -173,6 +173,10 @@ Status FinalizedPageCacheJob::await_durable() const
   StatusOr<usize> prune_status = job->prune(callers | Caller::PageCacheJob_finalize);
   BATT_REQUIRE_OK(prune_status);
 
+  // This job will no longer be changing, so unpin pages to save memory.
+  //
+  job->unpin_all();
+
   return CommittablePageCacheJob{std::move(job)};
 }
 

@@ -19,8 +19,10 @@
 #include <llfs/seq.hpp>
 
 #include <batteries/async/mutex.hpp>
+#include <batteries/status.hpp>
 
 #include <memory>
+#include <type_traits>
 
 namespace llfs {
 
@@ -217,7 +219,9 @@ class PageView
   // Like `set_user_data`, but never overwrites existing data stored under a different key (instead
   // returns None in this case).
   //
-  template <typename T, typename MakeValueFn>
+  template <
+      typename T, typename MakeValueFn,
+      typename = std::enable_if_t<std::is_constructible_v<T, std::invoke_result_t<MakeValueFn>>>>
   Optional<T> init_user_data(const UserDataKey<T>& key, MakeValueFn&& make_value) const
   {
     auto locked = this->user_data_.lock();
@@ -229,6 +233,26 @@ class PageView
       return None;
     }
     return locked->emplace(key, BATT_FORWARD(make_value)());
+  }
+
+  template <
+      typename T, typename MakeValueFn,
+      typename = std::enable_if_t<!std::is_constructible_v<T, std::invoke_result_t<MakeValueFn>> &&
+                                  batt::IsStatusOr<std::invoke_result_t<MakeValueFn>>{}>,
+      typename = void>
+  StatusOr<T> init_user_data(const UserDataKey<T>& key, MakeValueFn&& make_value) const
+  {
+    auto locked = this->user_data_.lock();
+    T* ptr = locked->get(key);
+    if (BATT_HINT_TRUE(ptr)) {
+      return *ptr;
+    }
+    if (BATT_HINT_FALSE(!locked->empty())) {
+      return make_status(StatusCode::kPageViewUserDataAlreadyInitialized);
+    }
+    auto status_or_value = BATT_FORWARD(make_value)();
+    BATT_REQUIRE_OK(status_or_value);
+    return locked->emplace(key, std::move(*status_or_value));
   }
 
  private:

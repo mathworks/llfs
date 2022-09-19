@@ -161,7 +161,7 @@ StatusOr<PinnedPage> PageCacheJob::pin_new(std::shared_ptr<PageView>&& page_view
           .initial_delay_usec = 100,
           .backoff_factor = 2,
           .backoff_divisor = 1,
-          .max_delay_usec = 100 * 1000,
+          .max_delay_usec = 10 * 1000,
       },
       "PageCacheJob::pin_new() - Cache::put_view",
       [&] {

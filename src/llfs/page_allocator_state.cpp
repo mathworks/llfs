@@ -92,7 +92,8 @@ StatusOr<slot_offset_type> PageAllocatorState::write_checkpoint_slice(
                                           });
     }
 
-    if (!slot_range.ok() && slot_range.status() == StatusCode::kSlotGrantTooSmall) {
+    if (!slot_range.ok() &&
+        slot_range.status() == ::llfs::make_status(StatusCode::kSlotGrantTooSmall)) {
       break;
     }
     BATT_REQUIRE_OK(slot_range);
@@ -231,7 +232,7 @@ Status PageAllocatorState::recover_page(PageId page_id)
   PageAllocatorRefCount& ref_count_obj = this->page_ref_counts_[physical_page];
 
   if (ref_count_obj.get_count() != 0 || !ref_count_obj.PageAllocatorFreePoolHook::is_linked()) {
-    return StatusCode::kRecoverFailedPageReallocated;
+    return ::llfs::make_status(StatusCode::kRecoverFailedPageReallocated);
   }
 
   this->free_pool_.erase(this->free_pool_.iterator_to(ref_count_obj));

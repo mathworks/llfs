@@ -15,22 +15,6 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*static*/ usize PageView::null_user_data_key_id()
-{
-  static const PageView::UserDataKey<void> null_key_;
-  return null_key_.id();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-/*static*/ usize PageView::next_unique_user_data_key_id()
-{
-  static std::atomic<usize> id_{0};
-  return id_.fetch_add(1);
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
 Status PageView::validate(PageId expected_id)
 {
   // TODO [tastolfi 2021-09-07] return error status codes instead of panic

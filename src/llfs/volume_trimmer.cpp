@@ -103,7 +103,7 @@ Status VolumeTrimmer::run()
 
           if (!slot_less_than(slot_range.lower_bound, *trim_upper_bound) ||
               slot_less_than(*trim_upper_bound, slot_range.upper_bound)) {
-            return StatusCode::kBreakSlotReaderLoop;
+            return ::llfs::make_status(StatusCode::kBreakSlotReaderLoop);
           }
 
           LLFS_VLOG(2) << "visiting slot...";
@@ -112,7 +112,8 @@ Status VolumeTrimmer::run()
           return this->visit_slot(slot, payload);
         });
 
-    if (!read_status.ok() && read_status.status() != StatusCode::kBreakSlotReaderLoop) {
+    if (!read_status.ok() &&
+        read_status.status() != ::llfs::make_status(StatusCode::kBreakSlotReaderLoop)) {
       BATT_REQUIRE_OK(read_status);
     }
 
@@ -257,7 +258,7 @@ Status VolumeTrimmer::visit_slot(const SlotParse& slot, const PackedCommitJob& c
 
   auto iter = this->roots_per_pending_job_.find(commit.prepare_slot);
   if (iter == this->roots_per_pending_job_.end()) {
-    BATT_UNTESTED_LINE();
+    // BATT_UNTESTED_LINE();
     LLFS_LOG_WARNING() << "commit slot found for missing prepare: "
                        << BATT_INSPECT(commit.prepare_slot);
   } else {
@@ -276,7 +277,7 @@ Status VolumeTrimmer::visit_slot(const SlotParse& slot, const PackedCommitJob& c
 //
 Status VolumeTrimmer::visit_slot(const SlotParse& /*slot*/, const PackedRollbackJob& rollback)
 {
-  BATT_UNTESTED_LINE();
+  // BATT_UNTESTED_LINE();
   this->roots_per_pending_job_.erase(rollback.prepare_slot);
   return OkStatus();
 }

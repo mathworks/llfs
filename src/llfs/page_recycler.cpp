@@ -603,7 +603,7 @@ Status PageRecycler::commit_batch(const Batch& batch)
   Status commit_status = with_retry_policy(
       batt::ExponentialBackoff::with_default_params(), "recycler_commit_job", [&]() -> Status {
         if (this->stop_requested_) {
-          return Status{StatusCode::kRecyclerStopped};
+          return ::llfs::make_status(StatusCode::kRecyclerStopped);
         }
         const usize page_count = batch.to_recycle.size();
         Status delete_result =
@@ -621,7 +621,7 @@ Status PageRecycler::commit_batch(const Batch& batch)
 
   if (this->stop_requested_) {
     LLFS_VLOG(1) << "[PageRecycler::commit_batch] stop requested; returning ";
-    return Status{StatusCode::kRecyclerStopped};
+    return ::llfs::make_status(StatusCode::kRecyclerStopped);
   }
 
   LLFS_VLOG(1) << "[PageRecycler::commit_batch] delete_pages OK; "
@@ -690,11 +690,11 @@ Status PageRecycler::trim_log()
 
     if (!info_slot_grant.ok()) {
       BATT_CHECK(this->stop_requested_);
-      return Status{StatusCode::kRecyclerStopped};
+      return ::llfs::make_status(StatusCode::kRecyclerStopped);
     }
 
     if (this->stop_requested_) {
-      return Status{StatusCode::kRecyclerStopped};
+      return ::llfs::make_status(StatusCode::kRecyclerStopped);
     }
 
     BATT_ASSIGN_OK_RESULT(

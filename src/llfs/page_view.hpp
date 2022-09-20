@@ -11,12 +11,14 @@
 #define LLFS_PAGE_VIEW_HPP
 
 #include <llfs/key.hpp>
+#include <llfs/optional.hpp>
 #include <llfs/page_buffer.hpp>
 #include <llfs/page_filter.hpp>
 #include <llfs/page_id.hpp>
 #include <llfs/page_layout.hpp>
 #include <llfs/page_loader.hpp>
 #include <llfs/seq.hpp>
+#include <llfs/user_data.hpp>
 
 #include <batteries/async/mutex.hpp>
 #include <batteries/status.hpp>
@@ -29,109 +31,6 @@ namespace llfs {
 class PageView
 {
  public:
-  static usize null_user_data_key_id();
-  static usize next_unique_user_data_key_id();
-
-  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-
-  using UserDataDestructorFn = void(void*) noexcept;
-
-  template <typename T>
-  class UserDataKey
-  {
-   public:
-    static_assert(std::is_same_v<std::decay_t<T>, T>,
-                  "UserDataKey may only be used with non-ref, non-qualified types");
-
-    static void destroy_user_data(void* ptr) noexcept
-    {
-      T* typed_ptr = (T*)ptr;
-      typed_ptr->~T();
-    }
-
-    //+++++++++++-+-+--+----- --- -- -  -  -   -
-
-    explicit UserDataKey() noexcept : id_{PageView::next_unique_user_data_key_id()}
-    {
-    }
-
-    usize id() const
-    {
-      return this->id_;
-    }
-
-   private:
-    usize id_;
-  };
-
-  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-
-  struct __attribute__((packed)) __attribute__((aligned(64))) UserData {
-    static constexpr usize kSize = batt::kCpuCacheLineSize;
-    static constexpr usize kAlignment = kSize;
-    static constexpr usize kOverhead = sizeof(usize) + sizeof(UserDataDestructorFn*);
-    static constexpr usize kStorageSize = kSize - kOverhead;
-
-    UserData() = default;
-    UserData(const UserData&) = delete;
-    UserData& operator=(const UserData&) = delete;
-
-    std::aligned_storage_t<kStorageSize> storage;
-    usize key_id{PageView::null_user_data_key_id()};
-    UserDataDestructorFn* destructor_fn = nullptr;
-
-    //+++++++++++-+-+--+----- --- -- -  -  -   -
-    // TODO [tastolfi 2022-09-17]
-    //
-    // New Design:
-    //
-    // - Make UserData cpu cache line aligned, equal in size to a cache line
-    // - Add C fn ptr for dtor of storage - make it a template instantiation
-    // - value is aligned_storage_t taking up the remainder of space
-    // - (in downstream code) call set_user_data when the PageView is constructed
-    //
-    //+++++++++++-+-+--+----- --- -- -  -  -   -
-
-    bool empty() const noexcept
-    {
-      return this->destructor_fn == nullptr;
-    }
-
-    template <typename T, typename... Args>
-    T& emplace(const UserDataKey<T>& key, Args&&... args) noexcept
-    {
-      BATT_STATIC_ASSERT_LE(sizeof(T), UserData::kStorageSize);
-
-      if (this->destructor_fn) {
-        this->destructor_fn(&this->storage);
-      }
-      this->destructor_fn = &UserDataKey<T>::destroy_user_data;
-      T* obj = new (&this->storage) T(BATT_FORWARD(args)...);
-      this->key_id = key.id();
-      return *obj;
-    }
-
-    template <typename T>
-    T& get_or_panic(const UserDataKey<T>& key) const noexcept
-    {
-      if (BATT_HINT_FALSE(key.id() != this->key_id)) {
-        BATT_PANIC() << "Wrong key id!";
-      }
-
-      return *((T*)&this->storage);
-    }
-
-    template <typename T>
-    T* get(const UserDataKey<T>& key) const noexcept
-    {
-      if (BATT_HINT_FALSE(key.id() != this->key_id)) {
-        return nullptr;
-      }
-
-      return (T*)&this->storage;
-    }
-  };
-
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
   explicit PageView(std::shared_ptr<const PageBuffer>&& data) noexcept
@@ -160,8 +59,8 @@ class PageView
   //
   Status validate(PageId expected_id);
 
-  // Get the tag for this page view.
-  //
+  /*! \brief Get the tag for this page view.
+   */
   virtual PageLayoutId get_page_layout_id() const = 0;
 
   // Returns a sequence of the ids of all pages directly referenced by this one.

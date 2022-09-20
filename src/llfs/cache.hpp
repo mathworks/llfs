@@ -187,7 +187,7 @@ class Cache : public boost::intrusive_ref_counter<Cache<K, V>>
       // TODO [tastolfi 2022-09-19] Add a batt::WaitForResource parameter to this function so that
       // instead of returning this status, we wait until there is a cache slot available.
       //
-      return batt::Status{StatusCode::kCacheSlotsFull};
+      return ::llfs::make_status(StatusCode::kCacheSlotsFull);
     } else {
       this->metrics_.evict_count.fetch_add(1);
     }

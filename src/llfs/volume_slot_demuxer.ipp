@@ -82,7 +82,7 @@ StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_prepare_job(
                                });
 
   if (!inserted) {
-    return {StatusCode::kDuplicatePrepareJob};
+    return ::llfs::make_status(StatusCode::kDuplicatePrepareJob);
   }
 
   return this->base_.on_prepare_job(slot, prepare);

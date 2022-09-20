@@ -170,7 +170,8 @@ StatusOr<PinnedPage> PageCacheJob::pin_new(std::shared_ptr<PageView>&& page_view
       },
       batt::TaskSleepImpl{},
       [](const batt::Status& status) {
-        return batt::status_is_retryable(status) || (status == StatusCode::kCacheSlotsFull);
+        return batt::status_is_retryable(status) ||
+               (status == ::llfs::make_status(StatusCode::kCacheSlotsFull));
       });
 
   BATT_REQUIRE_OK(pinned_page) << batt::LogLevel::kInfo << "Failed to pin page " << id
@@ -339,7 +340,7 @@ Status PageCacheJob::recover_page(PageId page_id, const boost::uuids::uuid& call
   const PackedPageHeader& page_header = get_page_header(*pinned_page->get_page_buffer());
   if (page_header.user_slot.user_id != caller_uuid ||
       page_header.user_slot.slot_offset != caller_slot) {
-    return StatusCode::kRecoverFailedPageReallocated;
+    return ::llfs::make_status(StatusCode::kRecoverFailedPageReallocated);
   }
 
   // TODO [tastolfi 2022-01-03] FIX nullptr below!!!

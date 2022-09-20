@@ -76,7 +76,7 @@ StatusOr<SlotParse> SlotReader::parse_next(batt::WaitForResource wait_for_data)
     if (min_bytes_needed > 0) {
       if (wait_for_data != batt::WaitForResource::kTrue) {
         LLFS_VLOG(1) << "out of data; wait_for_data == false, returning";
-        return {StatusCode::kSlotReaderOutOfData};
+        return ::llfs::make_status(StatusCode::kSlotReaderOutOfData);
       }
       LLFS_VLOG(1) << "waiting for " << min_bytes_needed << " bytes to be available";
       auto status = this->log_reader_.await(BytesAvailable{

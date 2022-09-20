@@ -67,7 +67,7 @@ StatusOr<std::unique_ptr<PageAllocator>> PageAllocator::recover(
   auto process_recovered_event = [&recovered_state, &metrics](const SlotParse& slot,
                                                               const auto& event_payload) -> Status {
     if (!PageAllocatorState::is_valid(recovered_state->propose(event_payload))) {
-      return StatusCode::kInvalidPageAllocatorProposal;
+      return ::llfs::make_status(::llfs::StatusCode::kInvalidPageAllocatorProposal);
     }
 
     recovered_state->learn(slot.offset.lower_bound, event_payload, metrics);

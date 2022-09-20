@@ -448,7 +448,7 @@ StatusOr<PinnedPage> PageCache::get(PageId page_id, const Optional<PageLayoutId>
   ++this->metrics_.get_count;
 
   if (!page_id) {
-    return Status{StatusCode::kPageIdInvalid};
+    return ::llfs::make_status(StatusCode::kPageIdInvalid);
   }
 
   BATT_ASSIGN_OK_RESULT(CacheImpl::PinnedSlot cache_slot,  //

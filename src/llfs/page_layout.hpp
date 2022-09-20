@@ -18,7 +18,9 @@
 #include <llfs/buffer.hpp>
 #include <llfs/data_layout.hpp>
 #include <llfs/packed_array.hpp>
+#include <llfs/packed_page_header.hpp>
 #include <llfs/packed_page_id.hpp>
+#include <llfs/packed_page_user_slot.hpp>
 #include <llfs/page_id.hpp>
 #include <llfs/page_layout_id.hpp>
 #include <llfs/page_ref_count.hpp>
@@ -26,8 +28,6 @@
 
 #include <batteries/static_assert.hpp>
 #include <batteries/type_traits.hpp>
-
-#include <boost/uuid/uuid.hpp>
 
 #include <cstddef>
 #include <string_view>
@@ -38,67 +38,6 @@ namespace llfs {
 // will never need more bits.
 //
 using slot_offset_type = u64;
-
-using PackedSlotOffset = little_u64;
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-// Represents a user-specified logical timestamp for a page.  The `user` here isn't necessarily an
-// end-user or human, it could be another part of the system (e.g., a Tablet).
-//
-struct PackedPageUserSlot {
-  boost::uuids::uuid user_id;
-  PackedSlotOffset slot_offset;
-};
-
-BATT_STATIC_ASSERT_EQ(sizeof(PackedPageUserSlot), 24);
-
-std::ostream& operator<<(std::ostream& out, const PackedPageUserSlot& t);
-
-struct PackedPageHeader;
-
-std::ostream& operator<<(std::ostream& out, const PackedPageHeader& t);
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-struct PackedPageHeader {
-  static constexpr u64 kMagic = 0x35f2e78c6a06fc2bull;
-  static constexpr u32 kCrc32NotSet = 0xdeadcc32ul;
-
-  u32 unused_size() const noexcept
-  {
-    BATT_CHECK_LE(this->unused_begin, this->unused_end) << *this;
-    return this->unused_end - this->unused_begin;
-  }
-
-  usize used_size() const noexcept
-  {
-    return this->size - this->unused_size();
-  }
-
-  big_u64 magic;
-  PackedPageId page_id;
-  PageLayoutId layout_id;
-  little_u32 crc32;
-  little_u32 unused_begin;
-  little_u32 unused_end;
-  PackedPageUserSlot user_slot;
-  little_u32 size;
-};
-
-BATT_STATIC_ASSERT_EQ(sizeof(PackedPageHeader), 64);
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-
-inline const PackedPageHeader& get_page_header(const PageBuffer& page)
-{
-  return *reinterpret_cast<const PackedPageHeader*>(&page);
-}
-
-inline PackedPageHeader* mutable_page_header(PageBuffer* page)
-{
-  return reinterpret_cast<PackedPageHeader*>(page);
-}
 
 // Compute the crc64 for the given page.
 //

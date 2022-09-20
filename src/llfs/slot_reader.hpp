@@ -90,6 +90,8 @@ class SlotReader
   template <typename /*Status(const SlotParse&)*/ VisitorFn>
   StatusOr<usize> run(batt::WaitForResource wait_for_data, VisitorFn&& visitor)
   {
+    [[maybe_unused]] static const bool b = ::llfs::initialize_status_codes();
+
     BATT_DEBUG_INFO("SlotReader::run()");
 
     usize slot_count = 0;
@@ -180,7 +182,7 @@ class TypedSlotReader<PackedVariant<Ts...>> : public SlotReader
         });
 
     if (!ok) {
-      return {StatusCode::kBadPackedVariant};
+      return ::llfs::make_status(StatusCode::kBadPackedVariant);
     }
 
     return visitor_status;

@@ -353,6 +353,7 @@ Status CommittablePageCacheJob::write_new_pages(const JobCommitParams& params, u
   }
 
   const PageCacheJob* const job = this->job_.get();
+  BATT_CHECK_NOT_NULLPTR(job);
 
   u64 op_count = 0;
   u64 used_byte_count = 0;

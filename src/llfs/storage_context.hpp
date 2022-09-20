@@ -116,7 +116,7 @@ class StorageContext : public batt::RefCounted<StorageContext>
       return {batt::StatusCode::kNotFound};
     }
     if (PackedConfigTagFor<PackedConfigT>::value != info->p_config_slot->tag) {
-      return {::llfs::StatusCode::kStorageObjectTypeError};
+      return ::llfs::make_status(::llfs::StatusCode::kStorageObjectTypeError);
     }
     return recover_storage_object(batt::shared_ptr_from(this), info->storage_file->file_name(),
                                   FileOffsetPtr<const PackedConfigT&>{

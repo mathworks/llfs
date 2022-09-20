@@ -211,13 +211,13 @@ class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
     PackedVariant<Ts...>* variant_head =
         op->packer().pack_record(batt::StaticType<PackedVariant<Ts...>>{});
     if (!variant_head) {
-      return {StatusCode::kFailedToPackSlotVarHead};
+      return ::llfs::make_status(StatusCode::kFailedToPackSlotVarHead);
     }
 
     variant_head->init(batt::StaticType<PackedTypeFor<T>>{});
 
     if (!pack_object(BATT_FORWARD(payload), &(op->packer()))) {
-      return {StatusCode::kFailedToPackSlotVarTail};
+      return ::llfs::make_status(StatusCode::kFailedToPackSlotVarTail);
     }
 
     return op->commit();

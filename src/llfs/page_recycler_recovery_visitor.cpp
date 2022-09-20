@@ -73,7 +73,7 @@ StatusOr<Optional<PageRecycler::Batch>> PageRecyclerRecoveryVisitor::consume_lat
     auto iter = this->recovered_pages_.find(page_id);
     if (iter == this->recovered_pages_.end()) {
       LLFS_LOG_WARNING() << "kBatchContainsUnknownPageDuringRecovery: " << page_id;
-      return Status{StatusCode::kBatchContainsUnknownPageDuringRecovery};
+      return ::llfs::make_status(StatusCode::kBatchContainsUnknownPageDuringRecovery);
     }
 
     if (!depth) {
@@ -135,7 +135,7 @@ Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
       LLFS_LOG_WARNING() << "kTooManyPendingBatchesDuringRecovery"
                          << BATT_INSPECT(prepare.batch_slot)
                          << BATT_INSPECT(*this->latest_batch_slot_);
-      return Status{StatusCode::kTooManyPendingBatchesDuringRecovery};
+      return ::llfs::make_status(StatusCode::kTooManyPendingBatchesDuringRecovery);
     }
   } else {
     BATT_CHECK(this->latest_batch_pages_.empty());
@@ -160,7 +160,7 @@ Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
   if (this->latest_batch_slot_ && *this->latest_batch_slot_ != commit.batch_slot) {
     LLFS_LOG_WARNING() << "kInvalidBatchCommitDuringRecovery: "
                        << BATT_INSPECT(this->latest_batch_slot_) << BATT_INSPECT(commit.batch_slot);
-    return Status{StatusCode::kInvalidBatchCommitDuringRecovery};
+    return llfs::make_status(StatusCode::kInvalidBatchCommitDuringRecovery);
   }
   this->latest_batch_slot_ = None;
   this->latest_batch_pages_.clear();

@@ -42,7 +42,7 @@ StatusOr<std::unique_ptr<FileLogDevice>> FileLogDriver::initialize(
   // Confirm the destructive operation.
   //
   if (confirm != ConfirmThisWillEraseAllMyData::kYes) {
-    return Status{StatusCode::kFileLogEraseNotConfirmed};
+    return ::llfs::make_status(StatusCode::kFileLogEraseNotConfirmed);
   }
 
   std::error_code ec;
@@ -63,7 +63,7 @@ StatusOr<std::unique_ptr<FileLogDevice>> FileLogDriver::initialize(
     std::ofstream ofs(location.config_file_path().string().c_str());
     ofs << config.max_size << " " << config.min_segment_split_size;
     if (!ofs.good()) {
-      return Status{::llfs::StatusCode::kFileLogDeviceConfigWriteFailed};
+      return ::llfs::make_status(::llfs::StatusCode::kFileLogDeviceConfigWriteFailed);
     }
   }
 
@@ -91,7 +91,7 @@ StatusOr<std::unique_ptr<FileLogDevice>> FileLogDriver::recover(const Location& 
     if (ifs.good()) {
       ifs >> config.max_size >> config.min_segment_split_size;
       if (!ifs.good() && !ifs.eof()) {
-        return Status{::llfs::StatusCode::kFileLogDeviceConfigReadFailed};
+        return ::llfs::make_status(::llfs::StatusCode::kFileLogDeviceConfigReadFailed);
       }
     }
   }

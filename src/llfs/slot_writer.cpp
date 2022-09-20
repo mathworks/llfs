@@ -69,7 +69,7 @@ auto SlotWriter::prepare(batt::Grant& caller_grant, usize slot_body_size,
 
   StatusOr<batt::Grant> slot_grant = caller_grant.spend(slot_size);
   if (slot_grant.status() == batt::StatusCode::kGrantUnavailable) {
-    return {StatusCode::kSlotGrantTooSmall};
+    return ::llfs::make_status(StatusCode::kSlotGrantTooSmall);
   }
   BATT_REQUIRE_OK(slot_grant);
 

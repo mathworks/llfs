@@ -224,13 +224,13 @@ class BasicRingBufferDevice<Impl>::WriterImpl : public LogDevice::Writer
     BATT_CHECK(!this->prepared_offset_);
 
     if (this->device_->closed_.load()) {
-      return Status{StatusCode::kPrepareFailedLogClosed};
+      return ::llfs::make_status(StatusCode::kPrepareFailedLogClosed);
     }
 
     const std::size_t space_required = byte_count + head_room;
 
     if (this->space() < space_required) {
-      return Status{StatusCode::kPrepareFailedTrimRequired};
+      return ::llfs::make_status(StatusCode::kPrepareFailedTrimRequired);
     }
 
     const slot_offset_type commit_pos = this->device_->driver_.get_commit_pos();
@@ -248,7 +248,7 @@ class BasicRingBufferDevice<Impl>::WriterImpl : public LogDevice::Writer
     });
 
     if (this->device_->closed_.load()) {
-      return Status{StatusCode::kCommitFailedLogClosed};
+      return ::llfs::make_status(StatusCode::kCommitFailedLogClosed);
     }
 
     BATT_CHECK(this->prepared_offset_);

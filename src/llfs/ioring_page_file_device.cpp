@@ -60,7 +60,21 @@ void IoRingPageFileDevice::write(std::shared_ptr<const PageBuffer>&& page_buffer
     handler(page_offset_in_file.status());
     return;
   }
-  this->write_some(*page_offset_in_file, std::move(page_buffer), /*n_written=*/0,
+
+  const PackedPageHeader& page_header = get_page_header(*page_buffer);
+  ConstBuffer remaining_data = [&] {
+    ConstBuffer buffer = page_buffer->const_buffer();
+    if (page_header.unused_end == page_header.size &&
+        page_header.unused_begin < page_header.unused_end) {
+      buffer = resize_buffer(buffer, batt::round_up_bits(9, page_header.unused_begin.value()));
+
+      BATT_CHECK_GE(page_header.unused_begin.value(), sizeof(PackedPageHeader));
+      BATT_CHECK_LE(buffer.size(), page_buffer->size());
+    }
+    return buffer;
+  }();
+
+  this->write_some(*page_offset_in_file, std::move(page_buffer), remaining_data,
                    std::move(handler));
 }
 
@@ -68,49 +82,44 @@ void IoRingPageFileDevice::write(std::shared_ptr<const PageBuffer>&& page_buffer
 //
 void IoRingPageFileDevice::write_some(i64 page_offset_in_file,
                                       std::shared_ptr<const PageBuffer>&& page_buffer,
-                                      usize n_written_so_far, WriteHandler&& handler)
+                                      ConstBuffer remaining_data, WriteHandler&& handler)
 {
   BATT_CHECK_GE(page_offset_in_file, 0);
 
-  // TODO [tastolfi 2021-06-11] only write "live" data.
+  // If we have reached the end of the data, invoke the handler.
   //
-  BATT_CHECK_LE(n_written_so_far, page_buffer->size());
-  ConstBuffer data = page_buffer->const_buffer() + n_written_so_far;
+  if (remaining_data.size() == 0u) {
+    handler(OkStatus());
+    return;
+  }
 
   this->file_.async_write_some(
-      page_offset_in_file + n_written_so_far, data,
+      page_offset_in_file, remaining_data,
       bind_handler(std::move(handler), [this, page_offset_in_file,
-                                        page_buffer = std::move(page_buffer), n_written_so_far](
+                                        page_buffer = std::move(page_buffer), remaining_data](
                                            WriteHandler&& handler, StatusOr<i32> result) mutable {
         if (!result.ok()) {
           if (batt::status_is_retryable(result.status())) {
-            this->write_some(page_offset_in_file, std::move(page_buffer), n_written_so_far,
+            this->write_some(page_offset_in_file, std::move(page_buffer), remaining_data,
                              std::move(handler));
             return;
           }
-
-          LLFS_LOG_WARNING() << "IoRingPageFileDevice::write failed; page_offset_in_file+"
-                             << n_written_so_far << "=" << page_offset_in_file + n_written_so_far
-                             << " n_written_so_far=" << n_written_so_far
-                             << " page_offset_in_file=" << page_offset_in_file;
+          LLFS_LOG_WARNING() << "IoRingPageFileDevice::write failed;"
+                             << BATT_INSPECT(page_offset_in_file);
 
           handler(result.status());
           return;
         }
-        BATT_CHECK_GT(*result, 0) << "We must either make progress or receive an error code!";
+        const i32 bytes_written = *result;
 
-        n_written_so_far += *result;
+        BATT_CHECK_GT(bytes_written, 0) << "We must either make progress or receive an error code!";
 
-        // If we have reached the end of the data, invoke the handler.
-        //
-        if (n_written_so_far == page_buffer->size()) {
-          handler(OkStatus());
-          return;
-        }
+        remaining_data += bytes_written;
+        page_offset_in_file += bytes_written;
 
         // The write was short; write again from the new stop point.
         //
-        this->write_some(page_offset_in_file, std::move(page_buffer), n_written_so_far,
+        this->write_some(page_offset_in_file, std::move(page_buffer), remaining_data,
                          std::move(handler));
       }));
 }
@@ -174,7 +183,7 @@ void IoRingPageFileDevice::read_some(PageId page_id, i64 page_offset_in_file,
           // Make sure the page generation numbers match.
           //
           if (page_buffer->page_id() != page_id) {
-            handler({::llfs::StatusCode::kPageGenerationNotFound});
+            handler(::llfs::make_status(::llfs::StatusCode::kPageGenerationNotFound));
             return;
           }
 

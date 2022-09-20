@@ -166,7 +166,8 @@ TEST_F(VolumeConfigTest, ConfigRestore)
                                                  root_log_uuid, this->get_volume_runtime_options());
 
       EXPECT_FALSE(expect_fail.ok());
-      EXPECT_EQ(expect_fail.status(), llfs::StatusCode::kStorageObjectTypeError);
+      EXPECT_EQ(expect_fail.status(),
+                ::llfs::make_status(llfs::StatusCode::kStorageObjectTypeError));
     }
 
     // Now restore the volume, write some events.

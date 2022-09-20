@@ -50,7 +50,7 @@ class IoRingPageFileDevice : public PageDevice
   StatusOr<i64> get_file_offset_of_page(PageId page_id) const;
 
   void write_some(i64 page_offset_in_file, std::shared_ptr<const PageBuffer>&& page_buffer,
-                  usize n_written_so_far, WriteHandler&& handler);
+                  ConstBuffer remaining_data, WriteHandler&& handler);
 
   void read_some(PageId page_id, i64 page_offset_in_file, std::shared_ptr<PageBuffer>&& page_buffer,
                  usize n_read_so_far, ReadHandler&& handler);

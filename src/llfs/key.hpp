@@ -10,7 +10,10 @@
 #ifndef LLFS_KEY_HPP
 #define LLFS_KEY_HPP
 
+#include <llfs/int_types.hpp>
 #include <llfs/interval.hpp>
+
+#include <boost/functional/hash.hpp>
 
 #include <string>
 #include <string_view>
@@ -18,8 +21,34 @@
 
 namespace llfs {
 
-using Key = std::string;
-using KeyView = std::string_view;
+// using Key = std::string;
+// using KeyView = std::string_view;
+
+class KeyView
+{
+ public:
+  std::string_view lower_bound() const noexcept
+  {
+    return this->lower_bound_;
+  }
+
+  std::string_view upper_bound() const noexcept
+  {
+    return this->upper_bound_;
+  }
+
+ private:
+  std::string_view lower_bound_;
+  std::string_view upper_bound_;
+};
+
+inline u64 hash_value(const KeyView& key)
+{
+  u64 v = 0;
+  boost::hash_combine(v, key.lower_bound());
+  boost::hash_combine(v, key.upper_bound());
+  return v;
+}
 
 inline const KeyView& get_key(const KeyView& key)
 {

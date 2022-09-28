@@ -30,7 +30,7 @@ class LlfsConan(ConanFile):
         "openssl/3.0.3",
         "glog/0.6.0",
         "libunwind/1.5.0",
-        "batteries/0.9.4@tonyastolfi+batteries/stable",
+        "batteries/0.9.5-devel", #@tonyastolfi+batteries/stable",
         "liburing/2.1",
         "cli11/1.9.1",
     ]

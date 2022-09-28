@@ -44,7 +44,7 @@ inline seq::LoopControl hash_for_bloom(const T& item, u64 count, Fn&& fn)
       0x7c3a2b8a1c43942cull, 0x8cb3fb6783724d25ull, 0xe3619c66bf3aa139ull, 0x3fdf358be099c7d9ull,
       0x0c38ccabc94a487full, 0x43e19e80ee4fe6edull, 0x22699c9fc26f20eeull, 0xa559cbafff2cea37ull};
 
-  const u64 item_hash = boost::hash_value(item);
+  const u64 item_hash = boost::hash<T>{}(item);
   u64 seed = item_hash;
   for (u64 i = 0; i < count; ++i) {
     boost::hash_combine(seed, kSeeds[i % 32] + i / 32);

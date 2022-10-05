@@ -91,7 +91,7 @@ class BasicIoRingLogInitializer
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   explicit BasicIoRingLogInitializer(usize n_tasks, typename IoRingImpl::File& file,
-                                     const IoRingLogConfig& config) noexcept;
+                                     const IoRingLogConfig& config, u64 n_blocks_to_init) noexcept;
 
   batt::Status run();
 
@@ -118,6 +118,10 @@ class BasicIoRingLogInitializer
   // The Subtask states.
   //
   std::vector<Subtask> subtasks_;
+
+  // The maximum number of block headers to initialize.
+  //
+  u64 n_blocks_to_init_;
 };
 
 }  // namespace llfs

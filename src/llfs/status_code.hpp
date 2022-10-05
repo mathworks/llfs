@@ -51,6 +51,7 @@ enum struct StatusCode {
   kFilesystemRemoveFailed = 33,
   kPinFailedPageEvicted = 34,
   kPageViewUserDataAlreadyInitialized = 35,
+  kRecoverFailedGenerationZero = 36,
 };
 
 bool initialize_status_codes();

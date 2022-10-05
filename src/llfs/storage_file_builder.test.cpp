@@ -123,13 +123,15 @@ TEST_F(StorageFileBuilderTest, PageDeviceConfig_Flush)
           .InSequence(flush_sequence)
           .WillOnce(::testing::Return(llfs::OkStatus()));
 
-      EXPECT_CALL(file_mock, write_some(::testing::Gt(kExpectedConfigBlockOffset),
-                                        ::testing::Truly([](const llfs::ConstBuffer& b) {
-                                          return b.size() == 512;
-                                        })))
-          .Times(options.page_count)
-          .InSequence(flush_sequence)
-          .WillRepeatedly(::testing::Return(512));
+      if (!llfs::kFastIoRingPageDeviceInit) {
+        EXPECT_CALL(file_mock, write_some(::testing::Gt(kExpectedConfigBlockOffset),
+                                          ::testing::Truly([](const llfs::ConstBuffer& b) {
+                                            return b.size() == 512;
+                                          })))
+            .Times(options.page_count)
+            .InSequence(flush_sequence)
+            .WillRepeatedly(::testing::Return(512));
+      }
 
       EXPECT_CALL(file_mock,
                   write_some(::testing::Eq(kExpectedConfigBlockOffset),

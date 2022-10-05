@@ -16,10 +16,12 @@ namespace llfs {
 //
 template <typename IoRingImpl>
 /*explicit*/ inline BasicIoRingLogInitializer<IoRingImpl>::BasicIoRingLogInitializer(
-    usize n_tasks, typename IoRingImpl::File& file, const IoRingLogConfig& config) noexcept
+    usize n_tasks, typename IoRingImpl::File& file, const IoRingLogConfig& config,
+    u64 n_blocks_to_init) noexcept
     : file_{file}
     , config_{config}
     , subtasks_(n_tasks)
+    , n_blocks_to_init_{n_blocks_to_init}
 {
   for (auto& task : this->subtasks_) {
     task.that = this;
@@ -36,7 +38,8 @@ inline batt::Status BasicIoRingLogInitializer<IoRingImpl>::run()
   LLFS_VLOG(1) << "IoRingLogInitializer::run() Entered; "
                << BATT_INSPECT(this->config_.block_count())
                << BATT_INSPECT(this->config_.block_size())
-               << BATT_INSPECT(this->config_.block_capacity());
+               << BATT_INSPECT(this->config_.block_capacity())
+               << BATT_INSPECT(this->n_blocks_to_init_);
   {
     batt::MutableBuffer memory{this->subtasks_.data(), this->subtasks_.size() * sizeof(Subtask)};
 
@@ -94,12 +97,12 @@ inline void BasicIoRingLogInitializer<IoRingImpl>::Subtask::start_write()
 
     const usize block_i = that->next_block_i_.fetch_add(1);
 
-    LLFS_VLOG(2) << " -- " << BATT_INSPECT(block_i) << "/" << config.block_count();
+    LLFS_VLOG(2) << " -- " << BATT_INSPECT(block_i) << "/" << that->n_blocks_to_init_;
 
     // If `block_i` is at or past the end of the log, we are done!  Increment the finished count
     // and return.
     //
-    if (block_i >= config.block_count()) {
+    if (block_i >= that->n_blocks_to_init_) {
       LLFS_VLOG(2) << " -- FINISHED (all blocks written)";
       this->finish(batt::OkStatus());
       return;

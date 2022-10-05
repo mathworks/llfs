@@ -105,6 +105,19 @@ constexpr bool kDebugBuild = false;
 //#define LLFS_USE_SELF_LOGGING
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+// Experimental feature: first-class ranges as keys.
+//
+#define LLFS_ENABLE_RANGE_KEYS 0
+
+// Experimental feature: fast log device initialization (only write the first log page header).
+//
+constexpr bool kFastIoRingLogDeviceInit = true;
+
+// Experimental feature: fast page device initialization (don't write any page headers; always fail
+// page recovery when generation == 0).
+//
+constexpr bool kFastIoRingPageDeviceInit = true;
+
 }  // namespace llfs
 
 #endif  // LLFS_CONFIG_HPP

@@ -21,8 +21,9 @@
 
 namespace llfs {
 
-// using Key = std::string;
-// using KeyView = std::string_view;
+#if LLFS_ENABLE_RANGE_KEYS
+
+#error Do not enable this feature yet!
 
 class KeyView
 {
@@ -49,6 +50,12 @@ inline u64 hash_value(const KeyView& key)
   boost::hash_combine(v, key.upper_bound());
   return v;
 }
+
+#else  // LLFS_ENABLE_RANGE_KEYS
+
+using KeyView = std::string_view;
+
+#endif  // LLFS_ENABLE_RANGE_KEYS
 
 inline const KeyView& get_key(const KeyView& key)
 {

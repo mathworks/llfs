@@ -9,6 +9,7 @@
 #include <llfs/page_device_config.hpp>
 //
 
+#include <llfs/config.hpp>
 #include <llfs/ioring_page_file_device.hpp>
 #include <llfs/page_layout.hpp>
 
@@ -56,22 +57,24 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
     Status truncate_status = file.truncate_at_least(pages_offset.upper_bound);
     BATT_REQUIRE_OK(truncate_status);
 
-    // Initialize all the packed page headers.
-    //
-    std::aligned_storage_t<512, 512> buffer;
-    std::memset(&buffer, 0, sizeof(buffer));
+    if (!kFastIoRingPageDeviceInit) {
+      // Initialize all the packed page headers.
+      //
+      std::aligned_storage_t<512, 512> buffer;
+      std::memset(&buffer, 0, sizeof(buffer));
 
-    auto& page_header = reinterpret_cast<PackedPageHeader&>(buffer);
-    page_header.magic = PackedPageHeader::kMagic;
-    page_header.crc32 = PackedPageHeader::kCrc32NotSet;
-    page_header.page_id = PackedPageId{.id_val = kInvalidPageId};
+      auto& page_header = reinterpret_cast<PackedPageHeader&>(buffer);
+      page_header.magic = PackedPageHeader::kMagic;
+      page_header.crc32 = PackedPageHeader::kCrc32NotSet;
+      page_header.page_id = PackedPageId{.id_val = kInvalidPageId};
 
-    for (u64 page_i = 0; page_i < page_count; ++page_i) {
-      const i64 page_offset = pages_offset.lower_bound + page_i * page_size;
-      LLFS_DVLOG(1) << "writing null page header | " << BATT_INSPECT(page_i)
-                    << BATT_INSPECT(page_offset);
-      Status status = write_all(file, page_offset, ConstBuffer{&buffer, sizeof(buffer)});
-      BATT_REQUIRE_OK(status);
+      for (u64 page_i = 0; page_i < page_count; ++page_i) {
+        const i64 page_offset = pages_offset.lower_bound + page_i * page_size;
+        LLFS_DVLOG(1) << "writing null page header | " << BATT_INSPECT(page_i)
+                      << BATT_INSPECT(page_offset);
+        Status status = write_all(file, page_offset, ConstBuffer{&buffer, sizeof(buffer)});
+        BATT_REQUIRE_OK(status);
+      }
     }
 
     return OkStatus();

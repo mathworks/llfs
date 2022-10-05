@@ -214,6 +214,18 @@ void PageAllocatorState::deallocate_page(PageId page_id)
   BATT_CHECK_GT(ref_count_obj.get_generation(), 0);
   BATT_CHECK(!ref_count_obj.PageAllocatorFreePoolHook::is_linked());
 
+  // It should be safe to revert the generation count increment we did when allocating this page
+  // because no one is allowed to reference a page once it is deallocated, so the invariant that
+  // PageId and durable page data are 1-to-1 is maintained.  This also allows us to make some
+  // helpful assumptions about what must be true when generation is >0, i.e., we can assume that the
+  // page header has been written at least once, so during recovery it is safe to try to read the
+  // pages in a half-committed Volume transaction instead of automatically invaliding the
+  // transaction, forcing the application layer to retry.
+  //
+  // IMPORTANT: the implementation of `recover_page` and the initialization algorithms for certain
+  // PageDevice types depend on this line, and vice-versa!  Consider the "big-picture" implications
+  // before changing!!
+  //
   ref_count_obj.revert_generation();
 
   this->free_pool_.push_back(ref_count_obj);
@@ -228,6 +240,10 @@ Status PageAllocatorState::recover_page(PageId page_id)
   const page_generation_int generation = this->page_ids_.get_generation(page_id);
 
   BATT_CHECK_LT(physical_page, this->page_device_capacity());
+
+  if (kFastIoRingPageDeviceInit && generation == 0) {
+    return ::llfs::make_status(::llfs::StatusCode::kRecoverFailedGenerationZero);
+  }
 
   PageAllocatorRefCount& ref_count_obj = this->page_ref_counts_[physical_page];
 

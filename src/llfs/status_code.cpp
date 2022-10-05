@@ -86,6 +86,9 @@ bool initialize_status_codes()
       CODE_WITH_MSG_(StatusCode::kPageViewUserDataAlreadyInitialized,
                      "PageView::init_user_data failed; there is already conflicting user data for "
                      "this page"),  // 35,
+      CODE_WITH_MSG_(
+          StatusCode::kRecoverFailedGenerationZero,
+          "Failed to recover page; generation is 0 (can not confirm page header status)"),  // 36,
 
   });
   return initialized;

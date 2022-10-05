@@ -36,7 +36,10 @@ Status IoRingLogRecovery::run()
   i64 file_offset = 0;
   Optional<slot_offset_type> old_trim_pos = this->trim_pos_;
 
-  for (usize block_i = 0; block_i < this->config_.block_count();
+  usize known_valid_blocks = 1;
+  const usize wrap_around_size = this->config_.block_count() * this->config_.block_capacity();
+
+  for (usize block_i = 0; block_i < known_valid_blocks;
        ++block_i, file_offset += this->config_.block_size()) {
     //----- --- -- -  -  -   -
     LLFS_VLOG(2) << "Reading " << BATT_INSPECT(block_i) << " from " << BATT_INSPECT(file_offset);
@@ -45,6 +48,19 @@ Status IoRingLogRecovery::run()
     //
     Status read_status = this->read_data_(file_offset, this->block_buffer());
     BATT_REQUIRE_OK(read_status);
+
+    // Update the known_valid_blocks count.
+    //
+    if (known_valid_blocks < this->config_.block_count()) {
+      if (this->block_header().slot_offset >= wrap_around_size) {
+        known_valid_blocks = this->config_.block_count();
+      } else {
+        if (this->block_header().commit_size == this->config_.block_capacity()) {
+          BATT_CHECK_GT(block_i + 2, known_valid_blocks);
+          known_valid_blocks = block_i + 2;
+        }
+      }
+    }
 
     // Run data integrity checks.
     //

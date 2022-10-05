@@ -32,9 +32,16 @@ Status initialize_ioring_log_device(RawBlockFile& file, const IoRingLogConfig& c
 
     IoRing::File* ioring_file = file.get_io_ring_file();
 
+    const u64 n_blocks_to_init = [&] {
+      if (kFastIoRingLogDeviceInit) {
+        return u64{1};
+      }
+      return config.block_count();
+    }();
+
     if (ioring_file) {
-      IoRingLogInitializer initializer{/*n_tasks=*/std::min<usize>(1024, config.block_count()),
-                                       *ioring_file, config};
+      IoRingLogInitializer initializer{/*n_tasks=*/std::min<usize>(1024, n_blocks_to_init),
+                                       *ioring_file, config, n_blocks_to_init};
 
       batt::Status init_status = initializer.run();
 
@@ -48,7 +55,7 @@ Status initialize_ioring_log_device(RawBlockFile& file, const IoRingLogConfig& c
       buffer.header.reset();
 
       u64 file_offset = config.physical_offset;
-      for (u64 block_i = 0; block_i < config.block_count(); ++block_i) {
+      for (u64 block_i = 0; block_i < n_blocks_to_init; ++block_i) {
         LLFS_VLOG(2) << "writing initial block header; " << BATT_INSPECT(buffer.header.slot_offset)
                      << BATT_INSPECT(file_offset);
         Status write_status = write_all(file, file_offset, buffer.as_const_buffer());

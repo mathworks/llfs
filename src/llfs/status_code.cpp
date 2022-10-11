@@ -89,7 +89,10 @@ bool initialize_status_codes()
       CODE_WITH_MSG_(
           StatusCode::kRecoverFailedGenerationZero,
           "Failed to recover page; generation is 0 (can not confirm page header status)"),  // 36,
-
+      CODE_WITH_MSG_(StatusCode::kUnpackCastWrongIntegerSize,
+                     "Failed to unpack byte-ordered integer: wrong size"),  // 37,
+      CODE_WITH_MSG_(StatusCode::kUnpackCastNullptr,
+                     "Packed data is `nullptr`"),  // 38,
   });
   return initialized;
 }

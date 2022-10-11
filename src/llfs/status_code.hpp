@@ -52,6 +52,8 @@ enum struct StatusCode {
   kPinFailedPageEvicted = 34,
   kPageViewUserDataAlreadyInitialized = 35,
   kRecoverFailedGenerationZero = 36,
+  kUnpackCastWrongIntegerSize = 37,
+  kUnpackCastNullptr = 38,
 };
 
 bool initialize_status_codes();

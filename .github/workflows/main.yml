@@ -12,5 +12,7 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@master
+        with:
+          submodules: recursive
       - name: Conan Install
         run: make BUILD_TYPE=Release install

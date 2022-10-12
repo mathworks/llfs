@@ -1,3 +1,11 @@
+#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
+#
+# Part of the LLFS Project, under Apache License v2.0.
+# See https://www.apache.org/licenses/LICENSE-2.0 for license information.
+# SPDX short identifier: Apache-2.0
+#
+#+++++++++++-+-+--+----- --- -- -  -  -   -
+
 from conans import ConanFile, CMake
 
 import os, sys
@@ -17,7 +25,7 @@ class LlfsConan(ConanFile):
     version = VERSION_
     license = "Apache Public License 2.0"
     author = "The MathWorks, Inc."
-    url = "https://gitlab.com/batteriescpp/llfs"
+    url = "https://github.com/mathworks/llfs"
     description = "Low-Level File System Utilities (C++)"
     settings = "os", "compiler", "build_type", "arch"
     options = {"shared": [True, False]}
@@ -30,7 +38,7 @@ class LlfsConan(ConanFile):
         "openssl/3.0.3",
         "glog/0.6.0",
         "libunwind/1.5.0",
-        "batteries/0.10.4-devel",#@tonyastolfi+batteries/stable",
+        "batteries/0.11.0@batteriescpp+batteries/stable",
         "liburing/2.1",
         "cli11/1.9.1",
     ]

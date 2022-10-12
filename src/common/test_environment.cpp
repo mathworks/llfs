@@ -7,14 +7,14 @@
 
 namespace {
 
-class BattRuntimeTestEnv : public testing::Environment
+class LlfsRuntimeTestEnv : public testing::Environment
 {
  public:
-  BattRuntimeTestEnv() noexcept
+  LlfsRuntimeTestEnv() noexcept
   {
   }
 
-  ~BattRuntimeTestEnv() override
+  ~LlfsRuntimeTestEnv() override
   {
   }
 
@@ -31,6 +31,6 @@ class BattRuntimeTestEnv : public testing::Environment
   }
 };
 
-testing::Environment* const runtime_env = testing::AddGlobalTestEnvironment(new BattRuntimeTestEnv);
+testing::Environment* const runtime_env = testing::AddGlobalTestEnvironment(new LlfsRuntimeTestEnv);
 
 }  // namespace

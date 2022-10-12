@@ -21,7 +21,7 @@ LLFS offers the following features:
 - CRC-based data integrity checking
 - Multi-device storage pool management
 
-** NOTE: LLFS is currently considered experimental and should only be used for prototyping, development, and non-critical applications.  When the project reaches stable status, the release major version will be incremented from 0 to 1.**
+**NOTE: LLFS is currently considered experimental and should only be used for prototyping, development, and non-critical applications.  When the project reaches stable status, the release major version will be incremented from 0 to 1.**
 
 ## llfs::Volume
 

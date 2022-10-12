@@ -21,6 +21,8 @@ LLFS offers the following features:
 - CRC-based data integrity checking
 - Multi-device storage pool management
 
+** NOTE: LLFS is currently considered experimental and should only be used for prototyping, development, and non-critical applications.  When the project reaches stable status, the release major version will be incremented from 0 to 1.**
+
 ## llfs::Volume
 
 The core abstraction for LLFS is `llfs::Volume`.  This class implements a bounded log of structured records which can contain references to pages of data.  The size of a `Volume` is fixed at creation time.  Once it fills up, a `Volume` must be `trim`-ed before more records can be appended.  Typically this is achieved via a checkpointing strategy that does some combination of refreshing older data later in the log, discarding obsolete records, and moving data out of the log into referenced pages.
@@ -33,7 +35,7 @@ A job represents a single atomic update to a volume.  An application creates a n
 
 ## llfs::LogDevice
 
-`llfs::LogDevice` is an abstract base class that represents an append-only, fixed-size storage area with a logical "active region" which moves monotonically through an unbounded range of byte offsets from the start of the log.  A good way to think of this is as a "sliding window:" the size limit (capacity) of a `LogDevice` is the maximum size (in bytes) of the active region of a "virtual log" whose maximum offset is unbounded.  
+`llfs::LogDevice` is an abstract base class that represents an append-only, fixed-size storage area with a logical "active region" which moves monotonically through an unbounded range of byte offsets from the start of the log.  A good way to think of this is as a "sliding window:" the size limit (capacity) of a `LogDevice` is the maximum size (in bytes) of the active region of a "virtual log" whose maximum offset is unbounded.
 
 The contents of a `LogDevice` are organized into sequential records, which can vary in size.  The log records are addressed by byte offset from the beginning of the log.  Thus not all log offsets actually point to the beginning of a valid record in a given log.  Applications must be careful to read records at valid offsets.  An offset interval that contains a single record within a log is referred to as a "slot" in LLFS.  There must be no logical gaps between subsequent records; any unused space at the end of one record is considered a part of that record.
 

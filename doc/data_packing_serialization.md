@@ -47,17 +47,21 @@ using little_i64 = boost::endian::little_int64_t;
 
 LLFS refers to these types collectively as Packed Integer types.
 
-LLFS currently does not define a IDL/DDL for describing structured
-data schemas; rather it uses C++ struct types directly, with certain
+LLFS currently does not define an Interface Description Language (IDL)
+or Data Description Language (DDL) for describing structured data
+schemas.  Rather, it uses C++ struct types directly with certain
 restrictions.  A `struct` type that conforms to these type
 restrictions is referred to as a Packed Struct type.
 
 While some care is necessary to correctly serialize data into packed
-form (using a composition of Packed Struct and Integer types), once it
-is packed, there is no explicit deserialization or parsing step.
-Application code may simply cast a byte buffer to the appropriate
-packed type and read it directly.  Note that data structures obtained
-in this way are strictly read-only (`const`).
+form (using a composition of Packed Struct and Packed Integer types),
+once it is packed, there is no explicit deserialization or parsing
+step (caveat: to protect against buffer under/overruns and preserve
+memory safety, there may be some bounds checking performed after
+reading a Packed Struct from an untrusted source).  Application code
+may simply cast a byte buffer to the appropriate packed type and read
+it directly.  Note that data structures obtained in this way are
+strictly read-only (`const`).
 
 ## Packed Types
 

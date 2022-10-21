@@ -1,6 +1,6 @@
 # LLFS - Low Level File System
 
-[[_TOC_]]
+<!--[[_TOC_]]-->
 
 LLFS is a library that provides low-level, portable building blocks for implementing external data structures on top of block- and log-based storage devices.  It aims to strike a middle ground between storage abstraction layers that are low-overhead but high effort, such as raw block devices, and feature-rich but lower efficiency options such as a full POSIX filesystem or relational (SQL) database.
 
@@ -21,7 +21,9 @@ LLFS offers the following features:
 - CRC-based data integrity checking
 - Multi-device storage pool management
 
-** NOTE: LLFS is currently considered experimental and should only be used for prototyping, development, and non-critical applications.  When the project reaches stable status, the release major version will be incremented from 0 to 1.**
+LLFS uses an **append-only** model for writing data.  Data is addressed by byte offset (in the case of LogDevice) and by PageId (in the case of PageDevice).  Once written, data can never be updated in place.  This means that a given offset within a LogDevice or a given PageId in a PageDevice will always refer to the same bytes.  Both LogDevice and PageDevice have a fixed capacity, and neither can grow forever; this means eventually the resources they consume must be reclaimed.  For LogDevice, this happens by trimming the start of the log to advance the minimum valid offset, erasing whatever data used to be stored before the trim point and reclaiming the storage resources that data consumed.  In the case of PageDevice, PageIds are reference-counted and released when their count drops to zero.  PageId embeds a write-generation counter so that re-using the same sector of a real storage device for multiple writes over time produces unique PageIds for each generation of data. 
+
+**NOTE: LLFS is currently considered experimental and should only be used for prototyping, development, and non-critical applications.  When the project reaches stable status, the release major version will be incremented from 0 to 1.**
 
 ## llfs::Volume
 

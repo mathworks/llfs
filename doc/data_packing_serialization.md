@@ -1,6 +1,6 @@
 # Data Packing/Serialization
 
-[[_TOC_]]
+<!--[[_TOC_]]-->
 
 ## Summary
 

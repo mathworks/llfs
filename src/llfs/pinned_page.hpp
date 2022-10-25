@@ -42,7 +42,7 @@ class PinnedPage
       : page_view_{page_view}
       , pinned_cache_slot_{std::move(pinned_cache_slot)}
   {
-    BATT_CHECK_EQ(bool{this->page_view_}, bool{pinned_cache_slot_});
+    BATT_CHECK_EQ(this->page_view_ != nullptr, bool{this->pinned_cache_slot_});
   }
 
   const PageView* get() const

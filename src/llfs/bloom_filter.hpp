@@ -20,6 +20,7 @@
 
 #include <batteries/seq/loop_control.hpp>
 #include <batteries/static_assert.hpp>
+#include <batteries/suppress.hpp>
 
 #include <boost/functional/hash.hpp>
 
@@ -191,7 +192,10 @@ void parallel_build_bloom_filter(batt::WorkerPool& worker_pool, Iter first, Iter
   const batt::WorkSlicePlan stage1_plan{stage1_params, first, last};
 
   const batt::InputSize item_count = stage1_plan.input_size;
+
+  BATT_SUPPRESS_IF_GCC("-Wtype-limits")  // Tell GCC we don't care if this is always true...
   BATT_CHECK_GE(item_count, 0);
+  BATT_UNSUPPRESS_IF_GCC()
 
   const batt::TaskCount n_input_shards = stage1_plan.n_tasks;
 

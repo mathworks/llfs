@@ -79,8 +79,8 @@ struct FileOffsetPtr {
     const PackedConfigSlot& slot_ref = this->object.slots[index];
 
     return FileOffsetPtr<const PackedConfigSlot&>{
-        .object = slot_ref,
-        .file_offset = this->file_offset + byte_distance(&this->object, &slot_ref),
+        slot_ref,
+        this->file_offset + byte_distance(&this->object, &slot_ref),
     };
   }
 
@@ -92,8 +92,8 @@ struct FileOffsetPtr {
     PackedConfigSlot& slot_ref = this->object.slots[index];
 
     return FileOffsetPtr<PackedConfigSlot&>{
-        .object = slot_ref,
-        .file_offset = this->file_offset + byte_distance(&this->object, &slot_ref),
+        slot_ref,
+        this->file_offset + byte_distance(&this->object, &slot_ref),
     };
   }
 

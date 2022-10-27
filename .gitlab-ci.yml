@@ -44,7 +44,7 @@ build:
   stage: build
   script:
     - echo "CONAN_USER_HOME=${CONAN_USER_HOME}"
-    - make BUILD_TYPE=Release build
+    - make BUILD_TYPE=Release install build
   artifacts:
     paths:
       - build/
@@ -59,7 +59,7 @@ test:
   stage: test
   script:
     - echo "CONAN_USER_HOME=${CONAN_USER_HOME}"
-    - make BUILD_TYPE=Release test
+    - make BUILD_TYPE=Release install build test
   artifacts:
     reports:
       junit:
@@ -78,6 +78,7 @@ release:
     RELEASE_CONAN_LOGIN_USERNAME: "${CI_DEPLOY_USER}"
     RELEASE_CONAN_PASSWORD: "${CI_DEPLOY_PASSWORD}"
   script:
+    - make BUILD_TYPE=Release install
     - batteries/script/publish-release.sh
   release:
     tag_name: $CI_COMMIT_TAG

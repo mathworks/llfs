@@ -33,11 +33,6 @@ install:
   script:
     - echo "CONAN_USER_HOME=${CONAN_USER_HOME}"
     - make BUILD_TYPE=Release install
-  cache:
-    - key: build-cache
-      paths:
-        - build/
-      policy: push
 
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 build:
@@ -48,28 +43,19 @@ build:
   artifacts:
     paths:
       - build/
-  cache:
-    - key: build-cache
-      paths:
-        - build/
-      policy: pull-push
 
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 test:
   stage: test
   script:
     - echo "CONAN_USER_HOME=${CONAN_USER_HOME}"
-    - make BUILD_TYPE=Release install build test
+    - ulimit -a
+    - make BUILD_TYPE=Release test
   artifacts:
     reports:
       junit:
         - build/Release/test-results.xml
         - build/Release/death-test-results.xml
-  cache:
-    - key: build-cache
-      paths:
-        - build/
-      policy: pull
 
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 release:
@@ -85,8 +71,3 @@ release:
     description: $CI_COMMIT_MESSAGE
   rules:
     - if: $CI_COMMIT_TAG
-  cache:
-    - key: build-cache
-      paths:
-        - build/
-      policy: pull

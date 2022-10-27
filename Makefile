@@ -12,11 +12,11 @@ ifeq ($(BUILD_TYPE),)
 BUILD_TYPE := RelWithDebInfo
 endif
 
-build: | install
+build:
 	mkdir -p build/$(BUILD_TYPE)
 	(cd build/$(BUILD_TYPE) && time -f "Build Time: %e seconds." conan build ../..)
 
-test: build
+test:
 	mkdir -p build/$(BUILD_TYPE)
 ifeq ("$(GTEST_FILTER)","")
 	@echo -e "\n\nRunning DEATH tests ==============================================\n"
@@ -35,7 +35,7 @@ create:
 	(conan remove -f "llfs/$(shell batteries/script/get-version.sh)" && cd build/$(BUILD_TYPE) && conan create ../.. -s build_type=$(BUILD_TYPE))
 
 
-publish: | test build
+publish:
 	batteries/script/publish-release.sh
 
 

@@ -103,7 +103,9 @@ While it is possible for applications do to this directly using the `PageDevice`
 
 `PageRecycler` also imposes a creation-time-configurable limit on the maximum "branching factor" of page refs (i.e., the maximum number of out-refs per page), and the depth of a reference chain.  Because these limits are highly dependent on the sorts of data structures and page sizes that must be accomodated by the `PageRecycler`, each `llfs::Volume` is given its own `PageRecycler`.  This allows different `Volume` instances to configure these parameters optimally for the type of data stored by that volume.
 
-# Test Configuration: Docker and IO_URING
+# Test Configuration
+
+## Docker and IO_URING
 
 When running the test target for this project, you may run into an
 EPERM error in the IoRing.Test.  To fix this, you must disable seccomp
@@ -130,7 +132,19 @@ Finally, restart the docker daemon:
 sudo systemctl restart docker
 ```
 
-Now the tests should pass!
+## Docker and MEMLOCK ulimit
+
+Test failures can occur when running under Docker with an attempt to create an `llfs::IoRing` object failing with "not enough memory" errors.  This is usually because the container's (or system's) MEMLOCK ulimit is set too low.  To fix this, the `--ulimit memlock=-1:-1` option may be added (to docker CLI invocations), or if you don't have control over the specific `docker run` command (e.g., if you're running Docker via the `gitlab-runner` daemon to process CI/CD pipelines), it will work on Ubuntu-based systems to modify the `docker.service` file (you can find it under `/etc`; e.g., `/etc/systemd/system/multi-user.target.wants/docker.service`); add the flag `--default-ulimit memlock=...` to the `ExecStart` setting:
+
+```
+ExecStart=/usr/bin/dockerd --default-ulimit memlock=819200000:819200000 -H fd:// --containerd=/run/containerd/containerd.sock
+```
+
+Then restart the docker daemon:
+
+```
+sudo systemctl restart docker
+```
 
 # License, Copyrights
 

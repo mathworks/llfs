@@ -19,6 +19,7 @@ default:
     - echo "CI_DEPLOY_PASSWORD=${CI_DEPLOY_PASSWORD}"
     - env | grep 'RELEASE_CONAN'
     - env | grep -v 'RELEASE_CONAN'
+    - ulimit -a
 
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 stages:
@@ -49,7 +50,6 @@ test:
   stage: test
   script:
     - echo "CONAN_USER_HOME=${CONAN_USER_HOME}"
-    - ulimit -a
     - make BUILD_TYPE=Release test
   artifacts:
     reports:

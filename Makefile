@@ -8,6 +8,11 @@
 
 .PHONY: clean build build-nodoc install create test publish docker-build docker-push docker
 
+CONAN_PROFILE := $(shell test -f /etc/conan_profile.default && echo '/etc/conan_profile.default' || echo 'default')
+
+$(info CONAN_PROFILE is $(CONAN_PROFILE))
+
+
 ifeq ($(BUILD_TYPE),)
 BUILD_TYPE := RelWithDebInfo
 endif
@@ -29,10 +34,10 @@ endif
 
 install:
 	mkdir -p build/$(BUILD_TYPE)
-	(cd build/$(BUILD_TYPE) && conan install ../.. -s build_type=$(BUILD_TYPE) --build=missing)
+	(cd build/$(BUILD_TYPE) && conan install --profile "$(CONAN_PROFILE)" -s build_type=$(BUILD_TYPE) --build=missing ../..)
 
 create:
-	(conan remove -f "llfs/$(shell batteries/script/get-version.sh)" && cd build/$(BUILD_TYPE) && conan create ../.. -s build_type=$(BUILD_TYPE))
+	(conan remove -f "llfs/$(shell batteries/script/get-version.sh)" && cd build/$(BUILD_TYPE) && conan create  --profile "$(CONAN_PROFILE)" -s build_type=$(BUILD_TYPE) ../..)
 
 
 publish:

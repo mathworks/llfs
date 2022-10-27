@@ -9,7 +9,6 @@
 .PHONY: clean build build-nodoc install create test publish docker-build docker-push docker
 
 CONAN_PROFILE := $(shell test -f /etc/conan_profile.default && echo '/etc/conan_profile.default' || echo 'default')
-
 $(info CONAN_PROFILE is $(CONAN_PROFILE))
 
 

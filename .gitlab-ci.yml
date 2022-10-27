@@ -33,10 +33,6 @@ install:
   script:
     - echo "CONAN_USER_HOME=${CONAN_USER_HOME}"
     - make BUILD_TYPE=Release install
-  rules:
-    - changes:
-      - conanfile.py
-      - .gitlab-ci.yml
   cache:
     - key: build-cache
       paths:

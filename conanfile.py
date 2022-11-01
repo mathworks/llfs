@@ -34,6 +34,7 @@ class LlfsConan(ConanFile):
         "batteries/0.12.5@batteriescpp+batteries/stable",
         "liburing/2.1",
         "cli11/1.9.1",
+        "zlib/1.2.13",
     ]
     exports_sources = [
         "src/CMakeLists.txt",

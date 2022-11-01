@@ -17,31 +17,48 @@
 
 #include <batteries/type_traits.hpp>
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// Must be in the top-level namespace.
+//
+template <typename T>
+batt::Status llfs_validate_packed_value_helper(const T* packed, const batt::ConstBuffer& buffer)
+{
+  return validate_packed_value(packed, buffer.data(), buffer.size());
+}
+//
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+
+namespace boost {
+
+template <::boost::endian::order kOrder, typename T, ::llfs::usize kNBits,
+          ::boost::endian::align kAlign>
+::batt::Status validate_packed_value(
+    const ::boost::endian::endian_buffer<kOrder, T, kNBits, kAlign>&, const void* buffer_data,
+    ::llfs::usize buffer_size)
+{
+  using PackedT = ::boost::endian::endian_buffer<kOrder, T, kNBits, kAlign>;
+  if (sizeof(PackedT) != buffer_size) {
+    return ::llfs::make_status(::llfs::StatusCode::kUnpackCastWrongIntegerSize);
+  }
+
+  return ::batt::OkStatus();
+}
+
+template <::boost::endian::order kOrder, typename T, ::llfs::usize kNBits>
+::batt::Status validate_packed_value(const ::boost::endian::endian_arithmetic<kOrder, T, kNBits>&,
+                                     const void* buffer_data, ::llfs::usize buffer_size)
+{
+  using PackedT = ::boost::endian::endian_arithmetic<kOrder, T, kNBits>;
+  if (sizeof(PackedT) != buffer_size) {
+    return ::llfs::make_status(::llfs::StatusCode::kUnpackCastWrongIntegerSize);
+  }
+
+  return ::batt::OkStatus();
+}
+
+}  // namespace boost
+
 namespace llfs {
-
-template <boost::endian::order kOrder, typename T, usize kNBits, boost::endian::align kAlign>
-Status validate_packed_value(const boost::endian::endian_buffer<kOrder, T, kNBits, kAlign>&,
-                             const ConstBuffer& buffer)
-{
-  using PackedT = boost::endian::endian_buffer<kOrder, T, kNBits, kAlign>;
-  if (sizeof(PackedT) != buffer.size()) {
-    return make_status(StatusCode::kUnpackCastWrongIntegerSize);
-  }
-
-  return OkStatus();
-}
-
-template <boost::endian::order kOrder, typename T, usize kNBits>
-Status validate_packed_value(const boost::endian::endian_arithmetic<kOrder, T, kNBits>&,
-                             const ConstBuffer& buffer)
-{
-  using PackedT = boost::endian::endian_arithmetic<kOrder, T, kNBits>;
-  if (sizeof(PackedT) != buffer.size()) {
-    return make_status(StatusCode::kUnpackCastWrongIntegerSize);
-  }
-
-  return OkStatus();
-}
 
 template <typename T, typename DataT>
 StatusOr<const T*> unpack_cast(const DataT& data, batt::StaticType<T> = {})
@@ -51,7 +68,7 @@ StatusOr<const T*> unpack_cast(const DataT& data, batt::StaticType<T> = {})
     return make_status(StatusCode::kUnpackCastNullptr);
   }
   const T* packed = reinterpret_cast<const T*>(buffer.data());
-  Status validation_status = validate_packed_value(*packed, buffer);
+  Status validation_status = ::llfs_validate_packed_value_helper(*packed, buffer);
   BATT_REQUIRE_OK(validation_status);
 
   return packed;

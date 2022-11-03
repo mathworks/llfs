@@ -13,6 +13,7 @@
 #include <llfs/int_types.hpp>
 #include <llfs/page_id.hpp>
 #include <llfs/seq.hpp>
+#include <llfs/unpack_cast.hpp>
 
 #include <batteries/assert.hpp>
 #include <batteries/static_assert.hpp>
@@ -89,6 +90,28 @@ usize packed_sizeof(const PackedVariant<Ts...>& var)
 {
   return sizeof(PackedVariant<Ts...>) + var.visit([](const auto& value) -> usize {
     return packed_sizeof(value);
+  });
+}
+
+template <typename... Ts>
+batt::Status validate_packed_value(const PackedVariant<Ts...>& var, const void* buffer_data,
+                                   usize buffer_size)
+{
+  const char* buffer_begin = static_cast<const char*>(buffer_data);
+  const char* buffer_end = buffer_begin + buffer_size;
+  const char* var_begin = reinterpret_cast<const char*>(&var);
+  const char* var_end = reinterpret_cast<const char*>(&var) + sizeof(PackedVariant<Ts...>);
+
+  BATT_CHECK_LE((void*)buffer_begin, (void*)var_begin);
+  BATT_CHECK_LT((void*)var_begin, (void*)var_end);
+
+  if (var_end > buffer_end) {
+    return ::llfs::make_status(StatusCode::kUnpackCastVariantStructOutOfBounds);
+  }
+
+  return var.visit([&](const auto& case_instance) {
+    return ::llfs_validate_packed_value_helper(case_instance,
+                                               ConstBuffer{buffer_data, buffer_size});
   });
 }
 

@@ -54,6 +54,8 @@ enum struct StatusCode {
   kRecoverFailedGenerationZero = 36,
   kUnpackCastWrongIntegerSize = 37,
   kUnpackCastNullptr = 38,
+  kUnpackCastVariantStructOutOfBounds = 39,
+  kUnpackCastIntegerOutOfBounds = 40,
 };
 
 bool initialize_status_codes();

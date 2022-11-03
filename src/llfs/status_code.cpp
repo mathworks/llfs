@@ -93,6 +93,10 @@ bool initialize_status_codes()
                      "Failed to unpack byte-ordered integer: wrong size"),  // 37,
       CODE_WITH_MSG_(StatusCode::kUnpackCastNullptr,
                      "Packed data is `nullptr`"),  // 38,
+      CODE_WITH_MSG_(StatusCode::kUnpackCastVariantStructOutOfBounds,
+                     "PackedVariant struct is (partially) outside the given buffer"),  // 39,
+      CODE_WITH_MSG_(StatusCode::kUnpackCastIntegerOutOfBounds,
+                     "Packed integer is (partially) outside the given buffer"),  // 40,
   });
   return initialized;
 }

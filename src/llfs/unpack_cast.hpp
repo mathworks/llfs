@@ -21,12 +21,7 @@
 // Must be in the top-level namespace.
 //
 template <typename T>
-batt::Status llfs_validate_packed_value_helper(const T& packed, const batt::ConstBuffer& buffer)
-{
-  return validate_packed_value(packed, buffer.data(), buffer.size());
-}
-//
-//+++++++++++-+-+--+----- --- -- -  -  -   -
+batt::Status llfs_validate_packed_value_helper(const T& packed, const batt::ConstBuffer& buffer);
 
 namespace boost {
 namespace endian {
@@ -46,11 +41,22 @@ template <::boost::endian::order kOrder, typename T, ::llfs::usize kNBits,
 }
 
 template <::boost::endian::order kOrder, typename T, ::llfs::usize kNBits>
-::batt::Status validate_packed_value(const ::boost::endian::endian_arithmetic<kOrder, T, kNBits>&,
-                                     const void* /*buffer_data*/, ::llfs::usize buffer_size)
+::batt::Status validate_packed_value(
+    const ::boost::endian::endian_arithmetic<kOrder, T, kNBits>& packed, const void* buffer_data,
+    ::llfs::usize buffer_size)
 {
+  static_assert(sizeof(char) == 1, "");
+
+  const char* const packed_begin = reinterpret_cast<const char*>(&packed);
+  const char* const buffer_begin = reinterpret_cast<const char*>(buffer_data);
+
+  if (packed_begin < buffer_begin) {
+    return ::llfs::make_status(::llfs::StatusCode::kUnpackCastIntegerOutOfBounds);
+  }
+
   using PackedT = ::boost::endian::endian_arithmetic<kOrder, T, kNBits>;
-  if (sizeof(PackedT) != buffer_size) {
+  const ::llfs::usize packed_size = buffer_size - (packed_begin - buffer_begin);
+  if (sizeof(PackedT) != packed_size) {
     return ::llfs::make_status(::llfs::StatusCode::kUnpackCastWrongIntegerSize);
   }
 
@@ -61,7 +67,6 @@ template <::boost::endian::order kOrder, typename T, ::llfs::usize kNBits>
 }  // namespace boost
 
 namespace llfs {
-
 template <typename T, typename DataT>
 StatusOr<const T*> unpack_cast(const DataT& data, batt::StaticType<T> = {})
 {
@@ -77,5 +82,17 @@ StatusOr<const T*> unpack_cast(const DataT& data, batt::StaticType<T> = {})
 }
 
 }  // namespace llfs
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// Must be in the top-level namespace.
+//
+template <typename T>
+batt::Status llfs_validate_packed_value_helper(const T& packed, const batt::ConstBuffer& buffer)
+{
+  return validate_packed_value(packed, buffer.data(), buffer.size());
+}
+
+//
+//+++++++++++-+-+--+----- --- -- -  -  -   -
 
 #endif  // LLFS_UNPACK_CAST_HPP

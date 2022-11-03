@@ -130,6 +130,110 @@ struct DefinePackedTypeFor<::llfs::little_i64> {
   using type = ::llfs::little_i64;
 };
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+
+inline usize packed_sizeof(u8)
+{
+  return sizeof(little_u8);
+}
+inline usize packed_sizeof(u16)
+{
+  return sizeof(little_u16);
+}
+inline usize packed_sizeof(u32)
+{
+  return sizeof(little_u32);
+}
+inline usize packed_sizeof(u64)
+{
+  return sizeof(little_u64);
+}
+
+inline usize packed_sizeof(i8)
+{
+  return sizeof(little_i8);
+}
+inline usize packed_sizeof(i16)
+{
+  return sizeof(little_i16);
+}
+inline usize packed_sizeof(i32)
+{
+  return sizeof(little_i32);
+}
+inline usize packed_sizeof(i64)
+{
+  return sizeof(little_i64);
+}
+
+inline usize packed_sizeof(big_u8)
+{
+  return sizeof(big_u8);
+}
+inline usize packed_sizeof(big_u16)
+{
+  return sizeof(big_u16);
+}
+inline usize packed_sizeof(big_u32)
+{
+  return sizeof(big_u32);
+}
+inline usize packed_sizeof(big_u64)
+{
+  return sizeof(big_u64);
+}
+
+inline usize packed_sizeof(big_i8)
+{
+  return sizeof(big_i8);
+}
+inline usize packed_sizeof(big_i16)
+{
+  return sizeof(big_i16);
+}
+inline usize packed_sizeof(big_i32)
+{
+  return sizeof(big_i32);
+}
+inline usize packed_sizeof(big_i64)
+{
+  return sizeof(big_i64);
+}
+
+inline usize packed_sizeof(little_u8)
+{
+  return sizeof(little_u8);
+}
+inline usize packed_sizeof(little_u16)
+{
+  return sizeof(little_u16);
+}
+inline usize packed_sizeof(little_u32)
+{
+  return sizeof(little_u32);
+}
+inline usize packed_sizeof(little_u64)
+{
+  return sizeof(little_u64);
+}
+
+inline usize packed_sizeof(little_i8)
+{
+  return sizeof(little_i8);
+}
+inline usize packed_sizeof(little_i16)
+{
+  return sizeof(little_i16);
+}
+inline usize packed_sizeof(little_i32)
+{
+  return sizeof(little_i32);
+}
+inline usize packed_sizeof(little_i64)
+{
+  return sizeof(little_i64);
+}
+
 }  // namespace llfs
 
 #endif  // LLFS_INT_TYPES_HPP

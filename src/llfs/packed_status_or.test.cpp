@@ -50,21 +50,20 @@ TEST(PackedStatusOrTest, PackUnPack)
   // Unpack cast - ok StatusOr - success case
   //
   {
-    batt::StatusOr<const llfs::PackedStatusOr<little_u32>*> unpacked =
+    batt::StatusOr<const llfs::PackedStatusOr<little_u32>&> unpacked =
         llfs::unpack_cast<llfs::PackedStatusOr<little_u32>>(ok_buffer);
 
     ASSERT_TRUE(unpacked.ok()) << BATT_INSPECT(unpacked.status());
-    ASSERT_NE(*unpacked, nullptr);
 
-    EXPECT_THAT(batt::to_string(**unpacked), ::testing::StrEq("Ok{123}"));
-    EXPECT_THAT(batt::to_string((**unpacked).status()), ::testing::StrEq("batt::StatusCode{0}:Ok"));
-    EXPECT_THAT((**unpacked).value(), ::testing::Eq(123u));
+    EXPECT_THAT(batt::to_string(*unpacked), ::testing::StrEq("Ok{123}"));
+    EXPECT_THAT(batt::to_string(unpacked->status()), ::testing::StrEq("batt::StatusCode{0}:Ok"));
+    EXPECT_THAT(unpacked->value(), ::testing::Eq(123u));
   }
 
   // Unpack cast - ok StatusOr - failure case
   //
   {
-    batt::StatusOr<const llfs::PackedStatusOr<little_u32>*> unpacked =
+    batt::StatusOr<const llfs::PackedStatusOr<little_u32>&> unpacked =
         llfs::unpack_cast<llfs::PackedStatusOr<little_u32>>(
             llfs::ConstBuffer{ok_buffer.data(), ok_buffer.size() - 1});
 
@@ -88,23 +87,22 @@ TEST(PackedStatusOrTest, PackUnPack)
   // Unpack cast - non-ok StatusOr - success case
   //
   {
-    batt::StatusOr<const llfs::PackedStatusOr<little_u32>*> unpacked =
+    batt::StatusOr<const llfs::PackedStatusOr<little_u32>&> unpacked =
         llfs::unpack_cast<llfs::PackedStatusOr<little_u32>>(not_ok_buffer);
 
     ASSERT_TRUE(unpacked.ok()) << BATT_INSPECT(unpacked.status());
-    ASSERT_NE(*unpacked, nullptr);
 
-    EXPECT_THAT(batt::to_string(**unpacked),
+    EXPECT_THAT(batt::to_string(*unpacked),
                 ::testing::StrEq("Status{batt::StatusCode{5}:Not Found}"));
-    EXPECT_THAT(batt::to_string((**unpacked).status()),
+    EXPECT_THAT(batt::to_string(unpacked->status()),
                 ::testing::StrEq("batt::StatusCode{5}:Not Found"));
-    EXPECT_DEATH((**unpacked).value(), "Assertion failed: this->ok !=.*0");
+    EXPECT_DEATH(unpacked->value(), "Assertion failed: this->ok !=.*0");
   }
 
   // Unpack cast - non-ok StatusOr - failure case
   //
   {
-    batt::StatusOr<const llfs::PackedStatusOr<little_u32>*> unpacked =
+    batt::StatusOr<const llfs::PackedStatusOr<little_u32>&> unpacked =
         llfs::unpack_cast<llfs::PackedStatusOr<little_u32>>(
             llfs::ConstBuffer{not_ok_buffer.data(), not_ok_buffer.size() - 1});
 

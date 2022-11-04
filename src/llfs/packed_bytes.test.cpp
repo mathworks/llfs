@@ -41,24 +41,22 @@ TEST(PackedBytesTest, UnpackCast)
 
     // unpack_cast - success case
     {
-      batt::StatusOr<const llfs::PackedBytes*> unpacked =
+      batt::StatusOr<const llfs::PackedBytes&> unpacked =
           llfs::unpack_cast<llfs::PackedBytes>(buffer);
 
       ASSERT_TRUE(unpacked.ok());
-      ASSERT_NE(*unpacked, nullptr);
-
-      EXPECT_THAT((**unpacked).as_str(), ::testing::StrEq(str));
+      EXPECT_THAT(unpacked->as_str(), ::testing::StrEq(str));
 
       // buffer underflow edge cases
       {
-        EXPECT_EQ(llfs::validate_packed_value(**unpacked, buffer.data() + 1, buffer.size() - 1),
+        EXPECT_EQ(llfs::validate_packed_value(*unpacked, buffer.data() + 1, buffer.size() - 1),
                   llfs::make_status(llfs::StatusCode::kUnpackCastPackedBytesStructUnder));
       }
     }
 
     // unpack_cast - failure case
     {
-      batt::StatusOr<const llfs::PackedBytes*> unpacked =
+      batt::StatusOr<const llfs::PackedBytes&> unpacked =
           llfs::unpack_cast<llfs::PackedBytes>(batt::ConstBuffer{buffer.data(), buffer.size() - 1});
 
       ASSERT_FALSE(unpacked.ok());

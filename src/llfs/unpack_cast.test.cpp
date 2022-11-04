@@ -31,35 +31,34 @@ TEST(UnpackCastTest, Test)
     using PackedT = std::decay_t<decltype(value)>;
 
     {
-      llfs::StatusOr<const PackedT*> result =
+      llfs::StatusOr<const PackedT&> result =
           llfs::unpack_cast<PackedT>(llfs::ConstBuffer{&value, sizeof(PackedT)});
 
       ASSERT_TRUE(result.ok()) << BATT_INSPECT(result.status());
-      EXPECT_EQ(&value, *result);
     }
     {
-      llfs::StatusOr<const PackedT*> result =
+      llfs::StatusOr<const PackedT&> result =
           llfs::unpack_cast<PackedT>(llfs::ConstBuffer{&value, 0});
 
       EXPECT_TRUE(!result.ok()) << BATT_INSPECT(result.status());
       EXPECT_EQ(result.status(), llfs::StatusCode::kUnpackCastWrongIntegerSize);
     }
     {
-      llfs::StatusOr<const PackedT*> result =
+      llfs::StatusOr<const PackedT&> result =
           llfs::unpack_cast<PackedT>(llfs::ConstBuffer{&value, sizeof(PackedT) - 1});
 
       EXPECT_TRUE(!result.ok()) << BATT_INSPECT(result.status());
       EXPECT_EQ(result.status(), llfs::StatusCode::kUnpackCastWrongIntegerSize);
     }
     {
-      llfs::StatusOr<const PackedT*> result =
+      llfs::StatusOr<const PackedT&> result =
           llfs::unpack_cast<PackedT>(llfs::ConstBuffer{&value, sizeof(PackedT) + 1});
 
       EXPECT_TRUE(!result.ok()) << BATT_INSPECT(result.status());
       EXPECT_EQ(result.status(), llfs::StatusCode::kUnpackCastWrongIntegerSize);
     }
     {
-      llfs::StatusOr<const PackedT*> result =
+      llfs::StatusOr<const PackedT&> result =
           llfs::unpack_cast<PackedT>(llfs::ConstBuffer{nullptr, sizeof(PackedT)});
 
       EXPECT_TRUE(!result.ok()) << BATT_INSPECT(result.status());

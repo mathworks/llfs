@@ -71,7 +71,7 @@ template <::boost::endian::order kOrder, typename T, ::llfs::usize kNBits>
 namespace llfs {
 
 template <typename T, typename DataT>
-StatusOr<const T*> unpack_cast(const DataT& data, batt::StaticType<T> = {})
+StatusOr<const T&> unpack_cast(const DataT& data, batt::StaticType<T> = {})
 {
   ConstBuffer buffer = batt::as_const_buffer(data);
   if (buffer.data() == nullptr) {
@@ -81,7 +81,7 @@ StatusOr<const T*> unpack_cast(const DataT& data, batt::StaticType<T> = {})
   Status validation_status = ::llfs_validate_packed_value_helper(*packed, buffer);
   BATT_REQUIRE_OK(validation_status);
 
-  return packed;
+  return *packed;
 }
 
 template <typename PackedStructT>

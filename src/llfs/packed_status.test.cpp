@@ -89,13 +89,13 @@ TEST(PackedStatusTest, Test)
 
   // unpack_cast - Success case
   {
-    batt::StatusOr<const llfs::PackedStatus*> unpacked =
+    batt::StatusOr<const llfs::PackedStatus&> unpacked =
         llfs::unpack_cast<llfs::PackedStatus>(buffer);
 
     ASSERT_TRUE(unpacked.ok());
 
     EXPECT_THAT(
-        batt::to_string(**unpacked),
+        batt::to_string(*unpacked),
         ::testing::StrEq("llfs::packed_status_test::CustomCodes{1}:Oh wait, no, that dubious "
                          "distinction belongs to one"));
   }
@@ -103,7 +103,7 @@ TEST(PackedStatusTest, Test)
   // unpack_cast - clip the message/group name
   //
   for (usize n_to_clip = 1; n_to_clip < (required_size - sizeof(llfs::PackedStatus)); ++n_to_clip) {
-    batt::StatusOr<const llfs::PackedStatus*> unpacked = llfs::unpack_cast<llfs::PackedStatus>(
+    batt::StatusOr<const llfs::PackedStatus&> unpacked = llfs::unpack_cast<llfs::PackedStatus>(
         llfs::ConstBuffer{buffer.data(), buffer.size() - n_to_clip});
 
     EXPECT_EQ(unpacked.status(),
@@ -112,7 +112,7 @@ TEST(PackedStatusTest, Test)
 
   // unpack_cast - clip the PackedStatus struct
   //
-  batt::StatusOr<const llfs::PackedStatus*> unpacked = llfs::unpack_cast<llfs::PackedStatus>(
+  batt::StatusOr<const llfs::PackedStatus&> unpacked = llfs::unpack_cast<llfs::PackedStatus>(
       llfs::ConstBuffer{buffer.data(), sizeof(llfs::PackedStatus) - 1});
 
   EXPECT_EQ(unpacked.status(), llfs::make_status(llfs::StatusCode::kUnpackCastStructOver));

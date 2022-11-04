@@ -43,11 +43,11 @@ class PackedVariantTest : public ::testing::Test
   {
     ASSERT_NO_FATAL_FAILURE(this->pack_value(src_value));
 
-    llfs::StatusOr<const Var*> unpacked = llfs::unpack_cast<Var>(this->buffer);
+    llfs::StatusOr<const Var&> unpacked = llfs::unpack_cast<Var>(this->buffer);
 
     ASSERT_TRUE(unpacked.ok()) << BATT_INSPECT(unpacked.status());
-    ASSERT_EQ((int)(**unpacked).which, (int)expected_case);
-    ASSERT_EQ(((**unpacked).visit([](auto value) -> decltype(expected_value) {
+    ASSERT_EQ((int)unpacked->which, (int)expected_case);
+    ASSERT_EQ((unpacked->visit([](auto value) -> decltype(expected_value) {
                 return value;
               })),
               expected_value);
@@ -60,7 +60,7 @@ class PackedVariantTest : public ::testing::Test
 
     BATT_CHECK_LE(truncate_count, this->buffer.size());
 
-    llfs::StatusOr<const Var*> unpacked = llfs::unpack_cast<Var>(
+    llfs::StatusOr<const Var&> unpacked = llfs::unpack_cast<Var>(
         llfs::ConstBuffer{this->buffer.data(), this->buffer.size() - truncate_count});
 
     ASSERT_FALSE(unpacked.ok());

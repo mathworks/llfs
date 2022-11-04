@@ -38,17 +38,16 @@ TEST(PackedSlotRangeTest, Test)
   }
 
   {
-    batt::StatusOr<const llfs::PackedSlotRange*> unpacked =
+    batt::StatusOr<const llfs::PackedSlotRange&> unpacked =
         llfs::unpack_cast<llfs::PackedSlotRange>(buffer);
 
     ASSERT_TRUE(unpacked.ok()) << BATT_INSPECT(unpacked.status());
-    ASSERT_NE(*unpacked, nullptr);
-    EXPECT_EQ((**unpacked).lower_bound, 45u);
-    EXPECT_EQ((**unpacked).upper_bound, 108u);
+    EXPECT_EQ(unpacked->lower_bound, 45u);
+    EXPECT_EQ(unpacked->upper_bound, 108u);
   }
 
   {
-    batt::StatusOr<const llfs::PackedSlotRange*> unpacked =
+    batt::StatusOr<const llfs::PackedSlotRange&> unpacked =
         llfs::unpack_cast<llfs::PackedSlotRange>(
             llfs::ConstBuffer{buffer.data(), buffer.size() - 1});
 

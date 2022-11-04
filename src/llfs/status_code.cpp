@@ -97,6 +97,14 @@ bool initialize_status_codes()
                      "PackedVariant struct is (partially) outside the given buffer"),  // 39,
       CODE_WITH_MSG_(StatusCode::kUnpackCastIntegerOutOfBounds,
                      "Packed integer is (partially) outside the given buffer"),  // 40,
+      CODE_WITH_MSG_(StatusCode::kUnpackCastPackedBytesStructUnder,
+                     "Failed to unpack bytes"),  // 41,
+      CODE_WITH_MSG_(StatusCode::kUnpackCastPackedBytesStructOver,
+                     "Failed to unpack bytes"),                                               // 42,
+      CODE_WITH_MSG_(StatusCode::kUnpackCastPackedBytesDataUnder, "Failed to unpack bytes"),  // 43,
+      CODE_WITH_MSG_(StatusCode::kUnpackCastPackedBytesDataOver, "Failed to unpack bytes"),   // 44,
+      CODE_WITH_MSG_(StatusCode::kUnpackCastStructUnder, "Failed to unpack struct"),          // 45,
+      CODE_WITH_MSG_(StatusCode::kUnpackCastStructOver, "Failed to unpack struct"),           // 46,
   });
   return initialized;
 }

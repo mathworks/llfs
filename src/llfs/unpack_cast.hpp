@@ -66,7 +66,10 @@ template <::boost::endian::order kOrder, typename T, ::llfs::usize kNBits>
 }  // namespace endian
 }  // namespace boost
 
+//#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
+
 namespace llfs {
+
 template <typename T, typename DataT>
 StatusOr<const T*> unpack_cast(const DataT& data, batt::StaticType<T> = {})
 {
@@ -79,6 +82,24 @@ StatusOr<const T*> unpack_cast(const DataT& data, batt::StaticType<T> = {})
   BATT_REQUIRE_OK(validation_status);
 
   return packed;
+}
+
+template <typename PackedStructT>
+batt::Status validate_packed_struct(
+    const PackedStructT& packed_struct, const void* buffer_data, usize buffer_size,
+    StatusCode under_code = ::llfs::StatusCode::kUnpackCastStructUnder,
+    StatusCode over_code = ::llfs::StatusCode::kUnpackCastStructOver)
+{
+  if (static_cast<const void*>(&packed_struct) < buffer_data) {
+    return ::llfs::make_status(under_code);
+  }
+
+  const void* buffer_end = static_cast<const u8*>(buffer_data) + buffer_size;
+  if (static_cast<const void*>((&packed_struct) + 1) > buffer_end) {
+    return ::llfs::make_status(over_code);
+  }
+
+  return batt::OkStatus();
 }
 
 }  // namespace llfs

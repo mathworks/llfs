@@ -56,6 +56,12 @@ enum struct StatusCode {
   kUnpackCastNullptr = 38,
   kUnpackCastVariantStructOutOfBounds = 39,
   kUnpackCastIntegerOutOfBounds = 40,
+  kUnpackCastPackedBytesStructUnder = 41,
+  kUnpackCastPackedBytesStructOver = 42,
+  kUnpackCastPackedBytesDataUnder = 43,
+  kUnpackCastPackedBytesDataOver = 44,
+  kUnpackCastStructUnder = 45,
+  kUnpackCastStructOver = 46,
 };
 
 bool initialize_status_codes();

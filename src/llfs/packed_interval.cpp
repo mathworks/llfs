@@ -6,7 +6,7 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-#include <llfs/packed_slot_range.hpp>
+#include <llfs/packed_interval.hpp>
 //
 
 namespace llfs {

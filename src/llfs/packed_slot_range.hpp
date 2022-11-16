@@ -12,6 +12,7 @@
 
 #include <llfs/data_packer.hpp>
 #include <llfs/define_packed_type.hpp>
+#include <llfs/packed_interval.hpp>
 #include <llfs/packed_page_user_slot.hpp>
 #include <llfs/slot.hpp>
 #include <llfs/unpack_cast.hpp>
@@ -22,53 +23,11 @@
 
 namespace llfs {
 
-struct PackedSlotRange {
-  PackedSlotOffset lower_bound;
-  PackedSlotOffset upper_bound;
-};
+using PackedSlotRange = PackedInterval<PackedSlotOffset>;
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedSlotRange), 16);
 
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-inline usize packed_sizeof(const PackedSlotRange&)
-{
-  return sizeof(PackedSlotRange);
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-inline usize packed_sizeof(const SlotRange&)
-{
-  return sizeof(PackedSlotRange);
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-PackedSlotRange* pack_object_to(const SlotRange& object, PackedSlotRange* packed_object,
-                                DataPacker* packer);
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-std::ostream& operator<<(std::ostream& out, const PackedSlotRange& t);
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-inline batt::Status validate_packed_value(const llfs::PackedSlotRange& packed,
-                                          const void* buffer_data, std::size_t buffer_size)
-{
-  return validate_packed_struct(packed, buffer_data, buffer_size);
-}
-
 }  // namespace llfs
-
-//#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
-
-namespace batt {
-
-LLFS_DEFINE_PACKED_TYPE_FOR(::llfs::SlotRange, ::llfs::PackedSlotRange);
-
-}  // namespace batt
 
 //#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
 

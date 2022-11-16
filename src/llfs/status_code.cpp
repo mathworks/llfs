@@ -105,6 +105,12 @@ bool initialize_status_codes()
       CODE_WITH_MSG_(StatusCode::kUnpackCastPackedBytesDataOver, "Failed to unpack bytes"),   // 44,
       CODE_WITH_MSG_(StatusCode::kUnpackCastStructUnder, "Failed to unpack struct"),          // 45,
       CODE_WITH_MSG_(StatusCode::kUnpackCastStructOver, "Failed to unpack struct"),           // 46,
+      CODE_WITH_MSG_(StatusCode::kPageHeaderBadMagic, "Sanity check failed"),                 // 47,
+      CODE_WITH_MSG_(StatusCode::kPageHeaderBadPageId, "Sanity check failed"),                // 48,
+      CODE_WITH_MSG_(StatusCode::kPageHeaderBadPageSize, "Sanity check failed"),              // 49,
+      CODE_WITH_MSG_(StatusCode::kPageHeaderBadUnusedSize, "Sanity check failed"),            // 50,
+      CODE_WITH_MSG_(StatusCode::kPageHeaderBadUnusedBegin, "Sanity check failed"),           // 51,
+      CODE_WITH_MSG_(StatusCode::kPageHeaderBadUnusedEnd, "Sanity check failed"),             // 52,
   });
   return initialized;
 }

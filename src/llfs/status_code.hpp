@@ -62,6 +62,12 @@ enum struct StatusCode {
   kUnpackCastPackedBytesDataOver = 44,
   kUnpackCastStructUnder = 45,
   kUnpackCastStructOver = 46,
+  kPageHeaderBadMagic = 47,
+  kPageHeaderBadPageId = 48,
+  kPageHeaderBadPageSize = 49,
+  kPageHeaderBadUnusedSize = 50,
+  kPageHeaderBadUnusedBegin = 51,
+  kPageHeaderBadUnusedEnd = 52,
 };
 
 bool initialize_status_codes();

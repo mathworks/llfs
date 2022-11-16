@@ -447,10 +447,14 @@ void run_ref_count_update_sanity_checks(const PackedPageRefCount& delta, i32 bef
       << " page= " << std::hex << delta.page_id.value();
 
   if (delta.ref_count < 0) {
-    BATT_CHECK_LT(after_ref_count, before_ref_count);
-    BATT_CHECK_GT(after_ref_count, 0) << BATT_INSPECT(delta.page_id);
+    BATT_CHECK_LT(after_ref_count, before_ref_count)
+        << BATT_INSPECT(delta.page_id) << BATT_INSPECT(delta.ref_count);
+    BATT_CHECK_GT(after_ref_count, 0)
+        << BATT_INSPECT(delta.page_id) << BATT_INSPECT(delta.ref_count)
+        << BATT_INSPECT(before_ref_count);
     if (after_ref_count == 0) {
-      BATT_CHECK_NE(before_ref_count, 2);
+      BATT_CHECK_NE(before_ref_count, 2)
+          << BATT_INSPECT(delta.page_id) << BATT_INSPECT(delta.ref_count);
     }
   } else if (delta.ref_count > 0) {
     BATT_CHECK_GT(after_ref_count, before_ref_count) << BATT_INSPECT(delta.ref_count.value());

@@ -453,7 +453,6 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
       this->metrics_.prepare_slot_sync_latency,
       this->slot_writer_.sync(LogReadMode::kDurable, SlotUpperBoundAt{prepare_slot->upper_bound}));
 
-  BATT_UNTESTED_COND(!sync_prepare.ok());
   BATT_REQUIRE_OK(sync_prepare);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -

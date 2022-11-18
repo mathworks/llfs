@@ -115,6 +115,21 @@ inline bool operator<(const PackedPointer<U>& l, const PackedPointer<U>& r)
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedPointer<int>), 4);
 
+template <typename T>
+batt::Status validate_packed_value(const PackedPointer<T>& ptr, const void* buffer_data,
+                                   usize buffer_size)
+{
+  BATT_REQUIRE_OK(validate_packed_struct(ptr, buffer_data, buffer_size));
+  BATT_REQUIRE_OK(
+      validate_packed_byte_range(&ptr, ptr.offset + sizeof(T), buffer_data, buffer_size));
+
+  if (ptr) {
+    BATT_REQUIRE_OK(validate_packed_value(*ptr, buffer_data, buffer_size));
+  }
+
+  return batt::OkStatus();
+}
+
 }  // namespace llfs
 
 #endif  // LLFS_PACKED_POINTER_HPP

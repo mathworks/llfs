@@ -56,6 +56,8 @@ StatusOr<NoneType> VolumeRecoveryVisitor::on_volume_ids(const SlotParse& slot,
   return None;
 }
 
+TODO[tastolfi 2022 - 11 - 18] on_volume_trim;
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 Status VolumeRecoveryVisitor::resolve_pending_jobs(PageCache& cache, PageRecycler& recycler,

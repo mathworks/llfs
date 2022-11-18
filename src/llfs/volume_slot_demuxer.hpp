@@ -77,6 +77,8 @@ class VolumeSlotDemuxer : public VolumeEventVisitor<StatusOr<R>>
 
   StatusOr<R> on_volume_format_upgrade(const SlotParse&, const PackedVolumeFormatUpgrade&) override;
 
+  StatusOr<R> on_volume_trim(const SlotParse&, const VolumeTrimEvent&) override;
+
  private:
   // Updates internal state to reflect having visited the given slot.
   //

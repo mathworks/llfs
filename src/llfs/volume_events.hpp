@@ -183,6 +183,71 @@ struct PackedRollbackJob {
 
 LLFS_SIMPLE_PACKED_TYPE(PackedRollbackJob);
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
+struct PackedTrimmedPrepareJob {
+  PackedSlotOffset prepare_slot;
+  PackedArray<PackedPageId> page_ids;
+};
+
+BATT_STATIC_ASSERT_EQ(sizeof(PackedTrimmedPrepareJob), 16);
+
+struct TrimmedPrepareJob {
+  slot_offset_type prepare_slot;
+  batt::BoxedSeq<PageId> page_ids;
+};
+
+LLFS_DEFINE_PACKED_TYPE_FOR(TrimmedPrepareJob, PackedTrimmedPrepareJob);
+
+usize packed_sizeof(const TrimmedPrepareJob& object);
+
+usize packed_sizeof(const PackedTrimmedPrepareJob& packed);
+
+PackedTrimmedPrepareJob* pack_object_to(const TrimmedPrepareJob& object,
+                                        PackedTrimmedPrepareJob* packed, DataPacker* dst);
+
+StatusOr<TrimmedPrepareJob> unpack_object(const PackedTrimmedPrepareJob& packed, DataReader* src);
+
+Status validate_packed_value(const PackedTrimmedPrepareJob& packed, const void* buffer_data,
+                             usize buffer_size);
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+/** \brief Written and flushed to the Volume WAL before trimming a segment of the log.  This allows
+ * correct recovery in the case where a trim operation that needs to make page ref_count updates is
+ * interrupted by shutdown.
+ *
+ * Only one pending PackedVolumeTrim event may be present in the WAL at a given time.  A trim event
+ * is considered "pending" when new_trim_position is ahead of the actual log trim position, and it
+ * is considered resolved when the actual log trim position catches up.
+ */
+struct PackedVolumeTrimEvent {
+  PackedSlotOffset old_trim_pos;
+  PackedSlotOffset new_trim_pos;
+  PackedArray<PackedPointer<PackedTrimmedPrepareJob>> trimmed_prepare_jobs;
+};
+
+BATT_STATIC_ASSERT_EQ(sizeof(PackedVolumeTrimEvent), 24);
+
+struct VolumeTrimEvent {
+  slot_offset_type old_trim_pos;
+  slot_offset_type new_trim_pos;
+  batt::BoxedSeq<TrimmedPrepareJob> trimmed_prepare_jobs;
+};
+
+LLFS_DEFINE_PACKED_TYPE_FOR(VolumeTrimEvent, PackedVolumeTrimEvent);
+
+usize packed_sizeof(const VolumeTrimEvent& object);
+
+usize packed_sizeof(const PackedVolumeTrimEvent& packed);
+
+PackedVolumeTrimEvent* pack_object_to(const VolumeTrimEvent& object, PackedVolumeTrimEvent* packed,
+                                      DataPacker* dst);
+
+StatusOr<VolumeTrimEvent> unpack_object(const PackedVolumeTrimEvent& packed, DataReader* src);
+
+Status validate_packed_value(const PackedVolumeTrimEvent& packed, const void* buffer_data,
+                             usize buffer_size);
+
 }  // namespace llfs
 
 #endif  // LLFS_VOLUME_EVENTS_HPP

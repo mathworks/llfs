@@ -143,6 +143,21 @@ inline usize packed_sizeof(const PackedArray<T>& a)
   return packed_array_size<T>(a.item_count);
 }
 
+template <typename T>
+batt::Status validate_packed_value(const PackedArray<T>& a, const void* buffer_data,
+                                   usize buffer_size)
+{
+  BATT_REQUIRE_OK(validate_packed_struct(a, buffer_data, buffer_size));
+  BATT_REQUIRE_OK(validate_packed_byte_range(&a, packed_array_size(a.size(), batt::StaticType<T>{}),
+                                             buffer_data, buffer_size));
+
+  for (const auto& item : a) {
+    BATT_REQUIRE_OK(validate_packed_value(item, buffer_data, buffer_size));
+  }
+
+  return batt::OkStatus();
+}
+
 }  // namespace llfs
 
 #endif  // LLFS_PACKED_ARRAY_HPP

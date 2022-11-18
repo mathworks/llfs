@@ -66,7 +66,7 @@ u64 Volume::calculate_grant_size(const std::string_view& payload) const
 //
 u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
 {
-  return packed_sizeof_slot(prepare(appendable)) +
+  return packed_sizeof_slot(prepare(appendable)) * 2 +
          packed_sizeof_slot(batt::StaticType<PackedCommitJob>{});
 }
 
@@ -113,6 +113,10 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
 
                               return log_reader.slot_offset();
                             }));
+
+  // The amount to allocate to the trimmer to refresh all metadata we append to the log below.
+  //
+  usize trimmer_grant_size = 0;
 
   // Put the main log in a clean state.  This means all configuration data must
   // be recorded, device attachments created, and pending jobs resolved.
@@ -171,6 +175,8 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
               .user_slot_offset = slot_offset,
           }};
 
+          trimmer_grant_size += packed_sizeof_slot(attach_event);
+
           if (visitor.device_attachments.count(attach_event)) {
             continue;
           }
@@ -222,6 +228,14 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
                  std::move(params.trim_control), std::move(page_deleter), std::move(root_log),
                  std::move(recycler), visitor.ids->payload.trimmer_uuid}};
 
+  {
+    batt::StatusOr<batt::Grant> trimmer_grant =
+        volume->slot_writer_.reserve(trimmer_grant_size, batt::WaitForResource::kFalse);
+    BATT_REQUIRE_OK(trimmer_grant);
+
+    volume->trimmer_.push_grant(std::move(*trimmer_grant));
+  }
+
   volume->start();
 
   return volume;
@@ -246,12 +260,11 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
           this->root_log_->slot_range(LogReadMode::kDurable), "Volume::(ctor)"))}
     , recycler_{std::move(recycler)}
     , slot_writer_{*this->root_log_}
-    , trimmer_{this->cache(),
-               *this->trim_control_,
-               *this->recycler_,
-               trimmer_uuid,
-               this->root_log_->new_reader(/*slot_lower_bound=*/None, LogReadMode::kDurable),
-               this->slot_writer_}
+    , trimmer_{
+          trimmer_uuid, *this->trim_control_,
+          this->root_log_->new_reader(/*slot_lower_bound=*/None, LogReadMode::kDurable),
+          this->slot_writer_,
+          VolumeTrimmer::make_default_drop_roots_fn(this->cache(), *this->recycler_, trimmer_uuid)}
 {
 }
 
@@ -432,9 +445,16 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
   //
   BATT_DEBUG_INFO("appending PrepareJob slot to the WAL");
 
+  auto prepared_job = prepare(appendable);
+  {
+    BATT_ASSIGN_OK_RESULT(batt::Grant trim_refresh_grant,
+                          grant.spend(packed_sizeof_slot(prepared_job)));
+    this->trimmer_.push_grant(std::move(trim_refresh_grant));
+  }
+
   StatusOr<SlotRange> prepare_slot =
       LLFS_COLLECT_LATENCY(this->metrics_.prepare_slot_append_latency,
-                           this->slot_writer_.append(grant, prepare(appendable)));
+                           this->slot_writer_.append(grant, std::move(prepared_job)));
 
   if (sequencer) {
     if (!prepare_slot.ok()) {

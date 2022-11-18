@@ -177,14 +177,19 @@ class SlotWriter::Append
   DataPacker packer_;
 };
 
-template <typename T>
-inline usize packed_sizeof_slot(const T& payload)
+inline usize packed_sizeof_slot_with_payload_size(usize payload_size)
 {
-  const usize slot_body_size = sizeof(PackedVariant<>) + packed_sizeof(payload);
+  const usize slot_body_size = sizeof(PackedVariant<>) + payload_size;
   const usize slot_header_size = packed_sizeof_varint(slot_body_size);
   const usize slot_size = slot_header_size + slot_body_size;
 
   return slot_size;
+}
+
+template <typename T>
+inline usize packed_sizeof_slot(const T& payload)
+{
+  return packed_sizeof_slot_with_payload_size(packed_sizeof(payload));
 }
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

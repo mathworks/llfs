@@ -84,22 +84,34 @@ StatusOr<const T&> unpack_cast(const DataT& data, batt::StaticType<T> = {})
   return *packed;
 }
 
+inline batt::Status validate_packed_byte_range(
+    const void* packed_begin, usize packed_size,  //
+    const void* buffer_data, usize buffer_size,   //
+    StatusCode under_code = ::llfs::StatusCode::kUnpackCastStructUnder,
+    StatusCode over_code = ::llfs::StatusCode::kUnpackCastStructOver)
+{
+  if (packed_begin < buffer_data) {
+    return ::llfs::make_status(under_code);
+  }
+
+  const void* buffer_end = static_cast<const u8*>(buffer_data) + buffer_size;
+  const void* packed_end = static_cast<const u8*>(packed_begin) + packed_size;
+
+  if (packed_end > buffer_end) {
+    return ::llfs::make_status(over_code);
+  }
+
+  return batt::OkStatus();
+}
+
 template <typename PackedStructT>
 batt::Status validate_packed_struct(
     const PackedStructT& packed_struct, const void* buffer_data, usize buffer_size,
     StatusCode under_code = ::llfs::StatusCode::kUnpackCastStructUnder,
     StatusCode over_code = ::llfs::StatusCode::kUnpackCastStructOver)
 {
-  if (static_cast<const void*>(&packed_struct) < buffer_data) {
-    return ::llfs::make_status(under_code);
-  }
-
-  const void* buffer_end = static_cast<const u8*>(buffer_data) + buffer_size;
-  if (static_cast<const void*>((&packed_struct) + 1) > buffer_end) {
-    return ::llfs::make_status(over_code);
-  }
-
-  return batt::OkStatus();
+  return validate_packed_byte_range(&packed_struct, sizeof(packed_struct), buffer_data, buffer_size,
+                                    under_code, over_code);
 }
 
 }  // namespace llfs

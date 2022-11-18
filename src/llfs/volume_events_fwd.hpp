@@ -22,20 +22,23 @@ struct PackedVolumeFormatUpgrade;
 struct PackedPrepareJob;
 struct PackedCommitJob;
 struct PackedRollbackJob;
+struct PackedVolumeTrimEvent;
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-using VolumeEventVariant = PackedVariant<PackedVolumeIds,            // 0
-                                         PackedVolumeAttachEvent,    // 1
-                                         PackedVolumeDetachEvent,    // 2
-                                         PackedVolumeRecovered,      // 3
-                                         PackedPrepareJob,           // 4
-                                         PackedCommitJob,            // 5
-                                         PackedRollbackJob,          // 6
-                                         PackedVolumeFormatUpgrade,  // 7
-                                         PackedRawData               // 8
-                                         // 9..255 : reserved for future use.
-                                         >;
+using VolumeEventVariant =
+    PackedVariant<PackedVolumeIds,            // 0
+                  PackedVolumeAttachEvent,    // 1
+                  PackedVolumeDetachEvent,    // 2
+                  PackedVolumeRecovered,      // 3
+                  PackedPrepareJob,           // 4
+                  PackedCommitJob,            // 5
+                  PackedRollbackJob,          // 6
+                  PackedVolumeFormatUpgrade,  // 7
+                  PackedRawData,              // 8
+                  PackedVolumeTrimEvent       // 9
+                                              // 10..255 : reserved for future use.
+                  >;
 
 }  // namespace llfs
 

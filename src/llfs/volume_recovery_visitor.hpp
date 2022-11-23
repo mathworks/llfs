@@ -42,7 +42,7 @@ class VolumeRecoveryVisitor : public VolumeSlotDemuxer<NoneType>
 
   // The device attachments for this volume.
   //
-  std::unordered_set<PackedVolumeAttachEvent, PackedVolumeAttachEvent::Hash> device_attachments;
+  std::unordered_set<VolumeAttachmentId, VolumeAttachmentId::Hash> device_attachments;
 
   // The uuids for the volume.
   //

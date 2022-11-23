@@ -163,11 +163,24 @@ TEST_F(VolumeEventsTest, TrimEventPackUnpack)
       jobs.emplace_back(this->make_trimmed_prepare_job(/*prepare_slot=*/i, /*n_pages=*/i));
     }
 
+    std::vector<llfs::slot_offset_type> commits;
+    for (usize i = 1; i < n_trimmed_jobs; ++i) {
+      commits.emplace_back(/*prepare_slot=*/i - 1);
+    }
+
     llfs::VolumeTrimEvent trim_event;
     trim_event.old_trim_pos = n_trimmed_jobs;
     trim_event.new_trim_pos = (n_trimmed_jobs + 1) * 1917;
-    trim_event.trimmed_prepare_jobs =
-        batt::as_seq(jobs) | batt::seq::decayed() | batt::seq::boxed();
+
+    trim_event.committed_jobs =  //
+        batt::as_seq(commits)    //
+        | batt::seq::decayed()   //
+        | batt::seq::boxed();
+
+    trim_event.trimmed_prepare_jobs =  //
+        batt::as_seq(jobs)             //
+        | batt::seq::decayed()         //
+        | batt::seq::boxed();
 
     EXPECT_GT(llfs::packed_sizeof(trim_event), prev_packed_size);
     prev_packed_size = llfs::packed_sizeof(trim_event);
@@ -181,6 +194,12 @@ TEST_F(VolumeEventsTest, TrimEventPackUnpack)
       ASSERT_TRUE(packed.ok()) << BATT_INSPECT(packed.status());
       EXPECT_EQ(packed->old_trim_pos, trim_event.old_trim_pos);
       EXPECT_EQ(packed->new_trim_pos, trim_event.new_trim_pos);
+      if (n_trimmed_jobs > 1) {
+        ASSERT_TRUE(packed->committed_jobs);
+        ASSERT_EQ(packed->committed_jobs->size(), n_trimmed_jobs - 1);
+      } else {
+        EXPECT_FALSE(packed->committed_jobs);
+      }
       ASSERT_EQ(packed->trimmed_prepare_jobs.size(), n_trimmed_jobs);
 
       for (usize i = 0; i < n_trimmed_jobs; ++i) {
@@ -201,6 +220,12 @@ TEST_F(VolumeEventsTest, TrimEventPackUnpack)
       ASSERT_TRUE(unpacked.ok()) << BATT_INSPECT(unpacked.status());
       EXPECT_EQ(unpacked->old_trim_pos, trim_event.old_trim_pos);
       EXPECT_EQ(unpacked->new_trim_pos, trim_event.new_trim_pos);
+      EXPECT_EQ((batt::make_copy(unpacked->committed_jobs) |
+                 batt::seq::map([](llfs::PackedSlotOffset offset) -> llfs::slot_offset_type {
+                   return offset.value();
+                 }) |
+                 batt::seq::collect_vec()),
+                commits);
       EXPECT_EQ((batt::make_copy(unpacked->trimmed_prepare_jobs) | batt::seq::collect_vec()).size(),
                 n_trimmed_jobs);
     }

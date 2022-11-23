@@ -26,7 +26,7 @@ namespace llfs {
 StatusOr<NoneType> VolumeRecoveryVisitor::on_volume_attach(const SlotParse& /*slot*/,
                                                            const PackedVolumeAttachEvent& attach)
 {
-  this->device_attachments.emplace(attach);
+  this->device_attachments.emplace(attach.id);
   return None;
 }
 
@@ -35,12 +35,7 @@ StatusOr<NoneType> VolumeRecoveryVisitor::on_volume_attach(const SlotParse& /*sl
 StatusOr<NoneType> VolumeRecoveryVisitor::on_volume_detach(const SlotParse& /*slot*/,
                                                            const PackedVolumeDetachEvent& detach)
 {
-  PackedVolumeAttachEvent attach{{
-      .client_uuid = detach.client_uuid,
-      .device_id = detach.device_id,
-      .user_slot_offset = 0 /* doesn't matter; this field doesn't affect equality groups */,
-  }};
-  this->device_attachments.erase(attach);
+  this->device_attachments.erase(detach.id);
   return None;
 }
 
@@ -56,7 +51,7 @@ StatusOr<NoneType> VolumeRecoveryVisitor::on_volume_ids(const SlotParse& slot,
   return None;
 }
 
-TODO[tastolfi 2022 - 11 - 18] on_volume_trim;
+// TODO[tastolfi 2022-11-18] on_volume_trim;
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //

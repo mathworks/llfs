@@ -158,6 +158,18 @@ batt::Status validate_packed_value(const PackedArray<T>& a, const void* buffer_d
   return batt::OkStatus();
 }
 
+template <boost::endian::order kOrder, typename T, usize kNBits>
+batt::Status validate_packed_value(
+    const PackedArray<boost::endian::endian_arithmetic<kOrder, T, kNBits>>& a,
+    const void* buffer_data, usize buffer_size)
+{
+  BATT_REQUIRE_OK(validate_packed_struct(a, buffer_data, buffer_size));
+  BATT_REQUIRE_OK(validate_packed_byte_range(&a, packed_array_size(a.size(), batt::StaticType<T>{}),
+                                             buffer_data, buffer_size));
+
+  return batt::OkStatus();
+}
+
 }  // namespace llfs
 
 #endif  // LLFS_PACKED_ARRAY_HPP

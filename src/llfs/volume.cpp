@@ -66,8 +66,14 @@ u64 Volume::calculate_grant_size(const std::string_view& payload) const
 //
 u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
 {
-  return packed_sizeof_slot(prepare(appendable)) * 2 +
-         packed_sizeof_slot(batt::StaticType<PackedCommitJob>{});
+  return (packed_sizeof_slot(prepare(appendable)) +
+          packed_sizeof_slot(batt::StaticType<PackedCommitJob>{}))
+
+         // We double the grant size to reserve log space to save the list of pages (and the record
+         // of a job being committed) in TrimEvent slots, should prepare and commit be split across
+         // two trimmed regions.
+         //
+         * 2;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -170,14 +176,17 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
           const slot_offset_type slot_offset = slot_writer.slot_offset();
 
           auto attach_event = PackedVolumeAttachEvent{{
-              .client_uuid = uuid,
-              .device_id = arena.device().get_id(),
+              .id =
+                  {
+                      .client = uuid,
+                      .device = arena.device().get_id(),
+                  },
               .user_slot_offset = slot_offset,
           }};
 
           trimmer_grant_size += packed_sizeof_slot(attach_event);
 
-          if (visitor.device_attachments.count(attach_event)) {
+          if (visitor.device_attachments.count(attach_event.id)) {
             continue;
           }
 

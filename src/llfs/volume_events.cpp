@@ -11,7 +11,16 @@
 
 #include <llfs/data_layout.hpp>
 
+#include <boost/uuid/uuid_io.hpp>
+
 namespace llfs {
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+std::ostream& operator<<(std::ostream& out, const VolumeAttachmentId& id)
+{
+  return out << "{.client=" << id.client << ", .device=" << id.device.value() << ",}";
+}
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
@@ -158,12 +167,22 @@ Status validate_packed_value(const PackedTrimmedPrepareJob& packed, const void* 
 //
 usize packed_sizeof(const VolumeTrimEvent& object)
 {
-  return sizeof(PackedVolumeTrimEvent) + (batt::make_copy(object.trimmed_prepare_jobs)  //
-                                          | batt::seq::map([](const TrimmedPrepareJob& pending) {
-                                              return packed_sizeof(pending) +
-                                                     sizeof(PackedPointer<PackedTrimmedPrepareJob>);
-                                            })  //
-                                          | batt::seq::sum());
+  const usize n_committed = [&] {
+    if (object.committed_jobs) {
+      return batt::make_copy(object.committed_jobs) | batt::seq::count();
+    } else {
+      return usize{0};
+    }
+  }();
+
+  return sizeof(PackedVolumeTrimEvent)                                       //
+         + n_committed * sizeof(PackedSlotOffset)                            //
+         + ((n_committed > 0) ? sizeof(PackedArray<PackedSlotOffset>) : 0u)  //
+         + (batt::make_copy(object.trimmed_prepare_jobs)                     //
+            | batt::seq::map([](const TrimmedPrepareJob& pending) {
+                return packed_sizeof(pending) + sizeof(PackedPointer<PackedTrimmedPrepareJob>);
+              })  //
+            | batt::seq::sum());
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -172,6 +191,13 @@ usize packed_sizeof(const PackedVolumeTrimEvent& packed)
 {
   return sizeof(PackedVolumeTrimEvent) +
          sizeof(PackedPointer<PackedTrimmedPrepareJob>) * packed.trimmed_prepare_jobs.size() +
+         ([&]() -> usize {
+           if (!packed.committed_jobs) {
+             return 0;
+           } else {
+             return packed.committed_jobs->size() * sizeof(PackedSlotOffset);
+           }
+         }()) +
          (as_seq(packed.trimmed_prepare_jobs)  //
           | batt::seq::map([](const PackedPointer<PackedTrimmedPrepareJob>& p_job) {
               return packed_sizeof(*p_job);
@@ -186,6 +212,7 @@ PackedVolumeTrimEvent* pack_object_to(const VolumeTrimEvent& object, PackedVolum
 {
   packed->old_trim_pos = object.old_trim_pos;
   packed->new_trim_pos = object.new_trim_pos;
+  packed->committed_jobs.offset = 0;
   packed->trimmed_prepare_jobs.initialize(0u);
 
   const usize pending_job_count = batt::make_copy(object.trimmed_prepare_jobs) | batt::seq::count();
@@ -218,6 +245,30 @@ PackedVolumeTrimEvent* pack_object_to(const VolumeTrimEvent& object, PackedVolum
 
   BATT_CHECK_EQ(pending_job_count, packed->trimmed_prepare_jobs.size());
 
+  if ((batt::make_copy(object.committed_jobs) | batt::seq::take_n(1) | batt::seq::count()) > 0) {
+    PackedArray<PackedSlotOffset>* const committed_jobs =
+        dst->pack_record(batt::StaticType<PackedArray<PackedSlotOffset>>{});
+    if (committed_jobs == nullptr) {
+      return nullptr;
+    }
+    committed_jobs->initialize(0u);
+    packed->committed_jobs.reset(committed_jobs, dst);
+
+    bool error = false;
+    batt::make_copy(object.committed_jobs)  //
+        | batt::seq::for_each([&error, committed_jobs, dst](slot_offset_type prepare_slot) {
+            if (!dst->pack_u64(prepare_slot)) {
+              error = true;
+              return batt::seq::LoopControl::kBreak;
+            }
+            committed_jobs->item_count += 1;
+            return batt::seq::LoopControl::kContinue;
+          });
+    if (error) {
+      return nullptr;
+    }
+  }
+
   return packed;
 }
 
@@ -228,6 +279,19 @@ StatusOr<VolumeTrimEvent> unpack_object(const PackedVolumeTrimEvent& packed, Dat
   return VolumeTrimEvent{
       .old_trim_pos = packed.old_trim_pos,
       .new_trim_pos = packed.new_trim_pos,
+
+      .committed_jobs = [&]() -> batt::BoxedSeq<slot_offset_type> {
+        if (packed.committed_jobs) {
+          return as_seq(*packed.committed_jobs) |
+                 batt::seq::map([](const PackedSlotOffset& prepare_slot) -> slot_offset_type {
+                   return prepare_slot.value();
+                 }) |
+                 batt::seq::boxed();
+        } else {
+          return batt::seq::Empty<slot_offset_type>{} | batt::seq::boxed();
+        }
+      }(),
+
       .trimmed_prepare_jobs =
           as_seq(packed.trimmed_prepare_jobs)  //
           | batt::seq::map(
@@ -246,6 +310,7 @@ Status validate_packed_value(const PackedVolumeTrimEvent& packed, const void* bu
                              usize buffer_size)
 {
   BATT_REQUIRE_OK(validate_packed_struct(packed, buffer_data, buffer_size));
+  BATT_REQUIRE_OK(validate_packed_value(packed.committed_jobs, buffer_data, buffer_size));
   BATT_REQUIRE_OK(validate_packed_value(packed.trimmed_prepare_jobs, buffer_data, buffer_size));
 
   return batt::OkStatus();

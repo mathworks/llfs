@@ -36,47 +36,49 @@ struct PackedVolumeAttachmentEvent;
 template <typename Derived>
 std::ostream& operator<<(std::ostream& out, const PackedVolumeAttachmentEvent<Derived>& t);
 
+struct VolumeAttachmentId {
+  boost::uuids::uuid client;
+  little_page_id_int device;
+
+  struct Hash {
+    u64 operator()(const VolumeAttachmentId& id) const
+    {
+      u64 seed = 0;
+      boost::hash_combine(seed, boost::hash<boost::uuids::uuid>{}(id.client));
+      boost::hash_combine(seed, id.device.value());
+      return seed;
+    }
+  };
+};
+
+inline bool operator==(const VolumeAttachmentId& l, const VolumeAttachmentId& r)
+{
+  return l.client == r.client     //
+         && l.device == r.device  //
+      ;
+}
+
+std::ostream& operator<<(std::ostream& out, const VolumeAttachmentId& id);
+
+BATT_EQUALITY_COMPARABLE((inline), VolumeAttachmentId, VolumeAttachmentId)
+
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 template <typename Derived>
 struct PackedVolumeAttachmentEvent {
-  boost::uuids::uuid client_uuid;
-  little_page_id_int device_id;
+  VolumeAttachmentId id;
   little_u64 user_slot_offset;
-
-  struct Hash {
-    u64 operator()(const PackedVolumeAttachmentEvent& event) const
-    {
-      u64 seed = 0;
-      boost::hash_combine(seed, boost::hash<boost::uuids::uuid>{}(event.client_uuid));
-      boost::hash_combine(seed, event.device_id.value());
-      /* user_slot_offset intentionally omitted */
-      return seed;
-    }
-  };
 };
 
 template <typename Derived>
 inline std::ostream& operator<<(std::ostream& out, const PackedVolumeAttachmentEvent<Derived>& t)
 {
   return out << batt::name_of<Derived>() <<               //
-         "{.client_uuid=" << t.client_uuid <<             //
-         ", .device_id=" << t.device_id <<                //
+         "{.client_uuid=" << t.id.client <<               //
+         ", .device_id=" << t.id.device <<                //
          ", .user_slot_offset=" << t.user_slot_offset <<  //
          ",}";
 }
-
-template <typename Derived>
-inline bool operator==(const PackedVolumeAttachmentEvent<Derived>& l,
-                       const PackedVolumeAttachmentEvent<Derived>& r)
-{
-  return l.client_uuid == r.client_uuid  //
-         && l.device_id == r.device_id   //
-      /* user_slot_offset intentionally omitted */;
-}
-
-BATT_EQUALITY_COMPARABLE((template <typename Derived> inline), PackedVolumeAttachmentEvent<Derived>,
-                         PackedVolumeAttachmentEvent<Derived>)
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
@@ -223,14 +225,23 @@ Status validate_packed_value(const PackedTrimmedPrepareJob& packed, const void* 
 struct PackedVolumeTrimEvent {
   PackedSlotOffset old_trim_pos;
   PackedSlotOffset new_trim_pos;
+
+  /** \brief The prepare slot offsets of any jobs that were resolved in this trim (i.e., the
+   * CommitJob slot for the corresponding prepare slot was found in the trimmed region).
+   */
+  PackedPointer<PackedArray<PackedSlotOffset>> committed_jobs;
+
+  /** \brief The pending PrepareJob slots from this trimmed region or a previous one.
+   */
   PackedArray<PackedPointer<PackedTrimmedPrepareJob>> trimmed_prepare_jobs;
 };
 
-BATT_STATIC_ASSERT_EQ(sizeof(PackedVolumeTrimEvent), 24);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedVolumeTrimEvent), 28);
 
 struct VolumeTrimEvent {
   slot_offset_type old_trim_pos;
   slot_offset_type new_trim_pos;
+  batt::BoxedSeq<slot_offset_type> committed_jobs;
   batt::BoxedSeq<TrimmedPrepareJob> trimmed_prepare_jobs;
 };
 

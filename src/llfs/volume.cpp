@@ -510,6 +510,7 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
 
   StatusOr<SlotRange> commit_slot =
       this->slot_writer_.append(grant, PackedCommitJob{
+                                           .reserved_ = {},
                                            .prepare_slot = prepare_slot->lower_bound,
                                        });
 

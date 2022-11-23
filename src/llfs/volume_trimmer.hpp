@@ -37,6 +37,14 @@ struct VolumeTrimmedRegionInfo {
       attachments_to_refresh;
   usize grant_size_to_release = 0;
   usize grant_size_to_reserve = 0;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  bool requires_trim_event_slot() const
+  {
+    return !this->resolved_jobs.empty() || !this->obsolete_roots.empty() ||
+           !this->pending_jobs.empty();
+  }
 };
 
 /** \brief Consumer of dropped root page refs.
@@ -61,6 +69,27 @@ struct VolumeMetadataRefreshInfo {
   AttachSlotMap most_recent_attach_slot;
 };
 
+inline bool operator==(const VolumeMetadataRefreshInfo& l, const VolumeMetadataRefreshInfo& r)
+{
+  return l.most_recent_ids_slot == r.most_recent_ids_slot  //
+         && l.most_recent_attach_slot == r.most_recent_attach_slot;
+}
+
+inline bool operator!=(const VolumeMetadataRefreshInfo& l, const VolumeMetadataRefreshInfo& r)
+{
+  return !(l == r);
+}
+
+inline std::ostream& operator<<(std::ostream& out, const VolumeMetadataRefreshInfo& t)
+{
+  return out << "{.most_recent_ids_slot=" << t.most_recent_ids_slot
+             << ",  .most_recent_attach_slot=" << batt::dump_range(t.most_recent_attach_slot)
+             << ",}";
+}
+
+/** \brief Appends any Volume metadata that will be lost when trimmed_region is trimmed to the end
+ * of the log using the passed grant.
+ */
 Status refresh_volume_metadata(TypedSlotWriter<VolumeEventVariant>& slot_writer, batt::Grant& grant,
                                VolumeMetadataRefreshInfo& refresh_info,
                                VolumeTrimmedRegionInfo& trimmed_region);
@@ -83,7 +112,8 @@ StatusOr<VolumeTrimEventInfo> write_trim_event(TypedSlotWriter<VolumeEventVarian
 /** \brief Decrement ref counts of obsolete roots in the given trimmed region and trim the log.
  */
 Status trim_volume_log(TypedSlotWriter<VolumeEventVariant>& slot_writer, batt::Grant& grant,
-                       VolumeTrimEventInfo&& trim_event, VolumeTrimmedRegionInfo&& trimmed_region,
+                       Optional<VolumeTrimEventInfo>&& trim_event,
+                       VolumeTrimmedRegionInfo&& trimmed_region,
                        const VolumeDropRootsFn& drop_roots,
                        VolumePendingJobsUMap& prior_pending_jobs);
 

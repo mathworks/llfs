@@ -115,9 +115,15 @@ class SlotReadLock
 
   ~SlotReadLock() noexcept
   {
+    this->clear();
+  }
+
+  void clear()
+  {
     if (this->sponsor_) {
       this->sponsor_->unlock_slots(this);
     }
+    this->sponsor_ = nullptr;
   }
 
   Sponsor* get_sponsor() const

@@ -123,70 +123,6 @@ inline std::ostream& operator<<(std::ostream& out, const PackedVolumeIds& t)
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-struct PackedVolumeRecovered {
-};
-
-LLFS_SIMPLE_PACKED_TYPE(PackedVolumeRecovered);
-
-//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-//
-struct PackedVolumeFormatUpgrade {
-  little_u64 new_version;
-};
-
-LLFS_SIMPLE_PACKED_TYPE(PackedVolumeFormatUpgrade);
-
-//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-// The "prepare" phase slot written to a log when transactionally appending a PageCacheJob with user
-// data (T).
-//
-struct PrepareJob {
-  BoxedSeq<PageId> new_page_ids;
-  BoxedSeq<PageId> deleted_page_ids;
-  PackableRef user_data;
-};
-
-usize packed_sizeof(const PrepareJob& obj);
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-// Packed representation of PrepareJob.
-//
-struct PackedPrepareJob {
-  PackedPrepareJob(const PackedPrepareJob&) = delete;
-  PackedPrepareJob& operator=(const PackedPrepareJob&) = delete;
-
-  PackedPointer<PackedArray<PackedPageId>> new_page_ids;
-  PackedPointer<PackedArray<PackedPageId>> deleted_page_ids;
-  PackedPointer<PackedArray<PackedPageId>> root_page_ids;
-  PackedPointer<PackedRawData> user_data;
-};
-
-LLFS_DEFINE_PACKED_TYPE_FOR(PrepareJob, PackedPrepareJob);
-
-usize packed_sizeof(const PackedPrepareJob& obj);
-
-PackedPrepareJob* pack_object_to(const PrepareJob& obj, PackedPrepareJob* packed, DataPacker* dst);
-
-StatusOr<Ref<const PackedPrepareJob>> unpack_object(const PackedPrepareJob& packed, DataReader*);
-
-//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-//
-struct PackedCommitJob {
-  PackedSlotOffset prepare_slot;
-};
-
-LLFS_SIMPLE_PACKED_TYPE(PackedCommitJob);
-
-//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-//
-struct PackedRollbackJob {
-  PackedSlotOffset prepare_slot;
-};
-
-LLFS_SIMPLE_PACKED_TYPE(PackedRollbackJob);
-
-//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-//
 struct PackedTrimmedPrepareJob {
   PackedSlotOffset prepare_slot;
   PackedArray<PackedPageId> page_ids;
@@ -258,6 +194,72 @@ StatusOr<VolumeTrimEvent> unpack_object(const PackedVolumeTrimEvent& packed, Dat
 
 Status validate_packed_value(const PackedVolumeTrimEvent& packed, const void* buffer_data,
                              usize buffer_size);
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
+struct PackedVolumeRecovered {
+};
+
+LLFS_SIMPLE_PACKED_TYPE(PackedVolumeRecovered);
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
+struct PackedVolumeFormatUpgrade {
+  little_u64 new_version;
+};
+
+LLFS_SIMPLE_PACKED_TYPE(PackedVolumeFormatUpgrade);
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+// The "prepare" phase slot written to a log when transactionally appending a PageCacheJob with user
+// data (T).
+//
+struct PrepareJob {
+  BoxedSeq<PageId> new_page_ids;
+  BoxedSeq<PageId> deleted_page_ids;
+  PackableRef user_data;
+};
+
+usize packed_sizeof(const PrepareJob& obj);
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// Packed representation of PrepareJob.
+//
+struct PackedPrepareJob {
+  PackedPrepareJob(const PackedPrepareJob&) = delete;
+  PackedPrepareJob& operator=(const PackedPrepareJob&) = delete;
+
+  u8 reserved_[sizeof(PackedVolumeTrimEvent) + sizeof(PackedPointer<PackedTrimmedPrepareJob>)];
+  PackedPointer<PackedArray<PackedPageId>> new_page_ids;
+  PackedPointer<PackedArray<PackedPageId>> deleted_page_ids;
+  PackedPointer<PackedArray<PackedPageId>> root_page_ids;
+  PackedPointer<PackedRawData> user_data;
+};
+
+LLFS_DEFINE_PACKED_TYPE_FOR(PrepareJob, PackedPrepareJob);
+
+usize packed_sizeof(const PackedPrepareJob& obj);
+
+PackedPrepareJob* pack_object_to(const PrepareJob& obj, PackedPrepareJob* packed, DataPacker* dst);
+
+StatusOr<Ref<const PackedPrepareJob>> unpack_object(const PackedPrepareJob& packed, DataReader*);
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
+struct PackedCommitJob {
+  u8 reserved_[sizeof(PackedVolumeTrimEvent) + sizeof(PackedArray<PackedSlotOffset>)];
+  PackedSlotOffset prepare_slot;
+};
+
+LLFS_SIMPLE_PACKED_TYPE(PackedCommitJob);
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
+struct PackedRollbackJob {
+  PackedSlotOffset prepare_slot;
+};
+
+LLFS_SIMPLE_PACKED_TYPE(PackedRollbackJob);
 
 }  // namespace llfs
 

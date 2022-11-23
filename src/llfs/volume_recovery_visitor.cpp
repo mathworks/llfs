@@ -104,6 +104,7 @@ Status VolumeRecoveryVisitor::resolve_pending_jobs(PageCache& cache, PageRecycle
       if (commit_status.ok()) {
         StatusOr<SlotRange> commit_slot =
             slot_writer.append(grant, PackedCommitJob{
+                                          .reserved_ = {},
                                           .prepare_slot = prepare_slot,
                                       });
 

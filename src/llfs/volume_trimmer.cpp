@@ -133,6 +133,13 @@ Status VolumeTrimmer::run()
     }
     BATT_CHECK(this->trimmed_region_info_);
 
+    if (this->trimmed_region_info_->slot_range.empty()) {
+      LLFS_VLOG(1) << "Trimmed region too small; waiting for more to be trimmed,"
+                   << BATT_INSPECT(least_upper_bound);
+      this->trimmed_region_info_ = batt::None;
+      continue;
+    }
+
     //+++++++++++-+-+--+----- --- -- -  -  -   -
     // Make sure all Volume metadata has been refreshed.
     //
@@ -142,12 +149,12 @@ Status VolumeTrimmer::run()
     //+++++++++++-+-+--+----- --- -- -  -  -   -
     // Write a TrimEvent to the log if necessary.
     //
-    if (!this->latest_trim_event_) {
+    if (this->trimmed_region_info_->requires_trim_event_slot() && !this->latest_trim_event_) {
       BATT_ASSIGN_OK_RESULT(this->latest_trim_event_,
                             write_trim_event(this->slot_writer_, this->trimmer_grant_,
                                              *this->trimmed_region_info_, this->pending_jobs_));
+      BATT_CHECK(this->latest_trim_event_);
     }
-    BATT_CHECK(this->latest_trim_event_);
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
     // Trim the log.
@@ -155,7 +162,7 @@ Status VolumeTrimmer::run()
     const slot_offset_type new_trim_target = this->trimmed_region_info_->slot_range.upper_bound;
 
     Status trim_result = trim_volume_log(
-        this->slot_writer_, this->trimmer_grant_, std::move(*this->latest_trim_event_),
+        this->slot_writer_, this->trimmer_grant_, std::move(this->latest_trim_event_),
         std::move(*this->trimmed_region_info_), this->drop_roots_, this->pending_jobs_);
 
     this->latest_trim_event_ = batt::None;
@@ -465,7 +472,7 @@ StatusOr<VolumeTrimEventInfo> write_trim_event(TypedSlotWriter<VolumeEventVarian
         })  //
       | batt::seq::boxed();
 
-  trimmed_region.grant_size_to_reserve += packed_sizeof_slot(event) * 2;
+  trimmed_region.grant_size_to_reserve += packed_sizeof_slot(event);
 
   StatusOr<SlotRange> result = slot_writer.append(grant, std::move(event));
   BATT_REQUIRE_OK(result);
@@ -482,10 +489,13 @@ StatusOr<VolumeTrimEventInfo> write_trim_event(TypedSlotWriter<VolumeEventVarian
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 Status trim_volume_log(TypedSlotWriter<VolumeEventVariant>& slot_writer, batt::Grant& grant,
-                       VolumeTrimEventInfo&& trim_event, VolumeTrimmedRegionInfo&& trimmed_region,
+                       Optional<VolumeTrimEventInfo>&& trim_event,
+                       VolumeTrimmedRegionInfo&& trimmed_region,
                        const VolumeDropRootsFn& drop_roots,
                        VolumePendingJobsUMap& prior_pending_jobs)
 {
+  BATT_CHECK_IMPLIES(!trim_event, trimmed_region.obsolete_roots.empty());
+
   // If we found some obsolete jobs in the newly trimmed log segment, then collect up all root set
   // ref counts to release.
   //
@@ -493,7 +503,7 @@ Status trim_volume_log(TypedSlotWriter<VolumeEventVariant>& slot_writer, batt::G
     std::vector<PageId> roots_to_trim;
     std::swap(roots_to_trim, trimmed_region.obsolete_roots);
 
-    BATT_REQUIRE_OK(drop_roots(trim_event.trim_event_slot.lower_bound, as_slice(roots_to_trim)));
+    BATT_REQUIRE_OK(drop_roots(trim_event->trim_event_slot.lower_bound, as_slice(roots_to_trim)));
   }
   // ** IMPORTANT ** It is only safe to trim the log after `commit(PageCacheJob, ...)` returns;
   // otherwise we will lose information about which root set page references to remove!
@@ -504,9 +514,6 @@ Status trim_volume_log(TypedSlotWriter<VolumeEventVariant>& slot_writer, batt::G
     return slot_writer.trim_and_reserve(trimmed_region.slot_range.upper_bound);
   }();
   BATT_REQUIRE_OK(trimmed_space);
-
-  BATT_CHECK_LE(trimmed_region.grant_size_to_reserve,
-                trimmed_space->size() + sizeof(PackedVolumeTrimEvent));
 
   // Balance the books.
   //
@@ -526,7 +533,7 @@ Status trim_volume_log(TypedSlotWriter<VolumeEventVariant>& slot_writer, batt::G
     std::swap(reserve_size, trimmed_region.grant_size_to_reserve);
     StatusOr<batt::Grant> reserved =
         trimmed_space->spend(reserve_size, batt::WaitForResource::kFalse);
-    BATT_REQUIRE_OK(reserved);
+    BATT_CHECK_OK(reserved) << BATT_INSPECT(reserve_size) << BATT_INSPECT(trimmed_space->size());
 
     grant.subsume(std::move(*reserved));
   }
@@ -535,7 +542,7 @@ Status trim_volume_log(TypedSlotWriter<VolumeEventVariant>& slot_writer, batt::G
     usize release_size = 0;
     std::swap(release_size, trimmed_region.grant_size_to_release);
     StatusOr<batt::Grant> released = grant.spend(release_size, batt::WaitForResource::kFalse);
-    BATT_REQUIRE_OK(released);
+    BATT_CHECK_OK(released);
   }
 
   // Move pending jobs from the trimmed region to `prior_pending_jobs`

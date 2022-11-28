@@ -1,7 +1,7 @@
 #+++++++++++-+-+--+----- --- -- -  -  -   -
-# See batteries/docker/Dockerfile (https://gitlab.com/tonyastolfi/batteries/)
+# See batteries/docker/Dockerfile (https://gitlab.com/batteriescpp/batteries/)
 #
-image: registry.gitlab.com/tonyastolfi/batteries:latest
+image: registry.gitlab.com/batteriescpp/batteries:v0.11.12-devel.linux_gcc11_amd64
 
 variables:
   GIT_SUBMODULE_STRATEGY: normal
@@ -19,6 +19,7 @@ default:
     - echo "CI_DEPLOY_PASSWORD=${CI_DEPLOY_PASSWORD}"
     - env | grep 'RELEASE_CONAN'
     - env | grep -v 'RELEASE_CONAN'
+    - ulimit -a
 
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 stages:
@@ -33,30 +34,16 @@ install:
   script:
     - echo "CONAN_USER_HOME=${CONAN_USER_HOME}"
     - make BUILD_TYPE=Release install
-  rules:
-    - changes:
-      - conanfile.py
-      - .gitlab-ci.yml
-  cache:
-    - key: build-cache
-      paths:
-        - build/
-      policy: push
 
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 build:
   stage: build
   script:
     - echo "CONAN_USER_HOME=${CONAN_USER_HOME}"
-    - make BUILD_TYPE=Release build
+    - make BUILD_TYPE=Release install build
   artifacts:
     paths:
       - build/
-  cache:
-    - key: build-cache
-      paths:
-        - build/
-      policy: pull-push
 
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 test:
@@ -69,11 +56,6 @@ test:
       junit:
         - build/Release/test-results.xml
         - build/Release/death-test-results.xml
-  cache:
-    - key: build-cache
-      paths:
-        - build/
-      policy: pull
 
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 release:
@@ -82,14 +64,10 @@ release:
     RELEASE_CONAN_LOGIN_USERNAME: "${CI_DEPLOY_USER}"
     RELEASE_CONAN_PASSWORD: "${CI_DEPLOY_PASSWORD}"
   script:
+    - make BUILD_TYPE=Release install
     - batteries/script/publish-release.sh
   release:
     tag_name: $CI_COMMIT_TAG
     description: $CI_COMMIT_MESSAGE
   rules:
     - if: $CI_COMMIT_TAG
-  cache:
-    - key: build-cache
-      paths:
-        - build/
-      policy: pull

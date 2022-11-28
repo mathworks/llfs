@@ -13,6 +13,7 @@
 #include <llfs/data_layout.hpp>
 #include <llfs/define_packed_type.hpp>
 #include <llfs/int_types.hpp>
+#include <llfs/unpack_cast.hpp>
 
 #include <batteries/static_assert.hpp>
 
@@ -134,6 +135,11 @@ struct DefinePackedTypeFor<std::string_view> {
 
 static_assert(std::is_same_v<PackedBytes, PackedTypeFor<std::string_view>>, "");
 static_assert(std::is_same_v<PackedBytes, PackedTypeFor<std::string>>, "");
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+
+batt::Status validate_packed_value(const PackedBytes& packed_bytes, const void* buffer_data,
+                                   usize buffer_size);
 
 }  // namespace llfs
 

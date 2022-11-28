@@ -219,6 +219,21 @@ StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_volume_format_upgrade(
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <typename R, typename Fn>
+StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_volume_trim(const SlotParse& slot,
+                                                     const VolumeTrimEvent& trim) /*override*/
+{
+  auto on_scope_exit = batt::finally([&] {
+    this->mark_slot_visited(slot);
+  });
+
+  LLFS_VLOG(1) << "on_volume_trim(" << BATT_INSPECT(slot) << ")";
+
+  return this->base_.on_volume_trim(slot, trim);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename R, typename Fn>
 void VolumeSlotDemuxer<R, Fn>::mark_slot_visited(const SlotParse& slot)
 {
   BATT_CHECK_IMPLIES(this->visited_upper_bound_,

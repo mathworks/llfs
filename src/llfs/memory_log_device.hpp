@@ -102,39 +102,29 @@ class MemoryLogStorageDriver /*Impl*/
   batt::Watch<slot_offset_type> commit_flush_pos_{0};
 };
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+/** \brief An emphemeral LogDevice that stores data in memory only.
+ *
+ * The commit pos and flush pos are always in sync, so there is no difference between
+ * LogReadMode::kSpeculative and LogReadMode::kDurable for this log device type.
+ */
 class MemoryLogDevice : public BasicRingBufferDevice</*Impl=*/MemoryLogStorageDriver>
 {
  public:
-  explicit MemoryLogDevice(usize size) noexcept
-      : BasicRingBufferDevice<MemoryLogStorageDriver>{RingBuffer::TempFile{size}}
-  {
-  }
+  explicit MemoryLogDevice(usize size) noexcept;
 
   void restore_snapshot(const LogDeviceSnapshot& snapshot, LogReadMode mode);
 };
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+/** \brief A factory that produces MemoryLogDevice instances of the given size.
+ */
 class MemoryLogDeviceFactory : public LogDeviceFactory
 {
  public:
-  explicit MemoryLogDeviceFactory(slot_offset_type size) noexcept : size_{size}
-  {
-  }
+  explicit MemoryLogDeviceFactory(slot_offset_type size) noexcept;
 
-  StatusOr<std::unique_ptr<LogDevice>> open_log_device(const LogScanFn& scan_fn) override
-  {
-    auto instance = std::make_unique<MemoryLogDevice>(this->size_);
-
-    auto scan_status =
-        scan_fn(*instance->new_reader(/*slot_lower_bound=*/None, LogReadMode::kDurable));
-
-    BATT_REQUIRE_OK(scan_status);
-
-    // Truncate the log at the indicated point.
-    //
-    this->truncate(instance->driver().impl(), *scan_status);
-
-    return instance;
-  }
+  StatusOr<std::unique_ptr<LogDevice>> open_log_device(const LogScanFn& scan_fn) override;
 
  private:
   slot_offset_type size_;

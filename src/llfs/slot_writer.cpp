@@ -103,7 +103,7 @@ SlotWriter::Append::Append(SlotWriter* that, batt::Mutex<LogDevice::Writer*>::Lo
   BATT_CHECK_NOT_NULLPTR(*this->writer_lock_);
   BATT_CHECK_EQ(this->slot_grant_.get_issuer(), &this->that_->pool_);
   BATT_CHECK_EQ(this->packer_.buffer_size(), this->slot_grant_.size());
-  BATT_CHECK(this->packer_.pack_varint(slot_body_size));
+  BATT_CHECK_NOT_NULLPTR(this->packer_.pack_varint(slot_body_size));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

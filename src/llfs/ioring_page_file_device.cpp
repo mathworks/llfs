@@ -138,30 +138,35 @@ void IoRingPageFileDevice::read(PageId page_id, ReadHandler&& handler)
     return;
   }
 
-  this->read_some(page_id, *page_offset_in_file, PageBuffer::allocate(this->page_size()),
-                  /*n_read_so_far=*/0, std::move(handler));
+  const PageSize page_buffer_size = this->page_size();
+  const usize n_read_so_far = 0;
+
+  this->read_some(page_id, *page_offset_in_file, PageBuffer::allocate(page_buffer_size),
+                  page_buffer_size, n_read_so_far, std::move(handler));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 void IoRingPageFileDevice::read_some(PageId page_id, i64 page_offset_in_file,
-                                     std::shared_ptr<PageBuffer>&& page_buffer, usize n_read_so_far,
+                                     std::shared_ptr<PageBuffer>&& page_buffer,
+                                     usize page_buffer_size, usize n_read_so_far,
                                      ReadHandler&& handler)
 {
   BATT_CHECK_GE(page_offset_in_file, 0);
+  BATT_CHECK_LE(n_read_so_far, page_buffer_size);
 
-  BATT_CHECK_LE(n_read_so_far, page_buffer->size());
   MutableBuffer buffer = page_buffer->mutable_buffer() + n_read_so_far;
 
   this->file_.async_read_some(
       page_offset_in_file + n_read_so_far, buffer,
       bind_handler(std::move(handler), [this, page_id, page_offset_in_file,
-                                        page_buffer = std::move(page_buffer), n_read_so_far](
-                                           ReadHandler&& handler, StatusOr<i32> result) mutable {
+                                        page_buffer = std::move(page_buffer), page_buffer_size,
+                                        n_read_so_far](ReadHandler&& handler,
+                                                       StatusOr<i32> result) mutable {
         if (!result.ok()) {
           if (batt::status_is_retryable(result.status())) {
-            this->read_some(page_id, page_offset_in_file, std::move(page_buffer), n_read_so_far,
-                            std::move(handler));
+            this->read_some(page_id, page_offset_in_file, std::move(page_buffer), page_buffer_size,
+                            n_read_so_far, std::move(handler));
             return;
           }
 
@@ -175,11 +180,22 @@ void IoRingPageFileDevice::read_some(PageId page_id, i64 page_offset_in_file,
         }
         BATT_CHECK_GT(*result, 0) << "We must either make progress or receive an error code!";
 
+        // Sanity check the page header and fail fast if something looks wrong.
+        //
+        const usize n_read_before = n_read_so_far;
         n_read_so_far += *result;
+
+        if (n_read_before < sizeof(PackedPageHeader) && n_read_so_far >= sizeof(PackedPageHeader)) {
+          Status sanity = get_page_header(*page_buffer).sanity_check(page_buffer_size, page_id);
+          if (!sanity.ok()) {
+            handler(sanity);
+            return;
+          }
+        }
 
         // If we have reached the end of the buffer, invoke the handler.
         //
-        if (n_read_so_far == page_buffer->size()) {
+        if (n_read_so_far == page_buffer_size) {
           // Make sure the page generation numbers match.
           //
           if (page_buffer->page_id() != page_id) {
@@ -195,8 +211,8 @@ void IoRingPageFileDevice::read_some(PageId page_id, i64 page_offset_in_file,
 
         // The write was short; write again from the new stop point.
         //
-        this->read_some(page_id, page_offset_in_file, std::move(page_buffer), n_read_so_far,
-                        std::move(handler));
+        this->read_some(page_id, page_offset_in_file, std::move(page_buffer), page_buffer_size,
+                        n_read_so_far, std::move(handler));
       }));
 }
 

@@ -457,7 +457,7 @@ StatusOr<PinnedPage> PageCache::get(PageId page_id, const Optional<PageLayoutId>
   BATT_ASSIGN_OK_RESULT(StatusOr<std::shared_ptr<const PageView>> loaded,  //
                         cache_slot->await());
 
-  BATT_CHECK_EQ(bool{loaded->get()}, bool{cache_slot});
+  BATT_CHECK_EQ(loaded->get() != nullptr, bool{cache_slot});
 
   return PinnedPage{loaded->get(), std::move(cache_slot)};
 }

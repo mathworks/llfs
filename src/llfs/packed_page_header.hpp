@@ -42,6 +42,8 @@ struct PackedPageHeader {
     return this->size - this->unused_size();
   }
 
+  Status sanity_check(usize page_size, PageId page_id) const noexcept;
+
   big_u64 magic;
   PackedPageId page_id;
   PageLayoutId layout_id;

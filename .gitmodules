@@ -1,3 +1,3 @@
 [submodule "batteries"]
 	path = batteries
-	url = https://gitlab.com/batteriescpp/batteries.git
+	url = ../batteries.git

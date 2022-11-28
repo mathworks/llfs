@@ -17,46 +17,115 @@
 
 #include <batteries/type_traits.hpp>
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// Must be in the top-level namespace.
+//
+template <typename T>
+batt::Status llfs_validate_packed_value_helper(const T& packed, const batt::ConstBuffer& buffer);
+
+namespace boost {
+namespace endian {
+
+template <::boost::endian::order kOrder, typename T, ::llfs::usize kNBits,
+          ::boost::endian::align kAlign>
+::batt::Status validate_packed_value(
+    const ::boost::endian::endian_buffer<kOrder, T, kNBits, kAlign>&, const void* /*buffer_data*/,
+    ::llfs::usize buffer_size)
+{
+  using PackedT = ::boost::endian::endian_buffer<kOrder, T, kNBits, kAlign>;
+  if (sizeof(PackedT) != buffer_size) {
+    return ::llfs::make_status(::llfs::StatusCode::kUnpackCastWrongIntegerSize);
+  }
+
+  return ::batt::OkStatus();
+}
+
+template <::boost::endian::order kOrder, typename T, ::llfs::usize kNBits>
+::batt::Status validate_packed_value(
+    const ::boost::endian::endian_arithmetic<kOrder, T, kNBits>& packed, const void* buffer_data,
+    ::llfs::usize buffer_size)
+{
+  static_assert(sizeof(char) == 1, "");
+
+  const char* const packed_begin = reinterpret_cast<const char*>(&packed);
+  const char* const buffer_begin = reinterpret_cast<const char*>(buffer_data);
+
+  if (packed_begin < buffer_begin) {
+    return ::llfs::make_status(::llfs::StatusCode::kUnpackCastIntegerOutOfBounds);
+  }
+
+  using PackedT = ::boost::endian::endian_arithmetic<kOrder, T, kNBits>;
+  const ::llfs::usize packed_size = buffer_size - (packed_begin - buffer_begin);
+  if (sizeof(PackedT) != packed_size) {
+    return ::llfs::make_status(::llfs::StatusCode::kUnpackCastWrongIntegerSize);
+  }
+
+  return ::batt::OkStatus();
+}
+
+}  // namespace endian
+}  // namespace boost
+
+//#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
+
 namespace llfs {
 
-template <boost::endian::order kOrder, typename T, usize kNBits, boost::endian::align kAlign>
-Status validate_packed_value(const boost::endian::endian_buffer<kOrder, T, kNBits, kAlign>&,
-                             const ConstBuffer& buffer)
-{
-  using PackedT = boost::endian::endian_buffer<kOrder, T, kNBits, kAlign>;
-  if (sizeof(PackedT) != buffer.size()) {
-    return make_status(StatusCode::kUnpackCastWrongIntegerSize);
-  }
-
-  return OkStatus();
-}
-
-template <boost::endian::order kOrder, typename T, usize kNBits>
-Status validate_packed_value(const boost::endian::endian_arithmetic<kOrder, T, kNBits>&,
-                             const ConstBuffer& buffer)
-{
-  using PackedT = boost::endian::endian_arithmetic<kOrder, T, kNBits>;
-  if (sizeof(PackedT) != buffer.size()) {
-    return make_status(StatusCode::kUnpackCastWrongIntegerSize);
-  }
-
-  return OkStatus();
-}
-
 template <typename T, typename DataT>
-StatusOr<const T*> unpack_cast(const DataT& data, batt::StaticType<T> = {})
+StatusOr<const T&> unpack_cast(const DataT& data, batt::StaticType<T> = {})
 {
   ConstBuffer buffer = batt::as_const_buffer(data);
   if (buffer.data() == nullptr) {
     return make_status(StatusCode::kUnpackCastNullptr);
   }
   const T* packed = reinterpret_cast<const T*>(buffer.data());
-  Status validation_status = validate_packed_value(*packed, buffer);
+  Status validation_status = ::llfs_validate_packed_value_helper(*packed, buffer);
   BATT_REQUIRE_OK(validation_status);
 
-  return packed;
+  return *packed;
+}
+
+inline batt::Status validate_packed_byte_range(
+    const void* packed_begin, usize packed_size,  //
+    const void* buffer_data, usize buffer_size,   //
+    StatusCode under_code = ::llfs::StatusCode::kUnpackCastStructUnder,
+    StatusCode over_code = ::llfs::StatusCode::kUnpackCastStructOver)
+{
+  if (packed_begin < buffer_data) {
+    return ::llfs::make_status(under_code);
+  }
+
+  const void* buffer_end = static_cast<const u8*>(buffer_data) + buffer_size;
+  const void* packed_end = static_cast<const u8*>(packed_begin) + packed_size;
+
+  if (packed_end > buffer_end) {
+    return ::llfs::make_status(over_code);
+  }
+
+  return batt::OkStatus();
+}
+
+template <typename PackedStructT>
+batt::Status validate_packed_struct(
+    const PackedStructT& packed_struct, const void* buffer_data, usize buffer_size,
+    StatusCode under_code = ::llfs::StatusCode::kUnpackCastStructUnder,
+    StatusCode over_code = ::llfs::StatusCode::kUnpackCastStructOver)
+{
+  return validate_packed_byte_range(&packed_struct, sizeof(packed_struct), buffer_data, buffer_size,
+                                    under_code, over_code);
 }
 
 }  // namespace llfs
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// Must be in the top-level namespace.
+//
+template <typename T>
+batt::Status llfs_validate_packed_value_helper(const T& packed, const batt::ConstBuffer& buffer)
+{
+  return validate_packed_value(packed, buffer.data(), buffer.size());
+}
+
+//
+//+++++++++++-+-+--+----- --- -- -  -  -   -
 
 #endif  // LLFS_UNPACK_CAST_HPP

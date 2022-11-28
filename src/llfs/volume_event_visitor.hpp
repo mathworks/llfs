@@ -53,6 +53,7 @@ class VolumeEventVisitor
   LLFS_VOLUME_EVENT_HANDLER_DECL(PackedVolumeIds, on_volume_ids)
   LLFS_VOLUME_EVENT_HANDLER_DECL(PackedVolumeRecovered, on_volume_recovered)
   LLFS_VOLUME_EVENT_HANDLER_DECL(PackedVolumeFormatUpgrade, on_volume_format_upgrade)
+  LLFS_VOLUME_EVENT_HANDLER_DECL(VolumeTrimEvent, on_volume_trim)
 
 #undef LLFS_VOLUME_EVENT_HANDLER_DECL
 
@@ -109,6 +110,11 @@ template <typename R>
     }
 
     R on_volume_format_upgrade(const SlotParse&, const PackedVolumeFormatUpgrade&) override
+    {
+      return batt::make_default<R>();
+    }
+
+    R on_volume_trim(const SlotParse&, const VolumeTrimEvent&) override
     {
       return batt::make_default<R>();
     }

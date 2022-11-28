@@ -54,6 +54,20 @@ enum struct StatusCode {
   kRecoverFailedGenerationZero = 36,
   kUnpackCastWrongIntegerSize = 37,
   kUnpackCastNullptr = 38,
+  kUnpackCastVariantStructOutOfBounds = 39,
+  kUnpackCastIntegerOutOfBounds = 40,
+  kUnpackCastPackedBytesStructUnder = 41,
+  kUnpackCastPackedBytesStructOver = 42,
+  kUnpackCastPackedBytesDataUnder = 43,
+  kUnpackCastPackedBytesDataOver = 44,
+  kUnpackCastStructUnder = 45,
+  kUnpackCastStructOver = 46,
+  kPageHeaderBadMagic = 47,
+  kPageHeaderBadPageId = 48,
+  kPageHeaderBadPageSize = 49,
+  kPageHeaderBadUnusedSize = 50,
+  kPageHeaderBadUnusedBegin = 51,
+  kPageHeaderBadUnusedEnd = 52,
 };
 
 bool initialize_status_codes();

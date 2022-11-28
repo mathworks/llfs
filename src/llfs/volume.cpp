@@ -101,19 +101,25 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
 
   VolumePendingJobsMap pending_jobs;
   VolumeRecoveryVisitor visitor{batt::make_copy(slot_visitor_fn), pending_jobs};
+  Optional<VolumeTrimmer::RecoveryVisitor> trimmer_visitor;
 
   // Open the log device and scan all slots.
   //
   BATT_ASSIGN_OK_RESULT(std::unique_ptr<LogDevice> root_log,
                         root_log_factory.open_log_device(
                             [&](LogDevice::Reader& log_reader) -> StatusOr<slot_offset_type> {
+                              trimmer_visitor.emplace(/*trim_pos=*/log_reader.slot_offset());
+
                               TypedSlotReader<VolumeEventVariant> slot_reader{log_reader};
 
-                              StatusOr<usize> slots_read =
-                                  slot_reader.run(batt::WaitForResource::kFalse,
-                                                  [&visitor](auto&&... args) -> Status {
-                                                    return visitor(BATT_FORWARD(args)...).status();
-                                                  });
+                              StatusOr<usize> slots_read = slot_reader.run(
+                                  batt::WaitForResource::kFalse,
+                                  [&visitor, &trimmer_visitor](auto&&... args) -> Status {
+                                    BATT_REQUIRE_OK(visitor(args...));
+                                    BATT_REQUIRE_OK((*trimmer_visitor)(args...));
+
+                                    return batt::OkStatus();
+                                  });
                               BATT_UNTESTED_COND(!slots_read.ok());
                               BATT_REQUIRE_OK(slots_read);
 
@@ -235,7 +241,7 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
   std::unique_ptr<Volume> volume{
       new Volume{params.options, visitor.ids->payload.main_uuid, std::move(cache),
                  std::move(params.trim_control), std::move(page_deleter), std::move(root_log),
-                 std::move(recycler), visitor.ids->payload.trimmer_uuid}};
+                 std::move(recycler), visitor.ids->payload.trimmer_uuid, *trimmer_visitor}};
 
   {
     batt::StatusOr<batt::Grant> trimmer_grant =
@@ -258,7 +264,8 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
                             std::unique_ptr<PageCache::PageDeleterImpl>&& page_deleter,
                             std::unique_ptr<LogDevice>&& root_log,
                             std::unique_ptr<PageRecycler>&& recycler,
-                            const boost::uuids::uuid& trimmer_uuid) noexcept
+                            const boost::uuids::uuid& trimmer_uuid,
+                            const VolumeTrimmer::RecoveryVisitor& trimmer_recovery_visitor) noexcept
     : options_{options}
     , volume_uuid_{volume_uuid}
     , cache_{std::move(page_cache)}
@@ -270,10 +277,12 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
     , recycler_{std::move(recycler)}
     , slot_writer_{*this->root_log_}
     , trimmer_{
-          trimmer_uuid, *this->trim_control_,
+          trimmer_uuid,
+          *this->trim_control_,
           this->root_log_->new_reader(/*slot_lower_bound=*/None, LogReadMode::kDurable),
           this->slot_writer_,
-          VolumeTrimmer::make_default_drop_roots_fn(this->cache(), *this->recycler_, trimmer_uuid)}
+          VolumeTrimmer::make_default_drop_roots_fn(this->cache(), *this->recycler_, trimmer_uuid),
+          trimmer_recovery_visitor}
 {
 }
 

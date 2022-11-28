@@ -102,6 +102,12 @@ struct VolumeTrimEventInfo {
   SlotRange trimmed_region_slot_range;
 };
 
+inline std::ostream& operator<<(std::ostream& out, const VolumeTrimEventInfo& t)
+{
+  return out << "{.trim_event_slot=" << t.trim_event_slot
+             << ", .trimmed_region_slot_range=" << t.trimmed_region_slot_range << ",}";
+}
+
 /** \brief Writes a trim event slot to the volume log.
  */
 StatusOr<VolumeTrimEventInfo> write_trim_event(TypedSlotWriter<VolumeEventVariant>& slot_writer,
@@ -117,6 +123,9 @@ Status trim_volume_log(TypedSlotWriter<VolumeEventVariant>& slot_writer, batt::G
                        const VolumeDropRootsFn& drop_roots,
                        VolumePendingJobsUMap& prior_pending_jobs);
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+/** \brief Runs in the background, trimming a single Volume's main log as needed.
+ */
 class VolumeTrimmer
 {
  public:
@@ -134,7 +143,8 @@ class VolumeTrimmer
   explicit VolumeTrimmer(const boost::uuids::uuid& trimmer_uuid, SlotLockManager& trim_control,
                          std::unique_ptr<LogDevice::Reader>&& log_reader,
                          TypedSlotWriter<VolumeEventVariant>& slot_writer,
-                         VolumeDropRootsFn&& drop_roots) noexcept;
+                         VolumeDropRootsFn&& drop_roots,
+                         const RecoveryVisitor& recovery_visitor) noexcept;
 
   VolumeTrimmer(const VolumeTrimmer&) = delete;
   VolumeTrimmer& operator=(const VolumeTrimmer&) = delete;
@@ -210,33 +220,33 @@ class VolumeTrimmer
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-class VolumeTrimmer::RecoveryVisitor : public VolumeEventVisitor<void>
+class VolumeTrimmer::RecoveryVisitor : public VolumeEventVisitor<Status>
 {
  public:
-  RecoveryVisitor() = default;
+  explicit RecoveryVisitor(slot_offset_type trim_pos) noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
   // VolumeEventVisitor methods.
   //
-  void on_raw_data(const SlotParse&, const Ref<const PackedRawData>&) override;
+  Status on_raw_data(const SlotParse&, const Ref<const PackedRawData>&) override;
 
-  void on_prepare_job(const SlotParse&, const Ref<const PackedPrepareJob>&) override;
+  Status on_prepare_job(const SlotParse&, const Ref<const PackedPrepareJob>&) override;
 
-  void on_commit_job(const SlotParse&, const PackedCommitJob&) override;
+  Status on_commit_job(const SlotParse&, const PackedCommitJob&) override;
 
-  void on_rollback_job(const SlotParse&, const PackedRollbackJob&) override;
+  Status on_rollback_job(const SlotParse&, const PackedRollbackJob&) override;
 
-  void on_volume_attach(const SlotParse& slot, const PackedVolumeAttachEvent& attach) override;
+  Status on_volume_attach(const SlotParse& slot, const PackedVolumeAttachEvent& attach) override;
 
-  void on_volume_detach(const SlotParse& slot, const PackedVolumeDetachEvent& detach) override;
+  Status on_volume_detach(const SlotParse& slot, const PackedVolumeDetachEvent& detach) override;
 
-  void on_volume_ids(const SlotParse& slot, const PackedVolumeIds&) override;
+  Status on_volume_ids(const SlotParse& slot, const PackedVolumeIds&) override;
 
-  void on_volume_recovered(const SlotParse&, const PackedVolumeRecovered&) override;
+  Status on_volume_recovered(const SlotParse&, const PackedVolumeRecovered&) override;
 
-  void on_volume_format_upgrade(const SlotParse&, const PackedVolumeFormatUpgrade&) override;
+  Status on_volume_format_upgrade(const SlotParse&, const PackedVolumeFormatUpgrade&) override;
 
-  void on_volume_trim(const SlotParse&, const VolumeTrimEvent&) override;
+  Status on_volume_trim(const SlotParse&, const VolumeTrimEvent&) override;
   //
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -270,6 +280,7 @@ class VolumeTrimmer::RecoveryVisitor : public VolumeEventVisitor<void>
   }
 
  private:
+  slot_offset_type log_trim_pos_;
   VolumeMetadataRefreshInfo refresh_info_;
   Optional<VolumeTrimEventInfo> trim_event_info_;
   VolumePendingJobsUMap pending_jobs_;

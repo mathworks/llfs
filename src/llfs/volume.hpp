@@ -203,7 +203,8 @@ class Volume
                   std::shared_ptr<SlotLockManager>&& trim_control,
                   std::unique_ptr<PageCache::PageDeleterImpl>&& page_deleter,
                   std::unique_ptr<LogDevice>&& root_log, std::unique_ptr<PageRecycler>&& recycler,
-                  const boost::uuids::uuid& trimmer_uuid) noexcept;
+                  const boost::uuids::uuid& trimmer_uuid,
+                  const VolumeTrimmer::RecoveryVisitor& trimmer_recovery_visitor) noexcept;
 
   // Launch background tasks associated with this Volume.
   //

@@ -13,6 +13,17 @@
 
 namespace llfs {
 
+//#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
+// class MemoryLogDevice
+//
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*explicit*/ MemoryLogDevice::MemoryLogDevice(usize size) noexcept
+    : BasicRingBufferDevice<MemoryLogStorageDriver>{RingBuffer::TempFile{size}}
+{
+}
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 void MemoryLogDevice::restore_snapshot(const LogDeviceSnapshot& snapshot, LogReadMode mode)
@@ -31,6 +42,36 @@ void MemoryLogDevice::restore_snapshot(const LogDeviceSnapshot& snapshot, LogRea
   MutableBuffer dst = ring_buffer.get_mut(snapshot.trim_pos());
 
   std::memcpy(dst.data(), snapshot.bytes(), snapshot.size());
+}
+
+//#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
+// class MemoryLogDeviceFactory
+//
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*explicit*/ MemoryLogDeviceFactory::MemoryLogDeviceFactory(slot_offset_type size) noexcept
+    : size_{size}
+{
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<std::unique_ptr<LogDevice>> MemoryLogDeviceFactory::open_log_device(
+    const LogScanFn& scan_fn) /*override*/
+{
+  auto instance = std::make_unique<MemoryLogDevice>(this->size_);
+
+  auto scan_status =
+      scan_fn(*instance->new_reader(/*slot_lower_bound=*/None, LogReadMode::kDurable));
+
+  BATT_REQUIRE_OK(scan_status);
+
+  // Truncate the log at the indicated point.
+  //
+  this->truncate(instance->driver().impl(), *scan_status);
+
+  return instance;
 }
 
 }  // namespace llfs

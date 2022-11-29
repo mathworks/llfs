@@ -101,12 +101,10 @@ Status IoRingLogRecovery::run()
 Status IoRingLogRecovery::validate_block() const
 {
   if (this->block_header().magic != PackedLogPageHeader::kMagic) {
-    // TODO [tastolfi 2022-02-09] specific error message/code
-    return {batt::StatusCode::kDataLoss};
+    return make_status(StatusCode::kLogBlockBadMagic);
   }
   if (this->block_header().commit_size > this->config_.block_capacity()) {
-    // TODO [tastolfi 2022-02-09] specific error message/code
-    return {batt::StatusCode::kDataLoss};
+    return make_status(StatusCode::kLogBlockCommitSizeOverflow);
   }
 
   return batt::OkStatus();

@@ -514,7 +514,9 @@ void PageRecycler::recycle_task_main()
       // We must write a PackedRecyclePagePrepare event to the WAL in case we need to recover from
       // a crash.
       //
-      BATT_ASSIGN_OK_RESULT(this->prepared_batch_, this->prepare_batch(std::move(to_recycle)));
+      StatusOr<PageRecycler::Batch> next_batch = this->prepare_batch(std::move(to_recycle));
+      BATT_REQUIRE_OK(next_batch);
+      this->prepared_batch_ = std::move(*next_batch);
     }
   }();
 

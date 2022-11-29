@@ -111,6 +111,7 @@ bool initialize_status_codes()
       CODE_WITH_MSG_(StatusCode::kPageHeaderBadUnusedSize, "Sanity check failed"),            // 50,
       CODE_WITH_MSG_(StatusCode::kPageHeaderBadUnusedBegin, "Sanity check failed"),           // 51,
       CODE_WITH_MSG_(StatusCode::kPageHeaderBadUnusedEnd, "Sanity check failed"),             // 52,
+      CODE_WITH_MSG_(StatusCode::kPageHeaderBadGeneration, "Sanity check failed"),            // 53,
   });
   return initialized;
 }

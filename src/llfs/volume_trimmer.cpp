@@ -560,7 +560,7 @@ Status trim_volume_log(TypedSlotWriter<VolumeEventVariant>& slot_writer, batt::G
     std::swap(reserve_size, trimmed_region.grant_size_to_reserve);
     StatusOr<batt::Grant> reserved =
         trimmed_space->spend(reserve_size, batt::WaitForResource::kFalse);
-    BATT_CHECK_OK(reserved) << BATT_INSPECT(reserve_size) << BATT_INSPECT(trimmed_space->size());
+    BATT_REQUIRE_OK(reserved) << BATT_INSPECT(reserve_size) << BATT_INSPECT(trimmed_space->size());
 
     grant.subsume(std::move(*reserved));
   }
@@ -569,7 +569,7 @@ Status trim_volume_log(TypedSlotWriter<VolumeEventVariant>& slot_writer, batt::G
     usize release_size = 0;
     std::swap(release_size, trimmed_region.grant_size_to_release);
     StatusOr<batt::Grant> released = grant.spend(release_size, batt::WaitForResource::kFalse);
-    BATT_CHECK_OK(released);
+    BATT_REQUIRE_OK(released);
   }
 
   // Move pending jobs from the trimmed region to `prior_pending_jobs`

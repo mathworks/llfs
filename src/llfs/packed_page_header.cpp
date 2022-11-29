@@ -15,13 +15,11 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status PackedPageHeader::sanity_check(usize page_size, PageId page_id) const noexcept
+Status PackedPageHeader::sanity_check(PageSize page_size, PageId page_id,
+                                      const PageIdFactory& id_factory) const noexcept
 {
   if (this->magic != PackedPageHeader::kMagic) {
     return make_status(StatusCode::kPageHeaderBadMagic);
-  }
-  if (this->page_id.as_page_id() != page_id) {
-    return make_status(StatusCode::kPageHeaderBadPageId);
   }
   if (this->size != page_size) {
     return make_status(StatusCode::kPageHeaderBadPageSize);
@@ -34,6 +32,22 @@ Status PackedPageHeader::sanity_check(usize page_size, PageId page_id) const noe
   }
   if (this->unused_end > page_size) {
     return make_status(StatusCode::kPageHeaderBadUnusedEnd);
+  }
+  const PageId header_page_id = this->page_id.as_page_id();
+  if (header_page_id != page_id) {
+    const i64 expected_physical_page = id_factory.get_physical_page(page_id);
+    const i64 actual_physical_page = id_factory.get_physical_page(header_page_id);
+
+    if (expected_physical_page != actual_physical_page) {
+      return make_status(StatusCode::kPageHeaderBadPageId);
+    }
+
+    const page_generation_int expected_generation = id_factory.get_generation(page_id);
+    const page_generation_int actual_generation = id_factory.get_generation(header_page_id);
+
+    if (actual_generation != expected_generation) {
+      return make_status(StatusCode::kPageHeaderBadGeneration);
+    }
   }
 
   return batt::OkStatus();

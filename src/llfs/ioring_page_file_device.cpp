@@ -186,25 +186,24 @@ void IoRingPageFileDevice::read_some(PageId page_id, i64 page_offset_in_file,
         n_read_so_far += *result;
 
         if (n_read_before < sizeof(PackedPageHeader) && n_read_so_far >= sizeof(PackedPageHeader)) {
-          Status sanity = get_page_header(*page_buffer).sanity_check(page_buffer_size, page_id);
-          if (!sanity.ok()) {
-            handler(sanity);
+          Status status = get_page_header(*page_buffer)
+                              .sanity_check(PageSize{BATT_CHECKED_CAST(u32, page_buffer_size)},
+                                            page_id, this->page_ids_);
+          if (!status.ok()) {
+            // If the only sanity check that failed was a bad generation number, then we report page
+            // not found.
+            //
+            if (status == StatusCode::kPageHeaderBadGeneration) {
+              status = batt::StatusCode::kNotFound;
+            }
+            handler(status);
             return;
           }
         }
 
-        // If we have reached the end of the buffer, invoke the handler.
+        // If we have reached the end of the buffer, invoke the handler.  Success!
         //
         if (n_read_so_far == page_buffer_size) {
-          // Make sure the page generation numbers match.
-          //
-          if (page_buffer->page_id() != page_id) {
-            handler(::llfs::make_status(::llfs::StatusCode::kPageGenerationNotFound));
-            return;
-          }
-
-          // Success!
-          //
           handler(std::move(page_buffer));
           return;
         }

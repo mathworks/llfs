@@ -68,6 +68,7 @@ enum struct StatusCode {
   kPageHeaderBadUnusedSize = 50,
   kPageHeaderBadUnusedBegin = 51,
   kPageHeaderBadUnusedEnd = 52,
+  kPageHeaderBadGeneration = 53,
 };
 
 bool initialize_status_codes();

@@ -13,7 +13,9 @@
 #include <llfs/int_types.hpp>
 #include <llfs/packed_page_id.hpp>
 #include <llfs/packed_page_user_slot.hpp>
+#include <llfs/page_id_factory.hpp>
 #include <llfs/page_layout_id.hpp>
+#include <llfs/page_size.hpp>
 
 #include <batteries/assert.hpp>
 
@@ -42,7 +44,8 @@ struct PackedPageHeader {
     return this->size - this->unused_size();
   }
 
-  Status sanity_check(usize page_size, PageId page_id) const noexcept;
+  Status sanity_check(PageSize page_size, PageId page_id,
+                      const PageIdFactory& id_factory) const noexcept;
 
   big_u64 magic;
   PackedPageId page_id;

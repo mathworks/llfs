@@ -37,17 +37,18 @@ Status PackedPageHeader::sanity_check(PageSize page_size, PageId page_id,
   if (header_page_id != page_id) {
     const i64 expected_physical_page = id_factory.get_physical_page(page_id);
     const i64 actual_physical_page = id_factory.get_physical_page(header_page_id);
-
-    if (expected_physical_page != actual_physical_page) {
-      return make_status(StatusCode::kPageHeaderBadPageId);
-    }
-
+    const page_device_id_int expected_device_id = id_factory.get_device_id(page_id);
+    const page_device_id_int actual_device_id = id_factory.get_device_id(header_page_id);
     const page_generation_int expected_generation = id_factory.get_generation(page_id);
     const page_generation_int actual_generation = id_factory.get_generation(header_page_id);
 
-    if (actual_generation != expected_generation) {
+    if (actual_physical_page == expected_physical_page  //
+        && actual_device_id == expected_device_id       //
+        && actual_generation != expected_generation) {
       return make_status(StatusCode::kPageHeaderBadGeneration);
     }
+
+    return make_status(StatusCode::kPageHeaderBadPageId);
   }
 
   return batt::OkStatus();

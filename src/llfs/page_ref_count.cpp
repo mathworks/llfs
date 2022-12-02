@@ -32,10 +32,15 @@ usize hash_value(const PageRefCount& prc)
 std::ostream& operator<<(std::ostream& out, const PageRefCount& t)
 {
   out << "{.page=" << std::hex << t.page_id << std::dec << ", .delta=";
-  if (t.ref_count > 0) {
-    out << "+";
+  if (t.ref_count == kRefCount_1_to_0) {
+    out << "kRefCount_1_to_0";
+  } else {
+    if (t.ref_count > 0) {
+      out << "+";
+    }
+    out << t.ref_count;
   }
-  return out << t.ref_count << ",}";
+  return out << ",}";
 }
 
 }  // namespace llfs

@@ -277,7 +277,7 @@ PageAllocatorState::ProposalStatus PageAllocatorState::propose_exactly_once(
   }
 
   LLFS_VLOG(1) << "[propose_exactly_once] last seen user slot=" << iter->second->get_user_slot()
-               << "; event user slot=" << user_slot.slot_offset;
+               << "; event user slot=" << user_slot.slot_offset << ", uuid=" << user_slot.user_id;
 
   if (slot_less_than(iter->second->get_user_slot(), user_slot.slot_offset)) {
     return ProposalStatus::kValid;

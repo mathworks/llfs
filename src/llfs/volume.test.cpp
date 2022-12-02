@@ -460,6 +460,8 @@ TEST_F(VolumeTest, TrimControl)
 //
 TEST_F(VolumeTest, PageJobs)
 {
+  ASSERT_FALSE(batt::Runtime::instance().is_halted());
+
   // Create an empty volume.
   //
   auto fake_root_log = llfs::testing::make_fake_log_device_factory(*this->root_log);
@@ -546,31 +548,38 @@ TEST_F(VolumeTest, PageJobs)
     test_reader_task.join();
   }
 
-  EXPECT_EQ(page_ids.size(), new_page_slot.size());
+  batt::Task test_trim_task{
+      batt::Runtime::instance().schedule_task(),
+      [&] {
+        EXPECT_EQ(page_ids.size(), new_page_slot.size());
 
-  for (usize i = 0; i < new_page_slot.size(); ++i) {
-    llfs::Status trimmed = test_volume->trim(new_page_slot[i].upper_bound);
+        for (usize i = 0; i < new_page_slot.size(); ++i) {
+          llfs::Status trimmed = test_volume->trim(new_page_slot[i].upper_bound);
 
-    ASSERT_TRUE(trimmed.ok());
+          ASSERT_TRUE(trimmed.ok());
 
-    for (usize j = 0; j < i + 1; ++j) {
-      const llfs::PageId id = page_ids[j];
-      const llfs::PageArena& arena = this->page_cache->arena_for_page_id(id);
-      const i32 target = [&]() -> i32 {
-        if (i + 1 == new_page_slot.size()) {
-          return 0;
+          for (usize j = 0; j < i + 1; ++j) {
+            const llfs::PageId id = page_ids[j];
+            const llfs::PageArena& arena = this->page_cache->arena_for_page_id(id);
+            const i32 target = [&]() -> i32 {
+              if (i + 1 == new_page_slot.size()) {
+                return 0;
+              }
+              return /*total=*/(page_ids.size() - j) - /*released_so_far=*/(i - j);
+            }();
+            LLFS_VLOG(1) << "waiting for ref count; " << BATT_INSPECT(new_page_slot[i])
+                         << BATT_INSPECT(i) << BATT_INSPECT(j) << BATT_INSPECT(id)
+                         << BATT_INSPECT(target);
+            ASSERT_TRUE(arena.allocator().await_ref_count(id, target));
+
+            if (target > 1) {
+              ASSERT_TRUE(this->verify_opaque_page(id, /*expected_ref_count=*/target));
+            }
+          }
         }
-        return /*total=*/(page_ids.size() - j) - /*released_so_far=*/(i - j);
-      }();
-      LLFS_VLOG(1) << "waiting for ref count; " << BATT_INSPECT(new_page_slot[i]) << BATT_INSPECT(i)
-                   << BATT_INSPECT(j) << BATT_INSPECT(id) << BATT_INSPECT(target);
-      ASSERT_TRUE(arena.allocator().await_ref_count(id, target));
-
-      if (target > 1) {
-        ASSERT_TRUE(this->verify_opaque_page(id, /*expected_ref_count=*/target));
-      }
-    }
-  }
+      },
+      "VolumeTest_PageJobs_trim_task"};
+  test_trim_task.join();
 
   LLFS_VLOG(1) << BATT_INSPECT(fake_root_log.state()->device_time);
   LLFS_VLOG(1) << BATT_INSPECT(fake_recycler_log.state()->device_time);

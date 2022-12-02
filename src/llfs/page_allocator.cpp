@@ -374,4 +374,37 @@ Optional<PageAllocatorAttachmentStatus> PageAllocator::get_client_attachment_sta
   return locked->get()->get_client_attachment_status(uuid);
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+bool PageAllocator::await_ref_count(PageId page_id, i32 ref_count)
+{
+  usize counter = 1;
+  for (;;) {
+    PageRefCount prc = this->state_->get_ref_count_obj(page_id);
+    if (prc.page_id != page_id.int_value()) {
+      return false;
+    }
+    if (prc.ref_count == ref_count) {
+      break;
+    }
+    batt::Task::sleep(boost::posix_time::milliseconds(1));
+    ++counter;
+
+    if ((counter & 4095) == 0) {
+      LLFS_LOG_INFO() << BATT_INSPECT(prc) << BATT_INSPECT(page_id) << BATT_INSPECT(ref_count)
+                      << BATT_INSPECT(counter);
+      BATT_CHECK_LT(counter, 10 * 1000) << "[PageAllocator::await_ref_count] timed out (10s)";
+    }
+  }
+  return true;
+
+#if 0  // TODO [tastolfi 2022-09-16] find a way to make this work...
+    return batt::Runtime::instance().await_condition(
+        [this, ref_count](PageId page_id) -> bool {
+          return this->get_ref_count(page_id).first == ref_count;
+        },
+        page_id);
+#endif
+}
+
 }  // namespace llfs

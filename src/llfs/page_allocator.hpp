@@ -157,11 +157,13 @@ class PageAllocator
       //
       BATT_FORWARD(ref_count_updates) |
 
+#if 0
           // Notify any tasks awaiting updates for the passed page ids.
           //
           seq::inspect([](const PageRefCount& prc) {
             batt::Runtime::instance().notify(prc.page_id);
           }) |
+#endif
 
           // Select only the pages from this set of updates that are now at ref_count==1, meaning
           // they are ready for GC.  If ref_count is 1, that means the current call has removed the
@@ -186,35 +188,22 @@ class PageAllocator
     LLFS_VLOG(2) << [&](std::ostream& out) {
       auto& state = this->state_.no_lock();
       for (const auto& prc : txn->ref_counts) {
-        out << prc << " -> " << state.get_ref_count_obj(PageId{prc.page_id}).ref_count;
+        out << prc << " -> " << state.get_ref_count_obj(PageId{prc.page_id}).ref_count << ", ";
       }
     };
 
     return update_status;
   }
 
-  bool await_ref_count(PageId page_id, i32 ref_count)
-  {
-    for (;;) {
-      PageRefCount prc = this->state_->get_ref_count_obj(page_id);
-      if (prc.page_id != page_id.int_value()) {
-        return false;
-      }
-      if (prc.ref_count == ref_count) {
-        break;
-      }
-      batt::Task::sleep(boost::posix_time::milliseconds(1));
-    }
-    return true;
-
-#if 0  // TODO [tastolfi 2022-09-16] find a way to make this work...
-    return batt::Runtime::instance().await_condition(
-        [this, ref_count](PageId page_id) -> bool {
-          return this->get_ref_count(page_id).first == ref_count;
-        },
-        page_id);
-#endif
-  }
+  /** \brief Polls the ref count for the given page_id every millisecond until it matches ref_count,
+   * for a maximum of 10 seconds.
+   *
+   * If the timeout is reached, panic.
+   *
+   * \return true if the desired ref_count was observed, false if the given page generation was
+   * advanced.
+   */
+  bool await_ref_count(PageId page_id, i32 ref_count);
 
   // Create an attachment used to detect duplicate change requests.
   //

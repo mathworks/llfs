@@ -22,6 +22,10 @@ class LlfsRuntimeTestEnv : public testing::Environment
   void SetUp() override
   {
     batt::EscapedStringLiteral::max_show_length() = 32;
+
+    if (batt::Runtime::instance().is_halted()) {
+      batt::Runtime::reset();
+    }
   }
 
   // Override this to define how to tear down the environment.

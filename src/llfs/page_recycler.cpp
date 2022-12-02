@@ -264,7 +264,8 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(const Slice<const PageId>
 {
   BATT_CHECK_GE(depth, 0);
 
-  LLFS_VLOG(1) << "PageRecycler::recycle_pages(page_ids=" << batt::dump_range(page_ids)
+  LLFS_VLOG(1) << "PageRecycler::recycle_pages(page_ids=" << batt::dump_range(page_ids) << "["
+               << page_ids.size() << "]"
                << ", grant=[" << (grant ? grant->size() : usize{0}) << "], depth=" << depth << ") "
                << this->name_;
 
@@ -612,8 +613,11 @@ Status PageRecycler::commit_batch(const Batch& batch)
             this->page_deleter_.delete_pages(as_slice(batch.to_recycle), *this, batch.slot_offset,
                                              this->recycle_task_grant_, batch.depth);
         if (delete_result.ok()) {
+          LLFS_VLOG(1) << "delete OK: " << batt::dump_range(batch.to_recycle);
           this->metrics_.page_drop_ok_count.fetch_add(page_count);
         } else {
+          LLFS_VLOG(1) << "delete ERROR: " << delete_result << ";"
+                       << batt::dump_range(batch.to_recycle);
           this->metrics_.page_drop_error_count.fetch_add(page_count);
         }
         return delete_result;
@@ -654,6 +658,8 @@ Status PageRecycler::commit_batch(const Batch& batch)
 //
 Status PageRecycler::trim_log()
 {
+  LLFS_VLOG(1) << "[PageRecycler::trim_log]";
+
   const PageRecyclerOptions& options = this->state_.no_lock().options;
   const boost::uuids::uuid& recycler_uuid = this->state_.no_lock().uuid;
 

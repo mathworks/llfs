@@ -179,11 +179,21 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
                visitor.ids->payload.trimmer_uuid,
            }) {
         for (const PageArena& arena : cache->all_arenas()) {
-          const slot_offset_type slot_offset = slot_writer.slot_offset();
+          const slot_offset_type slot_offset = [&] {
+            // Find the lowest available slot offset for the log associated with `uuid`.
+            //
+            if (uuid == visitor.ids->payload.recycler_uuid) {
+              return recycler->slot_upper_bound(LogReadMode::kDurable);
+            } else {
+              // Both the volume (main) and trimmer share the same WAL (the main log).
+              //
+              return slot_writer.slot_offset();
+            }
+          }();
 
           auto attach_event = PackedVolumeAttachEvent{{
               .id =
-                  {
+                  VolumeAttachmentId{
                       .client = uuid,
                       .device = arena.device().get_id(),
                   },
@@ -197,7 +207,7 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
           }
 
           LLFS_VLOG(1) << "[Volume::recover] attaching client " << uuid << " to device "
-                       << arena.device().get_id();
+                       << arena.device().get_id() << BATT_INSPECT(slot_offset);
 
           StatusOr<slot_offset_type> sync_slot =
               arena.allocator().attach_user(uuid, /*user_slot=*/slot_offset);

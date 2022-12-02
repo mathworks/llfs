@@ -10,7 +10,7 @@
 #ifndef LLFS_MEMORY_LOG_DEVICE_HPP
 #define LLFS_MEMORY_LOG_DEVICE_HPP
 
-#include <llfs/basic_ring_buffer_device.hpp>
+#include <llfs/basic_ring_buffer_log_device.hpp>
 #include <llfs/log_device.hpp>
 #include <llfs/ring_buffer.hpp>
 
@@ -108,7 +108,7 @@ class MemoryLogStorageDriver /*Impl*/
  * The commit pos and flush pos are always in sync, so there is no difference between
  * LogReadMode::kSpeculative and LogReadMode::kDurable for this log device type.
  */
-class MemoryLogDevice : public BasicRingBufferDevice</*Impl=*/MemoryLogStorageDriver>
+class MemoryLogDevice : public BasicRingBufferLogDevice</*Impl=*/MemoryLogStorageDriver>
 {
  public:
   explicit MemoryLogDevice(usize size) noexcept;

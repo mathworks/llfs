@@ -97,6 +97,52 @@ class BasicIoRingLogFlushOp
     return this->metrics_;
   }
 
+  /** \brief Returns the physical log block index to which this op is currently flushing.
+   */
+  LogBlockCalculator::PhysicalBlockIndex get_current_log_block_index() const
+  {
+    PackedLogPageHeader* const header = this->get_header();
+    return LogBlockCalculator::PhysicalBlockIndex{
+        this->driver_->calculate().physical_block_index_from(
+            SlotLowerBoundAt{header->slot_offset})};
+  }
+
+  /** \brief Returns one past the physical log block index to which this op is currently flushing.
+   */
+  LogBlockCalculator::PhysicalBlockIndex get_current_block_upper_bound() const
+  {
+    return LogBlockCalculator::PhysicalBlockIndex{this->get_current_log_block_index() + 1u};
+  }
+
+  /** \brief Returns the physical log block index of the block immediately after this op's current
+   * flush destination; NOTE: this is *not* the next block index that will be used by this op (which
+   * depends on the queue depth, i.e. the number of concurrent flush ops), but rather the next block
+   * in the log's physical layout (with wrap).
+   */
+  LogBlockCalculator::PhysicalBlockIndex get_next_log_block_index() const
+  {
+    PackedLogPageHeader* const header = this->get_header();
+    return LogBlockCalculator::PhysicalBlockIndex{
+        this->driver_->calculate().physical_block_index_from(
+            SlotLowerBoundAt{header->slot_offset + this->block_capacity_})};
+  }
+
+  /** \brief Returns true iff the header for this op's current log block is known to have been
+   * written at least once.
+   */
+  bool is_current_log_block_initialized() const
+  {
+    return this->driver_->get_init_upper_bound() > this->get_current_log_block_index();
+  }
+
+  /** \brief Returns true iff the header for the block immediately after this op's current block is
+   * known to have been written at least once.
+   */
+  bool is_next_log_block_initialized() const
+  {
+    return this->driver_->get_init_upper_bound() > this->get_next_log_block_index();
+  }
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   std::atomic<bool> quiet_failure_logging{false};
@@ -161,6 +207,28 @@ class BasicIoRingLogFlushOp
   {
     return make_custom_alloc_handler(this->handler_memory_, [this](const StatusOr<i32>& result) {
       this->handle_flush_trim_pos(result);
+    });
+  }
+  //----- --- -- -  -  -   -
+
+  // Suspends this flush op until the driver's init_upper_bound is different from last_known_value.
+  // This op will resume inside handle_init_upper_bound_changed.
+  //
+  void await_init_upper_bound_changed(usize last_known_value);
+
+  // Invoked to resume this flush op when the driver's init_upper_bound has changed.  This is used
+  // to make sure that we never commit a full block (by flushing the header) until we are sure that
+  // the next physical block has been initialized, so that recovery doesn't get confused.
+  //
+  void handle_init_upper_bound_changed(const StatusOr<usize>& result);
+
+  // Returns a bound version of handle_init_upper_bound_changed with custom memory allocation that
+  // uses this object's inline scratch buffer (this->handler_memory_).
+  //
+  auto get_init_upper_bound_changed_handler()
+  {
+    return make_custom_alloc_handler(this->handler_memory_, [this](const StatusOr<usize>& result) {
+      this->handle_init_upper_bound_changed(result);
     });
   }
 

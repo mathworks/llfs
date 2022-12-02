@@ -188,6 +188,35 @@ class BasicIoRingLogDriver
     return this->durable_trim_pos_.get_value();
   }
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief Clamps the initialized physical block index upper bound to at least index.
+   */
+  void update_init_upper_bound(LogBlockCalculator::PhysicalBlockIndex index)
+  {
+    this->init_upper_bound_.clamp_min_value(index);
+  }
+
+  /** \brief Returns the current initialized physical block index upper bound.  This value is one
+   * plus the highest known initialized physical block index.
+   */
+  usize get_init_upper_bound() const noexcept
+  {
+    return this->init_upper_bound_.get_value();
+  }
+
+  /** \brief Invokes the passed handler asynchronously as soon as the initialized upper bound
+   *  (physical block index) is not equal to last_known_value.
+   *
+   * \param last_known_value The value to compare against the init_upper_bound_ Watch
+   * \param handler A callable with signature void(StatusOr<usize>)
+   */
+  template <typename Handler = void(StatusOr<usize>)>
+  void async_wait_init_upper_bound(usize last_known_value, Handler&& handler)
+  {
+    this->init_upper_bound_.async_wait(last_known_value, BATT_FORWARD(handler));
+  }
+
  private:
   using SlotOffsetHeap = boost::heap::d_ary_heap<slot_offset_type,                   //
                                                  boost::heap::arity<2>,              //
@@ -256,6 +285,10 @@ class BasicIoRingLogDriver
   batt::Watch<slot_offset_type> trim_pos_{0};
   batt::Watch<slot_offset_type> flush_pos_{0};
   batt::Watch<slot_offset_type> commit_pos_{0};
+
+  // One past the highest physical log block index that has been initialized.
+  //
+  batt::Watch<usize> init_upper_bound_{0};
 
   // The highest trim_pos confirmed to be durably written to the log file by one of the flush ops.
   //

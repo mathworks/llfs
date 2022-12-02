@@ -11,7 +11,7 @@
 #define LLFS_FILE_LOG_DRIVER_HPP
 
 #include <llfs/basic_log_storage_driver.hpp>
-#include <llfs/basic_ring_buffer_device.hpp>
+#include <llfs/basic_ring_buffer_log_device.hpp>
 #include <llfs/confirm.hpp>
 #include <llfs/filesystem.hpp>
 #include <llfs/interval.hpp>
@@ -34,7 +34,7 @@ namespace llfs {
 
 class FileLogDriver;
 
-using FileLogDevice = BasicRingBufferDevice<FileLogDriver>;
+using FileLogDevice = BasicRingBufferLogDevice<FileLogDriver>;
 
 // Buffered log driver that flushes log data to a series of "segment" files.
 //

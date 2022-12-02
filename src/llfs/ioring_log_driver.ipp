@@ -36,7 +36,10 @@ inline BasicIoRingLogDriver<FlushOpImpl>::BasicIoRingLogDriver(
     , calculate_{config, options}
     , ioring_{*IoRing::make_new(MaxQueueDepth{this->calculate().queue_depth() * 2})}
     , file_{this->ioring_, fd}
-    , flush_ops_(this->calculate().queue_depth())
+    , flush_ops_(std::max(usize{2}, this->calculate().queue_depth()))
+//                        ^ we require at least two flush ops for lazy init:
+//                           one to flush a full block at the end of the log and one to
+//                           initialize the next (empty) block header.
 
 {
   const auto metric_name = [this](const std::string_view& property) {
@@ -68,7 +71,7 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::open()
   // Read all blocks into the ring buffer.
   //
   Status data_read = this->read_log_data();
-  BATT_REQUIRE_OK(data_read);
+  BATT_REQUIRE_OK(data_read) << BATT_INSPECT(this->name_);
 
   Status fd_registered = this->file_.register_fd();
   BATT_REQUIRE_OK(fd_registered);
@@ -117,7 +120,7 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::read_log_data()
   // Shut down the ioring and reset when we leave this scope.
   //
   const auto stop_ioring_thread = batt::finally([&] {
-    LLFS_VLOG(1) << "Stopping ioring (IoRingLogDrvier::read_log_data)";
+    LLFS_VLOG(1) << "Stopping ioring (IoRingLogDriver::read_log_data)";
     this->ioring_.on_work_finished();
     ioring_thread.join();
     this->ioring_.reset();
@@ -129,7 +132,7 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::read_log_data()
         return this->file_.read_all(file_offset + this->config_.physical_offset, buffer);
       }};
 
-  LLFS_VLOG(1) << "Starting log recovery...";
+  LLFS_VLOG(1) << "Starting log recovery..." << BATT_INSPECT(this->name_);
   Status recovery_status = recovery.run();
   LLFS_VLOG(1) << "Log recovery finished: " << BATT_INSPECT(recovery_status);
   BATT_REQUIRE_OK(recovery_status);
@@ -138,6 +141,26 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::read_log_data()
   this->flush_pos_.set_value(recovery.get_flush_pos());
   this->commit_pos_.set_value(recovery.get_flush_pos());
   this->durable_trim_pos_.set_value(recovery.get_trim_pos());
+
+  // Calculate the highest physical block index that has been initialized.
+  {
+    // If the flush pos is at the end of a block, then the logical block index calculated below will
+    // be equal to the first empty block, which must have been initialized in order for the last
+    // full block's header to be written.  Otherwise the index will be a non-full block (the last
+    // and only such block in the log); in either case, we add one to get the upper bound. be
+    //
+    const auto logical_init_upper_bound = LogBlockCalculator::LogicalBlockIndex{
+        this->calculate_.logical_block_index_from(SlotLowerBoundAt{recovery.get_flush_pos()}) + 1};
+
+    // If we are at or beyond the block count, set init_upper_bound_ to its maximum value.
+    //
+    if (logical_init_upper_bound >= this->calculate_.block_count()) {
+      this->init_upper_bound_.set_value(this->calculate_.block_count());
+    } else {
+      this->init_upper_bound_.set_value(
+          this->calculate_.physical_block_index_from(logical_init_upper_bound));
+    }
+  }
 
   // Initialize state according to recovered values.
   //

@@ -70,6 +70,13 @@ class MockIoRingLogDriver
 
   MOCK_METHOD(void, poll_flush_state, (), ());
 
+  MOCK_METHOD(void, update_init_upper_bound, (LogBlockCalculator::PhysicalBlockIndex), ());
+
+  MOCK_METHOD(usize, get_init_upper_bound, (), (const));
+
+  MOCK_METHOD(void, async_wait_init_upper_bound,
+              (usize last_known_value, std::function<void(StatusOr<usize>)> handler), ());
+
   MOCK_METHOD(void, update_durable_trim_pos, (slot_offset_type pos), ());
 
   MOCK_METHOD(slot_offset_type, get_durable_trim_pos, (), (const));

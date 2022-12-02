@@ -12,6 +12,7 @@
 
 #include <llfs/constants.hpp>
 #include <llfs/int_types.hpp>
+#include <llfs/ioring_log_device.hpp>
 #include <llfs/ioring_log_driver_options.hpp>
 #include <llfs/log_device.hpp>
 #include <llfs/optional.hpp>
@@ -37,7 +38,7 @@ Status configure_storage_object(StorageFileBuilder::Transaction&,
                                 FileOffsetPtr<PackedLogDeviceConfig&> p_config,
                                 const LogDeviceConfigOptions& options);
 
-StatusOr<std::unique_ptr<LogDeviceFactory>> recover_storage_object(
+StatusOr<std::unique_ptr<IoRingLogDeviceFactory>> recover_storage_object(
     const batt::SharedPtr<StorageContext>& storage_context, const std::string& file_name,
     const FileOffsetPtr<const PackedLogDeviceConfig&>& p_config,
     const IoRingLogDriverOptions& options);

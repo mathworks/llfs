@@ -374,6 +374,19 @@ class IoRingLogFlushOpModel
           return this->fake_log_->durable_trim_pos.get_value();
         }));
 
+    EXPECT_CALL(*this->driver_,
+                update_init_upper_bound(::testing::AllOf(
+                    ::testing::Ge(1u), ::testing::Le(this->calculate_->block_count()))))
+        .WillRepeatedly(::testing::Return());
+
+    EXPECT_CALL(*this->driver_, get_init_upper_bound())
+        .WillRepeatedly(::testing::Return(this->calculate_->block_count()));
+
+    EXPECT_CALL(*this->driver_,
+                async_wait_init_upper_bound(::testing::Lt(this->calculate_->block_count()),
+                                            ::testing::_ /*handler*/))
+        .WillRepeatedly(::testing::InvokeArgument<1>(this->calculate_->block_count()));
+
     //----- --- -- -  -  -   -
 
     // Create the expected flush op state.

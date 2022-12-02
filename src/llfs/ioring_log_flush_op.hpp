@@ -145,6 +145,11 @@ class BasicIoRingLogFlushOp
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  const char* debug_info_message() const
+  {
+    return this->debug_info_message_;
+  }
+
   std::atomic<bool> quiet_failure_logging{false};
 
  private:
@@ -276,6 +281,10 @@ class BasicIoRingLogFlushOp
   // flush_trim_pos().
   //
   Optional<u64> saved_commit_size_;
+
+  // A human-readable representation of the state of this object for diagnostic purposes.
+  //
+  const char* debug_info_message_ = "created";
 };
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedLogPageHeader), 64);

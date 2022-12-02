@@ -74,7 +74,7 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<std::unique_ptr<LogDeviceFactory>> recover_storage_object(
+StatusOr<std::unique_ptr<IoRingLogDeviceFactory>> recover_storage_object(
     const batt::SharedPtr<StorageContext>& /*storage_context*/, const std::string& file_name,
     const FileOffsetPtr<const PackedLogDeviceConfig&>& p_config,
     const IoRingLogDriverOptions& options)

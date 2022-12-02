@@ -10,7 +10,7 @@
 #ifndef LLFS_LOG_DEVICE_SNAPSHOT_HPP
 #define LLFS_LOG_DEVICE_SNAPSHOT_HPP
 
-#include <llfs/basic_ring_buffer_device.hpp>
+#include <llfs/basic_ring_buffer_log_device.hpp>
 #include <llfs/slot.hpp>
 
 #include <batteries/buffer.hpp>
@@ -33,7 +33,7 @@ class LogDeviceSnapshot : public boost::equality_comparable<LogDeviceSnapshot>
   friend usize hash_value(const LogDeviceSnapshot& s);
 
   template <typename Impl>
-  static LogDeviceSnapshot from_device(BasicRingBufferDevice<Impl>& device, LogReadMode mode)
+  static LogDeviceSnapshot from_device(BasicRingBufferLogDevice<Impl>& device, LogReadMode mode)
   {
     LogDeviceSnapshot snapshot;
 

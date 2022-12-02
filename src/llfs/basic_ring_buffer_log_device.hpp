@@ -7,8 +7,8 @@
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
 #pragma once
-#ifndef LLFS_BASIC_RING_BUFFER_DEVICE_HPP
-#define LLFS_BASIC_RING_BUFFER_DEVICE_HPP
+#ifndef LLFS_BASIC_RING_BUFFER_LOG_DEVICE_HPP
+#define LLFS_BASIC_RING_BUFFER_LOG_DEVICE_HPP
 
 #include <llfs/basic_log_storage_driver.hpp>
 #include <llfs/basic_log_storage_reader.hpp>
@@ -23,7 +23,7 @@ namespace llfs {
 class LogDeviceSnapshot;
 
 template <class Impl>
-class BasicRingBufferDevice
+class BasicRingBufferLogDevice
     : public LogDevice
     , protected LogStorageDriverContext
 {
@@ -34,13 +34,13 @@ class BasicRingBufferDevice
 
   class WriterImpl;
 
-  explicit BasicRingBufferDevice(const RingBuffer::Params& params) noexcept;
+  explicit BasicRingBufferLogDevice(const RingBuffer::Params& params) noexcept;
 
   template <typename... Args, typename = batt::EnableIfNoShadow<
-                                  BasicRingBufferDevice, const RingBuffer::Params&, Args&&...>>
-  explicit BasicRingBufferDevice(const RingBuffer::Params& params, Args&&... args) noexcept;
+                                  BasicRingBufferLogDevice, const RingBuffer::Params&, Args&&...>>
+  explicit BasicRingBufferLogDevice(const RingBuffer::Params& params, Args&&... args) noexcept;
 
-  ~BasicRingBufferDevice() noexcept;
+  ~BasicRingBufferLogDevice() noexcept;
 
   u64 capacity() const override;
 
@@ -75,19 +75,20 @@ class BasicRingBufferDevice
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-// class BasicRingBufferDevice
+// class BasicRingBufferLogDevice
 //
 
 template <class Impl>
-inline BasicRingBufferDevice<Impl>::BasicRingBufferDevice(const RingBuffer::Params& params) noexcept
+inline BasicRingBufferLogDevice<Impl>::BasicRingBufferLogDevice(
+    const RingBuffer::Params& params) noexcept
     : LogStorageDriverContext{params}
 {
 }
 
 template <class Impl>
 template <typename... Args, typename>
-inline BasicRingBufferDevice<Impl>::BasicRingBufferDevice(const RingBuffer::Params& params,
-                                                          Args&&... args) noexcept
+inline BasicRingBufferLogDevice<Impl>::BasicRingBufferLogDevice(const RingBuffer::Params& params,
+                                                                Args&&... args) noexcept
     : LogStorageDriverContext{params}
     , driver_{*this, BATT_FORWARD(args)...}
 {
@@ -96,7 +97,7 @@ inline BasicRingBufferDevice<Impl>::BasicRingBufferDevice(const RingBuffer::Para
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <class Impl>
-inline BasicRingBufferDevice<Impl>::~BasicRingBufferDevice() noexcept
+inline BasicRingBufferLogDevice<Impl>::~BasicRingBufferLogDevice() noexcept
 {
   this->close().IgnoreError();
 }
@@ -104,7 +105,7 @@ inline BasicRingBufferDevice<Impl>::~BasicRingBufferDevice() noexcept
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <class Impl>
-inline u64 BasicRingBufferDevice<Impl>::capacity() const
+inline u64 BasicRingBufferLogDevice<Impl>::capacity() const
 {
   return this->buffer_.size();
 }
@@ -112,7 +113,7 @@ inline u64 BasicRingBufferDevice<Impl>::capacity() const
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <class Impl>
-inline u64 BasicRingBufferDevice<Impl>::size() const
+inline u64 BasicRingBufferLogDevice<Impl>::size() const
 {
   return slot_distance(this->driver_.get_trim_pos(), this->driver_.get_commit_pos());
 }
@@ -120,7 +121,7 @@ inline u64 BasicRingBufferDevice<Impl>::size() const
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <class Impl>
-inline Status BasicRingBufferDevice<Impl>::trim(slot_offset_type slot_lower_bound)
+inline Status BasicRingBufferLogDevice<Impl>::trim(slot_offset_type slot_lower_bound)
 {
   BATT_CHECK_LE(this->driver_.get_trim_pos(), slot_lower_bound);
 
@@ -130,7 +131,7 @@ inline Status BasicRingBufferDevice<Impl>::trim(slot_offset_type slot_lower_boun
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <class Impl>
-inline std::unique_ptr<LogDevice::Reader> BasicRingBufferDevice<Impl>::new_reader(
+inline std::unique_ptr<LogDevice::Reader> BasicRingBufferLogDevice<Impl>::new_reader(
     Optional<slot_offset_type> slot_lower_bound, LogReadMode mode)
 {
   auto& context = static_cast<LogStorageDriverContext&>(*this);
@@ -142,7 +143,7 @@ inline std::unique_ptr<LogDevice::Reader> BasicRingBufferDevice<Impl>::new_reade
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <class Impl>
-inline SlotRange BasicRingBufferDevice<Impl>::slot_range(LogReadMode mode)
+inline SlotRange BasicRingBufferLogDevice<Impl>::slot_range(LogReadMode mode)
 {
   if (mode == LogReadMode ::kDurable) {
     return SlotRange{this->driver_.get_trim_pos(), this->driver_.get_flush_pos()};
@@ -153,7 +154,7 @@ inline SlotRange BasicRingBufferDevice<Impl>::slot_range(LogReadMode mode)
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <class Impl>
-inline LogDevice::Writer& BasicRingBufferDevice<Impl>::writer()
+inline LogDevice::Writer& BasicRingBufferLogDevice<Impl>::writer()
 {
   return *this->writer_;
 }
@@ -161,7 +162,7 @@ inline LogDevice::Writer& BasicRingBufferDevice<Impl>::writer()
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <class Impl>
-inline Status BasicRingBufferDevice<Impl>::close()
+inline Status BasicRingBufferLogDevice<Impl>::close()
 {
   const bool closed_prior = this->closed_.exchange(true);
   if (!closed_prior) {
@@ -173,7 +174,7 @@ inline Status BasicRingBufferDevice<Impl>::close()
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <class Impl>
-inline Status BasicRingBufferDevice<Impl>::sync(LogReadMode mode, SlotUpperBoundAt event)
+inline Status BasicRingBufferLogDevice<Impl>::sync(LogReadMode mode, SlotUpperBoundAt event)
 {
   switch (mode) {
     case LogReadMode::kInconsistent:
@@ -191,14 +192,14 @@ inline Status BasicRingBufferDevice<Impl>::sync(LogReadMode mode, SlotUpperBound
 }
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-// class BasicRingBufferDevice::WriterImpl
+// class BasicRingBufferLogDevice::WriterImpl
 //
 
 template <class Impl>
-class BasicRingBufferDevice<Impl>::WriterImpl : public LogDevice::Writer
+class BasicRingBufferLogDevice<Impl>::WriterImpl : public LogDevice::Writer
 {
  public:
-  explicit WriterImpl(BasicRingBufferDevice<Impl>* device) noexcept : device_{device}
+  explicit WriterImpl(BasicRingBufferLogDevice<Impl>* device) noexcept : device_{device}
   {
     initialize_status_codes();
   }
@@ -289,10 +290,10 @@ class BasicRingBufferDevice<Impl>::WriterImpl : public LogDevice::Writer
   }
 
  private:
-  BasicRingBufferDevice<Impl>* device_;
+  BasicRingBufferLogDevice<Impl>* device_;
   Optional<slot_offset_type> prepared_offset_;
 };
 
 }  // namespace llfs
 
-#endif  // LLFS_BASIC_RING_BUFFER_DEVICE_HPP
+#endif  // LLFS_BASIC_RING_BUFFER_LOG_DEVICE_HPP

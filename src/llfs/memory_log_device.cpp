@@ -20,7 +20,7 @@ namespace llfs {
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 /*explicit*/ MemoryLogDevice::MemoryLogDevice(usize size) noexcept
-    : BasicRingBufferDevice<MemoryLogStorageDriver>{RingBuffer::TempFile{size}}
+    : BasicRingBufferLogDevice<MemoryLogStorageDriver>{RingBuffer::TempFile{size}}
 {
 }
 

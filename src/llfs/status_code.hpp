@@ -69,6 +69,10 @@ enum struct StatusCode {
   kPageHeaderBadUnusedBegin = 51,
   kPageHeaderBadUnusedEnd = 52,
   kPageHeaderBadGeneration = 53,
+  kLogBlockBadMagic = 54,
+  kLogBlockCommitSizeOverflow = 55,
+  kStorageFileBadConfigBlockMagic = 56,
+  kStorageFileBadConfigBlockCrc = 57,
 };
 
 bool initialize_status_codes();

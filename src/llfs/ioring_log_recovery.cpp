@@ -37,12 +37,16 @@ Status IoRingLogRecovery::run()
   Optional<slot_offset_type> old_trim_pos = this->trim_pos_;
 
   usize known_valid_blocks = 1;
-  const usize wrap_around_size = this->config_.block_count() * this->config_.block_capacity();
+  const usize block_count = this->config_.block_count();
+  const usize wrap_around_size = block_count * this->config_.block_capacity();
 
   for (usize block_i = 0; block_i < known_valid_blocks;
        ++block_i, file_offset += this->config_.block_size()) {
     //----- --- -- -  -  -   -
-    LLFS_VLOG(2) << "Reading " << BATT_INSPECT(block_i) << " from " << BATT_INSPECT(file_offset);
+    LLFS_VLOG(2) << "Reading " << BATT_INSPECT(block_i) << "/" << block_count << " from "
+                 << BATT_INSPECT(file_offset);
+
+    BATT_CHECK_LE(known_valid_blocks, block_count);
 
     // Read the next block into the buffer.
     //
@@ -51,12 +55,16 @@ Status IoRingLogRecovery::run()
 
     // Update the known_valid_blocks count.
     //
-    if (known_valid_blocks < this->config_.block_count()) {
+    if (known_valid_blocks < block_count) {
       if (this->block_header().slot_offset >= wrap_around_size) {
-        known_valid_blocks = this->config_.block_count();
+        LLFS_VLOG(1) << " -- block slot_offset over (" << BATT_INSPECT(wrap_around_size)
+                     << " ); setting known_valid_blocks to " << BATT_INSPECT(block_count);
+        known_valid_blocks = block_count;
       } else {
         if (this->block_header().commit_size == this->config_.block_capacity()) {
           BATT_CHECK_GT(block_i + 2, known_valid_blocks);
+          LLFS_VLOG(2) << " -- block is full; known_valid_blocks = " << known_valid_blocks << " -> "
+                       << (block_i + 2);
           known_valid_blocks = block_i + 2;
         }
       }
@@ -101,12 +109,11 @@ Status IoRingLogRecovery::run()
 Status IoRingLogRecovery::validate_block() const
 {
   if (this->block_header().magic != PackedLogPageHeader::kMagic) {
-    // TODO [tastolfi 2022-02-09] specific error message/code
-    return {batt::StatusCode::kDataLoss};
+    LLFS_LOG_ERROR() << "Bad magic number;" << BATT_INSPECT(this->block_header());
+    return make_status(StatusCode::kLogBlockBadMagic);
   }
   if (this->block_header().commit_size > this->config_.block_capacity()) {
-    // TODO [tastolfi 2022-02-09] specific error message/code
-    return {batt::StatusCode::kDataLoss};
+    return make_status(StatusCode::kLogBlockCommitSizeOverflow);
   }
 
   return batt::OkStatus();
@@ -132,8 +139,7 @@ void IoRingLogRecovery::recover_block_data()
 {
   const auto& header = this->block_header();
 
-  LLFS_VLOG(1) << "IoRingLogRecovery::recover_block_data()" << BATT_INSPECT(header.slot_offset)
-               << BATT_INSPECT(header.commit_size);
+  LLFS_VLOG(1) << "IoRingLogRecovery::recover_block_data()" << BATT_INSPECT(header);
 
   // Record this slot interval so we know how much contiguous data we have starting at the trim pos
   // upper bound when we are done.

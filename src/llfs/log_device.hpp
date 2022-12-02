@@ -205,6 +205,17 @@ class LogDevice::Reader
   virtual Status await(ReaderEvent event) = 0;
 };
 
+/** \brief Open the log without scanning its contents.
+ */
+template <typename Factory>
+inline decltype(auto) open_log_device_no_scan(Factory& factory)
+{
+  return factory.open_log_device([](LogDevice::Reader& reader) -> StatusOr<slot_offset_type> {
+    const slot_offset_type slot_upper_bound = reader.slot_offset() + reader.data().size();
+    return slot_upper_bound;
+  });
+}
+
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 class LogDevice::Writer

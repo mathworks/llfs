@@ -9,6 +9,8 @@
 #include <llfs/storage_file.hpp>
 //
 
+#include <llfs/status_code.hpp>
+
 namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -32,11 +34,11 @@ StatusOr<std::vector<std::unique_ptr<StorageFileConfigBlock>>> read_storage_file
     const PackedConfigBlock& block = next_block->get()->get_const();
     if (block.magic != PackedConfigBlock::kMagic) {
       LLFS_LOG_WARNING() << "The magic number is wrong!";
-      return {batt::StatusCode::kDataLoss};
+      return make_status(StatusCode::kStorageFileBadConfigBlockMagic);
     }
     if (block.crc64 != block.true_crc64()) {
       LLFS_LOG_WARNING() << "The crc64 doesn't match!";
-      return {batt::StatusCode::kDataLoss};
+      return make_status(StatusCode::kStorageFileBadConfigBlockCrc);
     }
 
     blocks.emplace_back(std::move(*next_block));

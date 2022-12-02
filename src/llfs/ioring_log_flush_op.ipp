@@ -159,7 +159,13 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::handle_commit(slot_offset_type kn
                << BATT_INSPECT(header->slot_offset) << BATT_INSPECT(header->commit_size)
                << BATT_INSPECT(known_flush_pos);
 
-  if (!slot_less_than(known_flush_pos, known_commit_pos)) {
+  const bool have_data_to_flush = slot_less_than(known_flush_pos, known_commit_pos);
+
+  // We should only suspend this op waiting for data if the current log block is known to be
+  // initialized; otherwise we continue and flush whatever data we have (even if it is zero bytes)
+  // to unblock the previous flush op.
+  //
+  if (this->is_current_log_block_initialized() && !have_data_to_flush) {
     THIS_VLOG(1) << "caught up; waiting for commit_pos to advance..."
                  << BATT_INSPECT(known_commit_pos);
 
@@ -167,9 +173,20 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::handle_commit(slot_offset_type kn
     return;
   }
 
-  const bool data_copied = this->fill_buffer(known_commit_pos);
-  BATT_CHECK(data_copied);
+  // This may be false if we are flushing in order to (lazily) initialize the current log block
+  // header.
+  //
+  if (have_data_to_flush) {
+    const bool data_copied = this->fill_buffer(known_commit_pos);
+    BATT_CHECK(data_copied);
+  }
 
+  // When the head sector is written, it commits the block, so we must always flush the tail data
+  // first to maintain consistency.  Because the log is append-only, it is fine if we crash while
+  // flushing tail data; since individual sector writes are atomic and the sector that overlaps the
+  // current end of data will be same up to the previous value of header->commit_size, the integrity
+  // of the data will be preserved.
+  //
   if (this->get_header()->commit_size > kLogAtomicWriteSize - sizeof(PackedLogPageHeader)) {
     this->flush_tail();
   } else {
@@ -391,12 +408,57 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::flush_head()
 {
   THIS_VLOG(1) << "flush_head()";
 
+  PackedLogPageHeader* const header = this->get_header();
+
+  // Before we commit a full block, we must make sure that the _next_ physical log block has been
+  // initialized, otherwise fast recovery will not be able to accurately determine that the valid
+  // data range of the log ends on a block boundary.
+  //
+  if (header->commit_size == this->block_capacity_) {
+    THIS_VLOG(1) << "checking init_upper_bound...";
+
+    const usize current_init_upper_bound = this->driver_->get_init_upper_bound();
+    const usize next_physical_log_block = this->get_next_log_block_index();
+    const bool next_block_is_initialized = current_init_upper_bound > next_physical_log_block;
+    if (!next_block_is_initialized) {
+      THIS_VLOG(1) << "Waiting for the next block to be initialized "
+                   << BATT_INSPECT(current_init_upper_bound)
+                   << BATT_INSPECT(next_physical_log_block);
+      this->await_init_upper_bound_changed(current_init_upper_bound);
+      return;
+    }
+  }
+
   auto head_data = ConstBuffer{this->page_block_.get(), kLogAtomicWriteSize};
 
   this->write_timer_.emplace(this->metrics_.write_latency);
 
   this->driver_->async_write_some(this->file_offset_, head_data, /*buf_index=*/this->self_index(),
                                   this->get_flush_head_handler());
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename DriverImpl>
+inline void BasicIoRingLogFlushOp<DriverImpl>::await_init_upper_bound_changed(
+    usize last_known_value)
+{
+  this->driver_->async_wait_init_upper_bound(last_known_value,
+                                             this->get_init_upper_bound_changed_handler());
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename DriverImpl>
+inline void BasicIoRingLogFlushOp<DriverImpl>::handle_init_upper_bound_changed(
+    const StatusOr<usize>& result)
+{
+  if (*result > this->get_current_log_block_index()) {
+    this->flush_head();
+    return;
+  }
+
+  this->await_init_upper_bound_changed(*result);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -428,6 +490,7 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::handle_flush_head(const StatusOr<
   this->durable_flush_pos_ = header->slot_offset + header->commit_size;
   THIS_VLOG(1) << " -- " << BATT_INSPECT(this->durable_flush_pos_);
   this->driver_->poll_flush_state();
+  this->driver_->update_init_upper_bound(this->get_current_block_upper_bound());
 
   // Check to see whether we can advance to the next block.
   //

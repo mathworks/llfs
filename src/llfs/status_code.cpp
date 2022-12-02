@@ -112,6 +112,15 @@ bool initialize_status_codes()
       CODE_WITH_MSG_(StatusCode::kPageHeaderBadUnusedBegin, "Sanity check failed"),           // 51,
       CODE_WITH_MSG_(StatusCode::kPageHeaderBadUnusedEnd, "Sanity check failed"),             // 52,
       CODE_WITH_MSG_(StatusCode::kPageHeaderBadGeneration, "Sanity check failed"),            // 53,
+      CODE_WITH_MSG_(StatusCode::kLogBlockBadMagic,
+                     "Log block header contains bad magic number"),  // 54,
+      CODE_WITH_MSG_(StatusCode::kLogBlockCommitSizeOverflow,
+                     "Log block header commit size is too large"),  // 55,
+      CODE_WITH_MSG_(StatusCode::kStorageFileBadConfigBlockMagic,
+                     "Failed to read storage file"),  // 56,
+      CODE_WITH_MSG_(StatusCode::kStorageFileBadConfigBlockCrc,
+                     "Failed to read storage file"),  // 57,
+
   });
   return initialized;
 }

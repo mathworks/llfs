@@ -82,6 +82,6 @@ class LlfsConan(ConanFile):
         cmake.install()
 
     def package_info(self):
-        self.cpp_info.cxxflags = ["-std=c++17", "-D_GNU_SOURCE"]
+        self.cpp_info.cxxflags = ["-std=c++17", "-D_GNU_SOURCE", "-D_BITS_UIO_EXT_H=1"]
         self.cpp_info.system_libs = ["dl"]
         self.cpp_info.libs = ["llfs"]

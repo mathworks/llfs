@@ -26,15 +26,15 @@ class LlfsConan(ConanFile):
     generators = "cmake"
     build_policy = "missing"
     requires = [
-        "gtest/1.11.0",
+        "gtest/1.12.1",
         "boost/1.79.0",
         "openssl/3.0.3",
         "glog/0.6.0",
         "libunwind/1.5.0",
-        "batteries/0.17.1@batteriescpp+batteries/stable",
+        "batteries/0.20.1@batteriescpp+batteries/stable",
         "liburing/2.1",
         "cli11/1.9.1",
-        "zlib/1.2.13",
+        "zlib/1.2.12",
     ]
     exports_sources = [
         "src/CMakeLists.txt",

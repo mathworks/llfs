@@ -20,7 +20,6 @@
 #include <llfs/data_layout.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/optional.hpp>
-#include <llfs/packed_array.hpp>  // TODO [tastolfi 2022-01-06] remove
 #include <llfs/packed_bytes.hpp>
 #include <llfs/packed_variant.hpp>
 
@@ -198,27 +197,6 @@ class DataReader
       return None;
     }
     return {*read_record<little_u16>()};
-  }
-
-  template <typename T>
-  const PackedArray<T>* read_array()
-  {
-    const auto* packed_array = this->read_record<PackedArray<T>>();
-    if (!packed_array) {
-      return nullptr;
-    }
-
-    const usize items_size = sizeof(T) * usize{packed_array->item_count.value()};
-
-    if (this->bytes_available() < items_size) {
-      LLFS_DLOG_WARNING() << "ran out of data while reading array with item_count="
-                          << packed_array->item_count.value();
-      return nullptr;
-    }
-
-    this->unread_.advance_begin(items_size);
-
-    return packed_array;
   }
 
   template <typename... Ts, typename Fn>

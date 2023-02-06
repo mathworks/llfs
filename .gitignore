@@ -3,3 +3,5 @@ build/
 .mypy_cache/
 .conan/
 .DS_Store
+.vscode/
+a8/

@@ -263,6 +263,16 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::flush_task_main()
       op.activate();
     }
 
+    BATT_DEBUG_INFO([&](std::ostream& out) {
+      usize op_i = 0;
+      const usize block_count = this->calculate().block_count();
+      for (auto& op : this->flush_ops_) {
+        out << "FlushOp[" << op_i << "]: " << op.debug_info_message()
+            << " (block=" << op.get_current_log_block_index() << "/" << block_count << "), ";
+        op_i += 1;
+      }
+    });
+
     this->ioring_.on_work_started();
     this->poll_flush_state();
     this->poll_commit_state();
@@ -273,6 +283,7 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::flush_task_main()
     batt::Watch<bool> done{false};
     std::thread io_thread{[this, &done] {
       LLFS_VLOG(1) << "(driver=" << this->name_ << ") invoking IoRing::run()";
+
       Status io_status = this->ioring_.run();
       if (!io_status.ok()) {
         LLFS_LOG_WARNING() << "(driver=" << this->name_
@@ -280,6 +291,7 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::flush_task_main()
       }
       done.set_value(true);
     }};
+
     auto done_status = done.await_equal(true);
     BATT_CHECK(done_status.ok());
     io_thread.join();

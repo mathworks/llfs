@@ -1,3 +1,4 @@
 [submodule "batteries"]
 	path = batteries
 	url = ../../tonyastolfi/batteries.git
+	branch = main

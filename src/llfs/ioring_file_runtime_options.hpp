@@ -19,9 +19,9 @@
 namespace llfs {
 
 struct IoRingFileRuntimeOptions {
-  static IoRingFileRuntimeOptions with_default_values(IoRing& io);
+  static IoRingFileRuntimeOptions with_default_values(const IoRing& io_ring);
 
-  IoRing& io;
+  const IoRing& io_ring;
   bool use_raw_io;
   bool allow_read;
   bool allow_write;

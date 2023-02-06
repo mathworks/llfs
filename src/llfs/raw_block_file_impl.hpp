@@ -25,8 +25,9 @@ namespace llfs {
 class IoRingRawBlockFile : public RawBlockFile
 {
  public:
-  static StatusOr<std::unique_ptr<IoRingRawBlockFile>> open(IoRing& io, const char* file_name,
-                                                            int flags, Optional<mode_t> mode);
+  static StatusOr<std::unique_ptr<IoRingRawBlockFile>> open(const IoRing& io_ring,
+                                                            const char* file_name, int flags,
+                                                            Optional<mode_t> mode);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

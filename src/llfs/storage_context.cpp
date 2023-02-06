@@ -17,9 +17,9 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StorageContext::StorageContext(batt::TaskScheduler& scheduler, IoRing& io) noexcept
+StorageContext::StorageContext(batt::TaskScheduler& scheduler, const IoRing& io_ring) noexcept
     : scheduler_{scheduler}
-    , io_{io}
+    , io_ring_{&io_ring}
 {
   initialize_status_codes();
 }
@@ -43,7 +43,7 @@ Status StorageContext::add_existing_named_file(std::string&& file_name, i64 star
   StatusOr<int> fd = open_file_read_write(file_name, OpenForAppend{false}, OpenRawIO{true});
   BATT_REQUIRE_OK(fd);
 
-  IoRingRawBlockFile file{IoRing::File{this->io_, *fd}};
+  IoRingRawBlockFile file{IoRing::File{*this->io_ring_, *fd}};
   StatusOr<std::vector<std::unique_ptr<StorageFileConfigBlock>>> config_blocks =
       read_storage_file(file, start_offset);
   BATT_REQUIRE_OK(config_blocks);
@@ -60,7 +60,7 @@ Status StorageContext::add_new_file(const std::string& file_name,
   {
     BATT_ASSIGN_OK_RESULT(
         std::unique_ptr<IoRingRawBlockFile> file,
-        IoRingRawBlockFile::open(this->io_, file_name.c_str(),
+        IoRingRawBlockFile::open(*this->io_ring_, file_name.c_str(),
                                  /*flags=*/O_RDWR | O_CREAT | O_EXCL | O_DIRECT | O_SYNC,
                                  /*mode=*/S_IRUSR | S_IWUSR));
 
@@ -131,7 +131,7 @@ StatusOr<batt::SharedPtr<PageCache>> StorageContext::get_page_cache()
             return options;
           }(),
           IoRingFileRuntimeOptions{
-              .io = this->io_,
+              .io_ring = *this->io_ring_,
               .use_raw_io = true,
               .allow_read = true,
               .allow_write = true,

@@ -19,13 +19,13 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-IoRing::File::File(IoRing& io, int fd) noexcept : io_{&io}, fd_{fd}
+IoRing::File::File(const IoRing& io_ring, int fd) noexcept : io_ring_{&io_ring}, fd_{fd}
 {
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-IoRing::File::File(File&& that) noexcept : io_{that.io_}, fd_{that.fd_}
+IoRing::File::File(File&& that) noexcept : io_ring_{that.io_ring_}, fd_{that.fd_}
 {
   that.fd_ = -1;
   that.registered_fd_ = -1;
@@ -37,7 +37,7 @@ auto IoRing::File::operator=(File&& that) noexcept -> File&
 {
   File copy{std::move(that)};
 
-  std::swap(this->io_, copy.io_);
+  std::swap(this->io_ring_, copy.io_ring_);
   std::swap(this->fd_, copy.fd_);
   std::swap(this->registered_fd_, copy.registered_fd_);
 
@@ -133,7 +133,7 @@ Status IoRing::File::register_fd()
     return OkStatus();
   }
 
-  StatusOr<i32> rfd = this->io_->register_fd(this->fd_);
+  StatusOr<i32> rfd = this->io_ring_->register_fd(this->fd_);
   if (!rfd.ok()) {
     LLFS_LOG_ERROR() << "register_fd failed! " << BATT_INSPECT(rfd.status());
   }
@@ -152,7 +152,7 @@ Status IoRing::File::unregister_fd()
     return OkStatus();
   }
 
-  Status status = this->io_->unregister_fd(this->registered_fd_);
+  Status status = this->io_ring_->unregister_fd(this->registered_fd_);
   BATT_REQUIRE_OK(status);
 
   this->registered_fd_ = -1;

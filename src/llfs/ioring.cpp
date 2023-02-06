@@ -27,6 +27,8 @@
 
 namespace llfs {
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 StatusOr<IoRing> IoRing::make_new(MaxQueueDepth entries) noexcept
 {
   auto impl = std::make_unique<IoRing::Impl>();
@@ -70,6 +72,8 @@ StatusOr<IoRing> IoRing::make_new(MaxQueueDepth entries) noexcept
   return {IoRing{std::move(impl)}};
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 IoRing::Impl::~Impl() noexcept
 {
   LLFS_DVLOG(1) << "IoRing::Impl::~Impl()";
@@ -85,13 +89,17 @@ IoRing::Impl::~Impl() noexcept
   }
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 IoRing::IoRing(std::unique_ptr<Impl>&& impl) noexcept : impl_{std::move(impl)}
 {
   BATT_CHECK(this->impl_->ring_init_);
   BATT_CHECK_GE(this->impl_->event_fd_, 0);
 }
 
-Status IoRing::run()
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status IoRing::run() const
 {
   while (this->impl_->work_count_ && !this->impl_->needs_reset_) {
     LLFS_DVLOG(1) << "IoRing::run() " << BATT_INSPECT(this->impl_->work_count_);
@@ -144,7 +152,7 @@ Status IoRing::run()
       //
       try {
         LLFS_DVLOG(1) << "IoRing::run() invoke_handler " << BATT_INSPECT(this->impl_->work_count_);
-        invoke_handler(&cqe);
+        this->invoke_handler(&cqe);
         LLFS_DVLOG(1) << "IoRing::run() ... " << BATT_INSPECT(this->impl_->work_count_);
       } catch (...) {
         LLFS_LOG_ERROR() << "Uncaught exception";
@@ -156,7 +164,9 @@ Status IoRing::run()
   return OkStatus();
 }
 
-void IoRing::invoke_handler(struct io_uring_cqe* cqe)
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void IoRing::invoke_handler(struct io_uring_cqe* cqe) const
 {
   auto* handler = (CompletionHandler*)io_uring_cqe_get_data(cqe);
   BATT_CHECK_NOT_NULLPTR(handler);
@@ -174,12 +184,16 @@ void IoRing::invoke_handler(struct io_uring_cqe* cqe)
   this->impl_->work_count_.fetch_sub(1);
 }
 
-void IoRing::on_work_started()
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void IoRing::on_work_started() const
 {
   this->impl_->work_count_.fetch_add(1);
 }
 
-void IoRing::on_work_finished()
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void IoRing::on_work_finished() const
 {
   static const std::vector<ConstBuffer> empty;
 
@@ -197,7 +211,9 @@ void IoRing::on_work_finished()
       });
 }
 
-void IoRing::stop()
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void IoRing::stop() const
 {
   static const std::vector<ConstBuffer> empty;
 
@@ -214,14 +230,16 @@ void IoRing::stop()
       });
 }
 
-void IoRing::reset()
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void IoRing::reset() const
 {
   this->impl_->needs_reset_ = false;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status IoRing::register_buffers(BoxedSeq<MutableBuffer>&& buffers)
+Status IoRing::register_buffers(BoxedSeq<MutableBuffer>&& buffers) const
 {
   std::vector<struct iovec> iov = std::move(buffers) | seq::map([](const MutableBuffer& b) {
                                     struct iovec v;
@@ -233,7 +251,7 @@ Status IoRing::register_buffers(BoxedSeq<MutableBuffer>&& buffers)
   {
     std::unique_lock<std::mutex> lock{this->impl_->mutex_};
 
-    Status unregistered = this->unregister_buffers_with_lock();
+    Status unregistered = this->unregister_buffers_with_lock(lock);
     BATT_REQUIRE_OK(unregistered);
     BATT_CHECK(!this->impl_->buffers_registered_);
 
@@ -247,16 +265,16 @@ Status IoRing::register_buffers(BoxedSeq<MutableBuffer>&& buffers)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status IoRing::unregister_buffers()
+Status IoRing::unregister_buffers() const
 {
   std::unique_lock<std::mutex> lock{this->impl_->mutex_};
 
-  return this->unregister_buffers_with_lock();
+  return this->unregister_buffers_with_lock(lock);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status IoRing::unregister_buffers_with_lock()
+Status IoRing::unregister_buffers_with_lock(const std::unique_lock<std::mutex>&) const
 {
   if (this->impl_->buffers_registered_) {
     const int retval = io_uring_unregister_buffers(&this->impl_->ring_);
@@ -270,7 +288,7 @@ Status IoRing::unregister_buffers_with_lock()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<i32> IoRing::register_fd(i32 system_fd)
+StatusOr<i32> IoRing::register_fd(i32 system_fd) const
 {
   std::unique_lock<std::mutex> lock{this->impl_->mutex_};
 
@@ -317,7 +335,7 @@ StatusOr<i32> IoRing::register_fd(i32 system_fd)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status IoRing::unregister_fd(i32 user_fd)
+Status IoRing::unregister_fd(i32 user_fd) const
 {
   BATT_CHECK_GE(user_fd, 0);
 
@@ -358,7 +376,7 @@ Status IoRing::unregister_fd(i32 user_fd)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-i32 IoRing::free_user_fd(i32 user_fd)
+i32 IoRing::free_user_fd(i32 user_fd) const
 {
   BATT_CHECK_GE(user_fd, 0);
   BATT_CHECK_LT(static_cast<usize>(user_fd), this->impl_->registered_fds_.size());
@@ -397,10 +415,10 @@ i32 IoRing::free_user_fd(i32 user_fd)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-IoRing& ScopedIoRing::get() const
+const IoRing& ScopedIoRing::get_io_ring() const
 {
   BATT_ASSERT_NOT_NULLPTR(this->impl_);
-  return this->impl_->get();
+  return this->impl_->get_io_ring();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -458,7 +476,7 @@ void ScopedIoRing::Impl::io_thread_main()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-IoRing& ScopedIoRing::Impl::get()
+const IoRing& ScopedIoRing::Impl::get_io_ring()
 {
   return this->io_;
 }

@@ -88,8 +88,8 @@ class MockIoRingLogDriver
 class FakeLogState
 {
  public:
-  static const u8 kUninitializedMemoryByte = 0xfe;
-  static const u8 kUninitializedDiskByte = 0xba;
+  static constexpr u8 kUninitializedMemoryByte = 0xfe;
+  static constexpr u8 kUninitializedDiskByte = 0xba;
 
   static Status verify_log_data(slot_offset_type slot_offset, ConstBuffer actual)
   {

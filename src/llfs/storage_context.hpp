@@ -41,7 +41,7 @@ class StorageContext : public batt::RefCounted<StorageContext>
   // Construct a new StorageContext that will use the given TaskScheduler and IoRing for background
   // tasks and asynchronous file I/O.
   //
-  explicit StorageContext(batt::TaskScheduler& scheduler, IoRing& io) noexcept;
+  explicit StorageContext(batt::TaskScheduler& scheduler, const IoRing& io) noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
   // noncopyable
@@ -55,9 +55,9 @@ class StorageContext : public batt::RefCounted<StorageContext>
     return this->scheduler_;
   }
 
-  IoRing& get_ioring() const
+  const IoRing& get_io_ring() const
   {
-    return this->io_;
+    return *this->io_ring_;
   }
 
   /*! \brief Set runtime options for PageCache.
@@ -134,7 +134,7 @@ class StorageContext : public batt::RefCounted<StorageContext>
 
   // Passed in at creation time; this is the default IoRing used to perform I/O.
   //
-  IoRing& io_;
+  const IoRing* io_ring_;
 
   // An index of all storage objects by uuid.
   //

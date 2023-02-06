@@ -75,6 +75,9 @@ class IoRing
     std::vector<i32> registered_fds_;
     std::vector<i32> free_fds_;
 
+    Impl() = default;
+    Impl(const Impl&) = delete;
+    Impl& operator=(const Impl&) = delete;
     ~Impl() noexcept;
   };
 
@@ -151,20 +154,20 @@ class IoRing
   IoRing& operator=(IoRing&&) = default;
 
   template <typename Handler, typename BufferSequence>
-  void submit(
-      BufferSequence&& buffers, Handler&& handler,
-      std::function<void(struct io_uring_sqe*, OpHandler<std::decay_t<Handler>>&)>&& start_op);
+  void submit(BufferSequence&& buffers, Handler&& handler,
+              std::function<void(struct io_uring_sqe*, OpHandler<std::decay_t<Handler>>&)>&&
+                  start_op) const;
 
-  Status run();
+  Status run() const;
 
-  void reset();
+  void reset() const;
 
-  void on_work_started();
+  void on_work_started() const;
 
-  void on_work_finished();
+  void on_work_finished() const;
 
   template <typename Handler>
-  void post(Handler&& handler)
+  void post(Handler&& handler) const
   {
     static const std::vector<ConstBuffer> empty;
 
@@ -175,23 +178,23 @@ class IoRing
     });
   }
 
-  void stop();
+  void stop() const;
 
-  Status register_buffers(batt::BoxedSeq<MutableBuffer>&& buffers);
+  Status register_buffers(batt::BoxedSeq<MutableBuffer>&& buffers) const;
 
-  Status unregister_buffers();
+  Status unregister_buffers() const;
 
   // Registers the given file descriptor with the io_uring in kernel space, speeding performance for
   // repeated access to the same file.  Returns the "user_fd" that should be used to achieve faster
   // syscalls in the future.
   //
-  StatusOr<i32> register_fd(i32 system_fd);
+  StatusOr<i32> register_fd(i32 system_fd) const;
 
   // Unregisters the given "user_fd" that was previously returned by a call to
   // `IoRing::register_fd`.  Behavior is undefined if a user_fd obtained from one IoRing is handed
   // to another!
   //
-  Status unregister_fd(i32 user_fd);
+  Status unregister_fd(i32 user_fd) const;
 
  private:
   explicit IoRing(std::unique_ptr<Impl>&& impl) noexcept;
@@ -202,14 +205,14 @@ class IoRing
   static batt::HandlerImpl</*HandlerFn=*/OpHandler<std::decay_t<Fn>>, /*Args...=*/StatusOr<i32>>*
   wrap_handler(Fn&& fn, BufferSequence&& bufs);
 
-  void invoke_handler(struct io_uring_cqe* cqe);
+  void invoke_handler(struct io_uring_cqe* cqe) const;
 
-  Status unregister_buffers_with_lock();
+  Status unregister_buffers_with_lock(const std::unique_lock<std::mutex>&) const;
 
   // Removes the specified user_fd from the registered fds table, returning the previously
   // registered system fd that was in that slot.
   //
-  i32 free_user_fd(i32 user_fd);
+  i32 free_user_fd(i32 user_fd) const;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -239,7 +242,7 @@ inline auto IoRing::wrap_handler(Fn&& fn, BufferSequence&& bufs)
 template <typename Handler, typename BufferSequence>
 inline void IoRing::submit(
     BufferSequence&& buffers, Handler&& handler,
-    std::function<void(struct io_uring_sqe*, OpHandler<std::decay_t<Handler>>&)>&& start_op)
+    std::function<void(struct io_uring_sqe*, OpHandler<std::decay_t<Handler>>&)>&& start_op) const
 
 {
   std::unique_lock<std::mutex> lock{this->impl_->mutex_};
@@ -310,7 +313,7 @@ class ScopedIoRing
   // Returns a reference to the IoRing contained by this; if this is invalid (see operator bool),
   // behavior is undefined.
   //
-  IoRing& get() const;
+  const IoRing& get_io_ring() const;
 
   // Initiates a graceful shutdown of the IoRing and thread pool.
   //
@@ -363,7 +366,7 @@ class ScopedIoRing::Impl
 
   // Returns a reference to the IoRing.
   //
-  IoRing& get();
+  const IoRing& get_io_ring();
 
   // Initiates graceful shutdown.
   //

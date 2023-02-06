@@ -51,7 +51,7 @@ TEST(IoringLogDeviceTest, StorageFile)
     ASSERT_TRUE(scoped_ioring.ok()) << BATT_INSPECT(scoped_ioring.status());
 
     auto storage_context = batt::make_shared<llfs::StorageContext>(
-        batt::Runtime::instance().default_scheduler(), scoped_ioring->get());
+        batt::Runtime::instance().default_scheduler(), scoped_ioring->get_io_ring());
 
     // Remove the file if it already exists.
     //

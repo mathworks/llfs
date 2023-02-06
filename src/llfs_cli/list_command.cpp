@@ -50,8 +50,8 @@ void run_list_command(ListCommandArgs& args)
   for (auto f : args.files) {
     std::cout << f << ":" << std::endl;
 
-    StatusOr<std::unique_ptr<IoRingRawBlockFile>> file =
-        IoRingRawBlockFile::open(ioring->get(), f.c_str(), /*flags=*/O_RDONLY, /*mode=*/None);
+    StatusOr<std::unique_ptr<IoRingRawBlockFile>> file = IoRingRawBlockFile::open(
+        ioring->get_io_ring(), f.c_str(), /*flags=*/O_RDONLY, /*mode=*/None);
     BATT_CHECK_OK(file);
 
     StatusOr<std::vector<std::unique_ptr<StorageFileConfigBlock>>> config_blocks =

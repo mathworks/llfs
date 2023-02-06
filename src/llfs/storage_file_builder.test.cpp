@@ -166,7 +166,7 @@ TEST_F(StorageFileBuilderTest, WriteReadFile)
   ASSERT_TRUE(ioring.ok()) << BATT_INSPECT(ioring.status());
 
   auto storage_context = batt::make_shared<llfs::StorageContext>(
-      batt::Runtime::instance().default_scheduler(), ioring->get());
+      batt::Runtime::instance().default_scheduler(), ioring->get_io_ring());
 
   const char* const test_file_name = "/tmp/llfs_test_file";
   std::filesystem::remove(test_file_name);
@@ -180,7 +180,7 @@ TEST_F(StorageFileBuilderTest, WriteReadFile)
       llfs::Status status = llfs::enable_raw_io_fd(*test_fd, /*enabled=*/true);
       ASSERT_TRUE(status.ok()) << BATT_INSPECT(status);
     }
-    llfs::IoRingRawBlockFile test_file{llfs::IoRing::File{ioring->get(), *test_fd}};
+    llfs::IoRingRawBlockFile test_file{llfs::IoRing::File{ioring->get_io_ring(), *test_fd}};
 
     const auto page_device_options = llfs::PageDeviceConfigOptions{
         .uuid = llfs::None,
@@ -236,7 +236,7 @@ TEST_F(StorageFileBuilderTest, WriteReadFile)
   llfs::StatusOr<std::unique_ptr<llfs::PageDevice>> recovered_device =
       storage_context->recover_object(
           batt::StaticType<llfs::PackedPageDeviceConfig>{}, page_device_uuid,
-          llfs::IoRingFileRuntimeOptions::with_default_values(ioring->get()));
+          llfs::IoRingFileRuntimeOptions::with_default_values(ioring->get_io_ring()));
 
   ASSERT_TRUE(recovered_device.ok()) << BATT_INSPECT(recovered_device.status());
 }

@@ -17,10 +17,11 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*static*/ IoRingFileRuntimeOptions IoRingFileRuntimeOptions::with_default_values(IoRing& io)
+/*static*/ IoRingFileRuntimeOptions IoRingFileRuntimeOptions::with_default_values(
+    const IoRing& io_ring)
 {
   return IoRingFileRuntimeOptions{
-      .io = io,
+      .io_ring = io_ring,
       .use_raw_io = true,
       .allow_read = true,
       .allow_write = true,
@@ -57,7 +58,7 @@ StatusOr<IoRing::File> open_ioring_file(const std::string& file_name,
   });
   BATT_REQUIRE_OK(batt::status_from_retval(fd));
 
-  return IoRing::File{file_options.io, fd};
+  return IoRing::File{file_options.io_ring, fd};
 }
 
 }  // namespace llfs

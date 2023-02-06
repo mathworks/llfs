@@ -44,7 +44,7 @@ TEST(StorageContextTest, GetPageCache)
   // Create a StorageContext.
   //
   batt::SharedPtr<llfs::StorageContext> storage_context = batt::make_shared<llfs::StorageContext>(
-      batt::Runtime::instance().default_scheduler(), io->get());
+      batt::Runtime::instance().default_scheduler(), io->get_io_ring());
 
   boost::uuids::uuid arena_uuid_4kb = llfs::random_uuid();
   boost::uuids::uuid arena_uuid_2mb = llfs::random_uuid();

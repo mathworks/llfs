@@ -94,6 +94,9 @@ FileOffsetPtr<PackedConfigBlock&> StorageFileBuilder::allocate_config_block()
   if (this->config_blocks_.size() >= 2) {
     p_block.absolute_prev_offset(
         this->config_blocks_[this->config_blocks_.size() - 2]->file_offset());
+    //
+    // TODO [tastolfi 2023-02-14] BUG BUG BUG - need to set the next_offset of the previous block to
+    // the newly allocated one (p_block).
   } else {
     p_block->prev_offset = PackedConfigBlock::kNullFileOffset;
   }

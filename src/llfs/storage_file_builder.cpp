@@ -92,8 +92,11 @@ FileOffsetPtr<PackedConfigBlock&> StorageFileBuilder::allocate_config_block()
   // Link this block into the chain of config blocks for this file.
   //
   if (this->config_blocks_.size() >= 2) {
-    p_block.absolute_prev_offset(
-        this->config_blocks_[this->config_blocks_.size() - 2]->file_offset());
+    StorageFileConfigBlock& prev_rec = *this->config_blocks_[this->config_blocks_.size() - 2];
+    FileOffsetPtr<PackedConfigBlock&> p_prev_block = prev_rec.get_mutable_ptr();
+
+    p_block.absolute_prev_offset(prev_rec.file_offset());
+    p_prev_block.absolute_next_offset(rec.file_offset());
   } else {
     p_block->prev_offset = PackedConfigBlock::kNullFileOffset;
   }

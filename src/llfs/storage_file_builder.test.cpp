@@ -56,6 +56,30 @@ class StorageFileBuilderTest : public ::testing::Test
            }() &&
            config_block.crc64 == config_block.true_crc64();
   }
+
+  struct alignas(512) randStruct {
+    char randData[512];
+  };
+
+  void write_rand_data(llfs::IoRingRawBlockFile& test_file, i64 write_offset, i64 randBufferLen)
+  {
+    i64 structArrayLen = batt::round_up_bits(9, randBufferLen);
+    randStruct randStructArray[structArrayLen / 512];
+    int rand_fd = open("/dev/random", O_RDONLY);
+    i64 randBytesRead = 0;
+
+    for (int i = 0; i < (structArrayLen / 512); i++) {
+      randStructArray[i] = randStruct();
+      randBytesRead += ::read(rand_fd, &randStructArray[i].randData, 512);
+    }
+    ASSERT_EQ(structArrayLen, randBytesRead);
+
+    const llfs::ConstBuffer randBuffer(randStructArray, structArrayLen);
+
+    llfs::StatusOr<i64> randWriteLen = test_file.write_some(write_offset, randBuffer);
+    ASSERT_TRUE(randWriteLen.ok()) << BATT_INSPECT(randWriteLen.status());
+    ASSERT_EQ(structArrayLen, *randWriteLen);
+  }
 };
 
 // Test Plan:
@@ -65,14 +89,31 @@ class StorageFileBuilderTest : public ::testing::Test
 //  order.
 //
 
-TEST_F(StorageFileBuilderTest, NoConfigs)
+TEST_F(StorageFileBuilderTest, NoConfigs_Mock)
 {
   ::testing::StrictMock<llfs::RawBlockFileMock> file_mock;
 
   llfs::StorageFileBuilder builder{file_mock, /*base_offset=*/0};
 }
 
-TEST_F(StorageFileBuilderTest, PageDeviceConfig_NoFlush)
+TEST_F(StorageFileBuilderTest, NoConfigs)
+{
+  llfs::StatusOr<llfs::ScopedIoRing> ioring =
+      llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{1024}, llfs::ThreadPoolSize{1});
+
+  ASSERT_TRUE(ioring.ok()) << BATT_INSPECT(ioring.status());
+
+  const char* const test_file_name = "/dev/nvme8n1";
+  llfs::StatusOr<int> test_fd =
+      llfs::open_file_read_write(test_file_name, llfs::OpenForAppend{false}, llfs::OpenRawIO{true});
+  ASSERT_TRUE(test_fd.ok()) << BATT_INSPECT(test_fd.status());
+
+  llfs::IoRingRawBlockFile test_file{llfs::IoRing::File{ioring->get_io_ring(), *test_fd}};
+
+  llfs::StorageFileBuilder builder{test_file, /*base_offset=*/0};
+}
+
+TEST_F(StorageFileBuilderTest, PageDeviceConfig_NoFlush_Mock)
 {
   ::testing::StrictMock<llfs::RawBlockFileMock> file_mock;
 
@@ -89,7 +130,34 @@ TEST_F(StorageFileBuilderTest, PageDeviceConfig_NoFlush)
   ASSERT_TRUE(packed_config.ok()) << BATT_INSPECT(packed_config.status());
 }
 
-TEST_F(StorageFileBuilderTest, PageDeviceConfig_Flush)
+TEST_F(StorageFileBuilderTest, PageDeviceConfig_NoFlush)
+{
+  llfs::StatusOr<llfs::ScopedIoRing> ioring =
+      llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{1024}, llfs::ThreadPoolSize{1});
+
+  ASSERT_TRUE(ioring.ok()) << BATT_INSPECT(ioring.status());
+
+  const char* const test_file_name = "/dev/nvme8n1";
+  llfs::StatusOr<int> test_fd =
+      llfs::open_file_read_write(test_file_name, llfs::OpenForAppend{false}, llfs::OpenRawIO{true});
+  ASSERT_TRUE(test_fd.ok()) << BATT_INSPECT(test_fd.status());
+
+  llfs::IoRingRawBlockFile test_file{llfs::IoRing::File{ioring->get_io_ring(), *test_fd}};
+
+  llfs::StorageFileBuilder builder{test_file, /*base_offset=*/0};
+
+  llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageDeviceConfig&>> packed_config =
+      builder.add_object(llfs::PageDeviceConfigOptions{
+          .uuid = llfs::None,
+          .device_id = llfs::None,
+          .page_count = llfs::PageCount{kTestPageCount},
+          .page_size_log2 = llfs::PageSizeLog2{12},
+      });
+
+  ASSERT_TRUE(packed_config.ok()) << BATT_INSPECT(packed_config.status());
+}
+
+TEST_F(StorageFileBuilderTest, PageDeviceConfig_Flush_Mock)
 {
   for (i64 base_file_offset : {0, 128, 65536}) {
     for (u32 page_size_log2 : {9, 10, 11, 12, 13, 16, 24}) {
@@ -103,7 +171,7 @@ TEST_F(StorageFileBuilderTest, PageDeviceConfig_Flush)
           .page_count = llfs::PageCount{kTestPageCount},
           .page_size_log2 = llfs::PageSizeLog2{page_size_log2},
       };
-      const usize kTestPageSize = 1ll << options.page_size_log2;
+      const usize kTestPageSize = usize{1} << options.page_size_log2;
 
       llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageDeviceConfig&>> packed_config =
           builder.add_object(options);
@@ -148,6 +216,71 @@ TEST_F(StorageFileBuilderTest, PageDeviceConfig_Flush)
                              })))
           .InSequence(flush_sequence)
           .WillOnce(::testing::Return(llfs::StatusOr<i64>{4096}));
+
+      llfs::Status flush_status = builder.flush_all();
+
+      ASSERT_TRUE(flush_status.ok()) << BATT_INSPECT(flush_status);
+    }
+  }
+}
+
+TEST_F(StorageFileBuilderTest, PageDeviceConfig_Flush)
+{
+  for (i64 base_file_offset : {0, 128, 65536}) {
+    for (u32 page_size_log2 : {9, 10, 11, 12, 13, 16, 24}) {
+      llfs::StatusOr<llfs::ScopedIoRing> ioring =
+          llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{1024}, llfs::ThreadPoolSize{1});
+
+      ASSERT_TRUE(ioring.ok()) << BATT_INSPECT(ioring.status());
+
+      const char* const test_file_name = "/dev/nvme8n1";
+      llfs::StatusOr<int> test_fd = llfs::open_file_read_write(
+          test_file_name, llfs::OpenForAppend{false}, llfs::OpenRawIO{true});
+      ASSERT_TRUE(test_fd.ok()) << BATT_INSPECT(test_fd.status());
+
+      llfs::IoRingRawBlockFile test_file{llfs::IoRing::File{ioring->get_io_ring(), *test_fd}};
+
+      llfs::StorageFileBuilder builder{test_file, base_file_offset};
+
+      const auto options = llfs::PageDeviceConfigOptions{
+          .uuid = llfs::None,
+          .device_id = llfs::None,
+          .page_count = llfs::PageCount{kTestPageCount},
+          .page_size_log2 = llfs::PageSizeLog2{page_size_log2},
+      };
+      const usize kTestPageSize = 1ll << options.page_size_log2;
+
+      llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageDeviceConfig&>> packed_config =
+          builder.add_object(options);
+
+      ASSERT_TRUE(packed_config.ok()) << BATT_INSPECT(packed_config.status());
+
+      const i64 kExpectedConfigBlockOffset = batt::round_up_bits(12, base_file_offset);
+
+      const i64 kExpectedPage0Offset = batt::round_up_bits(
+          page_size_log2, kExpectedConfigBlockOffset + sizeof(llfs::PackedConfigBlock));
+
+      const i64 kExpectedFileSize = kExpectedPage0Offset + options.page_count * kTestPageSize;
+
+      const llfs::ConstBuffer& buffer = llfs::ConstBuffer();
+
+      llfs::Status truncate_status = test_file.truncate_at_least(kExpectedFileSize);
+      ASSERT_TRUE(truncate_status.ok()) << BATT_INSPECT(truncate_status);
+
+      if (!llfs::kFastIoRingPageDeviceInit) {
+        llfs::StatusOr<i64> write_some_result =
+            test_file.write_some(kExpectedConfigBlockOffset, buffer);
+        ASSERT_TRUE(write_some_result.ok()) << BATT_INSPECT(write_some_result.status());
+        ASSERT_EQ(*write_some_result, 512);
+      }
+
+      llfs::PackedConfigBlock configBlock = llfs::PackedConfigBlock{};
+      const llfs::ConstBuffer configBlockBuffer = llfs::ConstBuffer(&configBlock, 4096);
+
+      llfs::StatusOr<i64> blockStructWriteResult =
+          test_file.write_some(kExpectedConfigBlockOffset, configBlockBuffer);
+      ASSERT_TRUE(blockStructWriteResult.ok()) << BATT_INSPECT(blockStructWriteResult.status());
+      ASSERT_EQ(*blockStructWriteResult, 4096);
 
       llfs::Status flush_status = builder.flush_all();
 
@@ -240,5 +373,90 @@ TEST_F(StorageFileBuilderTest, WriteReadFile)
 
   ASSERT_TRUE(recovered_device.ok()) << BATT_INSPECT(recovered_device.status());
 }
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
+TEST_F(StorageFileBuilderTest, WriteReadBlockFile)
+{
+  llfs::StatusOr<llfs::ScopedIoRing> ioring =
+      llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{1024}, llfs::ThreadPoolSize{1});
+
+  ASSERT_TRUE(ioring.ok()) << BATT_INSPECT(ioring.status());
+
+  auto storage_context = batt::make_shared<llfs::StorageContext>(
+      batt::Runtime::instance().default_scheduler(), ioring->get_io_ring());
+
+  const char* const test_file_name = "/dev/nvme8n1";
+  boost::uuids::uuid page_device_uuid;
+
+  {
+    llfs::StatusOr<int> test_fd = llfs::open_file_read_write(
+        test_file_name, llfs::OpenForAppend{false}, llfs::OpenRawIO{true});
+    ASSERT_TRUE(test_fd.ok()) << BATT_INSPECT(test_fd.status());
+
+    llfs::IoRingRawBlockFile test_file{llfs::IoRing::File{ioring->get_io_ring(), *test_fd}};
+
+    this->write_rand_data(test_file, /*write_offset=*/0, /*randBufferLen=*/8192);
+
+    const auto page_device_options = llfs::PageDeviceConfigOptions{
+        .uuid = llfs::None,
+        .device_id = llfs::None,
+        .page_count = llfs::PageCount{kTestPageCount},
+        .page_size_log2 = llfs::PageSizeLog2{12} /* 4096 */,
+    };
+
+    {
+      llfs::StorageFileBuilder builder{test_file, /*base_offset=*/0};
+
+      llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageDeviceConfig&>> packed_config =
+          builder.add_object(page_device_options);
+
+      ASSERT_TRUE(packed_config.ok()) << BATT_INSPECT(packed_config.status());
+
+      // Save this for later.
+      //
+      page_device_uuid = (*packed_config)->uuid;
+
+      llfs::Status flush_status = builder.flush_all();
+
+      ASSERT_TRUE(flush_status.ok()) << BATT_INSPECT(flush_status);
+    }
+
+    {
+      llfs::StatusOr<std::vector<std::unique_ptr<llfs::StorageFileConfigBlock>>> config_blocks =
+          llfs::read_storage_file(test_file, /*start_offset=*/0);
+
+      ASSERT_TRUE(config_blocks.ok()) << BATT_INSPECT(config_blocks.status());
+
+      ASSERT_EQ(config_blocks->size(), 1u);
+
+      EXPECT_TRUE(this->verify_config_block(config_blocks->front()->get_const(),
+                                            /*kExpectedPage0Offset=*/4096,
+                                            /*kExpectedConfigBlockOffset=*/0,
+                                            /*page_size_log2=*/12));
+
+      auto storage_file =
+          batt::make_shared<llfs::StorageFile>(test_file_name, std::move(*config_blocks));
+
+      EXPECT_EQ(
+          storage_file->find_objects_by_type<llfs::PackedPageDeviceConfig>() | llfs::seq::count(),
+          1u);
+
+      {
+        llfs::Status status = storage_context->add_existing_file(storage_file);
+        ASSERT_TRUE(status.ok()) << BATT_INSPECT(status);
+      }
+    }
+  }
+
+  llfs::StatusOr<std::unique_ptr<llfs::PageDevice>> recovered_device =
+      storage_context->recover_object(
+          batt::StaticType<llfs::PackedPageDeviceConfig>{}, page_device_uuid,
+          llfs::IoRingFileRuntimeOptions::with_default_values(ioring->get_io_ring()));
+
+  ASSERT_TRUE(recovered_device.ok()) << BATT_INSPECT(recovered_device.status());
+}
+
+//---------------------------------------------------------------------------------------------------
 
 }  // namespace

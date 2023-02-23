@@ -15,8 +15,8 @@ jobs:
         with:
           submodules: recursive
       - name: Conan Install
-        run: batteries/script/run-with-docker.sh make BUILD_TYPE=Release install
+        run: script/run-with-docker.sh make BUILD_TYPE=Release install
       - name: Conan Build
-        run: batteries/script/run-with-docker.sh make BUILD_TYPE=Release build
+        run: script/run-with-docker.sh make BUILD_TYPE=Release build
       - name: Conan Test
-        run: batteries/script/run-with-docker.sh make BUILD_TYPE=Release test
+        run: script/run-with-docker.sh make BUILD_TYPE=Release test

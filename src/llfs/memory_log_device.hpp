@@ -25,6 +25,9 @@ class MemoryLogStorageDriver /*Impl*/
  public:
   explicit MemoryLogStorageDriver(LogStorageDriverContext&) noexcept
   {
+    // Verify default setting for auto-flush.
+    //
+    BATT_CHECK(this->is_auto_flush());
   }
 
   //----
@@ -52,32 +55,30 @@ class MemoryLogStorageDriver /*Impl*/
 
   slot_offset_type get_flush_pos() const
   {
-    return this->get_commit_pos();
+    return this->flush_pos_->get_value();
   }
 
   StatusOr<slot_offset_type> await_flush_pos(slot_offset_type min_offset)
   {
-    return this->await_commit_pos(min_offset);
+    return await_slot_offset(min_offset, *this->flush_pos_);
   }
 
   //----
 
   Status set_commit_pos(slot_offset_type commit_pos)
   {
-    this->commit_flush_pos_.set_value(commit_pos);
+    this->commit_pos_.set_value(commit_pos);
     return OkStatus();
   }
 
   slot_offset_type get_commit_pos() const
   {
-    return this->commit_flush_pos_.get_value();
+    return this->commit_pos_.get_value();
   }
 
   StatusOr<slot_offset_type> await_commit_pos(slot_offset_type min_offset)
   {
-    return this->commit_flush_pos_.await_true([&](slot_offset_type latest_pos) {
-      return !slot_less_than(latest_pos, min_offset);
-    });
+    return await_slot_offset(min_offset, this->commit_pos_);
   }
 
   //----
@@ -85,21 +86,63 @@ class MemoryLogStorageDriver /*Impl*/
   Status close()
   {
     this->trim_pos_.close();
-    this->commit_flush_pos_.close();
+    this->manual_flush_pos_.close();
+    this->commit_pos_.close();
 
     return OkStatus();
   }
+
+  //----
+
+  /** \brief Returns the current auto-flush status; if true, then the flush and commit pos are
+   * automatically kept in sync.  Otherwise the flush_pos must be manually advanced via one of:
+   *
+   *   - sync_flush_pos()
+   *   - advance_flush_pos(isize delta)
+   *   - flush_up_to_offset(slot_offset_type offset)
+   */
+  bool is_auto_flush() const noexcept;
+
+  /** \brief Set the auto-flush mode status.
+   * \see is_auto_flush
+   */
+  void set_auto_flush(bool on) noexcept;
+
+  /** \brief Sets the manual flush pos to match the current commit pos; this only synchronizes
+   * *once*.  To keep the flush and commit pos in sync, use `set_auto_flush(true)`.
+   */
+  void sync_flush_pos() noexcept;
+
+  /** \brief Returns the current delta (in bytes) between the flush_pos and commit_pos.
+   */
+  usize unflushed_size() noexcept;
+
+  /** \brief Advances the flush pos by at most `offset_delta` bytes.  This function automatically
+   * clamps the passed offset so it is never negative and so that the flush pos never goes past the
+   * commit pos.
+   *
+   * \return The actual number of bytes advanced.
+   */
+  isize advance_flush_pos(isize offset_delta) noexcept;
+
+  /** \brief Brings the flush pos up to the specified offset.  If flush pos is already at or beyond
+   * offset, this function has no effect.  If offset is beyond the current commit pos, then this
+   * function has the same effect as this->sync_flush_pos().
+   */
+  slot_offset_type flush_up_to_offset(slot_offset_type offset) noexcept;
 
  private:
   friend class LogTruncateAccess;
 
   void truncate(slot_offset_type truncate_pos)
   {
-    this->commit_flush_pos_.set_value(truncate_pos);
+    this->commit_pos_.set_value(truncate_pos);
   }
 
   batt::Watch<slot_offset_type> trim_pos_{0};
-  batt::Watch<slot_offset_type> commit_flush_pos_{0};
+  batt::Watch<slot_offset_type> manual_flush_pos_{0};
+  batt::Watch<slot_offset_type> commit_pos_{0};
+  batt::Watch<slot_offset_type>* flush_pos_ = &this->commit_pos_;
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

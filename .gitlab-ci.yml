@@ -1,9 +1,10 @@
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 # See batteries/docker/Dockerfile (https://gitlab.com/batteriescpp/batteries/)
 #
-image: registry.gitlab.com/batteriescpp/batteries:v0.11.12-devel.linux_gcc11_amd64
+image: registry.gitlab.com/batteriescpp/batteries:v0.23.1.linux_gcc11_amd64
 
 variables:
+  GIT_STRATEGY: clone
   GIT_SUBMODULE_STRATEGY: normal
   
 #+++++++++++-+-+--+----- --- -- -  -  -   -

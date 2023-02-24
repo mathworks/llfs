@@ -92,7 +92,7 @@ class MemoryLogStorageDriver /*Impl*/
     return OkStatus();
   }
 
-  //----
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   /** \brief Returns the current auto-flush status; if true, then the flush and commit pos are
    * automatically kept in sync.  Otherwise the flush_pos must be manually advanced via one of:
@@ -130,6 +130,8 @@ class MemoryLogStorageDriver /*Impl*/
    * function has the same effect as this->sync_flush_pos().
    */
   slot_offset_type flush_up_to_offset(slot_offset_type offset) noexcept;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
  private:
   friend class LogTruncateAccess;

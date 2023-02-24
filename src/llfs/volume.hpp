@@ -197,6 +197,15 @@ class Volume
   //
   const PageRecycler::Metrics& page_recycler_metrics() const;
 
+  //----- --- -- -  -  -   -
+  // FOR TESTING ONLY
+  //
+  LogDevice& root_log() const noexcept
+  {
+    return *this->root_log_;
+  }
+  //----- --- -- -  -  -   -
+
  private:
   explicit Volume(const VolumeOptions& options, const boost::uuids::uuid& volume_uuid,
                   batt::SharedPtr<PageCache>&& page_cache,

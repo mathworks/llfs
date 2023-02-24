@@ -48,6 +48,21 @@ enum struct LogReadMode : unsigned {
 };
 constexpr unsigned kNumLogReadModes = 3;
 
+inline std::ostream& operator<<(std::ostream& out, const LogReadMode& t)
+{
+  switch (t) {
+    case LogReadMode::kInconsistent:
+      return out << "Inconsistent";
+
+    case LogReadMode::kSpeculative:
+      return out << "Speculative";
+
+    case LogReadMode::kDurable:
+      return out << "Durable";
+  }
+  return out << "(bad value:" << (int)t << ")";
+}
+
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 class LogDevice

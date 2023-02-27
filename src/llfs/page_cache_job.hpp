@@ -173,7 +173,13 @@ class PageCacheJob : public PageLoader
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   // PageLoader interface
   //
-  using PageLoader::get;
+  using PageLoader::get_page;
+  using PageLoader::get_page_in_job;
+  using PageLoader::get_page_slot;
+  using PageLoader::get_page_slot_in_job;
+  using PageLoader::get_page_slot_with_layout;
+  using PageLoader::get_page_slot_with_layout_in_job;
+  using PageLoader::get_page_with_layout;
 
   // Hint to the cache that it is likely we will ask for this page in the near future.
   //
@@ -181,8 +187,10 @@ class PageCacheJob : public PageLoader
 
   // Load the page, first checking the pinned pages and views in this job.
   //
-  StatusOr<PinnedPage> get(PageId page_id, const Optional<PageLayoutId>& required_layout,
-                           PinPageToJob pin_page_to_job, OkIfNotFound ok_if_not_found) override;
+  StatusOr<PinnedPage> get_page_with_layout_in_job(PageId page_id,
+                                                   const Optional<PageLayoutId>& required_layout,
+                                                   PinPageToJob pin_page_to_job,
+                                                   OkIfNotFound ok_if_not_found) override;
   //
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -279,7 +287,7 @@ class PageCacheJob : public PageLoader
   }
 
   LLFS_METHOD_BINDER(PageCacheJob, prefetch_hint, Prefetch);
-  LLFS_METHOD_BINDER(PageCacheJob, get, Get);
+  LLFS_METHOD_BINDER(PageCacheJob, get_page_slot, Get);
 
   int binder_count = 0;
 

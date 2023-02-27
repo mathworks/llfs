@@ -209,18 +209,18 @@ class BasicRingBufferLogDevice<Impl>::WriterImpl : public LogDevice::Writer
     return this->device_->driver_.get_commit_pos();
   }
 
-  std::size_t space() const
+  usize space() const override
   {
     const slot_offset_type readable_begin = this->device_->driver_.get_trim_pos();
     const slot_offset_type readable_end = this->device_->driver_.get_commit_pos();
 
-    const std::size_t space_available =
+    const usize space_available =
         this->device_->buffer_.size() - slot_distance(readable_begin, readable_end);
 
     return space_available;
   }
 
-  StatusOr<MutableBuffer> prepare(std::size_t byte_count, std::size_t head_room) override
+  StatusOr<MutableBuffer> prepare(usize byte_count, usize head_room) override
   {
     BATT_CHECK(!this->prepared_offset_);
 
@@ -228,7 +228,7 @@ class BasicRingBufferLogDevice<Impl>::WriterImpl : public LogDevice::Writer
       return ::llfs::make_status(StatusCode::kPrepareFailedLogClosed);
     }
 
-    const std::size_t space_required = byte_count + head_room;
+    const usize space_required = byte_count + head_room;
 
     if (this->space() < space_required) {
       return ::llfs::make_status(StatusCode::kPrepareFailedTrimRequired);
@@ -242,7 +242,7 @@ class BasicRingBufferLogDevice<Impl>::WriterImpl : public LogDevice::Writer
     return MutableBuffer{writable_region.data(), byte_count};
   }
 
-  StatusOr<slot_offset_type> commit(std::size_t byte_count) override
+  StatusOr<slot_offset_type> commit(usize byte_count) override
   {
     auto guard = batt::finally([&] {
       this->prepared_offset_ = None;

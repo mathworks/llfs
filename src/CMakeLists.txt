@@ -23,6 +23,7 @@ add_compile_options(-D_GNU_SOURCE -fno-omit-frame-pointer)
 # Set warning/error level for the compilation.
 #
 add_compile_options(-Wall -Wextra -Werror -Werror=switch-enum -Wswitch-enum)
+add_compile_options(-Wsuggest-override -Woverloaded-virtual)
 
 # Configuration macros for Boost.
 #

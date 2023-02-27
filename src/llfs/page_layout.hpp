@@ -50,22 +50,6 @@ u64 compute_page_crc64(const PageBuffer& page);
 Status finalize_page_header(PageBuffer* page,
                             const Interval<u64>& unused_region = Interval<u64>{0u, 0u});
 
-template <typename Dst>
-[[nodiscard]] PackedPageId* pack_object_to(const PageId& id, PackedPageId* packed_id, Dst*)
-{
-  packed_id->id_val = id.int_value();
-
-  BATT_CHECK_EQ(packed_id->id_val, id.int_value());
-
-  return packed_id;
-}
-
-template <typename Src>
-inline StatusOr<PageId> unpack_object(const PackedPageId& packed_id, Src*)
-{
-  return PageId{packed_id.id_val};
-}
-
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
 struct PackedPageRefCount {

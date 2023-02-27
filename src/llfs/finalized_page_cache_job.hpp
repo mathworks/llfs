@@ -114,8 +114,10 @@ class FinalizedPageCacheJob : public PageLoader
 
   void prefetch_hint(PageId page_id) override;
 
-  StatusOr<PinnedPage> get(PageId page_id, const Optional<PageLayoutId>& required_layout,
-                           PinPageToJob pin_page_to_job, OkIfNotFound ok_if_not_found) override;
+  StatusOr<PinnedPage> get_page_with_layout_in_job(PageId page_id,
+                                                   const Optional<PageLayoutId>& required_layout,
+                                                   PinPageToJob pin_page_to_job,
+                                                   OkIfNotFound ok_if_not_found) override;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

@@ -223,9 +223,9 @@ void PageCacheJob::unpin_all()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<PinnedPage> PageCacheJob::get(PageId page_id,
-                                       const Optional<PageLayoutId>& required_layout,
-                                       PinPageToJob pin_page_to_job, OkIfNotFound ok_if_not_found)
+StatusOr<PinnedPage> PageCacheJob::get_page_with_layout_in_job(
+    PageId page_id, const Optional<PageLayoutId>& required_layout, PinPageToJob pin_page_to_job,
+    OkIfNotFound ok_if_not_found)
 {
   // First check in the pinned pages table.
   {
@@ -297,7 +297,7 @@ StatusOr<PinnedPage> PageCacheJob::const_get(PageId page_id,
   if (pinned_page.status() != batt::StatusCode::kUnavailable) {
     return pinned_page;
   }
-  return this->cache_->get(page_id, required_layout, ok_if_not_found);
+  return this->cache_->get_page_with_layout(page_id, required_layout, ok_if_not_found);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -329,8 +329,8 @@ Status PageCacheJob::recover_page(PageId page_id, const boost::uuids::uuid& call
   Status allocator_recovered = page_allocator.recover_page(page_id);
   BATT_REQUIRE_OK(allocator_recovered);
 
-  StatusOr<PinnedPage> pinned_page =
-      this->get(page_id, /*required_layout=*/None, PinPageToJob::kTrue, OkIfNotFound{true});
+  StatusOr<PinnedPage> pinned_page = this->get_page_with_layout_in_job(
+      page_id, /*required_layout=*/None, PinPageToJob::kTrue, OkIfNotFound{true});
 
   if (!pinned_page.ok()) {
     page_allocator.deallocate_page(page_id);
@@ -359,7 +359,7 @@ Status PageCacheJob::delete_page(PageId page_id)
   if (!page_id) {
     return OkStatus();
   }
-  StatusOr<PinnedPage> page_view = this->get(page_id, OkIfNotFound{true});
+  StatusOr<PinnedPage> page_view = this->get_page(page_id, OkIfNotFound{true});
   if (page_view.ok()) {
     this->pruned_ = false;
     this->deleted_pages_.emplace(page_id, *page_view);

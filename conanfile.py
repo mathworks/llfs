@@ -31,7 +31,7 @@ class LlfsConan(ConanFile):
         "openssl/3.0.7",
         "glog/0.6.0",
         "libunwind/1.6.2",
-        "batteries/0.25.0@batteriescpp+batteries/stable",
+        "batteries/0.25.1@batteriescpp+batteries/stable",
         "liburing/2.2",
         "cli11/2.3.2",
         "zlib/1.2.13",

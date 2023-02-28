@@ -19,6 +19,8 @@
 #include <llfs/seq.hpp>
 #include <llfs/slice.hpp>
 
+#include <batteries/async/worker_pool.hpp>
+#include <batteries/optional.hpp>
 #include <batteries/pointers.hpp>
 #include <batteries/type_traits.hpp>
 
@@ -390,6 +392,21 @@ class DataPacker
     return this->buffer_begin() + this->buffer_.size();
   }
 
+  void set_worker_pool(batt::WorkerPool& worker_pool) noexcept
+  {
+    this->worker_pool_.emplace(worker_pool);
+  }
+
+  void clear_worker_pool() noexcept
+  {
+    this->worker_pool_ = batt::None;
+  }
+
+  batt::Optional<batt::WorkerPool&> worker_pool() const noexcept
+  {
+    return this->worker_pool_;
+  }
+
  private:
   usize estimate_packed_data_size(usize size) const;
 
@@ -417,6 +434,11 @@ class DataPacker
 
   MutableBuffer buffer_;
   Arena arena_{this, boost::iterator_range<u8*>{this->buffer_begin(), this->buffer_end()}};
+
+  /** \brief Available as a convenience to users of this DataPacker, to speed up the packing of
+   * large data using parallelism.
+   */
+  batt::Optional<batt::WorkerPool&> worker_pool_ = batt::None;
 };
 
 }  // namespace llfs

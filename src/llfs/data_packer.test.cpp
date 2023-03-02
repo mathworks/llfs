@@ -20,6 +20,7 @@
 namespace {
 
 using namespace llfs::int_types;
+using namespace llfs::constants;
 
 TEST(DataPackerTest, Arena)
 {
@@ -92,6 +93,100 @@ TEST(DataPackerTest, Arena)
       << "\nmemory=\n"
       << batt::dump_hex(memory.data(), memory.size()) << "\nexpected=\n"
       << batt::dump_hex(expected.data(), expected.size());
+}
+
+constexpr usize kDataCopySize = 512 * kKiB;
+constexpr usize kCopyRepeat = 1 * 1000;
+
+void run_parallel_copy_test(bool on, usize min_task_size)
+{
+  std::vector<char> src_buffer(kDataCopySize);
+  std::vector<char> dst_buffer(kDataCopySize + 100);
+
+  if (on) {
+    llfs::DataPacker::min_parallel_copy_size() = min_task_size;
+  }
+
+  const void* packed_data = nullptr;
+
+  for (usize i = 0; i < kCopyRepeat; ++i) {
+    llfs::DataPacker packer{llfs::MutableBuffer{dst_buffer.data(), dst_buffer.size()}};
+    packer.set_worker_pool(batt::WorkerPool::default_pool());
+
+    llfs::PackedBytes* packed_bytes = packer.pack_record<llfs::PackedBytes>();
+    ASSERT_NE(packed_bytes, nullptr);
+
+    packed_data = packer.pack_data_to(packed_bytes, src_buffer.data(), src_buffer.size(),
+                                      llfs::UseParallelCopy{on});
+    ASSERT_NE(packed_data, nullptr);
+  }
+  ASSERT_EQ(std::memcmp(packed_data, src_buffer.data(), src_buffer.size()), 0);
+}
+
+TEST(DataPackerTest, ParallelDataCopyTrue1k)
+{
+  run_parallel_copy_test(true, 1 * kKiB);
+}
+TEST(DataPackerTest, ParallelDataCopyTrue2k)
+{
+  run_parallel_copy_test(true, 2 * kKiB);
+}
+TEST(DataPackerTest, ParallelDataCopyTrue4k)
+{
+  run_parallel_copy_test(true, 4 * kKiB);
+}
+TEST(DataPackerTest, ParallelDataCopyTrue8k)
+{
+  run_parallel_copy_test(true, 8 * kKiB);
+}
+TEST(DataPackerTest, ParallelDataCopyTrue16k)
+{
+  run_parallel_copy_test(true, 16 * kKiB);
+}
+TEST(DataPackerTest, ParallelDataCopyTrue32k)
+{
+  run_parallel_copy_test(true, 32 * kKiB);
+}
+TEST(DataPackerTest, ParallelDataCopyTrue43k)
+{
+  run_parallel_copy_test(true, 43 * kKiB);
+}
+TEST(DataPackerTest, ParallelDataCopyTrue64k)
+{
+  run_parallel_copy_test(true, 64 * kKiB);
+}
+TEST(DataPackerTest, ParallelDataCopyTrue75k)
+{
+  run_parallel_copy_test(true, 75 * kKiB);
+}
+TEST(DataPackerTest, ParallelDataCopyTrue86k)
+{
+  run_parallel_copy_test(true, 86 * kKiB);
+}
+TEST(DataPackerTest, ParallelDataCopyTrue97k)
+{
+  run_parallel_copy_test(true, 97 * kKiB);
+}
+TEST(DataPackerTest, ParallelDataCopyTrue128k)
+{
+  run_parallel_copy_test(true, 128 * kKiB);
+}
+TEST(DataPackerTest, ParallelDataCopyTrue256k)
+{
+  run_parallel_copy_test(true, 256 * kKiB);
+}
+TEST(DataPackerTest, ParallelDataCopyTrue512k)
+{
+  run_parallel_copy_test(true, 512 * kKiB);
+}
+TEST(DataPackerTest, ParallelDataCopyTrue1024k)
+{
+  run_parallel_copy_test(true, 1024 * kKiB);
+}
+
+TEST(DataPackerTest, ParallelDataCopyFalse)
+{
+  run_parallel_copy_test(false, 0);
 }
 
 }  // namespace

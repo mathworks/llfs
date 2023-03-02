@@ -26,6 +26,11 @@ BATT_STRONG_TYPEDEF(usize, MaxQueueDepth);
  */
 BATT_STRONG_TYPEDEF(bool, OkIfNotFound);
 
+/** \brief Ask DataPacker to use parallel_copy and its configured WorkerPool to copy data, if
+ * possible.
+ */
+BATT_STRONG_TYPEDEF(bool, UseParallelCopy);
+
 }  // namespace llfs
 
 #endif  // LLFS_API_TYPES_HPP

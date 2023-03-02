@@ -10,6 +10,7 @@
 #ifndef LLFS_DATA_PACKER_HPP
 #define LLFS_DATA_PACKER_HPP
 
+#include <llfs/api_types.hpp>
 #include <llfs/array_packer.hpp>
 #include <llfs/buffer.hpp>
 #include <llfs/data_layout.hpp>
@@ -33,6 +34,12 @@ namespace llfs {
 class DataPacker
 {
  public:
+  static std::atomic<usize>& min_parallel_copy_size()
+  {
+    static std::atomic<usize> value{64 * kKiB};
+    return value;
+  }
+
   template <typename T>
   using ArrayPacker = BasicArrayPacker<T, DataPacker>;
 
@@ -223,9 +230,19 @@ class DataPacker
   [[nodiscard]] const void* pack_data(const void* data, usize size);
   [[nodiscard]] const void* pack_data(const void* data, usize size, Arena* arena);
 
+  [[nodiscard]] const void* pack_data(const void* data, usize size,
+                                      UseParallelCopy use_parallel_copy);
+  [[nodiscard]] const void* pack_data(const void* data, usize size, Arena* arena,
+                                      UseParallelCopy use_parallel_copy);
+
   [[nodiscard]] const void* pack_data_to(PackedBytes* rec, const void* data, usize size);
   [[nodiscard]] const void* pack_data_to(PackedBytes* rec, const void* data, usize size,
                                          Arena* arena);
+
+  [[nodiscard]] const void* pack_data_to(PackedBytes* rec, const void* data, usize size,
+                                         UseParallelCopy use_parallel_copy);
+  [[nodiscard]] const void* pack_data_to(PackedBytes* rec, const void* data, usize size,
+                                         Arena* arena, UseParallelCopy use_parallel_copy);
 
   [[nodiscard]] const PackedBytes* pack_data_copy(const PackedBytes& src);
   [[nodiscard]] const PackedBytes* pack_data_copy(const PackedBytes& src, Arena* arena);
@@ -415,6 +432,10 @@ class DataPacker
   template <typename Policy>
   const void* nocheck_pack_data_to(PackedBytes* rec, const void* data, usize size, Arena* arena,
                                    batt::StaticType<Policy> = {});
+
+  template <typename Policy>
+  const void* nocheck_pack_data_to(PackedBytes* rec, const void* data, usize size, Arena* arena,
+                                   batt::StaticType<Policy>, UseParallelCopy use_parallel_copy);
 
   // Copy data into newly "allocated" space at the end of the avail range.
   //

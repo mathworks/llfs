@@ -657,4 +657,33 @@ const PageRecycler::Metrics& Volume::page_recycler_metrics() const
   return this->recycler_->metrics();
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<ConstBuffer> Volume::get_root_log_data(const SlotReadLock& read_lock) const
+{
+  if (!read_lock || read_lock.get_sponsor() != this->trim_control_.get()) {
+    return {batt::StatusCode::kInvalidArgument};
+  }
+
+  const llfs::SlotRange slot_range = read_lock.slot_range();
+
+  // Create a log reader to access the data.
+  //
+  std::unique_ptr<llfs::LogDevice::Reader> log_reader =
+      this->root_log_->new_reader(slot_range.lower_bound, llfs::LogReadMode::kSpeculative);
+
+  BATT_CHECK_NOT_NULLPTR(log_reader);
+  BATT_CHECK_EQ(log_reader->slot_offset(), slot_range.lower_bound);
+
+  // Verify that we can capture the requested range.
+  //
+  const usize slot_size = BATT_CHECKED_CAST(usize, slot_range.size());
+  batt::ConstBuffer available = log_reader->data();
+  if (available.size() < slot_size) {
+    return {batt::StatusCode::kOutOfRange};
+  }
+
+  return batt::ConstBuffer{available.data(), slot_size};
+}
+
 }  // namespace llfs

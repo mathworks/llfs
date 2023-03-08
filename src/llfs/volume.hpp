@@ -197,6 +197,12 @@ class Volume
   //
   const PageRecycler::Metrics& page_recycler_metrics() const;
 
+  /** \brief Returns the root log data corresponding to the given slot read lock.
+   *
+   * The returned buffer is valid only as long as the lock is held.
+   */
+  StatusOr<ConstBuffer> get_root_log_data(const SlotReadLock& read_lock) const;
+
   //----- --- -- -  -  -   -
   // FOR TESTING ONLY
   //
@@ -269,6 +275,15 @@ class Volume
   //
   Optional<batt::Task> trimmer_task_;
 };
+
+/** \brief For parsing raw log data, like that returned by Volume::get_root_log_data.
+ *
+ * \return the slot upper bound of the last slot parsed.
+ */
+template <typename SlotVisitorFn>
+batt::StatusOr<slot_offset_type> parse_raw_volume_log_data(const SlotReadLock& read_lock,
+                                                           const ConstBuffer& buffer,
+                                                           SlotVisitorFn&& slot_visitor_fn);
 
 }  // namespace llfs
 

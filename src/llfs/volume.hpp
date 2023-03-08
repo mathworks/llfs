@@ -280,8 +280,9 @@ class Volume
  *
  * \return the slot upper bound of the last slot parsed.
  */
-template <typename SlotVisitorFn>
-batt::StatusOr<slot_offset_type> parse_raw_volume_log_data(const SlotReadLock& read_lock,
+template <typename SlotVisitorFn = batt::Status(const SlotParse& slot,
+                                                const std::string_view& user_data)>
+batt::StatusOr<slot_offset_type> parse_raw_volume_log_data(const SlotRange& slot_range,
                                                            const ConstBuffer& buffer,
                                                            SlotVisitorFn&& slot_visitor_fn);
 

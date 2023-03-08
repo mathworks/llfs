@@ -30,17 +30,16 @@ inline StatusOr<TypedVolumeReader<T>> Volume::typed_reader(const SlotRangeSpec& 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <typename SlotVisitorFn>
-batt::StatusOr<slot_offset_type> parse_raw_volume_log_data(const SlotReadLock& read_lock,
+batt::StatusOr<slot_offset_type> parse_raw_volume_log_data(const SlotRange& slot_range,
                                                            const ConstBuffer& buffer,
                                                            SlotVisitorFn&& slot_visitor_fn)
 {
-  const SlotRange locked_range = read_lock.slot_range();
-  slot_offset_type parsed_upper_bound = locked_range.lower_bound;
+  slot_offset_type parsed_upper_bound = slot_range.lower_bound;
 
-  auto wrapped_visitor_fn = [&slot_visitor_fn, &parsed_upper_bound, &locked_range](
+  auto wrapped_visitor_fn = [&slot_visitor_fn, &parsed_upper_bound, &slot_range](
                                 const SlotParse& slot,
                                 const std::string_view& user_data) -> batt::Status {
-    if (slot_greater_than(slot.offset.upper_bound, locked_range.upper_bound)) {
+    if (slot_greater_than(slot.offset.upper_bound, slot_range.upper_bound)) {
       return ::llfs::make_status(::llfs::StatusCode::kBreakSlotReaderLoop);
     }
     BATT_REQUIRE_OK(slot_visitor_fn(slot, user_data));
@@ -53,7 +52,7 @@ batt::StatusOr<slot_offset_type> parse_raw_volume_log_data(const SlotReadLock& r
   VolumeSlotDemuxer<NoneType, decltype(wrapped_visitor_fn)> demuxer{wrapped_visitor_fn,
                                                                     pending_jobs};
 
-  BufferedLogDataReader log_data_reader{buffer};
+  BufferedLogDataReader log_data_reader{slot_range.lower_bound, buffer};
 
   TypedSlotReader<VolumeEventVariant> slot_reader{log_data_reader};
 

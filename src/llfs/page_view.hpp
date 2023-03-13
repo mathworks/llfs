@@ -45,14 +45,24 @@ class PageView
 
   virtual ~PageView() = default;
 
-  PageId page_id() const
+  PageId page_id() const noexcept
   {
     return this->data_->page_id();
   }
 
-  std::shared_ptr<const PageBuffer> data() const
+  std::shared_ptr<const PageBuffer> data() const noexcept
   {
     return this->data_;
+  }
+
+  ConstBuffer const_buffer() const noexcept
+  {
+    return this->data_->const_buffer();
+  }
+
+  ConstBuffer const_payload() const noexcept
+  {
+    return this->data_->const_payload();
   }
 
   // Check to make sure the page id matches the expected one, and that no data corruption is found.
@@ -64,6 +74,7 @@ class PageView
   virtual PageLayoutId get_page_layout_id() const = 0;
 
   // Returns a sequence of the ids of all pages directly referenced by this one.
+  //  TODO [tastolfi 2023-03-13] add parallel friendly API
   //
   virtual BoxedSeq<PageId> trace_refs() const = 0;
 

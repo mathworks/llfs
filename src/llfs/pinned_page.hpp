@@ -45,7 +45,7 @@ class PinnedPage
     BATT_CHECK_EQ(this->page_view_ != nullptr, bool{this->pinned_cache_slot_});
   }
 
-  const PageView* get() const
+  const PageView* get() const noexcept
   {
     return this->page_view_;
   }
@@ -59,27 +59,27 @@ class PinnedPage
     }
   }
 
-  const PageView* operator->() const
+  const PageView* operator->() const noexcept
   {
     return this->get();
   }
 
-  const PageView& operator*() const
+  const PageView& operator*() const noexcept
   {
     return *this->get();
   }
 
-  explicit operator bool() const
+  explicit operator bool() const noexcept
   {
     return this->get() != nullptr;
   }
 
-  PinnedCacheSlotT get_cache_slot() const
+  PinnedCacheSlotT get_cache_slot() const noexcept
   {
     return this->pinned_cache_slot_;
   }
 
-  std::shared_ptr<const PageBuffer> get_page_buffer() const
+  std::shared_ptr<const PageBuffer> get_page_buffer() const noexcept
   {
     return this->page_view_->data();
   }
@@ -87,6 +87,16 @@ class PinnedPage
   std::shared_ptr<const PageView> get_shared_view() const
   {
     return BATT_OK_RESULT_OR_PANIC(this->pinned_cache_slot_.get()->get_ready_value_or_panic());
+  }
+
+  ConstBuffer const_buffer() const noexcept
+  {
+    return this->page_view_->const_buffer();
+  }
+
+  ConstBuffer const_payload() const noexcept
+  {
+    return this->page_view_->const_payload();
   }
 
   friend page_id_int get_page_id_int(const PinnedPage& pinned);

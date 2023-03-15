@@ -148,9 +148,9 @@ class PageCache : public PageLoader
   //
   void deallocate_page(PageId page_id, u64 callers, u64 job_id);
 
-  Status attach(const boost::uuids::uuid& user_id, slot_offset_type slot_offset);
+  Status attach_user(const boost::uuids::uuid& user_id, slot_offset_type slot_offset);
 
-  Status detach(const boost::uuids::uuid& user_id, slot_offset_type slot_offset);
+  Status detach_user(const boost::uuids::uuid& user_id, slot_offset_type slot_offset);
 
   Slice<const PageArena> arenas_for_page_size_log2(usize size_log2) const;
 

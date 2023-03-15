@@ -435,6 +435,7 @@ class VolumeTrimmerTest : public ::testing::Test
     llfs::PrepareJob prepare{
         .new_page_ids = batt::seq::Empty<llfs::PageId>{} | batt::seq::boxed(),
         .deleted_page_ids = batt::seq::Empty<llfs::PageId>{} | batt::seq::boxed(),
+        .page_device_ids = batt::seq::Empty<llfs::page_device_id_int>{} | batt::seq::boxed(),
         .user_data = llfs::PackableRef{page_ids_seq},
     };
 

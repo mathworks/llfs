@@ -299,15 +299,9 @@ class PageAllocatorState : public PageAllocatorStateNoLock
   PageAllocatorState(const PageAllocatorState&) = delete;
   PageAllocatorState& operator=(const PageAllocatorState&) = delete;
 
-  void revert(const PageAllocatorState& prior);
-
   Optional<PageId> allocate_page();
 
   void deallocate_page(PageId page_id);
-
-  // Returns Ok if the given page_id was successfully removed from the free pool.
-  //
-  Status recover_page(PageId page_id);
 
   // Write index objects to the log in LRU order until we have written a minimum of
   // `min_byte_count`.
@@ -338,6 +332,8 @@ class PageAllocatorState : public PageAllocatorStateNoLock
 
   Optional<PageAllocatorAttachmentStatus> get_client_attachment_status(
       const boost::uuids::uuid& uuid) const;
+
+  void refresh_client_attachment(const boost::uuids::uuid& uuid, slot_offset_type slot);
 
  private:
   ProposalStatus propose_exactly_once(const PackedPageUserSlot& user_slot,

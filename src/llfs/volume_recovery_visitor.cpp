@@ -68,29 +68,88 @@ Status VolumeRecoveryVisitor::resolve_pending_jobs(PageCache& cache, PageRecycle
 
   while (!pending_jobs.empty()) {
     const auto& [prepare_slot, slot_with_payload] = *pending_jobs.begin();
-    const Ref<const PackedPrepareJob> pending_job = slot_with_payload.payload;
+    const Ref<const PackedPrepareJob> packed_prepare_job = slot_with_payload.payload;
 
-    // 1. Create a page cache job
+    // Whether we commit or roll back, we will need a job.
     //
     std::unique_ptr<PageCacheJob> job = cache.new_job();
 
-    // 2. Call recover_page for all the new pages.
+    // Keep track of the first fatal error we see.
     //
-    std::vector<PageId> found_pages;
     Status overall_status = OkStatus();
-    as_seq(*pending_job.get().new_page_ids) |
-        seq::for_each([&](const PackedPageId& packed_page_id) {
-          auto page_id = packed_page_id.as_page_id();
-          Status recover_status = job->recover_page(page_id, volume_uuid, prepare_slot);
-          if (recover_status.ok()) {
-            found_pages.emplace_back(page_id);
-          }
-          overall_status.Update(recover_status);
-        });
 
-    // 3. If all the recover_page ops succeed, commit the job
+    // See whether any ref count updates were flushed.
     //
-    if (overall_status.ok()) {
+    bool found_ref_count_updates =
+        as_seq(*packed_prepare_job.get().page_device_ids)  //
+        | seq::map([&](page_device_id_int page_device_id) -> bool {
+            PageAllocator& page_allocator = cache.arena_for_device_id(page_device_id).allocator();
+            Optional<PageAllocatorAttachmentStatus> attachment =
+                page_allocator.get_client_attachment_status(volume_uuid);
+            if (!attachment) {
+              overall_status.Update(
+                  ::llfs::make_status(StatusCode::kRecoverFailedAllocatorNotAttached));
+              return false;
+            }
+            return slot_at_least(attachment->user_slot, prepare_slot);
+          })  //
+        | seq::any_true();
+
+    // If any device is not attached, its a fatal failure.
+    //
+    BATT_REQUIRE_OK(overall_status);
+
+    // If any ref count update is found, then this job must have successfully written all of its new
+    // pages and we will attempt to commit the job; otherwise, we roll it back.
+    //
+    if (!found_ref_count_updates) {
+      //----- --- -- -  -  -   -
+      LLFS_LOG_INFO() << "Rolling back job at slot " << prepare_slot << "...";
+
+      // Else (maybe) delete any pages that _did_ succeed, and then-and-only-then write a
+      // rollback job slot.
+      //
+      Status drop_status = parallel_drop_pages(as_seq(*packed_prepare_job.get().new_page_ids)  //
+                                                   | seq::map(BATT_OVERLOADS_OF(get_page_id))  //
+                                                   | seq::collect_vec(),
+                                               cache, job->job_id, Caller::Unknown);
+
+      BATT_REQUIRE_OK(drop_status);
+
+      StatusOr<SlotRange> rollback_slot =
+          slot_writer.append(grant, PackedRollbackJob{
+                                        .prepare_slot = prepare_slot,
+                                    });
+
+      BATT_REQUIRE_OK(rollback_slot);
+
+      clamp_min_slot(&slot_upper_bound, rollback_slot->upper_bound);
+
+    } else {
+      //----- --- -- -  -  -   -
+      // Call recover_page for all the new pages.
+      //
+      as_seq(*packed_prepare_job.get().new_page_ids)  //
+          | seq::for_each([&](const PackedPageId& packed_page_id) {
+              auto page_id = packed_page_id.as_page_id();
+              Status recover_status = job->recover_page(page_id, volume_uuid, prepare_slot);
+              overall_status.Update(recover_status);
+            });
+
+      // If any pages failed to load, that's a fatal failure.
+      //
+      BATT_REQUIRE_OK(overall_status);
+
+      // Add the root page ids to the job so that ref counts will be recalculated correctly.
+      //
+      as_seq(*packed_prepare_job.get().root_page_ids)  //
+          | seq::map(BATT_OVERLOADS_OF(get_page_id))   //
+          | seq::for_each([&job](PageId page_id) {
+              job->new_root(page_id);
+            });
+
+      // Commit the job!
+      //
       Status commit_status = commit(std::move(job),
                                     JobCommitParams{
                                         .caller_uuid = &volume_uuid,
@@ -101,36 +160,22 @@ Status VolumeRecoveryVisitor::resolve_pending_jobs(PageCache& cache, PageRecycle
                                     },
                                     Caller::Unknown);
 
-      if (commit_status.ok()) {
-        StatusOr<SlotRange> commit_slot =
-            slot_writer.append(grant, PackedCommitJob{
-                                          .reserved_ = {},
-                                          .prepare_slot = prepare_slot,
-                                      });
+      BATT_REQUIRE_OK(commit_status);
 
-        BATT_REQUIRE_OK(commit_slot);
-
-        clamp_min_slot(&slot_upper_bound, commit_slot->upper_bound);
-        pending_jobs.erase(prepare_slot);
-        continue;
-      }
-      // else - attempt to rollback instead...
-    }
-
-    // Else (maybe) delete any pages that _did_ succeed, and then-and-only-then write a
-    // rollback job slot.
-    //
-    Status drop_status = parallel_drop_pages(found_pages, cache, job->job_id, Caller::Unknown);
-
-    BATT_REQUIRE_OK(drop_status);
-
-    StatusOr<SlotRange> rollback_slot = slot_writer.append(grant, PackedRollbackJob{
+      // Now we can write the commit slot.
+      //
+      StatusOr<SlotRange> commit_slot = slot_writer.append(grant, PackedCommitJob{
+                                                                      .reserved_ = {},
                                                                       .prepare_slot = prepare_slot,
                                                                   });
 
-    BATT_REQUIRE_OK(rollback_slot);
+      BATT_REQUIRE_OK(commit_slot);
 
-    clamp_min_slot(&slot_upper_bound, rollback_slot->upper_bound);
+      clamp_min_slot(&slot_upper_bound, commit_slot->upper_bound);
+
+      LLFS_LOG_INFO() << "Successfully recovered (committed) job at slot " << prepare_slot;
+    }
+
     pending_jobs.erase(prepare_slot);
 
   }  // while (!pending_jobs.empty())

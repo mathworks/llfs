@@ -114,48 +114,6 @@ StatusOr<slot_offset_type> PageAllocatorState::write_checkpoint_slice(
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void PageAllocatorState::revert(const PageAllocatorState& prior)
-{
-  BATT_CHECK_EQ(this->page_device_capacity(), prior.page_device_capacity());
-
-  this->lru_.clear();
-  this->free_pool_.clear();
-  this->attachments_.clear();
-
-  for (std::size_t i = 0; i < this->page_device_capacity(); ++i) {
-    this->page_ref_counts_[i].set_count(prior.page_ref_counts_[i].get_count());
-    this->page_ref_counts_[i].set_last_update(prior.page_ref_counts_[i].last_update());
-    if (this->page_ref_counts_[i].get_count() == 0) {
-      this->free_pool_.push_back(this->page_ref_counts_[i]);
-    }
-  }
-  this->free_pool_size_.set_value(this->free_pool_.size());
-
-  for (const auto& kv_pair : prior.attachments_) {
-    auto iter = this->attachments_
-                    .emplace(kv_pair.first, std::make_unique<PageAllocatorAttachment>(
-                                                kv_pair.first, kv_pair.second->get_user_slot()))
-                    .first;
-    iter->second->set_last_update(kv_pair.second->last_update());
-  }
-
-  for (const PageAllocatorObject& that_obj : prior.lru_) {
-    PageAllocatorObject* const this_obj = [&]() -> PageAllocatorObject* {
-      if (prior.is_ref_count(&that_obj)) {
-        const auto physical_page =
-            prior.index_of(static_cast<const PageAllocatorRefCount*>(&that_obj));
-        return &this->page_ref_counts_[physical_page];
-      }
-      return this
-          ->attachments_[static_cast<const PageAllocatorAttachment*>(&that_obj)->get_user_id()]
-          .get();
-    }();
-    this->lru_.push_back(*this_obj);
-  }
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
 boost::iterator_range<PageAllocatorRefCount*> PageAllocatorState::page_ref_counts()
 {
   return boost::make_iterator_range(&this->page_ref_counts_[0],  //
@@ -183,21 +141,23 @@ Optional<PageId> PageAllocatorState::allocate_page()
       BATT_UNREACHABLE();
     }
   }();
-  BATT_CHECK_EQ(ref_count_obj.get_count(), 0);
   this->free_pool_size_.fetch_sub(1);
 
   const isize physical_page = this->index_of(&ref_count_obj);
   const page_generation_int generation = ref_count_obj.advance_generation();
+  const PageId page_id = this->page_ids_.make_page_id(physical_page, generation);
 
-  const PageId id = this->page_ids_.make_page_id(physical_page, generation);
+  BATT_CHECK_EQ(ref_count_obj.get_count(), 0)
+      << BATT_INSPECT(physical_page) << BATT_INSPECT(generation) << BATT_INSPECT(page_id);
 
-  BATT_CHECK_EQ(physical_page, this->page_ids_.get_physical_page(id))
-      << std::hex << BATT_INSPECT(id) << BATT_INSPECT(this->page_ids_.get_physical_page(id))
-      << BATT_INSPECT(physical_page) << BATT_INSPECT(generation)
-      << BATT_INSPECT(this->page_device_capacity());
-  BATT_CHECK_EQ(generation, this->page_ids_.get_generation(id));
+  BATT_CHECK_EQ(physical_page, this->page_ids_.get_physical_page(page_id))
+      << std::hex << BATT_INSPECT(page_id)
+      << BATT_INSPECT(this->page_ids_.get_physical_page(page_id)) << BATT_INSPECT(physical_page)
+      << BATT_INSPECT(generation) << BATT_INSPECT(this->page_device_capacity());
 
-  return id;
+  BATT_CHECK_EQ(generation, this->page_ids_.get_generation(page_id));
+
+  return page_id;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -230,35 +190,6 @@ void PageAllocatorState::deallocate_page(PageId page_id)
 
   this->free_pool_.push_back(ref_count_obj);
   this->free_pool_size_.fetch_add(1);
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Status PageAllocatorState::recover_page(PageId page_id)
-{
-  const page_id_int physical_page = this->page_ids_.get_physical_page(page_id);
-  const page_generation_int generation = this->page_ids_.get_generation(page_id);
-
-  BATT_CHECK_LT(physical_page, this->page_device_capacity());
-
-  if (kFastIoRingPageDeviceInit && generation == 0) {
-    return ::llfs::make_status(::llfs::StatusCode::kRecoverFailedGenerationZero);
-  }
-
-  PageAllocatorRefCount& ref_count_obj = this->page_ref_counts_[physical_page];
-
-  if (ref_count_obj.get_count() != 0 || !ref_count_obj.PageAllocatorFreePoolHook::is_linked()) {
-    return ::llfs::make_status(StatusCode::kRecoverFailedPageReallocated);
-  }
-
-  this->free_pool_.erase(this->free_pool_.iterator_to(ref_count_obj));
-  ref_count_obj.set_generation(generation);
-
-  BATT_CHECK_EQ(this->page_ids_.make_page_id(physical_page, generation), page_id);
-
-  this->free_pool_size_.fetch_sub(1);
-
-  return OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -597,6 +528,19 @@ Optional<PageAllocatorAttachmentStatus> PageAllocatorState::get_client_attachmen
       .user_id = iter->first,
       .user_slot = iter->second->get_user_slot(),
   };
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void PageAllocatorState::refresh_client_attachment(const boost::uuids::uuid& uuid,
+                                                   slot_offset_type slot)
+{
+  auto iter = this->attachments_.find(uuid);
+  if (iter != this->attachments_.end()) {
+    // read-modify-write is OK because the PageAllocator has a lock on State.
+    //
+    iter->second->set_user_slot(slot_max(slot, iter->second->get_user_slot()));
+  }
 }
 
 }  // namespace llfs

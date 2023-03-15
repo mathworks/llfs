@@ -62,15 +62,28 @@ StatusOr<std::unique_ptr<PageAllocator>> PageAllocator::recover(
 
   PageAllocator::Metrics metrics;
 
+  usize duplicate_slots = 0;
+
   // For each recovered event in the log, update the state machine.
   //
-  auto process_recovered_event = [&recovered_state, &metrics](const SlotParse& slot,
-                                                              const auto& event_payload) -> Status {
-    if (!PageAllocatorState::is_valid(recovered_state->propose(event_payload))) {
-      return ::llfs::make_status(::llfs::StatusCode::kInvalidPageAllocatorProposal);
+  auto process_recovered_event = [&recovered_state, &metrics, &duplicate_slots](
+                                     const SlotParse& slot, const auto& event_payload) -> Status {
+    PageAllocatorState::ProposalStatus proposal_status = recovered_state->propose(event_payload);
+
+    switch (proposal_status) {
+      case PageAllocatorState::ProposalStatus::kNoChange:
+        // Already processed this one.
+        ++duplicate_slots;
+        break;
+
+      case PageAllocatorState::ProposalStatus::kValid:
+        recovered_state->learn(slot.offset.lower_bound, event_payload, metrics);
+        break;
+
+      case PageAllocatorState::ProposalStatus::kInvalid_NotAttached:
+        return ::llfs::make_status(::llfs::StatusCode::kInvalidPageAllocatorProposal);
     }
 
-    recovered_state->learn(slot.offset.lower_bound, event_payload, metrics);
     return OkStatus();
   };
 
@@ -90,10 +103,29 @@ StatusOr<std::unique_ptr<PageAllocator>> PageAllocator::recover(
 
   BATT_REQUIRE_OK(recovered_log);
 
+  LLFS_VLOG(1) << "PageAllocator::recover()" << BATT_INSPECT(duplicate_slots);
+
   // Now we can create the PageAllocator.
   //
-  return std::unique_ptr<PageAllocator>{new PageAllocator{
+  auto page_allocator = std::unique_ptr<PageAllocator>{new PageAllocator{
       options.scheduler, options.name, std::move(*recovered_log), std::move(recovered_state)}};
+
+  // Set the recovering_users state.
+  //
+  {
+    std::vector<PageAllocatorAttachmentStatus> attached =
+        page_allocator->get_all_clients_attachment_status();
+    auto locked = page_allocator->recovering_users_.lock();
+    locked->clear();
+    for (const auto& attachment : attached) {
+      locked->emplace(attachment.user_id);
+    }
+    page_allocator->recovering_user_count_.set_value(attached.size());
+  }
+
+  // Done!
+  //
+  return page_allocator;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -160,6 +192,17 @@ void PageAllocator::join() noexcept
 //
 StatusOr<PageId> PageAllocator::allocate_page(batt::WaitForResource wait_for_resource)
 {
+  // If some attached users are still recovering, then fail/block (to prevent accidental
+  // re-allocation of a page that belonged to some page job that was partially committed).
+  //
+  if (wait_for_resource == batt::WaitForResource::kFalse) {
+    if (BATT_HINT_FALSE(this->recovering_user_count_.get_value() > 0)) {
+      return {batt::StatusCode::kUnavailable};
+    }
+  } else {
+    BATT_REQUIRE_OK(this->recovering_user_count_.await_equal(0));
+  }
+
   for (;;) {
     {
       auto locked = this->state_.lock();
@@ -190,14 +233,6 @@ void PageAllocator::deallocate_page(PageId page_id)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status PageAllocator::recover_page(PageId page_id)
-{
-  LLFS_VLOG(1) << "removing page from free pool for recovery: " << page_id;
-  return this->state_.lock()->get()->recover_page(page_id);
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
 StatusOr<slot_offset_type> PageAllocator::attach_user(const boost::uuids::uuid& user_id,
                                                       slot_offset_type user_slot)
 {
@@ -222,6 +257,27 @@ StatusOr<slot_offset_type> PageAllocator::detach_user(const boost::uuids::uuid& 
               .slot_offset = user_slot,
           },
   });
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status PageAllocator::on_user_recovered(const boost::uuids::uuid& user_id,
+                                        slot_offset_type user_slot)
+{
+  {
+    auto locked = this->recovering_users_.lock();
+    auto iter = locked->find(user_id);
+    if (iter == locked->end()) {
+      return batt::OkStatus();
+    }
+    const i64 old_count = this->recovering_user_count_.fetch_sub(1);
+    BATT_CHECK_GT(old_count, 0);
+  }
+  {
+    auto locked = this->state_.lock();
+    locked->get()->refresh_client_attachment(user_id, user_slot);
+  }
+  return batt::OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

@@ -286,6 +286,11 @@ class PageCacheJob : public PageLoader
     return this->root_set_delta_;
   }
 
+  bool is_recovered_page(PageId page_id) const
+  {
+    return this->recovered_pages_.count(page_id) != 0;
+  }
+
   LLFS_METHOD_BINDER(PageCacheJob, prefetch_hint, Prefetch);
   LLFS_METHOD_BINDER(PageCacheJob, get_page_slot, Get);
 
@@ -299,6 +304,7 @@ class PageCacheJob : public PageLoader
   std::unordered_map<PageId, i32, PageId::Hash> root_set_delta_;
   std::unordered_map<PageId, std::function<auto()->std::shared_ptr<PageView>>, PageId::Hash>
       deferred_new_pages_;
+  std::unordered_set<PageId, PageId::Hash> recovered_pages_;
   bool pruned_ = false;
   std::ostringstream debug_;
   FinalizedPageCacheJob base_job_;

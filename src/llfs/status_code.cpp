@@ -120,7 +120,9 @@ bool initialize_status_codes()
                      "Failed to read storage file"),  // 56,
       CODE_WITH_MSG_(StatusCode::kStorageFileBadConfigBlockCrc,
                      "Failed to read storage file"),  // 57,
-
+      CODE_WITH_MSG_(
+          StatusCode::kRecoverFailedAllocatorNotAttached,
+          "Failed to recover page; the Volume is not attached to the PageAllocator"),  // 58,
   });
   return initialized;
 }

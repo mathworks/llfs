@@ -217,6 +217,7 @@ LLFS_SIMPLE_PACKED_TYPE(PackedVolumeFormatUpgrade);
 struct PrepareJob {
   BoxedSeq<PageId> new_page_ids;
   BoxedSeq<PageId> deleted_page_ids;
+  BoxedSeq<page_device_id_int> page_device_ids;
   PackableRef user_data;
 };
 
@@ -233,6 +234,7 @@ struct PackedPrepareJob {
   PackedPointer<PackedArray<PackedPageId>> new_page_ids;
   PackedPointer<PackedArray<PackedPageId>> deleted_page_ids;
   PackedPointer<PackedArray<PackedPageId>> root_page_ids;
+  PackedPointer<PackedArray<little_page_device_id_int>> page_device_ids;
   PackedPointer<PackedRawData> user_data;
 };
 

@@ -6,7 +6,7 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-#include <llfs/page_allocator_state.hpp>
+#include <llfs/page_allocator/page_allocator_state.hpp>
 //
 
 #include <llfs/logging.hpp>
@@ -17,36 +17,13 @@ using Metrics = PageAllocatorMetrics;
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
-PageAllocatorStateNoLock::PageAllocatorStateNoLock(const PageIdFactory& ids) noexcept
-    : page_ids_{ids}
-{
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-StatusOr<slot_offset_type> PageAllocatorStateNoLock::await_learned_slot(
-    slot_offset_type min_learned_upper_bound)
-{
-  return await_slot_offset(min_learned_upper_bound, this->learned_upper_bound_);
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Status PageAllocatorStateNoLock::await_free_page()
-{
-  return this->free_pool_size_
-      .await_true([](u64 available) {
-        return available > 0;
-      })
-      .status();
-}
-
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
 PageAllocatorState::PageAllocatorState(const PageIdFactory& page_ids) noexcept
     : PageAllocatorStateNoLock{page_ids}
 {
   for (PageAllocatorRefCount& ref_count_obj : this->page_ref_counts()) {
+    BATT_CHECK_EQ(ref_count_obj.get_count(), 0);
     this->free_pool_.push_back(ref_count_obj);
   }
   this->free_pool_size_.set_value(this->free_pool_.size());
@@ -61,7 +38,7 @@ StatusOr<slot_offset_type> PageAllocatorState::write_checkpoint_slice(
   usize n_refreshed = 0;
 
   while (!this->lru_.empty() && n_refreshed < n_active) {
-    PageAllocatorObject* oldest_object = &this->lru_.front();
+    PageAllocatorObjectBase* oldest_object = &this->lru_.front();
 
     batt::StatusOr<SlotRange> slot_range;
 
@@ -451,11 +428,20 @@ void PageAllocatorState::learn_ref_count_1_to_0(const PackedPageRefCount& delta,
   if (obj->get_generation() != page_generation) {
     LLFS_LOG_INFO() << "refcount 1->0 on " << std::hex << delta.page_id.value()
                     << " generations don't match: current=" << std::dec << obj->get_generation()
-                    << " delta.gen=" << page_generation;
+                    << " delta.gen=" << page_generation << " ref_count=" << obj->get_count()
+                    << std::endl
+                    << std::endl
+                    << boost::stacktrace::stacktrace{} << std::endl
+                    << std::endl;
 
     BATT_CHECK_GT(obj->get_generation(), page_generation);
     return;
   }
+
+  //----- --- -- -  -  -   -
+  // const i32 prior_count = obj->fetch_sub(1);
+  // BATT_CHECK_EQ(prior_count, 1);
+  //----- --- -- -  -  -   -
 
   // Atomic compare-and-swap loop to force the ref count to 0.
   //
@@ -465,6 +451,8 @@ void PageAllocatorState::learn_ref_count_1_to_0(const PackedPageRefCount& delta,
       LLFS_VLOG(2) << "page ref_count => 0 (adding to free pool): " << std::hex
                    << delta.page_id.value();
       if (!obj->PageAllocatorFreePoolHook::is_linked()) {
+        BATT_CHECK(!obj->PageAllocatorFreePoolHook::is_linked()) << BATT_INSPECT(this->recovering_);
+        BATT_CHECK_EQ(obj->get_count(), 0);
         this->free_pool_.push_back(*obj);
         this->free_pool_size_.fetch_add(1);
         metrics.pages_freed.fetch_add(1);
@@ -476,7 +464,7 @@ void PageAllocatorState::learn_ref_count_1_to_0(const PackedPageRefCount& delta,
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void PageAllocatorState::set_last_update(PageAllocatorObject* obj, slot_offset_type index_slot)
+void PageAllocatorState::set_last_update(PageAllocatorObjectBase* obj, slot_offset_type index_slot)
 {
   if (obj->PageAllocatorLRUHook::is_linked()) {
     this->lru_.erase(this->lru_.iterator_to(*obj));
@@ -487,17 +475,10 @@ void PageAllocatorState::set_last_update(PageAllocatorObject* obj, slot_offset_t
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-bool PageAllocatorState::is_ref_count(const PageAllocatorObject* obj) const
+bool PageAllocatorState::is_ref_count(const PageAllocatorObjectBase* obj) const
 {
   return &this->page_ref_counts_[0] <= obj &&
          obj < &this->page_ref_counts_[this->page_device_capacity()];
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-isize PageAllocatorStateNoLock::index_of(const PageAllocatorRefCount* ref_count_obj) const
-{
-  return std::distance<const PageAllocatorRefCount*>(&this->page_ref_counts_[0], ref_count_obj);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

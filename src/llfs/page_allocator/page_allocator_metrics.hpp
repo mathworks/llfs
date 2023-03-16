@@ -7,18 +7,18 @@
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
 #pragma once
-#ifndef LLFS_PAGE_ALLOCATOR_RUNTIME_OPTIONS_HPP
-#define LLFS_PAGE_ALLOCATOR_RUNTIME_OPTIONS_HPP
+#ifndef LLFS_PAGE_ALLOCATOR_PAGE_ALLOCATOR_METRICS_HPP
+#define LLFS_PAGE_ALLOCATOR_PAGE_ALLOCATOR_METRICS_HPP
 
-#include <batteries/async/task_scheduler.hpp>
+#include <llfs/metrics.hpp>
 
 namespace llfs {
 
-struct PageAllocatorRuntimeOptions {
-  batt::TaskScheduler& scheduler;
-  std::string_view name;
+struct PageAllocatorMetrics {
+  CountMetric<u64> pages_allocated{0};
+  CountMetric<u64> pages_freed{0};
 };
 
 }  // namespace llfs
 
-#endif  // LLFS_PAGE_ALLOCATOR_RUNTIME_OPTIONS_HPP
+#endif  // LLFS_PAGE_ALLOCATOR_PAGE_ALLOCATOR_METRICS_HPP

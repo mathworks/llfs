@@ -6,7 +6,7 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-#include <llfs/page_allocator_config.hpp>
+#include <llfs/page_allocator/page_allocator_config.hpp>
 //
 
 #include <llfs/page_allocator.hpp>

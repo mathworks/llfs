@@ -176,12 +176,12 @@ struct SlotLowerBoundGreater {
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 // TODO [tastolfi 2020-12-07] - handle slot offset wrap-around!
 //
-inline slot_offset_type slot_relative_min(slot_offset_type offset)
+inline constexpr slot_offset_type slot_relative_min(slot_offset_type offset)
 {
   return offset - kMaxSlotDistance;
 }
 
-inline slot_offset_type slot_relative_max(slot_offset_type offset)
+inline constexpr slot_offset_type slot_relative_max(slot_offset_type offset)
 {
   return offset + kMaxSlotDistance;
 }

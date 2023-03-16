@@ -7,9 +7,11 @@
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
 #pragma once
-#ifndef LLFS_PAGE_DEVICE_ALLOCATOR_EVENTS_HPP
-#define LLFS_PAGE_DEVICE_ALLOCATOR_EVENTS_HPP
+#ifndef LLFS_PAGE_ALLOCATOR_PAGE_ALLOCATOR_EVENTS_HPP
+#define LLFS_PAGE_ALLOCATOR_PAGE_ALLOCATOR_EVENTS_HPP
 
+#include <llfs/config.hpp>
+//
 #include <llfs/array_packer.hpp>
 #include <llfs/data_layout.hpp>
 #include <llfs/page_layout.hpp>
@@ -138,4 +140,4 @@ inline usize packed_sizeof_checkpoint(const PackedPageAllocatorTxn& txn)
 
 }  // namespace llfs
 
-#endif  // LLFS_PAGE_DEVICE_ALLOCATOR_EVENTS_HPP
+#endif  // LLFS_PAGE_ALLOCATOR_PAGE_ALLOCATOR_EVENTS_HPP

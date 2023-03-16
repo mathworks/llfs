@@ -29,6 +29,8 @@ class PageRecyclerRecoveryVisitor
 
   explicit PageRecyclerRecoveryVisitor(const PageRecyclerOptions& default_options) noexcept;
 
+  ~PageRecyclerRecoveryVisitor() noexcept;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   const PageRecyclerOptions& options() const;

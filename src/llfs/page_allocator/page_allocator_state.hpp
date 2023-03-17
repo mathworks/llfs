@@ -91,7 +91,8 @@ class PageAllocatorState : public PageAllocatorStateNoLock
 
 #define LLFS_PAGE_DEVICE_INDEX_OP(Type)                                                            \
   ProposalStatus propose(const Type& op);                                                          \
-  void learn(slot_offset_type index_slot, const Type& op, PageAllocatorMetrics&)
+  void learn(const SlotRange& slot_offset, const Type& op, PageAllocatorMetrics&);                 \
+  Status recover(const SlotRange& slot_offset, const Type& op)
 
   LLFS_PAGE_DEVICE_INDEX_OP(PackedPageAllocatorAttach);
   LLFS_PAGE_DEVICE_INDEX_OP(PackedPageAllocatorDetach);
@@ -100,10 +101,7 @@ class PageAllocatorState : public PageAllocatorStateNoLock
 
 #undef LLFS_PAGE_DEVICE_INDEX_OP
 
-  void set_recovering(bool value)
-  {
-    this->recovering_.store(value);
-  }
+  void check_post_recovery_invariants() const;
 
   std::vector<PageAllocatorAttachmentStatus> get_all_clients_attachment_status() const;
 
@@ -118,10 +116,19 @@ class PageAllocatorState : public PageAllocatorStateNoLock
   ProposalStatus propose_exactly_once(const PackedPageUserSlot& user_slot,
                                       AllowAttach attach) const;
 
-  // Sets the `last_update` field on `obj` to `index_slot` and moves `obj` to the back of the LRU
-  // list.
+  /** \brief Unconditionally updates the user slot, attaching if necessary.
+   */
+  void update_attachment(const SlotRange& slot_offset, const PackedPageUserSlot& user_slot,
+                         AllowAttach attach);
+
+  /** \brief Unconditionally detaches the specified uuid.
+   */
+  void remove_attachment(const boost::uuids::uuid& user_id);
+
+  // Sets the `last_update` field on `obj` to `slot_offset.lower_bound` and moves `obj` to the back
+  // of the LRU list.
   //
-  void set_last_update(PageAllocatorObjectBase* obj, slot_offset_type index_slot);
+  void set_last_update(PageAllocatorObjectBase* obj, const SlotRange& slot_offset);
 
   // Returns true iff `obj` is an PageAllocatorRefCount belonging to _this_ PageAllocator.
   //
@@ -130,6 +137,10 @@ class PageAllocatorState : public PageAllocatorStateNoLock
   // Returns a range of all the page ref counts in this index.
   //
   boost::iterator_range<PageAllocatorRefCount*> page_ref_counts();
+
+  // Returns a range of all the page ref counts in this index (const).
+  //
+  boost::iterator_range<const PageAllocatorRefCount*> page_ref_counts() const;
 
   // Advance the current learned upper bound.
   //
@@ -140,6 +151,8 @@ class PageAllocatorState : public PageAllocatorStateNoLock
 
   void learn_ref_count_1_to_0(const PackedPageRefCount& delta, page_generation_int page_generation,
                               PageAllocatorRefCount* const obj, PageAllocatorMetrics& metrics);
+
+  void update_free_pool_status(PageAllocatorRefCount* obj);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -154,10 +167,6 @@ class PageAllocatorState : public PageAllocatorStateNoLock
   // All pages with ref count 0 that have not been allocated.
   //
   PageAllocatorFreePoolList free_pool_;
-
-  // Flag to indicate whether we are in steady-state.
-  //
-  std::atomic<bool> recovering_{true};
 };
 
 }  // namespace llfs

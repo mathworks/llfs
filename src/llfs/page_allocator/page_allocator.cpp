@@ -62,30 +62,14 @@ StatusOr<std::unique_ptr<PageAllocator>> PageAllocator::recover(
 
   PageAllocator::Metrics metrics;
 
-  usize duplicate_slots = 0;
-
   // For each recovered event in the log, update the state machine.
   //
-  auto process_recovered_event = [&recovered_state, &metrics, &duplicate_slots](
-                                     const SlotParse& slot, const auto& event_payload) -> Status {
-    PageAllocatorState::ProposalStatus proposal_status = recovered_state->propose(event_payload);
-
-    switch (proposal_status) {
-      case PageAllocatorState::ProposalStatus::kNoChange:
-        // Already processed this one.
-        ++duplicate_slots;
-        break;
-
-      case PageAllocatorState::ProposalStatus::kValid:
-        recovered_state->learn(slot.offset.lower_bound, event_payload, metrics);
-        break;
-
-      case PageAllocatorState::ProposalStatus::kInvalid_NotAttached:
-        return ::llfs::make_status(::llfs::StatusCode::kInvalidPageAllocatorProposal);
-    }
-
-    return OkStatus();
+  auto process_recovered_event = [&recovered_state](const SlotParse& slot,
+                                                    const auto& event_payload) -> Status {
+    return recovered_state->recover(slot.offset, event_payload);
   };
+
+  recovered_state->check_post_recovery_invariants();
 
   // Read the log, scanning its contents.
   //
@@ -103,7 +87,7 @@ StatusOr<std::unique_ptr<PageAllocator>> PageAllocator::recover(
 
   BATT_REQUIRE_OK(recovered_log);
 
-  LLFS_VLOG(1) << "PageAllocator::recover()" << BATT_INSPECT(duplicate_slots);
+  LLFS_VLOG(1) << "PageAllocator::recover()";
 
   // Now we can create the PageAllocator.
   //
@@ -261,21 +245,17 @@ StatusOr<slot_offset_type> PageAllocator::detach_user(const boost::uuids::uuid& 
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status PageAllocator::on_user_recovered(const boost::uuids::uuid& user_id,
-                                        slot_offset_type user_slot)
+Status PageAllocator::notify_user_recovered(const boost::uuids::uuid& user_id)
 {
   {
-    auto locked = this->recovering_users_.lock();
-    auto iter = locked->find(user_id);
-    if (iter == locked->end()) {
+    auto locked_recovering_users = this->recovering_users_.lock();
+    auto iter = locked_recovering_users->find(user_id);
+    if (iter == locked_recovering_users->end()) {
       return batt::OkStatus();
     }
     const i64 old_count = this->recovering_user_count_.fetch_sub(1);
-    BATT_CHECK_GT(old_count, 0);
-  }
-  {
-    auto locked = this->state_.lock();
-    locked->get()->refresh_client_attachment(user_id, user_slot);
+    BATT_CHECK_GT(old_count, 0) << BATT_INSPECT(user_id)
+                                << BATT_INSPECT_RANGE(*locked_recovering_users);
   }
   return batt::OkStatus();
 }

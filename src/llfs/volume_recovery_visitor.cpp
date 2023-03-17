@@ -125,7 +125,11 @@ Status VolumeRecoveryVisitor::resolve_pending_jobs(PageCache& cache, PageRecycle
 
       clamp_min_slot(&slot_upper_bound, rollback_slot->upper_bound);
 
+      LLFS_LOG_INFO() << "Successfully rolled back job at slot " << prepare_slot;
+
     } else {
+      LLFS_LOG_INFO() << "Committing job at slot " << prepare_slot << "...";
+
       //----- --- -- -  -  -   -
       // Call recover_page for all the new pages.
       //
@@ -178,13 +182,15 @@ Status VolumeRecoveryVisitor::resolve_pending_jobs(PageCache& cache, PageRecycle
 
     pending_jobs.erase(prepare_slot);
 
-  }  // while (!pending_jobs.empty())
+    // Make sure we flush any newly appended slots to the log.
+    //
+    if (slot_upper_bound) {
+      BATT_REQUIRE_OK(slot_writer.sync(LogReadMode::kDurable, SlotUpperBoundAt{
+                                                                  .offset = *slot_upper_bound,
+                                                              }));
+    }
 
-  // Make sure we flush any newly appended slots to the log.
-  //
-  if (slot_upper_bound) {
-    return slot_writer.sync(LogReadMode::kDurable, SlotUpperBoundAt{.offset = *slot_upper_bound});
-  }
+  }  // while (!pending_jobs.empty())
 
   return OkStatus();
 }

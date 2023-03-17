@@ -14,6 +14,8 @@
 //
 #include <llfs/page_allocator/page_allocator_object_base.hpp>
 
+#include <llfs/slot.hpp>
+
 #include <boost/functional/hash.hpp>
 #include <boost/uuid/uuid.hpp>
 
@@ -49,6 +51,13 @@ class PageAllocatorAttachment : public PageAllocatorObjectBase
     this->user_slot_ = slot_offset;
   }
 
+  /** \brief Clamps the user slot to at least the given offset.
+   */
+  void clamp_min_user_slot(slot_offset_type min_offset) noexcept
+  {
+    clamp_min_slot(&this->user_slot_, min_offset);
+  }
+
   /** \brief Returns the current slot offset associated with this attachment.
    */
   slot_offset_type get_user_slot() const noexcept
@@ -62,19 +71,33 @@ class PageAllocatorAttachment : public PageAllocatorObjectBase
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-/** \brief Used to report attachment status to clients of PageAllocator.
- */
-struct PageAllocatorAttachmentStatus {
-  boost::uuids::uuid user_id;
-  slot_offset_type user_slot;
-};
-
-//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 /** \brief (Hash) Map from client/user UUID to PageAllocatorAttachment.
  */
 using PageAllocatorAttachmentMap =
     std::unordered_map<boost::uuids::uuid, std::unique_ptr<PageAllocatorAttachment>,
                        boost::hash<boost::uuids::uuid>>;
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+/** \brief Used to report attachment status to clients of PageAllocator.
+ */
+struct PageAllocatorAttachmentStatus {
+  using Self = PageAllocatorAttachmentStatus;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  static Self from(const PageAllocatorAttachmentMap::value_type& kv_pair)
+  {
+    return Self{
+        .user_id = kv_pair.first,
+        .user_slot = kv_pair.second->get_user_slot(),
+    };
+  }
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  boost::uuids::uuid user_id;
+  slot_offset_type user_slot;
+};
 
 }  // namespace llfs
 

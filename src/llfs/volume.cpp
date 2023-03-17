@@ -258,17 +258,8 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
              visitor.ids->payload.recycler_uuid,
              visitor.ids->payload.trimmer_uuid,
          }) {
-      const slot_offset_type next_available_slot_offset = [&] {
-        if (uuid == visitor.ids->payload.recycler_uuid) {
-          return recycler->slot_upper_bound(LogReadMode::kDurable);
-        } else {
-          // Both the volume (main) and trimmer share the same WAL (the main log).
-          //
-          return slot_writer.slot_offset();
-        }
-      }();
       for (const PageArena& arena : cache->all_arenas()) {
-        BATT_REQUIRE_OK(arena.allocator().on_user_recovered(uuid, next_available_slot_offset - 1));
+        BATT_REQUIRE_OK(arena.allocator().notify_user_recovered(uuid));
       }
     }
   }

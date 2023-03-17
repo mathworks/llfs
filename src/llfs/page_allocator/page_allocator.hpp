@@ -96,7 +96,7 @@ class PageAllocator
 
   /** \brief Called by attached users to indicate they have successfully recovered.
    */
-  Status on_user_recovered(const boost::uuids::uuid& user_id, slot_offset_type user_slot);
+  Status notify_user_recovered(const boost::uuids::uuid& user_id);
 
   // Return the current ref count value for a given page.
   //  TODO [tastolfi 2021-04-05] -- return generation too!
@@ -240,7 +240,7 @@ class PageAllocator
   batt::Watch<bool> stop_requested_{false};
 
   // On recover, set to the number of attached users.  Attached users should call
-  // `on_user_recovered` to indicate that they are now in a clean state; when the last of these
+  // `notify_user_recovered` to indicate that they are now in a clean state; when the last of these
   // happens, the PageAllocator changes from safe mode to normal mode.
   //
   batt::Watch<i64> recovering_user_count_;
@@ -301,7 +301,7 @@ inline StatusOr<slot_offset_type> PageAllocator::update(const T& op)
 
     // Apply the event to the state machine.
     //
-    speculative->learn(commit_slot->lower_bound, op, this->metrics_);
+    speculative->learn(*commit_slot, op, this->metrics_);
   }
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

@@ -120,6 +120,8 @@ StatusOr<SlotRange> refresh_recycler_info_slot(TypedSlotWriter<PageRecycleEvent>
   //
   StatusOr<std::unique_ptr<LogDevice>> recovered_log = log_device_factory.open_log_device(
       [&](LogDevice::Reader& log_reader) -> StatusOr<slot_offset_type> {
+        visitor.set_trim_pos(log_reader.slot_offset());
+
         TypedSlotReader<PageRecycleEvent> slot_reader{log_reader};
 
         StatusOr<usize> slots_recovered = slot_reader.run(batt::WaitForResource::kFalse, visitor);
@@ -223,6 +225,13 @@ PageRecycler::~PageRecycler() noexcept
       .remove(this->metrics_.remove_count);
 
   LLFS_VLOG(1) << "PageRecycler::~PageRecycler() RETURNING";
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const boost::uuids::uuid& PageRecycler::uuid() const
+{
+  return this->state_.no_lock().uuid;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -343,34 +352,39 @@ StatusOr<slot_offset_type> PageRecycler::insert_to_log(
   // Update the state machine.
   //
   const slot_offset_type current_slot = this->slot_writer_.slot_offset();
-  batt::SmallVec<PageToRecycle, 2> to_append = (*locked_state)
-                                                   ->insert(PageToRecycle{
-                                                       .page_id = page_id,
-                                                       .slot_offset = current_slot,
-                                                       .depth = depth,
-                                                   });
 
-  // The update was not accepted (already pending); return success anyhow (repeat inserts are
-  // idempotent).
-  //
-  if (to_append.empty()) {
-    return current_slot;
-  }
+  return (*locked_state)
+      ->insert_and_refresh(
+          PageToRecycle{
+              .page_id = page_id,
+              .refresh_slot = None,
+              .batch_slot = None,
+              .depth = depth,
+          },
+          [&](const batt::SmallVecBase<PageToRecycle*>& to_append) -> StatusOr<slot_offset_type> {
+            if (to_append.empty()) {
+              // The update was not accepted (already pending); return success anyhow (repeat
+              // inserts are idempotent).
+              //
+              return current_slot;
+            }
 
-  // Write the slots.
-  //
-  slot_offset_type last_slot = current_slot;
-  for (const PageToRecycle& item : to_append) {
-    StatusOr<SlotRange> append_slot = this->slot_writer_.append(grant, item);
-    BATT_REQUIRE_OK(append_slot);
-    last_slot = slot_max(last_slot, append_slot->upper_bound);
-    LLFS_VLOG(1) << "Write " << item << " to the log; last_slot=" << last_slot;
-  }
-  BATT_CHECK_NE(this->slot_writer_.slot_offset(), current_slot);
+            // Write the slots.
+            //
+            slot_offset_type last_slot = current_slot;
+            for (PageToRecycle* item : to_append) {
+              StatusOr<SlotRange> append_slot = this->slot_writer_.append(grant, *item);
+              BATT_REQUIRE_OK(append_slot);
+              item->refresh_slot = append_slot->lower_bound;
+              last_slot = slot_max(last_slot, append_slot->upper_bound);
+              LLFS_VLOG(1) << "Write " << item << " to the log; last_slot=" << last_slot;
+            }
+            BATT_CHECK_NE(this->slot_writer_.slot_offset(), current_slot);
 
-  this->metrics_.insert_count.fetch_add(1);
+            this->metrics_.insert_count.fetch_add(1);
 
-  return last_slot;
+            return last_slot;
+          });
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -556,8 +570,10 @@ StatusOr<PageRecycler::Batch> PageRecycler::prepare_batch(std::vector<PageToRecy
 
   Optional<slot_offset_type> sync_upper_bound;
 
-  for (const PageToRecycle& next_page : batch.to_recycle) {
+  for (PageToRecycle& next_page : batch.to_recycle) {
     BATT_CHECK_EQ(next_page.depth, first_page_depth);
+
+    next_page.batch_slot = batch.slot_offset;
 
     if (this->stop_requested_) {
       return Status{batt::StatusCode::kCancelled};
@@ -567,11 +583,8 @@ StatusOr<PageRecycler::Batch> PageRecycler::prepare_batch(std::vector<PageToRecy
                  << BATT_INSPECT(batch.slot_offset)
                  << BATT_INSPECT(this->recycle_task_grant_.size()) << " " << this->name_;
 
-    StatusOr<SlotRange> append_slot = this->slot_writer_.append(
-        this->recycle_task_grant_, PackedRecyclePagePrepare{
-                                       .page_id = next_page.page_id.int_value(),
-                                       .batch_slot = batch.slot_offset,
-                                   });
+    StatusOr<SlotRange> append_slot =
+        this->slot_writer_.append(this->recycle_task_grant_, next_page);
 
     if (!append_slot.ok() && this->stop_requested_ && this->recycle_task_grant_.size() == 0) {
       return append_slot.status();

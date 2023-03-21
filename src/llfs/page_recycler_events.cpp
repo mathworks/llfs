@@ -17,8 +17,8 @@ namespace llfs {
 //
 std::ostream& operator<<(std::ostream& out, const PageToRecycle& t)
 {
-  return out << "PageToRecycle{.page_id=" << t.page_id << ", .slot_offset=" << t.slot_offset
-             << ", .depth=" << t.depth << ",}";
+  return out << "PageToRecycle{.page_id=" << t.page_id << ", .refresh_slot=" << t.refresh_slot
+             << ", .batch_slot=" << t.batch_slot << ", .depth=" << t.depth << ",}";
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -27,15 +27,6 @@ std::ostream& operator<<(std::ostream& out, const PackedPageRecyclerInfo&)
 {
   return out << "RecyclerInfo{...}";
 }
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-std::ostream& operator<<(std::ostream& out, const PackedRecyclePagePrepare& t)
-{
-  return out << "Prepare{.page=" << PageId{t.page_id.value()} << ", .batch_slot=" << t.batch_slot
-             << ",}";
-}
-
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 std::ostream& operator<<(std::ostream& out, const PackedRecycleBatchCommit& t)

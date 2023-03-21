@@ -226,8 +226,12 @@ TEST(PageAllocatorTest, LogCrashRecovery)
 
         if (expect_ref_count[page_i] == 0) {
           prc.ref_count = +2;
-        } else if (expect_ref_count[page_i] == 1 && delta < 0) {
+
+        } else if (expect_ref_count[page_i] == 1) {
+          // This is the only valid delta for ref_count==1.
+          //
           prc.ref_count = llfs::kRefCount_1_to_0;
+
         } else {
           prc.ref_count = std::clamp<i32>(delta, 1 - expect_ref_count[page_i], +5);
         }

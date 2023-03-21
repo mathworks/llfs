@@ -375,6 +375,9 @@ Status PageAllocatorState::recover(const SlotRange& slot_offset, const PackedPag
 
   PageAllocatorRefCount* obj = &this->page_ref_counts_[physical_page];
 
+  BATT_CHECK_GE(packed.ref_count, 0)
+      << "PageRef checkpoint slices should never store negative values!";
+
   const i32 old_count = obj->set_count(packed.ref_count);
   const page_generation_int old_generation = obj->set_generation(generation);
 
@@ -448,9 +451,13 @@ void run_ref_count_update_sanity_checks(const PackedPageRefCount& delta, i32 bef
                << after_ref_count;
 
   BATT_CHECK_GE(before_ref_count, 0);
+
   BATT_CHECK_GE(after_ref_count, 0)
       << "before_ref_count= " << before_ref_count << " delta.ref_count= " << delta.ref_count
       << " page= " << std::hex << delta.page_id.value();
+
+  BATT_CHECK_NE(before_ref_count, 1)
+      << "Page ref count of 1 should only be modified via kRefCount_1_to_0" << BATT_INSPECT(delta);
 
   if (delta.ref_count < 0) {
     BATT_CHECK_LT(after_ref_count, before_ref_count)

@@ -46,10 +46,13 @@ void PageRecycler::State::bulk_load(Slice<const PageToRecycle> pages)
 
   usize pending_count_delta = 0;
   for (const PageToRecycle& to_recycle : pages) {
+    BATT_CHECK(to_recycle.page_id.is_valid());
+    BATT_CHECK(to_recycle.refresh_slot);
     if (prev_slot) {
-      BATT_CHECK_LE(*prev_slot, to_recycle.slot_offset)
+      BATT_CHECK_LE(*prev_slot, *to_recycle.refresh_slot)
           << "arg `pages` must be sorted by `PageToRecycle::slot_offset`";
     }
+    BATT_CHECK(!to_recycle.batch_slot) << "Pages with a batch slot are no longer pending!";
 
     const auto& [iter, inserted] = this->pending_.emplace(to_recycle.page_id);
     if (inserted == true) {
@@ -57,7 +60,7 @@ void PageRecycler::State::bulk_load(Slice<const PageToRecycle> pages)
       (void)this->new_work_item(to_recycle);
     }
 
-    prev_slot = to_recycle.slot_offset;
+    prev_slot = to_recycle.refresh_slot;
   }
 
   this->pending_count.fetch_add(pending_count_delta);
@@ -65,36 +68,122 @@ void PageRecycler::State::bulk_load(Slice<const PageToRecycle> pages)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-batt::SmallVec<PageToRecycle, 2> PageRecycler::State::insert(const PageToRecycle& p)
+batt::StatusOr<slot_offset_type> PageRecycler::State::insert_and_refresh(
+    const PageToRecycle& p,
+    std::function<batt::StatusOr<slot_offset_type>(const batt::SmallVecBase<PageToRecycle*>&)>&&
+        append_to_log_fn)
 {
+  batt::SmallVec<PageToRecycle*, 2> to_append;
+
   // If the page is already pending, do nothing.
   //
-  const auto result = this->pending_.emplace(p.page_id);
-  if (result.second == false) {
-    return {};
+  {
+    const auto result = this->pending_.emplace(p.page_id);
+    if (!p || result.second == false) {
+      return append_to_log_fn(to_append);
+    }
   }
 
   // Bump the pending counter to let the recycler task know it has some work to do.
   //
-  const auto on_return = batt::finally([&] {
+  auto notify_pending = batt::finally([&] {
     this->pending_count.fetch_add(1);
   });
 
   WorkItem& latest = this->new_work_item(p);
+  BATT_CHECK(latest.PageListHook::is_linked());
 
   // Because C=2, we must refresh one slot for every slot we write (ampFactor=2).  Find the least
   // recently used record (if not the same as `latest`) and refresh that one.
   //
-  WorkItem* oldest = this->refresh_oldest_work_item();
+  auto* const oldest = [&]() -> WorkItem* {
+    if (this->lru_.size() == 1) {
+      return nullptr;
+    }
+    return &(this->lru_.front());
+  }();
+
+  // Save oldest->refresh_slot in case we need to revert.
+  //
+  Optional<slot_offset_type> oldest_refresh_slot;
+
+  // Build the list of slots to write and pass it to the append fn.
+  //
+  to_append.push_back(&latest.to_recycle);
   if (oldest) {
-    return {{latest.to_recycle, oldest->to_recycle}};
+    std::swap(oldest_refresh_slot, oldest->to_recycle.refresh_slot);
+    to_append.push_back(&oldest->to_recycle);
   }
-  return {{latest.to_recycle}};
+
+  batt::StatusOr<slot_offset_type> result = append_to_log_fn(to_append);
+
+  // If log append succeeded, we update the LRU; else revert.
+  //
+  if (!result.ok()) {
+    if (oldest) {
+      oldest->to_recycle.refresh_slot = oldest_refresh_slot;
+    }
+    BATT_CHECK(latest.PageListHook::is_linked());
+    this->stack_[p.depth].erase(this->stack_[p.depth].iterator_to(latest));
+    this->delete_work_item(latest);
+    notify_pending.cancel();
+    return result;
+  } else {
+    // Make sure the append fn updated all the refresh slots.
+    //
+    for (const PageToRecycle* page : to_append) {
+      BATT_CHECK(page->refresh_slot);
+    }
+
+    // `latest` and `oldest` should not have moved.
+    //
+    BATT_CHECK_EQ(&latest, &(this->lru_.back()));
+    if (oldest) {
+      BATT_CHECK_EQ(oldest, &(this->lru_.front()));
+
+      // Move oldest to the front.
+      //
+      this->lru_.pop_front();
+      this->lru_.push_back(*oldest);
+    }
+  }
+
+  return result;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 PageToRecycle PageRecycler::State::remove()
+{
+  // Enforce depth-first discipline: search for the highest non-empty stack level.
+  //
+  i32 active_depth = this->get_active_depth();
+
+  return this->remove_at_depth(active_depth).or_else([] {
+    return PageToRecycle::make_invalid();
+  });
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Optional<PageToRecycle> PageRecycler::State::try_remove(i32 required_depth)
+{
+  BATT_CHECK_GE(required_depth, 0);
+
+  // Enforce depth-first discipline: search for the highest non-empty stack level.
+  //
+  i32 active_depth = this->get_active_depth();
+
+  if (active_depth != required_depth) {
+    return None;
+  }
+
+  return this->remove_at_depth(active_depth);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+i32 PageRecycler::State::get_active_depth() const
 {
   // Enforce depth-first discipline: search for the highest non-empty stack level.
   //
@@ -104,8 +193,15 @@ PageToRecycle PageRecycler::State::remove()
   }
   BATT_CHECK_GE(active_depth, 0);
 
+  return active_depth;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Optional<PageToRecycle> PageRecycler::State::remove_at_depth(i32 active_depth)
+{
   if (this->stack_[active_depth].empty()) {
-    return PageToRecycle::make_invalid();
+    return None;
   }
 
   WorkItem& item = this->stack_[active_depth].back();
@@ -119,44 +215,6 @@ PageToRecycle PageRecycler::State::remove()
   });
 
   return item.to_recycle;
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-// TODO [tastolfi 2021-06-21] factor out duplicate code between this and remove() above.
-//
-Optional<PageToRecycle> PageRecycler::State::try_remove(i32 required_depth)
-{
-  BATT_CHECK_GE(required_depth, 0);
-
-  // Enforce depth-first discipline: search for the highest non-empty stack level.
-  //
-  i32 active_depth = BATT_CHECKED_CAST(i32, this->stack_.size()) - 1;
-  for (; active_depth > 0 && this->stack_[active_depth].empty(); active_depth -= 1) {
-    continue;
-  }
-  BATT_CHECK_GE(active_depth, 0);
-
-  if (active_depth != required_depth) {
-    return None;
-  }
-
-  if (this->stack_[active_depth].empty()) {
-    return None;
-  }
-  {
-    WorkItem& item = this->stack_[active_depth].back();
-    this->stack_[active_depth].pop_back();
-    BATT_CHECK_EQ(item.to_recycle.depth, active_depth);
-
-    const auto on_return = batt::finally([&] {
-      this->pending_.erase(item.to_recycle.page_id);
-      this->delete_work_item(item);
-      this->pending_count.fetch_sub(1);
-    });
-
-    return item.to_recycle;
-  }
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -196,6 +254,8 @@ PageRecycler::WorkItem& PageRecycler::State::alloc_work_item()
 //
 void PageRecycler::State::init_work_item(WorkItem& item, const PageToRecycle& p)
 {
+  BATT_CHECK(p);
+
   item.to_recycle = p;
 
   // The new item needs to go onto the stack and the LRU list.
@@ -240,26 +300,11 @@ Optional<slot_offset_type> PageRecycler::State::get_lru_slot() const
   if (this->lru_.empty()) {
     return None;
   }
-  return this->lru_.front().to_recycle.slot_offset;
-}
 
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-PageRecycler::WorkItem* PageRecycler::State::refresh_oldest_work_item()
-{
-  if (this->lru_.size() == 1) {
-    return nullptr;
-  }
+  const Optional<slot_offset_type>& lru_slot = this->lru_.front().to_recycle.refresh_slot;
+  BATT_CHECK(lru_slot) << BATT_INSPECT(this->lru_.front().to_recycle);
 
-  // Move to the back of the LRU list and set the slot offset to the current slot.
-  //
-  WorkItem& oldest = this->lru_.front();
-  const WorkItem& newest = this->lru_.back();
-  this->lru_.pop_front();
-  this->lru_.push_back(oldest);
-  oldest.to_recycle.slot_offset = newest.to_recycle.slot_offset;
-
-  return &oldest;
+  return lru_slot;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

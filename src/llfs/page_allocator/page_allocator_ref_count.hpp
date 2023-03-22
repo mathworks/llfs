@@ -94,6 +94,20 @@ class PageAllocatorRefCount
     return this->generation_.exchange(generation);
   }
 
+  /** \brief Atomically updates the `last_modified_by` attachment num for this page.
+   */
+  void set_last_modified_by(u32 user_index) noexcept
+  {
+    this->last_modified_by_user_index_.store(user_index);
+  }
+
+  /** \brief Returns the current `last_modified_by` attachment num for this page.
+   */
+  u32 get_last_modified_by() const noexcept
+  {
+    return this->last_modified_by_user_index_.load();
+  }
+
   /** \brief Atomically increments the generation number by 1, returning the new generation value.
    */
   page_generation_int advance_generation() noexcept
@@ -111,6 +125,7 @@ class PageAllocatorRefCount
  private:
   std::atomic<page_generation_int> generation_{0};
   std::atomic<i32> count_{0};
+  std::atomic<u32> last_modified_by_user_index_{~u32{0}};
 };
 
 }  // namespace llfs

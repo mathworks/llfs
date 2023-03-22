@@ -23,14 +23,21 @@ namespace llfs {
 
 u64 PageAllocator::calculate_log_size(u64 physical_page_count, u64 max_attachments)
 {
-  static const PackedPageRefCount packed_ref_count{
-      .page_id = 0,
-      .ref_count = 0,
+  static const PackedPageRefCountRefresh packed_ref_count{
+      {
+          .page_id = 0,
+          .ref_count = 0,
+      },
+      .user_index = 0,
   };
-  static const PackedPageAllocatorAttach packed_attachment{.user_slot = {
-                                                               .user_id = {},
-                                                               .slot_offset = 0,
-                                                           }};
+  static const PackedPageAllocatorAttach packed_attachment{
+      .user_slot =
+          {
+              .user_id = {},
+              .slot_offset = 0,
+          },
+      .user_index = 0,
+  };
 
   const u64 attachment_checkpoints = packed_sizeof_slot(packed_attachment) * max_attachments;
 
@@ -51,14 +58,14 @@ u64 PageAllocator::calculate_log_size(u64 physical_page_count, u64 max_attachmen
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<std::unique_ptr<PageAllocator>> PageAllocator::recover(
-    const PageAllocatorRuntimeOptions& options, const PageIdFactory& page_ids,
+    const PageAllocatorRuntimeOptions& runtime_options, const PageIdFactory& page_ids,
     LogDeviceFactory& log_device_factory)
 {
   initialize_status_codes();
 
   // Create a State object to collect recovered events from the log.
   //
-  auto recovered_state = std::make_unique<PageAllocator::State>(page_ids);
+  auto recovered_state = std::make_unique<PageAllocator::State>(page_ids, /*max_attachments=*/64);
 
   PageAllocator::Metrics metrics;
 
@@ -91,8 +98,9 @@ StatusOr<std::unique_ptr<PageAllocator>> PageAllocator::recover(
 
   // Now we can create the PageAllocator.
   //
-  auto page_allocator = std::unique_ptr<PageAllocator>{new PageAllocator{
-      options.scheduler, options.name, std::move(*recovered_log), std::move(recovered_state)}};
+  auto page_allocator = std::unique_ptr<PageAllocator>{
+      new PageAllocator{runtime_options.scheduler, runtime_options.name, std::move(*recovered_log),
+                        std::move(recovered_state)}};
 
   // Set the recovering_users state.
   //
@@ -220,12 +228,15 @@ void PageAllocator::deallocate_page(PageId page_id)
 StatusOr<slot_offset_type> PageAllocator::attach_user(const boost::uuids::uuid& user_id,
                                                       slot_offset_type user_slot)
 {
+  BATT_ASSIGN_OK_RESULT(u32 user_index, this->state_.lock()->get()->allocate_attachment(user_id));
+
   return this->update_sync(PackedPageAllocatorAttach{
       .user_slot =
           PackedPageUserSlot{
               .user_id = user_id,
               .slot_offset = user_slot,
           },
+      .user_index = user_index,
   });
 }
 
@@ -264,7 +275,8 @@ Status PageAllocator::notify_user_recovered(const boost::uuids::uuid& user_id)
 //
 std::pair<i32, slot_offset_type> PageAllocator::get_ref_count(PageId id)
 {
-  return this->state_->get_ref_count(id);
+  const auto info = this->state_->get_ref_count_info(id);
+  return {info.ref_count, info.learned_upper_bound};
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -274,8 +286,9 @@ BoxedSeq<PageRefCount> PageAllocator::page_ref_counts()
   auto* state = &(this->state_.no_lock());
 
   return as_seq(boost::irange<std::size_t>(0, state->page_device_capacity()))  //
-         | seq::map([state](page_id_int id_val) {
-             return state->get_ref_count_obj(PageId{id_val});
+         | seq::map([state](page_id_int id_val) -> PageRefCount {
+             const auto info = state->get_ref_count_info(PageId{id_val});
+             return PageRefCount{info.page_id, info.ref_count};
            })  //
          | seq::boxed();
 }
@@ -416,8 +429,8 @@ bool PageAllocator::await_ref_count(PageId page_id, i32 ref_count)
 {
   usize counter = 1;
   for (;;) {
-    PageRefCount prc = this->state_->get_ref_count_obj(page_id);
-    if (prc.page_id != page_id.int_value()) {
+    PageRefCountInfo prc = this->state_->get_ref_count_info(page_id);
+    if (prc.page_id != page_id) {
       return false;
     }
     if (prc.ref_count == ref_count) {

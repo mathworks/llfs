@@ -19,14 +19,21 @@ using Metrics = PageAllocatorMetrics;
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
-PageAllocatorState::PageAllocatorState(const PageIdFactory& page_ids) noexcept
+PageAllocatorState::PageAllocatorState(const PageIdFactory& page_ids, u64 max_attachments) noexcept
     : PageAllocatorStateNoLock{page_ids}
+    , attachment_by_index_(max_attachments)
 {
   for (PageAllocatorRefCount& ref_count_obj : this->page_ref_counts()) {
     BATT_CHECK_EQ(ref_count_obj.get_count(), 0);
     this->free_pool_.push_back(ref_count_obj);
   }
   this->free_pool_size_.set_value(this->free_pool_.size());
+
+  for (u32 i = 0; i < max_attachments; ++i) {
+    this->free_attach_nums_.emplace(i);
+  }
+
+  BATT_CHECK_LT(this->attachment_by_index_.size(), kInvalidUserIndex);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -48,12 +55,16 @@ StatusOr<slot_offset_type> PageAllocatorState::write_checkpoint_slice(
 
       const page_id_int physical_page = this->index_of(ref_count_obj);
       const page_generation_int generation = ref_count_obj->get_generation();
+      const u32 user_index = ref_count_obj->get_last_modified_by();
 
       slot_range = slot_writer.append(
           slice_grant,
-          PackedPageRefCount{
-              .page_id = this->page_ids_.make_page_id(physical_page, generation).int_value(),
-              .ref_count = ref_count_obj->get_count(),
+          PackedPageRefCountRefresh{
+              {
+                  .page_id = this->page_ids_.make_page_id(physical_page, generation).int_value(),
+                  .ref_count = ref_count_obj->get_count(),
+              },
+              .user_index = user_index,
           });
     } else {
       PageAllocatorAttachment* const attachment =
@@ -66,6 +77,7 @@ StatusOr<slot_offset_type> PageAllocatorState::write_checkpoint_slice(
                                                       .user_id = attachment->get_user_id(),
                                                       .slot_offset = attachment->get_user_slot(),
                                                   },
+                                              .user_index = attachment->get_user_index(),
                                           });
     }
 
@@ -230,7 +242,7 @@ void PageAllocatorState::learn(const SlotRange& slot_offset,
 {
   LLFS_VLOG(1) << "learning " << attach;
 
-  this->update_attachment(slot_offset, attach.user_slot, AllowAttach::kTrue);
+  this->update_attachment(slot_offset, attach.user_slot, attach.user_index, AllowAttach::kTrue);
 
   this->update_learned_upper_bound(slot_offset.upper_bound);
 }
@@ -238,7 +250,8 @@ void PageAllocatorState::learn(const SlotRange& slot_offset,
 //----- --- -- -  -  -   -
 
 void PageAllocatorState::update_attachment(const SlotRange& slot_offset,
-                                           const PackedPageUserSlot& user_slot, AllowAttach attach)
+                                           const PackedPageUserSlot& user_slot, u32 user_index,
+                                           AllowAttach attach)
 {
   PageAllocatorAttachment* p_attachment = nullptr;
 
@@ -248,8 +261,11 @@ void PageAllocatorState::update_attachment(const SlotRange& slot_offset,
     p_attachment->clamp_min_user_slot(user_slot.slot_offset);
 
   } else if (attach == AllowAttach::kTrue) {
-    auto attachment =
-        std::make_unique<PageAllocatorAttachment>(user_slot.user_id, user_slot.slot_offset);
+    BATT_CHECK_NE(user_index, PageAllocatorState::kInvalidUserIndex);
+
+    auto attachment = std::make_unique<PageAllocatorAttachment>(user_slot.user_id,
+                                                                user_slot.slot_offset, user_index);
+
     p_attachment = attachment.get();
     this->attachments_.emplace(user_slot.user_id, std::move(attachment));
   }
@@ -266,7 +282,17 @@ Status PageAllocatorState::recover(const SlotRange& slot_offset,
 {
   LLFS_VLOG(1) << "recovering " << attach;
 
-  this->update_attachment(slot_offset, attach.user_slot, AllowAttach::kTrue);
+  BATT_CHECK_LT(attach.user_index, this->attachment_by_index_.size());
+  if (this->attachment_by_index_[attach.user_index] == batt::None) {
+    BATT_CHECK_EQ(this->free_attach_nums_.count(attach.user_index), 1);
+    this->attachment_by_index_[attach.user_index] = attach.user_slot.user_id;
+    this->free_attach_nums_.erase(attach.user_index);
+  } else {
+    BATT_CHECK_EQ(this->free_attach_nums_.count(attach.user_index), 0);
+    BATT_CHECK_EQ(*this->attachment_by_index_[attach.user_index], attach.user_slot.user_id);
+  }
+
+  this->update_attachment(slot_offset, attach.user_slot, attach.user_index, AllowAttach::kTrue);
 
   this->update_learned_upper_bound(slot_offset.upper_bound);
 
@@ -300,7 +326,10 @@ void PageAllocatorState::remove_attachment(const boost::uuids::uuid& user_id)
   auto iter = this->attachments_.find(user_id);
   BATT_CHECK_NE(iter, this->attachments_.end());
 
-  this->lru_.erase(this->lru_.iterator_to(*iter->second));
+  PageAllocatorAttachment& attachment = *iter->second;
+
+  this->deallocate_attachment(attachment.get_user_index(), user_id);
+  this->lru_.erase(this->lru_.iterator_to(attachment));
   this->attachments_.erase(iter);
 }
 
@@ -332,15 +361,15 @@ Status PageAllocatorState::recover(const SlotRange& slot_offset,
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-PageAllocatorState::ProposalStatus PageAllocatorState::propose(const PackedPageRefCount&)
+PageAllocatorState::ProposalStatus PageAllocatorState::propose(const PackedPageRefCountRefresh&)
 {
   return ProposalStatus::kValid;
 }
 
 //----- --- -- -  -  -   -
 
-void PageAllocatorState::learn(const SlotRange& slot_offset, const PackedPageRefCount& packed,
-                               Metrics&)
+void PageAllocatorState::learn(const SlotRange& slot_offset,
+                               const PackedPageRefCountRefresh& packed, Metrics&)
 {
   LLFS_VLOG(1) << "learning " << packed;
 
@@ -358,6 +387,8 @@ void PageAllocatorState::learn(const SlotRange& slot_offset, const PackedPageRef
       << "Checkpoint slices should never change the "
          "PageAllocator state after recovery completes!";
 
+  BATT_CHECK_EQ(obj->get_last_modified_by(), packed.user_index);
+
   this->set_last_update(obj, slot_offset);
 
   this->update_learned_upper_bound(slot_offset.upper_bound);
@@ -365,7 +396,8 @@ void PageAllocatorState::learn(const SlotRange& slot_offset, const PackedPageRef
 
 //----- --- -- -  -  -   -
 
-Status PageAllocatorState::recover(const SlotRange& slot_offset, const PackedPageRefCount& packed)
+Status PageAllocatorState::recover(const SlotRange& slot_offset,
+                                   const PackedPageRefCountRefresh& packed)
 {
   LLFS_VLOG(1) << "recovering " << packed;
 
@@ -380,6 +412,8 @@ Status PageAllocatorState::recover(const SlotRange& slot_offset, const PackedPag
 
   const i32 old_count = obj->set_count(packed.ref_count);
   const page_generation_int old_generation = obj->set_generation(generation);
+
+  obj->set_last_modified_by(packed.user_index);
 
   this->update_free_pool_status(obj);
 
@@ -430,6 +464,7 @@ void PageAllocatorState::learn(const SlotRange& slot_offset, const PackedPageAll
     const page_id_int physical_page = this->page_ids_.get_physical_page(page_id);
     PageAllocatorRefCount* const obj = &this->page_ref_counts_[physical_page];
     this->learn_ref_count_delta(delta, obj, metrics);
+    obj->set_last_modified_by(txn.user_index);
     this->set_last_update(obj, slot_offset);
   }
 
@@ -558,7 +593,7 @@ batt::Status PageAllocatorState::recover(const SlotRange& slot_offset,
   // Assume that the txn was correctly deduplicated when it was originally appended to the log;
   // don't bother checking during recovery, just update the attachment slot.
   //
-  this->update_attachment(slot_offset, txn.user_slot, AllowAttach::kTrue);
+  this->update_attachment(slot_offset, txn.user_slot, txn.user_index, AllowAttach::kTrue);
 
   auto& ids = this->page_ids_;
 
@@ -669,6 +704,74 @@ void PageAllocatorState::check_post_recovery_invariants() const
     BATT_CHECK_EQ((ref_count_obj.get_count() == 0),
                   ref_count_obj.PageAllocatorFreePoolHook::is_linked());
   }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<u32> PageAllocatorState::allocate_attachment(const boost::uuids::uuid& uuid) noexcept
+{
+  // If the given uuid is already attached, just return the existing user_index.
+  {
+    auto iter = this->attachments_.find(uuid);
+    if (iter != this->attachments_.end()) {
+      return iter->second->get_user_index();
+    }
+  }
+
+  // If there are no more attachments available, fail.
+  //
+  if (this->free_attach_nums_.empty()) {
+    return ::llfs::make_status(StatusCode::kOutOfAttachments);
+  }
+
+  // Grab an arbitrary attachment number (we don't know what we'll get because `free_attach_nums_`
+  // is an unordered_set).
+  //
+  auto iter = this->free_attach_nums_.begin();
+  u32 n = *iter;
+  this->free_attach_nums_.erase(iter);
+
+  // Sanity checks: `n` must be under the max attachment limit, and must not be mapped to some other
+  // uuid.
+  //
+  BATT_CHECK_LT(n, this->attachment_by_index_.size());
+  BATT_CHECK_EQ(this->attachment_by_index_[n], batt::None);
+
+  // Record the mapping from user_index to uuid.
+  //
+  this->attachment_by_index_[n] = uuid;
+
+  return n;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void PageAllocatorState::deallocate_attachment(
+    u32 user_index, const Optional<boost::uuids::uuid>& expected_uuid) noexcept
+{
+  BATT_CHECK_LT(user_index, this->attachment_by_index_.size());
+
+  // It's ok if we deallocate repeatedly, but make sure at least we don't deallocate someone else's
+  // attachment by mistake!
+  //
+  if (expected_uuid && this->attachment_by_index_[user_index]) {
+    BATT_CHECK_EQ(this->attachment_by_index_[user_index], *expected_uuid);
+  }
+
+  this->attachment_by_index_[user_index] = batt::None;
+  this->free_attach_nums_.emplace(user_index);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Optional<u32> PageAllocatorState::get_attachment_num(const boost::uuids::uuid& uuid) noexcept
+{
+  auto iter = this->attachments_.find(uuid);
+  if (iter == this->attachments_.end()) {
+    return None;
+  }
+
+  return iter->second->get_user_index();
 }
 
 }  // namespace llfs

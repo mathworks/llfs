@@ -30,10 +30,11 @@ class PageAllocatorAttachment : public PageAllocatorObjectBase
  public:
   /** \brief Create a new attachment setting the initial values of user id and slot.
    */
-  explicit PageAllocatorAttachment(const boost::uuids::uuid& user_id,
-                                   slot_offset_type user_slot) noexcept
+  explicit PageAllocatorAttachment(const boost::uuids::uuid& user_id, slot_offset_type user_slot,
+                                   u32 user_index) noexcept
       : user_id_{user_id}
       , user_slot_{user_slot}
+      , user_index_{user_index}
   {
   }
 
@@ -65,9 +66,17 @@ class PageAllocatorAttachment : public PageAllocatorObjectBase
     return this->user_slot_;
   }
 
+  /** \brief Return the current attachment number.
+   */
+  u32 get_user_index() const noexcept
+  {
+    return this->user_index_;
+  }
+
  private:
   const boost::uuids::uuid user_id_;
   slot_offset_type user_slot_;
+  u32 user_index_;
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

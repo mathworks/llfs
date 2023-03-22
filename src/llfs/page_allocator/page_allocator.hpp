@@ -105,12 +105,14 @@ class PageAllocator
 
   // Updates the index synchronously by applying the specified event.  Must be one of the event
   // types enumerated in page_device_event_types.hpp.
+  // TODO [tastolfi 2023-03-22] deprecate public usage of this function!
   //
   template <typename T>
   StatusOr<slot_offset_type> update(const T& event);
 
   // Updates the index synchronously by applying the specified event.  Must be one of the event
   // types enumerated in page_device_event_types.hpp.
+  // TODO [tastolfi 2023-03-22] deprecate public usage of this function!
   //
   template <typename T>
   StatusOr<slot_offset_type> update_sync(const T& event);
@@ -151,6 +153,17 @@ class PageAllocator
   // Returns a sequence of reference counts for all pages managed by this allocator.
   //
   BoxedSeq<PageRefCount> page_ref_counts();
+
+  /** \brief Finds an attachment number (aka `user_index`) not in use by any other uuid, and binds
+   * it to `user_id`.  Returns the allocated user_index.
+   *
+   * This function is DEPRECATED and will eventually be removed from the public interface of
+   * PageAllocator.
+   */
+  StatusOr<u32> allocate_attachment(const boost::uuids::uuid& user_id)
+  {
+    return this->state_.lock()->get()->allocate_attachment(user_id);
+  }
 
   auto debug_info()
   {
@@ -333,6 +346,14 @@ inline StatusOr<slot_offset_type> PageAllocator::update_page_ref_counts(
     const boost::uuids::uuid& user_id, slot_offset_type user_slot,
     PageRefCountSeq&& ref_count_updates, GarbageCollectFn&& garbage_collect_fn)
 {
+  // The txn will include the user_index to track which user was the last to update a given page ref
+  // count, for deterministic detection of "dead" pages.
+  //
+  Optional<u32> user_index = this->state_.lock()->get()->get_attachment_num(user_id);
+  if (!user_index) {
+    return ::llfs::make_status(StatusCode::kPageAllocatorNotAttached);
+  }
+
   const std::size_t op_size =
       packed_sizeof_page_allocator_txn(batt::make_copy(ref_count_updates) | seq::count());
 
@@ -343,6 +364,7 @@ inline StatusOr<slot_offset_type> PageAllocator::update_page_ref_counts(
 
   txn->user_slot.user_id = user_id;
   txn->user_slot.slot_offset = user_slot;
+  txn->user_index = *user_index;
   txn->ref_counts.initialize(0u);
 
   BasicArrayPacker<PackedPageRefCount, DataPacker> packed_ref_counts{&txn->ref_counts, &packer};
@@ -358,26 +380,25 @@ inline StatusOr<slot_offset_type> PageAllocator::update_page_ref_counts(
   {
     auto& state = this->state_.no_lock();
 
-    // TODO [tastolfi 2022-09-04] This is not the best way to do this; we should instead gather
-    // this information (did page ref count go from >1 to 1?) during the atomic update of each
-    // page's count (in `PageAllocator::update` above).
-    //
     BATT_FORWARD(ref_count_updates) |
 
         // Select only the pages from this set of updates that are now at ref_count==1, meaning
         // they are ready for GC.  If ref_count is 1, that means the current call has removed the
         // last reference to a page, so we can be sure there are no race conditions.
         //
-        seq::filter_map([&state](const PageRefCount& prc) -> Optional<page_id_int> {
-          BATT_CHECK_EQ(PageIdFactory::get_device_id(PageId{prc.page_id}),
-                        state.page_ids().get_device_id());
-          const auto info = state.get_ref_count_obj(PageId{prc.page_id});
-          if (info.ref_count == 1 && info.page_id == prc.page_id &&
-              prc.ref_count != kRefCount_1_to_0) {
-            return {prc.page_id};
-          }
-          return None;
-        }) |
+        seq::filter_map(
+            [&state, user_index = *user_index](const PageRefCount& prc) -> Optional<PageId> {
+              if (prc.ref_count < 0 && prc.ref_count != kRefCount_1_to_0) {
+                const PageRefCountInfo info = state.get_ref_count_info(prc.page_id);
+                if (info.ref_count == 1 && info.page_id == prc.page_id &&
+                    info.user_index == user_index) {
+                  BATT_CHECK_EQ(PageIdFactory::get_device_id(PageId{prc.page_id}),
+                                state.page_ids().get_device_id());
+                  return prc.page_id;
+                }
+              }
+              return None;
+            }) |
 
         // Call the user-supplied function.
         //
@@ -387,7 +408,7 @@ inline StatusOr<slot_offset_type> PageAllocator::update_page_ref_counts(
   LLFS_VLOG(2) << [&](std::ostream& out) {
     auto& state = this->state_.no_lock();
     for (const auto& prc : txn->ref_counts) {
-      out << prc << " -> " << state.get_ref_count_obj(PageId{prc.page_id}).ref_count << ", ";
+      out << prc << " -> " << state.get_ref_count_info(PageId{prc.page_id}).ref_count << ", ";
     }
   };
 

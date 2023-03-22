@@ -369,7 +369,7 @@ Status PageCacheJob::delete_page(PageId page_id)
 void PageCacheJob::new_root(PageId page_id)
 {
   this->update_root_set(PageRefCount{
-      .page_id = page_id.int_value(),
+      .page_id = page_id,
       .ref_count = +1,
   });
 }
@@ -379,7 +379,7 @@ void PageCacheJob::new_root(PageId page_id)
 void PageCacheJob::delete_root(PageId page_id)
 {
   this->update_root_set(PageRefCount{
-      .page_id = page_id.int_value(),
+      .page_id = page_id,
       .ref_count = -1,
   });
 }

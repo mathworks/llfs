@@ -67,21 +67,16 @@ u64 PageAllocatorStateNoLock::free_pool_size() noexcept
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-std::pair<i32, slot_offset_type> PageAllocatorStateNoLock::get_ref_count(PageId id) const noexcept
+PageRefCountInfo PageAllocatorStateNoLock::get_ref_count_info(PageId id) const noexcept
 {
+  //----- --- -- -  -  -   -
+  // This must be first!
+  //
+  const slot_offset_type learned_upper_bound = this->learned_upper_bound_.get_value();
+  //----- --- -- -  -  -   -
+
   const page_id_int physical_page = this->page_ids_.get_physical_page(id);
   BATT_CHECK_LT(physical_page, this->page_device_capacity());
-
-  slot_offset_type slot = this->learned_upper_bound_.get_value();
-  return std::make_pair(this->page_ref_counts_[physical_page].get_count(), slot);
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-PageRefCount PageAllocatorStateNoLock::get_ref_count_obj(PageId id) const noexcept
-{
-  const page_id_int physical_page = this->page_ids_.get_physical_page(id);
-  BATT_ASSERT_LT(physical_page, this->page_device_capacity());
 
   const auto& iprc = this->page_ref_counts_[physical_page];
 
@@ -91,13 +86,16 @@ PageRefCount PageAllocatorStateNoLock::get_ref_count_obj(PageId id) const noexce
   // later generation.  If we load generation after count, then the caller observes the generation
   // *not* to have changed, that means count was accurate for that generation in this case.
   //
-  const auto physical_page_ref_count = iprc.get_count();
-  //  (^^^ count)  (generation vvv)
-  const auto physical_page_generation = iprc.get_generation();
+  const i32 ref_count = iprc.get_count();
+  //       (^^^ count) (generation vvv)
+  const page_generation_int generation = iprc.get_generation();
 
-  return PageRefCount{
-      .page_id = this->page_ids_.make_page_id(physical_page, physical_page_generation).int_value(),
-      .ref_count = physical_page_ref_count,
+  return PageRefCountInfo{
+      .page_id = this->page_ids_.make_page_id(physical_page, generation),
+      .ref_count = ref_count,
+      .generation = generation,
+      .user_index = iprc.get_last_modified_by(),
+      .learned_upper_bound = learned_upper_bound,
   };
 }
 

@@ -28,6 +28,7 @@
 #include <boost/uuid/uuid.hpp>
 
 #include <unordered_map>
+#include <unordered_set>
 
 namespace llfs {
 
@@ -38,6 +39,8 @@ namespace llfs {
 class PageAllocatorState : public PageAllocatorStateNoLock
 {
  public:
+  static constexpr u32 kInvalidUserIndex = ~u32{0};
+
   // Define `ThreadSafeBase` type member alias for the benefit of Mutex<PageAllocatorState>.
   //
   using ThreadSafeBase = PageAllocatorStateNoLock;
@@ -69,7 +72,7 @@ class PageAllocatorState : public PageAllocatorStateNoLock
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  explicit PageAllocatorState(const PageIdFactory& ids) noexcept;
+  explicit PageAllocatorState(const PageIdFactory& ids, u64 max_attachments) noexcept;
 
   PageAllocatorState(const PageAllocatorState&) = delete;
   PageAllocatorState& operator=(const PageAllocatorState&) = delete;
@@ -96,7 +99,7 @@ class PageAllocatorState : public PageAllocatorStateNoLock
 
   LLFS_PAGE_DEVICE_INDEX_OP(PackedPageAllocatorAttach);
   LLFS_PAGE_DEVICE_INDEX_OP(PackedPageAllocatorDetach);
-  LLFS_PAGE_DEVICE_INDEX_OP(PackedPageRefCount);
+  LLFS_PAGE_DEVICE_INDEX_OP(PackedPageRefCountRefresh);
   LLFS_PAGE_DEVICE_INDEX_OP(PackedPageAllocatorTxn);
 
 #undef LLFS_PAGE_DEVICE_INDEX_OP
@@ -110,6 +113,13 @@ class PageAllocatorState : public PageAllocatorStateNoLock
 
   void refresh_client_attachment(const boost::uuids::uuid& uuid, slot_offset_type slot);
 
+  StatusOr<u32> allocate_attachment(const boost::uuids::uuid& uuid) noexcept;
+
+  void deallocate_attachment(u32 user_index,
+                             const Optional<boost::uuids::uuid>& expected_uuid = None) noexcept;
+
+  Optional<u32> get_attachment_num(const boost::uuids::uuid& uuid) noexcept;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
  private:
@@ -119,7 +129,7 @@ class PageAllocatorState : public PageAllocatorStateNoLock
   /** \brief Unconditionally updates the user slot, attaching if necessary.
    */
   void update_attachment(const SlotRange& slot_offset, const PackedPageUserSlot& user_slot,
-                         AllowAttach attach);
+                         u32 user_index, AllowAttach attach);
 
   /** \brief Unconditionally detaches the specified uuid.
    */
@@ -167,6 +177,14 @@ class PageAllocatorState : public PageAllocatorStateNoLock
   // All pages with ref count 0 that have not been allocated.
   //
   PageAllocatorFreePoolList free_pool_;
+
+  // A list of attachment numbers (i.e., user_index) known to be free.
+  //
+  std::unordered_set<u32> free_attach_nums_;
+
+  // The current assignment of attachment number (i.e. user_index) to uuid (user_id).
+  //
+  std::vector<batt::Optional<boost::uuids::uuid>> attachment_by_index_;
 };
 
 }  // namespace llfs

@@ -247,7 +247,7 @@ BoxedSeq<PageRefCount> CommittablePageCacheJob::root_set_deltas() const
                 this->job_->get_root_set_delta().end())  //
          | seq::map([](const auto& kv_pair) {
              return PageRefCount{
-                 .page_id = kv_pair.first.int_value(),
+                 .page_id = PageId{kv_pair.first.int_value()},
                  .ref_count = kv_pair.second,
              };
            })  //
@@ -502,10 +502,10 @@ auto CommittablePageCacheJob::start_ref_count_updates(const JobCommitParams& par
         arena.allocator().update_page_ref_counts(
             *params.caller_uuid, params.caller_slot, as_seq(device_state.ref_count_updates),
             /*dead_page_fn=*/
-            [&dead_pages, recycle_depth = params.recycle_depth](page_id_int dead_page_id) {
-              LLFS_VLOG(1) << "(recycle event) page is now dead: " << std::hex << dead_page_id
-                           << std::dec << " depth=" << recycle_depth;
-              dead_pages.ids.emplace_back(PageId{dead_page_id});
+            [&dead_pages, recycle_depth = params.recycle_depth](PageId dead_page_id) {
+              LLFS_VLOG(1) << "(recycle event) page is now dead: " << dead_page_id
+                           << " depth=" << recycle_depth;
+              dead_pages.ids.emplace_back(dead_page_id);
             }));
     //
     // ^^^ TODO [tastolfi 2021-09-13] deal with partial failure
@@ -595,7 +595,7 @@ auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/) const
     }
     const auto device_id = PageIdFactory::get_device_id(p.first);
     updates.per_device[device_id].ref_count_updates.emplace_back(PageRefCount{
-        .page_id = p.first.int_value(),
+        .page_id = p.first,
         .ref_count = p.second,
     });
   }

@@ -75,6 +75,8 @@ enum struct StatusCode {
   kStorageFileBadConfigBlockCrc = 57,
   kRecoverFailedAllocatorNotAttached = 58,
   kRecoverFailedRefCountNotUpdated = 59,
+  kOutOfAttachments = 60,
+  kPageAllocatorNotAttached = 61,
 };
 
 bool initialize_status_codes();

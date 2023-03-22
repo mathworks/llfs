@@ -22,6 +22,21 @@
 
 namespace llfs {
 
+struct PageRefCountInfo {
+  PageId page_id;
+  i32 ref_count;
+  page_generation_int generation;
+  u32 user_index;
+  slot_offset_type learned_upper_bound;
+};
+
+inline std::ostream& operator<<(std::ostream& out, const PageRefCountInfo& t)
+{
+  return out << "PageRefCountInfo{.page_id=" << t.page_id << ", .ref_count=" << t.ref_count
+             << ", .generation=" << t.generation << ", .user_index=" << t.user_index
+             << ", .learned_upper_bound=" << t.learned_upper_bound << ",}";
+}
+
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 /** \brief Base class of PageAllocatorState comprised of state that is safe to access without
  * holding a mutex lock.
@@ -43,9 +58,7 @@ class PageAllocatorStateNoLock
 
   u64 free_pool_size() noexcept;
 
-  std::pair<i32, slot_offset_type> get_ref_count(PageId id) const noexcept;
-
-  PageRefCount get_ref_count_obj(PageId id) const noexcept;
+  PageRefCountInfo get_ref_count_info(PageId id) const noexcept;
 
   void halt() noexcept;
 

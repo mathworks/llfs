@@ -53,6 +53,12 @@ StatusOr<std::unique_ptr<PageAllocator>> recover_storage_object(
 struct PageAllocatorConfigOptions {
   using PackedConfigType = PackedPageAllocatorConfig;
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  static PageAllocatorConfigOptions with_default_values() noexcept;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   // The unique identifier for this allocator; if None, a random UUID is generated.
   //
   Optional<boost::uuids::uuid> uuid;

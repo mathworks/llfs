@@ -84,6 +84,8 @@ TEST(PageAllocatorTest, UpdateRefCounts)
 
   auto fake_user_id = boost::uuids::random_generator{}();
 
+  const u32 user_index = BATT_OK_RESULT_OR_PANIC(index.allocate_attachment(fake_user_id));
+
   ASSERT_TRUE(index
                   .update_sync(PackedPageAllocatorAttach{
                       .user_slot =
@@ -91,6 +93,7 @@ TEST(PageAllocatorTest, UpdateRefCounts)
                               .user_id = fake_user_id,
                               .slot_offset = 0,
                           },
+                      .user_index = user_index,
                   })
                   .ok());
 
@@ -101,7 +104,7 @@ TEST(PageAllocatorTest, UpdateRefCounts)
     std::vector<PageRefCount> updates;
     for (page_id_int page_index = 0; page_index < std::min(kNumPages, update_count); ++page_index) {
       updates.emplace_back(PageRefCount{
-          .page_id = page_index,
+          .page_id = PageId{page_index},
           .ref_count = +2,
       });
     }
@@ -222,7 +225,7 @@ TEST(PageAllocatorTest, LogCrashRecovery)
         PageRefCount& prc = prcs.back();
         const i32 delta = pick_ref_count_delta(rng);
 
-        prc.page_id = page_i;
+        prc.page_id = PageId{page_i};
 
         if (expect_ref_count[page_i] == 0) {
           prc.ref_count = +2;

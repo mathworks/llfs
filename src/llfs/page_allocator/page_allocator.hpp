@@ -168,8 +168,8 @@ class PageAllocator
   auto debug_info()
   {
     return [this](std::ostream& out) {
-      out << "{" << this->state_.no_lock().free_pool_size() << "/"
-          << this->state_.no_lock().page_device_capacity() << "}";
+      out << "PageAllocator{.free=" << this->state_.no_lock().free_pool_size() << "/"
+          << this->state_.no_lock().page_device_capacity() << ",}";
     };
   }
 

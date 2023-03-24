@@ -27,10 +27,18 @@ std::ostream& operator<<(std::ostream& out, const PackedPageAllocatorDetach& t)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+std::ostream& operator<<(std::ostream& out, const PackedPageRefCountRefresh& t)
+{
+  return out << "{" << static_cast<const PackedPageRefCount&>(t) << ", user_index=" << t.user_index
+             << ",}";
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 std::ostream& operator<<(std::ostream& out, const PackedPageAllocatorTxn& t)
 {
-  out << "PackedPageAllocatorTxn{.user_slot=" << t.user_slot << ", .ref_counts["
-      << t.ref_counts.size() << "]={";
+  out << "PackedPageAllocatorTxn{.user_slot=" << t.user_slot << ", .user_index=" << t.user_index
+      << ", .ref_counts[" << t.ref_counts.size() << "]={";
   for (const auto& item : t.ref_counts) {
     out << item << ", ";
   }

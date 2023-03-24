@@ -98,11 +98,7 @@ struct PackedPageRefCountRefresh : PackedPageRefCount {
   little_u32 user_index;
 };
 
-inline std::ostream& operator<<(std::ostream& out, const PackedPageRefCountRefresh& t)
-{
-  return out << "{{" << static_cast<const PackedPageRefCount&>(t)
-             << "}, user_index=" << t.user_index << ",}";
-}
+std::ostream& operator<<(std::ostream& out, const PackedPageRefCountRefresh& t);
 
 LLFS_DEFINE_PACKED_TYPE_FOR(PackedPageRefCountRefresh, PackedPageRefCountRefresh);
 

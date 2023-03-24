@@ -446,15 +446,20 @@ StatusOr<SlotRange> Volume::append(const std::string_view& payload, batt::Grant&
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-
 StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& grant,
-                                   Optional<SlotSequencer>&& sequencer)
+                                   Optional<SlotSequencer>&& sequencer, u64* total_spent)
 {
   const auto check_sequencer_is_resolved = batt::finally([&sequencer] {
     BATT_CHECK_IMPLIES(bool{sequencer}, sequencer->is_resolved())
         << "If a SlotSequencer is passed, it must be resolved even on failure "
            "paths.";
   });
+
+  u64 ignored_output_total_spent_;
+  if (!total_spent) {
+    total_spent = &ignored_output_total_spent_;
+  }
+  *total_spent = 0;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
   // Phase 0: Wait for the previous slot in the sequence to be appended to the
@@ -493,8 +498,10 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
 
   auto prepared_job = prepare(appendable);
   {
-    BATT_ASSIGN_OK_RESULT(batt::Grant trim_refresh_grant,
-                          grant.spend(packed_sizeof_slot(prepared_job)));
+    const usize prepare_slot_size = packed_sizeof_slot(prepared_job);
+    *total_spent += prepare_slot_size;
+
+    BATT_ASSIGN_OK_RESULT(batt::Grant trim_refresh_grant, grant.spend(prepare_slot_size));
     this->trimmer_.push_grant(std::move(trim_refresh_grant));
   }
 
@@ -545,11 +552,15 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
   //
   BATT_DEBUG_INFO("writing commit slot");
 
-  StatusOr<SlotRange> commit_slot =
-      this->slot_writer_.append(grant, PackedCommitJob{
-                                           .reserved_ = {},
-                                           .prepare_slot = prepare_slot->lower_bound,
-                                       });
+  auto packed_commit = PackedCommitJob{
+      .reserved_ = {},
+      .prepare_slot = prepare_slot->lower_bound,
+  };
+
+  const usize commit_slot_size = packed_sizeof_slot(packed_commit);
+  *total_spent += commit_slot_size;
+
+  StatusOr<SlotRange> commit_slot = this->slot_writer_.append(grant, std::move(packed_commit));
 
   BATT_REQUIRE_OK(commit_slot);
 

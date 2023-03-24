@@ -34,7 +34,7 @@ class PageAllocatorObjectBase : public PageAllocatorLRUHook
   }
 
  private:
-  slot_offset_type last_update_ = slot_relative_min(0);
+  slot_offset_type last_update_ = 0;
 };
 
 }  // namespace llfs

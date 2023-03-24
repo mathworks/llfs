@@ -119,7 +119,8 @@ class Volume
   // job contained in `prepare_job`.
   //
   StatusOr<SlotRange> append(AppendableJob&& appendable_job, batt::Grant& grant,
-                             Optional<SlotSequencer>&& prepare_slot_sequencer = None);
+                             Optional<SlotSequencer>&& prepare_slot_sequencer = None,
+                             u64* total_spent = nullptr);
 
   // Overload to prevent confusion.
   //

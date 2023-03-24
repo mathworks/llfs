@@ -77,6 +77,8 @@ class PageAllocatorState : public PageAllocatorStateNoLock
   PageAllocatorState(const PageAllocatorState&) = delete;
   PageAllocatorState& operator=(const PageAllocatorState&) = delete;
 
+  ~PageAllocatorState() noexcept;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   Optional<PageId> allocate_page();
@@ -156,11 +158,12 @@ class PageAllocatorState : public PageAllocatorStateNoLock
   //
   void update_learned_upper_bound(slot_offset_type offset);
 
-  void learn_ref_count_delta(const PackedPageRefCount& delta, PageAllocatorRefCount* const obj,
-                             PageAllocatorMetrics& metrics);
+  void learn_ref_count_delta(const SlotRange& slot_offset, const PackedPageRefCount& delta,
+                             PageAllocatorRefCount* const obj, PageAllocatorMetrics& metrics);
 
-  void learn_ref_count_1_to_0(const PackedPageRefCount& delta, page_generation_int page_generation,
-                              PageAllocatorRefCount* const obj, PageAllocatorMetrics& metrics);
+  void learn_ref_count_1_to_0(const SlotRange& slot_offset, const PackedPageRefCount& delta,
+                              page_generation_int page_generation, PageAllocatorRefCount* const obj,
+                              PageAllocatorMetrics& metrics);
 
   void update_free_pool_status(PageAllocatorRefCount* obj);
 

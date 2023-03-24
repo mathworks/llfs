@@ -203,7 +203,8 @@ StatusOr<PageId> PageAllocator::allocate_page(batt::WaitForResource wait_for_res
         this->metrics_.pages_allocated.fetch_add(1);
         return *page_id;
       }
-      LLFS_LOG_INFO_FIRST_N(1) << "Unable to allocate page (pool is empty)";
+      LLFS_LOG_INFO_FIRST_N(1) << "Unable to allocate page (pool is empty)"
+                               << "; device=" << (**locked).page_ids().get_device_id();
       if (wait_for_resource == batt::WaitForResource::kFalse) {
         return Status{batt::StatusCode::kResourceExhausted};
       }

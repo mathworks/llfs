@@ -31,7 +31,7 @@ class LlfsConan(ConanFile):
         "openssl/3.0.7",
         "glog/0.6.0",
         "libunwind/1.6.2",
-        "batteries/0.23.1@batteriescpp+batteries/stable",
+        "batteries/0.28.5@batteriescpp+batteries/stable",
         "liburing/2.2",
         "cli11/2.3.2",
         "zlib/1.2.13",
@@ -47,7 +47,7 @@ class LlfsConan(ConanFile):
         #==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
         # Import the Batteries utility module.
         #
-        script_dir = os.path.join(os.path.dirname(__file__), 'batteries', 'script')
+        script_dir = os.path.join(os.path.dirname(__file__), 'script')
         sys.path.append(script_dir)
         
         import batt
@@ -69,14 +69,14 @@ class LlfsConan(ConanFile):
         cmake.build()
 
     def export(self):
-        self.copy("*.sh", src="batteries/script", dst="batteries/script")
-        self.copy("*.py", src="batteries/script", dst="batteries/script")
+        self.copy("*.sh", src="script", dst="script")
+        self.copy("*.py", src="script", dst="script")
 
     def package(self):
         self.copy("*.hpp", dst="include", src="src")
         self.copy("*.ipp", dst="include", src="src")
-        self.copy("*.sh", src="batteries/script", dst="batteries/script")
-        self.copy("*.py", src="batteries/script", dst="batteries/script")
+        self.copy("*.sh", src="script", dst="script")
+        self.copy("*.py", src="script", dst="script")
         cmake = CMake(self)
         cmake.configure()
         cmake.install()

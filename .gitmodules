@@ -2,7 +2,3 @@
 	path = script
 	url = ../../tonyastolfi/batteries
 	branch = script
-[submodule "batteries"]
-	path = batteries
-	url = ../../tonyastolfi/batteries
-	branch = main

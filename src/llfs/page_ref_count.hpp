@@ -20,15 +20,13 @@
 namespace llfs {
 
 struct PageRefCount {
-  // TODO [tastolfi 2021-09-07] - change `page_id` to type `PageId` for stronger
-  // type checking.
-  page_id_int page_id;
+  PageId page_id;
   i32 ref_count;
 
   struct Delta {
     PageRefCount operator()(page_id_int page_id) const
     {
-      return PageRefCount{page_id, val_};
+      return PageRefCount{PageId{page_id}, val_};
     }
 
     i32 val_;

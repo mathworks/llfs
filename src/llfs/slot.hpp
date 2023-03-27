@@ -152,6 +152,12 @@ inline void clamp_min_slot(Optional<slot_offset_type>* target, slot_offset_type 
 
 BATT_IF_GCC(BATT_UNSUPPRESS());
 
+inline void clamp_min_slot(slot_offset_type* target, slot_offset_type min_offset)
+{
+  BATT_CHECK_NOT_NULLPTR(target);
+  *target = slot_max(*target, min_offset);
+}
+
 // Convenience function; wait for a slot offset watch to reach a certain minimum value.
 //
 inline StatusOr<slot_offset_type> await_slot_offset(const slot_offset_type min_offset,
@@ -174,14 +180,13 @@ struct SlotLowerBoundGreater {
 };
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-// TODO [tastolfi 2020-12-07] - handle slot offset wrap-around!
-//
-inline slot_offset_type slot_relative_min(slot_offset_type offset)
+
+inline constexpr slot_offset_type slot_relative_min(slot_offset_type offset)
 {
   return offset - kMaxSlotDistance;
 }
 
-inline slot_offset_type slot_relative_max(slot_offset_type offset)
+inline constexpr slot_offset_type slot_relative_max(slot_offset_type offset)
 {
   return offset + kMaxSlotDistance;
 }

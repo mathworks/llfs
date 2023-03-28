@@ -1,4 +1,4 @@
-[submodule "batteries"]
-	path = batteries
-	url = ../../tonyastolfi/batteries.git
-	branch = main
+[submodule "script"]
+	path = script
+	url = ../../tonyastolfi/batteries
+	branch = script

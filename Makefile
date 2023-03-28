@@ -6,7 +6,7 @@
 #
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 
-.PHONY: clean build build-nodoc install create test publish docker-build docker-push docker
+.PHONY: clean build build-nodoc install create test publish docker-build docker-push docker unlink
 
 CONAN_PROFILE := $(shell test -f /etc/conan_profile.default && echo '/etc/conan_profile.default' || echo 'default')
 $(info CONAN_PROFILE is $(CONAN_PROFILE))
@@ -36,22 +36,16 @@ install:
 	(cd build/$(BUILD_TYPE) && conan install --profile "$(CONAN_PROFILE)" -s build_type=$(BUILD_TYPE) --build=missing ../..)
 
 create:
-	(conan remove -f "llfs/$(shell batteries/script/get-version.sh)" && cd build/$(BUILD_TYPE) && conan create  --profile "$(CONAN_PROFILE)" -s build_type=$(BUILD_TYPE) ../..)
+	(conan remove -f "llfs/$(shell script/get-version.sh)" && cd build/$(BUILD_TYPE) && conan create  --profile "$(CONAN_PROFILE)" -s build_type=$(BUILD_TYPE) ../..)
 
 
 publish:
-	batteries/script/publish-release.sh
+	script/publish-release.sh
 
 
 clean:
 	rm -rf build/$(BUILD_TYPE)
 
-docker-build:
-	(cd docker && docker build -t registry.gitlab.com/tonyastolfi/batteries .)
 
+unlink:
 
-docker-push: | docker-build
-	(cd docker && docker push registry.gitlab.com/tonyastolfi/batteries)
-
-
-docker: docker-build docker-push

@@ -227,6 +227,13 @@ PageRecycler::~PageRecycler() noexcept
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+const boost::uuids::uuid& PageRecycler::uuid() const
+{
+  return this->state_.no_lock().uuid;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void PageRecycler::start()
 {
   if (!this->recycle_task_) {
@@ -527,7 +534,7 @@ void PageRecycler::recycle_task_main()
   } else {
     if (!suppress_log_output_for_test()) {
       LLFS_LOG_WARNING() << "[PageRecycler::recycle_task] exited, no stop requested; code= "
-                         << this->recycle_task_status_;
+                         << this->recycle_task_status_ << BATT_INSPECT(this->stop_requested_);
     }
     this->page_deleter_.notify_failure(*this, this->recycle_task_status_);
   }

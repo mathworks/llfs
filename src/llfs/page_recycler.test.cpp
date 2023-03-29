@@ -13,6 +13,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <llfs/log_device_snapshot.hpp>
 #include <llfs/memory_log_device.hpp>
 #include <llfs/testing/fake_log_device.hpp>
 
@@ -46,6 +47,12 @@ using llfs::slot_offset_type;
 using llfs::Status;
 using llfs::StatusOr;
 
+//#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
+
+constexpr usize kNumFakePageIds = 10;
+
+//#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
+
 struct FakePage {
   FakePage() = default;
 
@@ -77,12 +84,36 @@ inline std::ostream& operator<<(std::ostream& out, const std::unique_ptr<FakePag
   return out << *t;
 }
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
+class MockPageDeleter : public llfs::PageDeleter
+{
+ public:
+  MOCK_METHOD(Status, delete_pages,
+              (const Slice<const PageToRecycle>& to_delete, PageRecycler& recycler,
+               slot_offset_type caller_slot, batt::Grant& recycle_grant, i32 recycle_depth),
+              (override));
+};
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
 class PageRecyclerTest : public ::testing::Test
 {
  public:
+  static constexpr auto kMaxRefsPerPage = llfs::MaxRefsPerPage{16};
+
+  const u64 kLogSize = PageRecycler::calculate_log_size(
+      kMaxRefsPerPage, /*max_buffered_page_count=*/llfs::PageCount{kNumFakePageIds});
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   void SetUp() override
   {
     llfs::suppress_log_output_for_test() = true;
+
+    for (usize i = 0; i < this->fake_page_id_.size(); ++i) {
+      this->fake_page_id_[i] = llfs::PageId{i + 0x101};
+    }
   }
 
   void TearDown() override
@@ -139,11 +170,49 @@ class PageRecyclerTest : public ::testing::Test
 
   void run_crash_recovery_test();
 
+  batt::Status recover_page_recycler()
+  {
+    static const std::string_view kTestRecyclerName = "TestRecycler";
+
+    BATT_CHECK_EQ(this->recycler_, nullptr);
+    BATT_CHECK_EQ(this->unique_page_recycler_, nullptr);
+
+    batt::StatusOr<std::unique_ptr<llfs::PageRecycler>> page_recycler_recovery =
+        llfs::PageRecycler::recover(
+            batt::Runtime::instance().default_scheduler(), kTestRecyclerName, kMaxRefsPerPage,
+            this->mock_deleter_, *std::make_unique<llfs::BasicLogDeviceFactory>([this] {
+              auto mem_log = std::make_unique<llfs::MemoryLogDevice>(kLogSize);
+              if (this->mem_log_snapshot_) {
+                mem_log->restore_snapshot(*this->mem_log_snapshot_, llfs::LogReadMode::kDurable);
+              }
+              this->p_mem_log_ = mem_log.get();
+              return mem_log;
+            }));
+
+    if (page_recycler_recovery.ok()) {
+      EXPECT_NE(this->p_mem_log_, nullptr);
+
+      this->recycler_ = page_recycler_recovery->get();
+      this->unique_page_recycler_ = std::move(*page_recycler_recovery);
+
+      // Important: Start the PageRecycler!
+      //
+      this->recycler_->start();
+    }
+
+    return page_recycler_recovery.status();
+  }
+
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
   std::unordered_map<PageId, std::unique_ptr<FakePage>, PageId::Hash> fake_pages_;
   std::vector<PageId> fake_page_root_set_;
   PageRecycler* recycler_ = nullptr;
+  ::testing::StrictMock<MockPageDeleter> mock_deleter_;
+  batt::Optional<llfs::LogDeviceSnapshot> mem_log_snapshot_;
+  llfs::MemoryLogDevice* p_mem_log_ = nullptr;
+  std::array<llfs::PageId, kNumFakePageIds> fake_page_id_;
+  std::unique_ptr<llfs::PageRecycler> unique_page_recycler_;
 };
 
 class FakePageDeleter : public PageDeleter
@@ -475,6 +544,114 @@ void PageRecyclerTest::run_crash_recovery_test()
     LLFS_VLOG(1) << "Run Finished" << BATT_INSPECT(seed)
                  << BATT_INSPECT(fake_recovered_log_state->device_time);
   }
+}
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
+TEST_F(PageRecyclerTest, NoRefreshBatchedPage)
+{
+  enum TestStep : i32 {
+    kWaitingForDeletePages,
+    kDeletePagesCalled,
+    kDeletePagesOkToReturn,
+  };
+
+  // Initialize helpers and test data.
+  //
+  batt::Watch<i32> test_step{kWaitingForDeletePages};
+
+  batt::Task test_task{
+      batt::Runtime::instance().schedule_task(), [&] {
+        // Create the PageRecycler to test.
+        //
+        batt::Status recovery1 = this->recover_page_recycler();
+        ASSERT_TRUE(recovery1.ok()) << BATT_INSPECT(recovery1);
+
+        // Expect some pages to be deleted; when they are, verify the page_ids, and wait until the
+        // main test task signals it is OK to continue.
+        //
+        EXPECT_CALL(
+            this->mock_deleter_,
+            delete_pages(
+                ::testing::Truly([&](const batt::Slice<const llfs::PageToRecycle>& to_delete) {
+                  return to_delete.size() == 1 && to_delete[0].page_id == this->fake_page_id_[0];
+                }),
+                ::testing::_ /*recycler*/, testing::_ /*caller_slot*/, testing::_ /*recycle_grant*/,
+                0 /*recycle_depth*/))
+            .WillOnce(::testing::InvokeWithoutArgs([&] {
+              BATT_CHECK_EQ(test_step.get_value(), kWaitingForDeletePages);
+
+              test_step.set_value(kDeletePagesCalled);
+              test_step.await_equal(kDeletePagesOkToReturn).IgnoreError();
+              test_step.set_value(kWaitingForDeletePages);
+
+              return batt::OkStatus();
+            }));
+
+        // Give some PageIds to delete.
+        //
+        {
+          batt::StatusOr<llfs::slot_offset_type> result =
+              this->recycler_->recycle_page(this->fake_page_id_[0]);
+
+          ASSERT_TRUE(result.ok()) << BATT_INSPECT(result);
+        }
+
+        // Wait for the MockPageDeleter to be invoked.
+        //
+        ASSERT_TRUE(test_step.await_equal(kDeletePagesCalled).ok());
+
+        // While the MockPageDeleter is still active, insert enough new pages to ensure that we will
+        // refresh the page we just recycled.
+        //
+        for (usize i = 1; i < this->fake_page_id_.size(); ++i) {
+          batt::StatusOr<llfs::slot_offset_type> result = this->recycler_->recycle_pages(
+              batt::as_slice(std::vector<PageId>{this->fake_page_id_[i]}));
+          ASSERT_TRUE(result.ok()) << BATT_INSPECT(result);
+
+          batt::Status flush_status = this->recycler_->await_flush(*result);
+          EXPECT_TRUE(flush_status.ok()) << BATT_INSPECT(flush_status);
+        }
+
+        this->mem_log_snapshot_ =
+            llfs::LogDeviceSnapshot::from_device(*this->p_mem_log_, llfs::LogReadMode::kDurable);
+        this->p_mem_log_->close().IgnoreError();
+
+        test_step.set_value(kDeletePagesOkToReturn);
+      }};
+
+  test_task.join();
+
+  ASSERT_TRUE(this->mem_log_snapshot_);
+
+  // Scan the log to make sure that the first (deleted) page was never refreshed.
+  //
+  llfs::MemoryLogDevice mem_log2{kLogSize};
+
+  mem_log2.restore_snapshot(*this->mem_log_snapshot_, llfs::LogReadMode::kDurable);
+
+  std::unique_ptr<llfs::LogDevice::Reader> log_reader =
+      mem_log2.new_reader(/*slot_lower_bound=*/batt::None, llfs::LogReadMode::kDurable);
+  llfs::TypedSlotReader<llfs::PageRecycleEvent> slot_reader{*log_reader};
+
+  usize page_0_count = 0;
+
+  slot_reader
+      .run(batt::WaitForResource::kFalse,
+           /*visitor=*/batt::make_case_of_visitor(
+               [&](const llfs::SlotParse&, const llfs::PageToRecycle& inserted) -> batt::Status {
+                 if (llfs::PageId{inserted.page_id} == this->fake_page_id_[0]) {
+                   page_0_count += 1;
+                   EXPECT_EQ(inserted.depth, 0);
+                 }
+                 return batt::OkStatus();
+               },
+               [](auto&&...) {
+                 return batt::OkStatus();
+               }))
+      .IgnoreError();
+
+  EXPECT_EQ(page_0_count, 1u);
 }
 
 }  // namespace

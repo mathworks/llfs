@@ -341,6 +341,14 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(const Slice<const PageId>
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+StatusOr<slot_offset_type> PageRecycler::recycle_page(PageId page_id, batt::Grant* grant, i32 depth)
+{
+  std::array<PageId, 1> page_ids{page_id};
+  return this->recycle_pages(batt::as_slice(page_ids), grant, depth);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 StatusOr<slot_offset_type> PageRecycler::insert_to_log(
     batt::Grant& grant, PageId page_id, i32 depth,
     batt::Mutex<std::unique_ptr<State>>::Lock& locked_state)
@@ -570,15 +578,17 @@ StatusOr<PageRecycler::Batch> PageRecycler::prepare_batch(std::vector<PageToRecy
       return Status{batt::StatusCode::kCancelled};
     }
 
-    LLFS_VLOG(1) << "[PageRecycler::recycle_task] writing remove slot: " << next_page
+    auto prepare_page = PackedRecyclePagePrepare{
+        .page_id = next_page.page_id.int_value(),
+        .batch_slot = batch.slot_offset,
+    };
+
+    LLFS_VLOG(1) << "[PageRecycler::recycle_task] writing remove slot: " << prepare_page
                  << BATT_INSPECT(batch.slot_offset)
                  << BATT_INSPECT(this->recycle_task_grant_.size()) << " " << this->name_;
 
-    StatusOr<SlotRange> append_slot = this->slot_writer_.append(
-        this->recycle_task_grant_, PackedRecyclePagePrepare{
-                                       .page_id = next_page.page_id.int_value(),
-                                       .batch_slot = batch.slot_offset,
-                                   });
+    StatusOr<SlotRange> append_slot =
+        this->slot_writer_.append(this->recycle_task_grant_, std::move(prepare_page));
 
     if (!append_slot.ok() && this->stop_requested_ && this->recycle_task_grant_.size() == 0) {
       return append_slot.status();

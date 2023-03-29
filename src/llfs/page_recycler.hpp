@@ -96,11 +96,16 @@ class PageRecycler
   //
   void join();
 
-  // Schedule a page to be recycled; returns once the WAL has been appended, not necessarily flushed
-  // (see `await_flush`).
+  // Schedule a list of pages to be recycled; returns once the WAL has been appended, not
+  // necessarily flushed (see `await_flush`).
   //
   StatusOr<slot_offset_type> recycle_pages(const Slice<const PageId>& page_ids,
                                            batt::Grant* grant = nullptr, i32 depth = 0);
+
+  // Schedule a single page to be recycled.  \see recycle_pages
+  //
+  StatusOr<slot_offset_type> recycle_page(PageId page_id, batt::Grant* grant = nullptr,
+                                          i32 depth = 0);
 
   // Waits for the given slot to be flushed to durable storage.
   //

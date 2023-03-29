@@ -15,6 +15,10 @@
 
 namespace llfs {
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+/** \brief Base class of PageRecycler::State that is safe to access concurrently without holding a
+ * lock.
+ */
 struct PageRecycler::NoLockState {
   explicit NoLockState(const boost::uuids::uuid& uuid_arg,
                        slot_offset_type latest_info_refresh_slot_arg,
@@ -42,7 +46,10 @@ struct PageRecycler::NoLockState {
   const PageRecyclerOptions options;
 };
 
-class PageRecycler::State : public NoLockState
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+/** \brief The state of the PageRecycler.
+ */
+class PageRecycler::State : public PageRecycler::NoLockState
 {
  public:
   using ThreadSafeBase = NoLockState;
@@ -51,40 +58,87 @@ class PageRecycler::State : public NoLockState
                  const PageRecyclerOptions& options, usize wal_capacity,
                  const SlotRange& initial_wal_range);
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   --
+
+  /** \brief Inserts all the pages in the passed slice, which must be in `refresh_slot`-sorted
+   * order.  `pages` must not have any records with an assigned `batch_slot` (or we will panic).
+   *
+   * This function is used to restore the recycler state on recovery.
+   */
   void bulk_load(Slice<const PageToRecycle> pages);
 
   batt::SmallVec<PageToRecycle, 2> insert(const PageToRecycle& p);
 
+  /** \brief Removes a single page from the highest discovery depth available.  If no pages are
+   * queued, returns a record with an invalid PageId.
+   */
   PageToRecycle remove();
 
   Optional<PageToRecycle> try_remove(i32 required_depth);
 
+  /** \brief Returns the oldest refresh slot value for any page currently tracked by the recycler;
+   * if there are none, returns None.
+   */
   Optional<slot_offset_type> get_lru_slot() const;
 
+  /** \brief Returns the maximum number of pages that can be queued in this object for deletion.
+   */
   usize max_page_count() const
   {
     return this->arena_size_;
   }
 
+  /** \brief Removes and returns up to `max_page_count` pages at the highest discovery depth
+   * available.
+   *
+   * All the returned pages will be at the same depth.
+   */
   std::vector<PageToRecycle> collect_batch(usize max_page_count, Metrics& metrics);
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   --
+
  private:
+  /** \brief Allocates and initializes a WorkItem.  This is like calling new.
+   */
   WorkItem& new_work_item(const PageToRecycle& p);
 
+  /** \brief Allocates an uninitialized WorkItem.  This is like calling malloc.
+   */
   WorkItem& alloc_work_item();
 
   WorkItem* refresh_oldest_work_item();
 
+  /** \brief Initializes an already-allocated WorkItem.  This is like calling a constructor.
+   */
   void init_work_item(WorkItem& item, const PageToRecycle& p);
 
+  /** \brief Cleans up and frees a WorkItem.  This is like calling delete.
+   */
   void delete_work_item(WorkItem& item);
 
+  /** \brief Cleans up a WorkItem without freeing its memory.  This is like calling a destructor.
+   */
   void deinit_work_item(WorkItem& item);
 
+  /** \brief Frees the memory used by a WorkItem to the local pool, without cleaning it up.  This is
+   * like calling free.
+   */
   void free_work_item(WorkItem& item);
+
+  /** \brief Returns the highest discovery depth value that currently has at least one page.
+   */
+  i32 get_active_depth() const;
+
+  /** \brief Removes a single page record from the specified discovery depth.  If none are
+   * available, returns None.  If `active_depth` is past the maximum depth (kMaxPageRefDepth),
+   * behavior is undefined.
+   */
+  Optional<PageToRecycle> remove_at_depth(i32 active_depth);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  /** \brief The number of WorkItems in `arena_` that have *ever* been initialized/allocated.
+   */
   usize arena_used_;
   const usize arena_size_;
   std::unique_ptr<WorkItem[]> arena_;

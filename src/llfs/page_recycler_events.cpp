@@ -17,8 +17,8 @@ namespace llfs {
 //
 std::ostream& operator<<(std::ostream& out, const PageToRecycle& t)
 {
-  return out << "PageToRecycle{.page_id=" << t.page_id << ", .slot_offset=" << t.slot_offset
-             << ", .depth=" << t.depth << ",}";
+  return out << "PageToRecycle{.page_id=" << t.page_id << ", .refresh_slot=" << t.refresh_slot
+             << ", .batch_slot=" << t.batch_slot << ", .depth=" << t.depth << ",}";
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -27,15 +27,6 @@ std::ostream& operator<<(std::ostream& out, const PackedPageRecyclerInfo&)
 {
   return out << "RecyclerInfo{...}";
 }
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-std::ostream& operator<<(std::ostream& out, const PackedRecyclePagePrepare& t)
-{
-  return out << "Prepare{.page=" << PageId{t.page_id.value()} << ", .batch_slot=" << t.batch_slot
-             << ",}";
-}
-
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 std::ostream& operator<<(std::ostream& out, const PackedRecycleBatchCommit& t)
@@ -50,11 +41,11 @@ PackedPageRecyclerInfo PackedPageRecyclerInfo::from(const boost::uuids::uuid& uu
 {
   return PackedPageRecyclerInfo{
       .uuid = uuid,
-      .info_refresh_rate = options.info_refresh_rate,
-      .batch_size = options.batch_size,
-      .refresh_factor = options.refresh_factor,
+      .info_refresh_rate = BATT_CHECKED_CAST(u32, options.info_refresh_rate()),
+      .batch_size = BATT_CHECKED_CAST(u32, options.batch_size()),
+      .refresh_factor = BATT_CHECKED_CAST(u32, options.refresh_factor()),
       .max_page_ref_depth = kMaxPageRefDepth,
-      .max_refs_per_page = options.max_refs_per_page,
+      .max_refs_per_page = BATT_CHECKED_CAST(u32, options.max_refs_per_page().value()),
   };
 }
 

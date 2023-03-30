@@ -17,25 +17,53 @@
 
 namespace llfs {
 
-struct PageRecyclerOptions {
-  // How many times per total log size to refresh the page recycler info.
-  //
-  usize info_refresh_rate = 4;
+class PageRecyclerOptions
+{
+ public:
+  static constexpr usize kDefaultInfoRefreshRate = 4;
+  static constexpr usize kDefaultMaxRefsPerPage = 1 * kMiB;
+  static constexpr usize kDefaultBatchSize = 24;
+  static constexpr usize kDefaultRefreshFactor = 2;
 
-  // Name says it all.
-  //
-  usize max_refs_per_page = 1 * kMiB;
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  // The maximum number of pages to recycle at a time.  Batching records together helps amortize the
-  // various fixed costs of page recycling (e.g., writing log pages to the recycler log and the page
-  // allocator logs).
-  //
-  usize batch_size = 24;
+  using Self = PageRecyclerOptions;
 
-  // The log amplification factor to target when writing refresh records so we can trim the log. For
-  // example, refresh_factor = 2 means that for each page inserted, one is inserted.
-  //
-  usize refresh_factor = 2;
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  //----- --- -- -  -  -   -
+  // (setters - begin)
+
+  Self& set_info_refresh_rate(usize value) noexcept;
+
+  Self& set_max_refs_per_page(usize value) noexcept;
+
+  Self& set_batch_size(usize value) noexcept;
+
+  Self& set_refresh_factor(usize value) noexcept;
+
+  // (setters - end)
+  //----- --- -- -  -  -   -
+
+  usize info_refresh_rate() const noexcept
+  {
+    return this->info_refresh_rate_;
+  }
+
+  MaxRefsPerPage max_refs_per_page() const noexcept
+  {
+    return MaxRefsPerPage{this->max_refs_per_page_};
+  }
+
+  usize batch_size() const noexcept
+  {
+    return this->batch_size_;
+  }
+
+  usize refresh_factor() const noexcept
+  {
+    return this->refresh_factor_;
+  }
 
   // The log space needed to insert a single page.
   //
@@ -72,6 +100,28 @@ struct PageRecyclerOptions {
   //
   bool info_needs_refresh(slot_offset_type last_info_refresh_slot_lower_bound,
                           LogDevice& log_device) const;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+ private:
+  // How many times per total log size to refresh the page recycler info.
+  //
+  usize info_refresh_rate_ = kDefaultInfoRefreshRate;
+
+  // Name says it all.
+  //
+  usize max_refs_per_page_ = kDefaultMaxRefsPerPage;
+
+  // The maximum number of pages to recycle at a time.  Batching records together helps amortize the
+  // various fixed costs of page recycling (e.g., writing log pages to the recycler log and the page
+  // allocator logs).
+  //
+  usize batch_size_ = kDefaultBatchSize;
+
+  // The log amplification factor to target when writing refresh records so we can trim the log. For
+  // example, refresh_factor = 2 means that for each page inserted, one is inserted.
+  //
+  usize refresh_factor_ = kDefaultRefreshFactor;
 };
 
 }  // namespace llfs

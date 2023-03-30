@@ -38,6 +38,10 @@ BraceWrapping:
   SplitEmptyRecord: true
   SplitEmptyNamespace: true
 
+SpacesInLineCommentPrefix:
+  Minimum: 0
+  Maximum: -1
+
 BreakConstructorInitializers: "BeforeComma"
 BreakInheritanceList: "BeforeComma"
 IndentCaseLabels: "true"

@@ -92,10 +92,13 @@ class VolumeTest : public ::testing::Test
   {
     this->root_log.emplace(1 * kMiB);
 
-    const u64 recycler_log_size = llfs::PageRecycler::calculate_log_size(max_refs_per_page);
+    const auto recycler_options =
+        llfs::PageRecyclerOptions{}.set_max_refs_per_page(max_refs_per_page);
 
-    EXPECT_EQ(llfs::PageRecycler::default_max_buffered_page_count(max_refs_per_page),
-              ::llfs::PageRecycler::calculate_max_buffered_page_count(max_refs_per_page,
+    const u64 recycler_log_size = llfs::PageRecycler::calculate_log_size(recycler_options);
+
+    EXPECT_EQ(llfs::PageRecycler::default_max_buffered_page_count(recycler_options),
+              ::llfs::PageRecycler::calculate_max_buffered_page_count(recycler_options,
                                                                       recycler_log_size));
 
     this->recycler_log.emplace(recycler_log_size);

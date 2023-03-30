@@ -863,24 +863,28 @@ TEST_F(PageRecyclerTest, NoRefreshBatchedPage)
       mem_log2.new_reader(/*slot_lower_bound=*/batt::None, llfs::LogReadMode::kDurable);
   llfs::TypedSlotReader<llfs::PageRecycleEvent> slot_reader{*log_reader};
 
-  usize page_0_count = 0;
+  usize page_0_insert_or_refresh_count = 0;
 
   slot_reader
       .run(batt::WaitForResource::kFalse,
            /*visitor=*/batt::make_case_of_visitor(
-               [&](const llfs::SlotParse&, const llfs::PageToRecycle& inserted) -> batt::Status {
-                 if (llfs::PageId{inserted.page_id} == this->fake_page_id_[0]) {
-                   page_0_count += 1;
+               [&](const llfs::SlotParse& slot,
+                   const llfs::PageToRecycle& inserted) -> batt::Status {
+                 LLFS_VLOG(1) << slot.offset << ": " << inserted;
+                 if (llfs::PageId{inserted.page_id} == this->fake_page_id_[0] &&
+                     inserted.batch_slot == batt::None) {
+                   page_0_insert_or_refresh_count += 1;
                    EXPECT_EQ(inserted.depth, 0);
                  }
                  return batt::OkStatus();
                },
-               [](auto&&...) {
+               [](const llfs::SlotParse& slot, const auto& event) {
+                 LLFS_VLOG(1) << slot.offset << ": " << event;
                  return batt::OkStatus();
                }))
       .IgnoreError();
 
-  EXPECT_EQ(page_0_count, 1u);
+  EXPECT_EQ(page_0_insert_or_refresh_count, 1u);
 }
 
 }  // namespace

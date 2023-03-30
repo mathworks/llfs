@@ -29,7 +29,11 @@ class PageRecyclerRecoveryVisitor
 
   explicit PageRecyclerRecoveryVisitor(const PageRecyclerOptions& default_options) noexcept;
 
+  ~PageRecyclerRecoveryVisitor() noexcept;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  void set_trim_pos(slot_offset_type trim_pos) noexcept;
 
   const PageRecyclerOptions& options() const;
 
@@ -44,16 +48,36 @@ class PageRecyclerRecoveryVisitor
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   Status operator()(const SlotParse&, const PageToRecycle& to_recycle);
-  Status operator()(const SlotParse&, const PackedRecyclePagePrepare& prepare);
   Status operator()(const SlotParse&, const PackedRecycleBatchCommit& commit);
   Status operator()(const SlotParse&, const PackedPageRecyclerInfo& info);
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
  private:
+  /** \brief The recycler options passed in at construction time.
+   */
   PageRecyclerOptions options_;
+
+  /** \brief The recycler log trim position.
+   */
+  slot_offset_type trim_pos_ = 0;
+
+  /** \brief Contains all the pages from PackedRecyclePageInserted/PageToRecycle events found
+   * during the scan.
+   */
   std::unordered_map<PageId, PageToRecycle, PageId::Hash> recovered_pages_;
-  Optional<slot_offset_type> latest_batch_slot_;
-  std::vector<PageId> latest_batch_pages_;
+
+  /** \brief The most recent (highest slot offset) batch for which no PackedRecycleBatchCommit event
+   * has yet been seen.
+   */
+  Optional<PageRecycler::Batch> latest_batch_;
+
+  /** \brief The recycler UUID, as read in the most recent recycler info slot.
+   */
   boost::uuids::uuid recycler_uuid_;
+
+  /** \brief The most recent slot at which recycler info was refreshed.
+   */
   Optional<SlotRange> latest_info_refresh_slot_;
 };
 

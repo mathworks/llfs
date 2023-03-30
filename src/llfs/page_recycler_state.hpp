@@ -67,7 +67,14 @@ class PageRecycler::State : public PageRecycler::NoLockState
    */
   void bulk_load(Slice<const PageToRecycle> pages);
 
-  batt::SmallVec<PageToRecycle, 2> insert(const PageToRecycle& p);
+  /** \brief Inserts the given page into the queue and returns a list of pages to append to the
+   * log.  If `p` has an invalid PageId, then returns an empty list.  Otherwise, the returned list
+   * of records will always include `p`.
+   */
+  batt::StatusOr<slot_offset_type> insert_and_refresh(
+      const PageToRecycle& p,
+      std::function<batt::StatusOr<slot_offset_type>(const batt::SmallVecBase<PageToRecycle*>&)>&&
+          append_to_log_fn);
 
   /** \brief Removes a single page from the highest discovery depth available.  If no pages are
    * queued, returns a record with an invalid PageId.
@@ -105,8 +112,6 @@ class PageRecycler::State : public PageRecycler::NoLockState
   /** \brief Allocates an uninitialized WorkItem.  This is like calling malloc.
    */
   WorkItem& alloc_work_item();
-
-  WorkItem* refresh_oldest_work_item();
 
   /** \brief Initializes an already-allocated WorkItem.  This is like calling a constructor.
    */

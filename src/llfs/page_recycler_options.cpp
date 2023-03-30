@@ -54,7 +54,7 @@ PageRecyclerOptions& PageRecyclerOptions::set_refresh_factor(usize value) noexce
 //
 usize PageRecyclerOptions::insert_grant_size() const
 {
-  return (packed_sizeof<PackedVariant<>>() + packed_sizeof<PackedRecyclePageInserted>() +
+  return (packed_sizeof<PackedVariant<>>() + packed_sizeof<PackedPageToRecycle>() +
           kMaxSlotHeaderSize) *
          this->refresh_factor();
 }
@@ -63,7 +63,7 @@ usize PageRecyclerOptions::insert_grant_size() const
 //
 usize PageRecyclerOptions::remove_grant_size() const
 {
-  return (packed_sizeof<PackedVariant<>>() + packed_sizeof<PackedRecyclePagePrepare>() +
+  return (packed_sizeof<PackedVariant<>>() + packed_sizeof<PackedPageToRecycle>() +
           kMaxSlotHeaderSize);
 }
 

@@ -11,7 +11,44 @@
 
 #include <llfs/page_recycler_events.hpp>
 
+#include <batteries/checked_cast.hpp>
+
 namespace llfs {
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+PageRecyclerOptions& PageRecyclerOptions::set_info_refresh_rate(usize value) noexcept
+{
+  this->info_refresh_rate_ = BATT_CHECKED_CAST(u32, value);
+  return *this;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+PageRecyclerOptions& PageRecyclerOptions::set_max_refs_per_page(usize value) noexcept
+{
+  BATT_CHECK_LE(value, kMaxPageRefDepth);
+  this->max_refs_per_page_ = BATT_CHECKED_CAST(u32, value);
+  return *this;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+PageRecyclerOptions& PageRecyclerOptions::set_batch_size(usize value) noexcept
+{
+  BATT_CHECK_GT(value, 0) << "batch_size must be >0";
+  this->batch_size_ = BATT_CHECKED_CAST(u32, value);
+  return *this;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+PageRecyclerOptions& PageRecyclerOptions::set_refresh_factor(usize value) noexcept
+{
+  BATT_CHECK_EQ(value, 2) << "2 is the only supported refresh factor for PageRecycler";
+  this->refresh_factor_ = BATT_CHECKED_CAST(u32, value);
+  return *this;
+}
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
@@ -19,7 +56,7 @@ usize PageRecyclerOptions::insert_grant_size() const
 {
   return (packed_sizeof<PackedVariant<>>() + packed_sizeof<PackedRecyclePageInserted>() +
           kMaxSlotHeaderSize) *
-         this->refresh_factor;
+         this->refresh_factor();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -42,8 +79,8 @@ usize PageRecyclerOptions::total_page_grant_size() const
 usize PageRecyclerOptions::total_grant_size_for_depth(u32 depth) const
 {
   return this->total_page_grant_size() *
-         ((1 /*the page itself*/) + (kMaxPageRefDepth - depth) * this->max_refs_per_page) *
-         this->batch_size;
+         ((1 /*the page itself*/) + (kMaxPageRefDepth - depth) * this->max_refs_per_page()) *
+         this->batch_size();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -76,7 +113,7 @@ bool PageRecyclerOptions::info_needs_refresh(slot_offset_type last_info_refresh_
 {
   return (slot_distance(last_info_refresh_slot_lower_bound,
                         log_device.slot_range(LogReadMode::kSpeculative).upper_bound) +
-          this->info_slot_size()) >= (log_device.capacity() / this->info_refresh_rate);
+          this->info_slot_size()) >= (log_device.capacity() / this->info_refresh_rate());
 }
 
 }  // namespace llfs

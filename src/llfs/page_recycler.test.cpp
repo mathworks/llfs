@@ -103,7 +103,8 @@ class PageRecyclerTest : public ::testing::Test
   static constexpr auto kMaxRefsPerPage = llfs::MaxRefsPerPage{16};
 
   const u64 kLogSize = PageRecycler::calculate_log_size(
-      kMaxRefsPerPage, /*max_buffered_page_count=*/llfs::PageCount{kNumFakePageIds});
+      llfs::PageRecyclerOptions{}.set_max_refs_per_page(kMaxRefsPerPage),
+      /*max_buffered_page_count=*/llfs::PageCount{kNumFakePageIds});
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

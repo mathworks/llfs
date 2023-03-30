@@ -37,7 +37,7 @@ PageRecycler::State::State(const boost::uuids::uuid& uuid,
     , free_pool_{}
     , lru_{}
 {
-  BATT_CHECK_EQ(2, options.refresh_factor) << "implement generic refresh factors";
+  BATT_CHECK_EQ(2, options.refresh_factor()) << "implement generic refresh factors";
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

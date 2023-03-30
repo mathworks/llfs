@@ -448,7 +448,6 @@ StatusOr<SlotRange> Volume::append(const std::string_view& payload, batt::Grant&
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-
 StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& grant,
                                    Optional<SlotSequencer>&& sequencer)
 {

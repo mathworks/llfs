@@ -24,7 +24,12 @@
 namespace llfs {
 
 using page_device_id_int = u64;
+using little_page_device_id_int = little_u64;
+using big_page_device_id_int = big_u64;
+
 using page_generation_int = u64;
+using little_page_generation_int = little_u64;
+using big_page_generation_int = big_u64;
 
 constexpr u8 kPageDeviceIdShift = 64 - kPageDeviceIdBits;
 constexpr page_id_int kPageDeviceIdMask = ((page_id_int{1} << kPageDeviceIdBits) - 1)

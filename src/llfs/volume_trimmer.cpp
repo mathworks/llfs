@@ -27,7 +27,7 @@ namespace llfs {
     //
     std::unique_ptr<PageCacheJob> job = cache.new_job();
 
-    LLFS_VLOG(1) << "Dropping PageId roots from the log...";
+    LLFS_VLOG(1) << "Dropping PageId roots from the log..." << BATT_INSPECT(slot_offset);
     for (PageId page_id : roots_to_trim) {
       LLFS_VLOG(1) << " -- " << page_id;
       job->delete_root(page_id);
@@ -87,7 +87,7 @@ void VolumeTrimmer::halt()
 //
 void VolumeTrimmer::push_grant(batt::Grant&& grant) noexcept
 {
-  LLFS_VLOG(1) << "trimmer grant: " << this->trimmer_grant_.size() << " -> "
+  LLFS_VLOG(2) << "trimmer grant: " << this->trimmer_grant_.size() << " -> "
                << (this->trimmer_grant_.size() + grant.size());
 
   this->trimmer_grant_.subsume(std::move(grant));

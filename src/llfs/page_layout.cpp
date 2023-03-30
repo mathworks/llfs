@@ -61,22 +61,6 @@ Status finalize_page_header(PageBuffer* page, const Interval<u64>& unused_region
   return OkStatus();
 }
 
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-std::ostream& operator<<(std::ostream& out, const PackedPageRefCount& t)
-{
-  out << "PackedPageRefCount{.page_id=" << std::hex << std::setw(5) << std::setfill('0')
-      << t.page_id.value() << ", .ref_count=";
-
-  if (t.ref_count == kRefCount_1_to_0) {
-    out << "kRefCount_1_to_0";
-  } else {
-    out << std::setw(0) << std::dec << t.ref_count.value();
-  }
-
-  return out << ",}";
-}
-
 std::ostream& operator<<(std::ostream& out, const PackedPageUserSlot& t)
 {
   return out << "{.user_id=" << t.user_id << ", .slot_offset=" << t.slot_offset.value() << ",}";

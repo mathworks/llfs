@@ -168,6 +168,46 @@ class LogDeviceFactory
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+/** \brief A simple implementation of LogDeviceFactory that wraps a function that returns LogDevice
+ * instances by std::unique_ptr.
+ */
+class BasicLogDeviceFactory : public LogDeviceFactory
+{
+ public:
+  /** \brief Creates a new BasicLogDeviceFactory.
+   *
+   * The passed function will be invoked whenever this->open_log_device is called.
+   */
+  explicit BasicLogDeviceFactory(
+      std::function<std::unique_ptr<LogDevice>()>&& create_log_device) noexcept
+      : create_log_device_{std::move(create_log_device)}
+  {
+  }
+
+  /** \brief Invokes the function passed in at construction time, creating a reader and invoking the
+   * passed `scan_fn`.
+   *
+   * \return the new LogDevice
+   */
+  StatusOr<std::unique_ptr<LogDevice>> open_log_device(const LogScanFn& scan_fn) override
+  {
+    std::unique_ptr<LogDevice> instance = this->create_log_device_();
+
+    StatusOr<slot_offset_type> scan_status =
+        scan_fn(*instance->new_reader(/*slot_lower_bound=*/None, LogReadMode::kDurable));
+
+    BATT_REQUIRE_OK(scan_status);
+
+    return instance;
+  }
+
+ private:
+  /** \brief Wrapped factory function for creating LogDevice instances.
+   */
+  std::function<std::unique_ptr<LogDevice>()> create_log_device_;
+};
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 class LogDevice::Reader
 {

@@ -10,6 +10,8 @@
 #ifndef LLFS_PAGE_ALLOCATOR_HPP
 #define LLFS_PAGE_ALLOCATOR_HPP
 
+#include <llfs/config.hpp>
+//
 #include <llfs/data_packer.hpp>
 #include <llfs/log_device.hpp>
 #include <llfs/metrics.hpp>
@@ -34,6 +36,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <unordered_set>
 
 namespace llfs {
 
@@ -90,6 +93,10 @@ class PageAllocator
   //
   void deallocate_page(PageId id);
 
+  /** \brief Called by attached users to indicate they have successfully recovered.
+   */
+  Status notify_user_recovered(const boost::uuids::uuid& user_id);
+
   // Removes page from the free pool in order to recover a pending job.
   //
   Status recover_page(PageId id);
@@ -101,12 +108,14 @@ class PageAllocator
 
   // Updates the index synchronously by applying the specified event.  Must be one of the event
   // types enumerated in page_device_event_types.hpp.
+  // TODO [tastolfi 2023-03-22] deprecate public usage of this function!
   //
   template <typename T>
   StatusOr<slot_offset_type> update(const T& event);
 
   // Updates the index synchronously by applying the specified event.  Must be one of the event
   // types enumerated in page_device_event_types.hpp.
+  // TODO [tastolfi 2023-03-22] deprecate public usage of this function!
   //
   template <typename T>
   StatusOr<slot_offset_type> update_sync(const T& event);
@@ -122,78 +131,7 @@ class PageAllocator
   StatusOr<slot_offset_type> update_page_ref_counts(
       const boost::uuids::uuid& user_id, slot_offset_type user_slot,
       PageRefCountSeq&& ref_count_updates,
-      GarbageCollectFn&& garbage_collect_fn = GarbageCollectFn{})
-  {
-    const std::size_t op_size =
-        packed_sizeof_page_allocator_txn(batt::make_copy(ref_count_updates) | seq::count());
-
-    std::unique_ptr<u8[]> buffer{new u8[op_size]};
-    DataPacker packer{MutableBuffer{buffer.get(), op_size}};
-    auto* txn = packer.pack_record<PackedPageAllocatorTxn>();
-    BATT_CHECK_NOT_NULLPTR(txn);
-
-    txn->user_slot.user_id = user_id;
-    txn->user_slot.slot_offset = user_slot;
-    txn->ref_counts.initialize(0u);
-
-    BasicArrayPacker<PackedPageRefCount, DataPacker> packed_ref_counts{&txn->ref_counts, &packer};
-    batt::make_copy(ref_count_updates) |
-        seq::for_each([&packed_ref_counts](const PageRefCount& prc) {
-          BATT_CHECK(packed_ref_counts.pack_item(prc));
-        });
-
-    LLFS_VLOG(2) << "updating ref counts: "
-                 << batt::dump_range(txn->ref_counts, batt::Pretty::True);
-
-    StatusOr<slot_offset_type> update_status = this->update(*txn);
-    BATT_REQUIRE_OK(update_status);
-
-    {
-      auto& state = this->state_.no_lock();
-
-      // TODO [tastolfi 2022-09-04] This is not the best way to do this; we should instead gather
-      // this information (did page ref count go from >1 to 1?) during the atomic update of each
-      // page's count (in `PageAllocator::update` above).
-      //
-      BATT_FORWARD(ref_count_updates) |
-
-#if 0
-          // Notify any tasks awaiting updates for the passed page ids.
-          //
-          seq::inspect([](const PageRefCount& prc) {
-            batt::Runtime::instance().notify(prc.page_id);
-          }) |
-#endif
-
-          // Select only the pages from this set of updates that are now at ref_count==1, meaning
-          // they are ready for GC.  If ref_count is 1, that means the current call has removed the
-          // last reference to a page, so we can be sure there are no race conditions.
-          //
-          seq::filter_map([&state](const PageRefCount& prc) -> Optional<page_id_int> {
-            BATT_CHECK_EQ(PageIdFactory::get_device_id(PageId{prc.page_id}),
-                          state.page_ids().get_device_id());
-            const auto info = state.get_ref_count_obj(PageId{prc.page_id});
-            if (info.ref_count == 1 && info.page_id == prc.page_id &&
-                prc.ref_count != kRefCount_1_to_0) {
-              return {prc.page_id};
-            }
-            return None;
-          }) |
-
-          // Call the user-supplied function.
-          //
-          seq::for_each(BATT_FORWARD(garbage_collect_fn));
-    }
-
-    LLFS_VLOG(2) << [&](std::ostream& out) {
-      auto& state = this->state_.no_lock();
-      for (const auto& prc : txn->ref_counts) {
-        out << prc << " -> " << state.get_ref_count_obj(PageId{prc.page_id}).ref_count << ", ";
-      }
-    };
-
-    return update_status;
-  }
+      GarbageCollectFn&& garbage_collect_fn = GarbageCollectFn{});
 
   /** \brief Polls the ref count for the given page_id every millisecond until it matches ref_count,
    * for a maximum of 10 seconds.
@@ -219,11 +157,22 @@ class PageAllocator
   //
   BoxedSeq<PageRefCount> page_ref_counts();
 
+  /** \brief Finds an attachment number (aka `user_index`) not in use by any other uuid, and binds
+   * it to `user_id`.  Returns the allocated user_index.
+   *
+   * This function is DEPRECATED and will eventually be removed from the public interface of
+   * PageAllocator.
+   */
+  StatusOr<u32> allocate_attachment(const boost::uuids::uuid& user_id)
+  {
+    return this->state_.lock()->get()->allocate_attachment(user_id);
+  }
+
   auto debug_info()
   {
     return [this](std::ostream& out) {
-      out << "{" << this->state_.no_lock().free_pool_size() << "/"
-          << this->state_.no_lock().page_device_capacity() << "}";
+      out << "PageAllocator{.free=" << this->state_.no_lock().free_pool_size() << "/"
+          << this->state_.no_lock().page_device_capacity() << ",}";
     };
   }
 
@@ -306,12 +255,23 @@ class PageAllocator
   //
   batt::Watch<bool> stop_requested_{false};
 
+  // On recover, set to the number of attached users.  Attached users should call
+  // `notify_user_recovered` to indicate that they are now in a clean state; when the last of these
+  // happens, the PageAllocator changes from safe mode to normal mode.
+  //
+  batt::Watch<i64> recovering_user_count_;
+
+  // Tracks the recovering users.
+  //
+  batt::Mutex<std::unordered_set<boost::uuids::uuid, boost::hash<boost::uuids::uuid>>>
+      recovering_users_;
+
   // Writes checkpoint data so the log can be trimmed.
   //
   batt::Task checkpoint_task_;
 };
 
-//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <typename T>
 inline StatusOr<slot_offset_type> PageAllocator::update(const T& op)
@@ -333,7 +293,7 @@ inline StatusOr<slot_offset_type> PageAllocator::update(const T& op)
   //
   StatusOr<SlotRange> commit_slot;
 
-  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
   {
     auto locked_state = this->state_.lock();
     State* speculative = locked_state->get();
@@ -344,10 +304,9 @@ inline StatusOr<slot_offset_type> PageAllocator::update(const T& op)
       return this->log_device_->slot_range(LogReadMode::kDurable).upper_bound;
       //
       // TODO [tastolfi 2021-03-08] - should we attempt to wait until the operation is durable??
+
     } else if (proposal_status == State::ProposalStatus::kInvalid_NotAttached) {
-      return Status{batt::StatusCode::kInvalidArgument};
-      // TODO [tastolfi 2021-10-20] "Update can not be processed; the client must attach to the page
-      // allocator"
+      return ::llfs::make_status(StatusCode::kPageAllocatorNotAttached);
     }
 
     BATT_CHECK_EQ(proposal_status, State::ProposalStatus::kValid);
@@ -357,9 +316,9 @@ inline StatusOr<slot_offset_type> PageAllocator::update(const T& op)
 
     // Apply the event to the state machine.
     //
-    speculative->learn(commit_slot->lower_bound, op, this->metrics_);
+    speculative->learn(*commit_slot, op, this->metrics_);
   }
-  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   // Take whatever was left over from the slot grant and allow it to be used for checkpoints.
   //
@@ -368,6 +327,8 @@ inline StatusOr<slot_offset_type> PageAllocator::update(const T& op)
   return commit_slot->upper_bound;
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 template <typename T>
 inline StatusOr<slot_offset_type> PageAllocator::update_sync(const T& op)
 {
@@ -378,6 +339,84 @@ inline StatusOr<slot_offset_type> PageAllocator::update_sync(const T& op)
   BATT_REQUIRE_OK(sync_status);
 
   return commit_slot;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename PageRefCountSeq, typename GarbageCollectFn>
+inline StatusOr<slot_offset_type> PageAllocator::update_page_ref_counts(
+    const boost::uuids::uuid& user_id, slot_offset_type user_slot,
+    PageRefCountSeq&& ref_count_updates, GarbageCollectFn&& garbage_collect_fn)
+{
+  // The txn will include the user_index to track which user was the last to update a given page ref
+  // count, for deterministic detection of "dead" pages.
+  //
+  Optional<u32> user_index = this->state_.lock()->get()->get_attachment_num(user_id);
+  if (!user_index) {
+    return ::llfs::make_status(StatusCode::kPageAllocatorNotAttached);
+  }
+
+  const std::size_t op_size =
+      packed_sizeof_page_allocator_txn(batt::make_copy(ref_count_updates) | seq::count());
+
+  std::unique_ptr<u8[]> buffer{new u8[op_size]};
+  DataPacker packer{MutableBuffer{buffer.get(), op_size}};
+  auto* txn = packer.pack_record<PackedPageAllocatorTxn>();
+  BATT_CHECK_NOT_NULLPTR(txn);
+
+  txn->user_slot.user_id = user_id;
+  txn->user_slot.slot_offset = user_slot;
+  txn->user_index = *user_index;
+  txn->ref_counts.initialize(0u);
+
+  BasicArrayPacker<PackedPageRefCount, DataPacker> packed_ref_counts{&txn->ref_counts, &packer};
+  batt::make_copy(ref_count_updates) | seq::for_each([&packed_ref_counts](const PageRefCount& prc) {
+    BATT_CHECK(packed_ref_counts.pack_item(prc));
+  });
+
+  LLFS_VLOG(2) << "updating ref counts: " << batt::dump_range(txn->ref_counts, batt::Pretty::True);
+
+  StatusOr<slot_offset_type> update_status = this->update(*txn);
+  BATT_REQUIRE_OK(update_status);
+
+  {
+    auto& state = this->state_.no_lock();
+
+    BATT_FORWARD(ref_count_updates) |
+
+        // Select only the pages from this set of updates that are now at ref_count==1, meaning
+        // they are ready for GC.  If ref_count is 1, that means the current call has removed the
+        // last reference to a page, so we can be sure there are no race conditions.
+        //
+        seq::filter_map([&state,
+                         user_index = *user_index](const PageRefCount& prc) -> Optional<PageId> {
+          if (prc.ref_count < 0 && prc.ref_count != kRefCount_1_to_0) {
+            const PageAllocatorRefCountStatus page_status = state.get_ref_count_status(prc.page_id);
+            if (page_status.ref_count == 1               //
+                && page_status.page_id == prc.page_id    //
+                && page_status.user_index == user_index  //
+            ) {
+              BATT_CHECK_EQ(PageIdFactory::get_device_id(PageId{prc.page_id}),
+                            state.page_ids().get_device_id());
+              return prc.page_id;
+            }
+          }
+          return None;
+        }) |
+
+        // Call the user-supplied function.
+        //
+        seq::for_each(BATT_FORWARD(garbage_collect_fn));
+  }
+
+  LLFS_VLOG(2) << [&](std::ostream& out) {
+    auto& state = this->state_.no_lock();
+    for (const auto& prc : txn->ref_counts) {
+      out << prc << " -> " << state.get_ref_count_status(PageId{prc.page_id}).ref_count << ", ";
+    }
+  };
+
+  return update_status;
 }
 
 }  // namespace llfs

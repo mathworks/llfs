@@ -98,29 +98,6 @@ class PageAllocatorRefCount
     return this->generation_.load();
   }
 
-  /** \brief Atomically performs a weak compare-and-swap operation on the reference count value.
-   *
-   * \see std::atomic<int>::compare_exchange_weak
-   */
-  bool compare_exchange_weak(i32& expected, i32 desired) noexcept
-  {
-    return this->count_.compare_exchange_weak(expected, desired);
-  }
-
-  /** \brief Atomically increments the reference count by `delta`, returning the previous value.
-   */
-  i32 fetch_add(i32 delta) noexcept
-  {
-    return this->count_.fetch_add(delta);
-  }
-
-  /** \brief Atomically decrements the reference count by `delta`, returning the previous value.
-   */
-  i32 fetch_sub(i32 delta) noexcept
-  {
-    return this->count_.fetch_sub(delta);
-  }
-
   /** \brief Atomically sets the reference count value, returning the previous value.
    */
   i32 set_count(i32 value) noexcept
@@ -168,6 +145,15 @@ class PageAllocatorRefCount
   std::atomic<i32> count_{0};
   std::atomic<u32> last_modified_by_user_index_{Self::kInvalidUserIndex};
 };
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+inline std::ostream& operator<<(std::ostream& out, const PageAllocatorRefCount& t)
+{
+  return out << "PageAllocatorRefCount{.count=" << t.get_count()
+             << ", .generation=" << t.get_generation()
+             << ", .last_modified_by=" << t.get_last_modified_by() << ",}";
+}
 
 }  // namespace llfs
 

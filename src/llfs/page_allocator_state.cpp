@@ -271,10 +271,28 @@ void PageAllocatorState::update_learned_upper_bound(slot_offset_type offset)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-PageAllocatorState::ProposalStatus PageAllocatorState::propose(
-    const PackedPageAllocatorAttach& attach)
+PageAllocatorState::ProposalStatus PageAllocatorState::propose(PackedPageAllocatorAttach* attach)
 {
-  return this->propose_exactly_once(attach.user_slot, AllowAttach::kTrue);
+  BATT_CHECK_EQ(attach->user_index, PageAllocatorState::kInvalidUserIndex);
+
+  ProposalStatus status = this->propose_exactly_once(
+      const_cast<const PackedPageAllocatorAttach*>(attach)->user_slot, AllowAttach::kTrue);
+
+  if (status == ProposalStatus::kValid) {
+    StatusOr<u32> user_index = this->allocate_attachment(attach->user_slot.user_id);
+    if (!user_index.ok()) {
+      return ProposalStatus::kInvalid_OutOfAttachments;
+    }
+    attach->user_index = *user_index;
+
+  } else if (status == ProposalStatus::kNoChange) {
+    Optional<u32> user_index = this->get_attachment_num(attach->user_slot.user_id);
+    if (user_index) {
+      attach->user_index = *user_index;
+    }
+  }
+
+  return status;
 }
 
 //----- --- -- -  -  -   -
@@ -343,10 +361,10 @@ Status PageAllocatorState::recover(const SlotRange& slot_offset,
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-PageAllocatorState::ProposalStatus PageAllocatorState::propose(
-    const PackedPageAllocatorDetach& detach)
+PageAllocatorState::ProposalStatus PageAllocatorState::propose(PackedPageAllocatorDetach* detach)
 {
-  return this->propose_exactly_once(detach.user_slot, AllowAttach::kFalse);
+  return this->propose_exactly_once(const_cast<const PackedPageAllocatorDetach*>(detach)->user_slot,
+                                    AllowAttach::kFalse);
 }
 
 //----- --- -- -  -  -   -
@@ -409,7 +427,7 @@ Status PageAllocatorState::recover(const SlotRange& slot_offset,
   LLFS_VLOG(1) << "recovering[slot=" << slot_offset << "] "
                << "PackedPageRefCountRefresh{.user_index=" << packed.user_index << ",}";
 
-  const PageId page_id{packed.page_id.value()};
+  const PageId page_id = packed.page_id.unpack();
   const page_id_int physical_page = this->page_ids_.get_physical_page(page_id);
   const page_id_int generation = this->page_ids_.get_generation(page_id);
 
@@ -438,9 +456,31 @@ Status PageAllocatorState::recover(const SlotRange& slot_offset,
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-PageAllocatorState::ProposalStatus PageAllocatorState::propose(const PackedPageAllocatorTxn& txn)
+PageAllocatorState::ProposalStatus PageAllocatorState::propose(PackedPageAllocatorTxn* txn)
 {
-  return this->propose_exactly_once(txn.user_slot, AllowAttach::kFalse);
+  // The txn will include the user_index to track which user was the last to update a given page ref
+  // count, for deterministic detection of "dead" pages.
+  //
+  Optional<u32> user_index = this->get_attachment_num(txn->user_slot.user_id);
+  if (!user_index) {
+    return ProposalStatus::kInvalid_NotAttached;
+  }
+  BATT_CHECK_EQ(txn->user_index, PageAllocatorState::kInvalidUserIndex);
+  txn->user_index = *user_index;
+
+  const ProposalStatus status = this->propose_exactly_once(
+      const_cast<const PackedPageAllocatorTxn*>(txn)->user_slot, AllowAttach::kFalse);
+
+  // If this is a valid proposal that will cause state change, go through and change the deltas to
+  // the new ref count values.
+  //
+  if (status == ProposalStatus::kValid) {
+    for (PackedPageRefCount& prc : txn->ref_counts) {
+      prc.ref_count = this->calculate_new_ref_count(prc);
+    }
+  }
+
+  return status;
 }
 
 //----- --- -- -  -  -   -
@@ -468,18 +508,32 @@ void PageAllocatorState::learn(const SlotRange& slot_offset, const PackedPageAll
 
   // Apply all ref count updates in the txn.
   //
-  for (const PackedPageRefCount& delta : txn.ref_counts) {
-    const PageId page_id{delta.page_id.value()};
+  for (const PackedPageRefCount& updated : txn.ref_counts) {
+    const PageId page_id = updated.page_id.unpack();
     const page_id_int physical_page = this->page_ids_.get_physical_page(page_id);
+    const page_id_int new_generation = this->page_ids_.get_generation(page_id);
     PageAllocatorRefCount* const obj = &this->page_ref_counts_[physical_page];
 
+    // IMPORTANT: `set_last_modified_by` must come first!  This is required because we detect dead
+    // pages in a lock-free manner, and we don't want to read the updated ref count (which might be
+    // 1) along with an *older* user_index value, because this will mistakenly credit a different
+    // client with producing the dead page.
+    //
     obj->set_last_modified_by(txn.user_index);
 
-    this->learn_ref_count_delta(slot_offset, delta, obj, metrics);
+    const i32 old_count = obj->set_count(updated.ref_count);
+    const u64 old_generation = obj->set_generation(new_generation);
 
-    if (delta.ref_count == kRefCount_1_to_0 || !obj->PageAllocatorLRUHook::is_linked()) {
-      this->set_last_update(obj, slot_offset);
+    // Update metrics for alloc/free.
+    //
+    if (old_count == 0 && updated.ref_count >= 2 && old_generation < new_generation) {
+      metrics.pages_allocated.fetch_add(1);
+    } else if (updated.ref_count == 0 && old_count > 0) {
+      metrics.pages_freed.fetch_add(1);
     }
+
+    this->set_last_update(obj, slot_offset);
+    this->update_free_pool_status(obj);
   }
 
   this->update_learned_upper_bound(slot_offset.upper_bound);
@@ -489,42 +543,81 @@ void PageAllocatorState::learn(const SlotRange& slot_offset, const PackedPageAll
 //
 namespace {
 
-void run_ref_count_update_sanity_checks(const PackedPageRefCount& delta, i32 before_ref_count,
-                                        PageAllocatorRefCount* const obj)
+void run_ref_count_update_sanity_checks(const PackedPageRefCount& delta,
+                                        const PageAllocatorRefCount& obj, i32 old_count,
+                                        i32 new_count)
 {
-  BATT_CHECK_NE(delta.ref_count, kRefCount_1_to_0);
+  const auto debug_info = [&](std::ostream& out) {
+    out << "(" << BATT_INSPECT(delta) << BATT_INSPECT(obj) << BATT_INSPECT(old_count)
+        << BATT_INSPECT(new_count) << ")";
+  };
 
-  const i32 after_ref_count = before_ref_count + delta.ref_count;
+  LLFS_VLOG(2) << debug_info;
 
-  LLFS_VLOG(2) << "page: " << std::hex << delta.page_id.value() << std::dec
-               << " += " << delta.ref_count.value() << "; " << before_ref_count << " -> "
-               << after_ref_count;
+  BATT_CHECK_GE(old_count, 0) << "ref counts must be non-negative" << debug_info;
+  BATT_CHECK_GE(new_count, 0) << "ref counts must be non-negative" << debug_info;
 
-  BATT_CHECK_GE(before_ref_count, 0);
+  if (old_count == new_count) {
+    BATT_CHECK_EQ(delta.ref_count, 0)
+        << "delta was non-zero but count did not change" << debug_info;
+    return;
+  }
 
-  BATT_CHECK_GE(after_ref_count, 0)
-      << "before_ref_count= " << before_ref_count << " delta.ref_count= " << delta.ref_count
-      << " page= " << std::hex << delta.page_id.value();
+  if (delta.ref_count == 0) {
+    BATT_CHECK_EQ(old_count, new_count)
+        << "zero delta must leave ref count unchanged" << debug_info;
+    return;
+  }
+  //
+  // From here on we know that old_count != new_count and that delta != 0...
 
-  BATT_CHECK_NE(before_ref_count, 1)
-      << "Page ref count of 1 should only be modified via kRefCount_1_to_0" << BATT_INSPECT(delta);
+  if (new_count == 0) {
+    BATT_CHECK_EQ(old_count, 1) << "ref count can only change to 0 if old count was 1"
+                                << debug_info;
+
+    BATT_CHECK_EQ(delta.ref_count, kRefCount_1_to_0)
+        << "ref count can only change to 0 via kRefCount_1_to_0" << debug_info;
+
+    return;
+  }
+
+  if (old_count == 1) {
+    BATT_CHECK_EQ(new_count, 0) << "ref count of 1 can only change to 0" << debug_info;
+
+    BATT_CHECK_EQ(delta.ref_count, kRefCount_1_to_0)
+        << "ref count of 1 can only change via kRefCount_1_to_0" << debug_info;
+
+    return;
+  }
+
+  if (delta.ref_count == kRefCount_1_to_0) {
+    BATT_CHECK_EQ(old_count, 1) << "delta of kRefCount_1_to_0 requires old count of 1"
+                                << debug_info;
+
+    BATT_CHECK_EQ(new_count, 0) << "delta of kRefCount_1_to_0 requires new count of 0"
+                                << debug_info;
+
+    return;
+  }
+  //
+  // From here on, we know we have an arithmetic delta (i.e., not kRefCount_1_to_0)...
+
+  BATT_CHECK_EQ(old_count + delta.ref_count, new_count)
+      << "ref count was not updated properly" << debug_info;
 
   if (delta.ref_count < 0) {
-    BATT_CHECK_LT(after_ref_count, before_ref_count)
-        << BATT_INSPECT(PageId{delta.page_id}) << BATT_INSPECT(delta.ref_count);
-    BATT_CHECK_GT(after_ref_count, 0)
-        << BATT_INSPECT(PageId{delta.page_id}) << BATT_INSPECT(delta.ref_count)
-        << BATT_INSPECT(before_ref_count) << BATT_INSPECT(obj->get_generation())
-        << BATT_INSPECT(obj->get_count());
-    if (after_ref_count == 0) {
-      BATT_CHECK_NE(before_ref_count, 2)
-          << BATT_INSPECT(delta.page_id) << BATT_INSPECT(delta.ref_count);
-    }
+    BATT_CHECK_LT(new_count, old_count)
+        << "negative delta did not decrease the ref count" << debug_info;
+
+    BATT_CHECK_GT(new_count, 0) << "ref count can not become 0 via negative delta" << debug_info;
+
   } else if (delta.ref_count > 0) {
-    BATT_CHECK_GT(after_ref_count, before_ref_count) << BATT_INSPECT(delta.ref_count.value());
-    if (before_ref_count == 0) {
-      BATT_CHECK_GE(after_ref_count, 2)
-          << BATT_INSPECT(delta.ref_count.value()) << BATT_INSPECT(before_ref_count);
+    BATT_CHECK_GT(new_count, old_count)
+        << "positive delta did not increase the ref count" << debug_info;
+
+    if (old_count == 0) {
+      BATT_CHECK_GE(new_count, 2)
+          << "initial ref count increase for page generation must be at least 2" << debug_info;
     }
   }
 }
@@ -533,82 +626,32 @@ void run_ref_count_update_sanity_checks(const PackedPageRefCount& delta, i32 bef
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void PageAllocatorState::learn_ref_count_delta(const SlotRange& slot_offset,
-                                               const PackedPageRefCount& delta,
-                                               PageAllocatorRefCount* const obj, Metrics& metrics)
+i32 PageAllocatorState::calculate_new_ref_count(const PackedPageRefCount& delta) const
 {
-  const page_generation_int page_generation =
-      this->page_ids_.get_generation(PageId{delta.page_id.value()});
+  const PageId page_id = delta.page_id.unpack();
+  const page_id_int physical_page = this->page_ids_.get_physical_page(page_id);
+  const PageAllocatorRefCount& obj = this->page_ref_counts_[physical_page];
+
+  const page_generation_int new_generation = this->page_ids_.get_generation(page_id);
+  const page_generation_int old_generation = obj.get_generation();
+
+  BATT_CHECK_GE(new_generation, old_generation) << "page generation went backwards!";
+
+  const i32 old_count = obj.get_count();
+  i32 new_count = -1;  // set below...
 
   // Special case for 1 -> 0.
   //
   if (delta.ref_count == kRefCount_1_to_0) {
-    this->learn_ref_count_1_to_0(slot_offset, delta, page_generation, obj, metrics);
-    return;
+    BATT_CHECK_EQ(obj.get_generation(), new_generation);
+    new_count = 0;
+  } else {
+    new_count = old_count + delta.ref_count;
   }
 
-  const page_generation_int old_generation = obj->set_generation(page_generation);
-  const i32 prior_value = obj->fetch_add(delta.ref_count);
+  run_ref_count_update_sanity_checks(delta, obj, old_count, new_count);
 
-  LLFS_VLOG(1) << "lT[" << slot_offset.lower_bound
-               << "] -- page_id: " << PageId{delta.page_id.value()}                          //
-               << ", ref_count: " << prior_value << "->" << (prior_value + delta.ref_count)  //
-               << ", generation: " << old_generation << "->" << page_generation;
-
-  if (old_generation > page_generation) {
-    LLFS_LOG_ERROR() << "page generation went backwards!  old=" << old_generation
-                     << " current=" << page_generation;
-    // TODO [tastolfi 2021-04-05] - stop?  panic?  recover?
-  }
-
-  // Sanity checks.
-  //
-  run_ref_count_update_sanity_checks(delta, prior_value, obj);
-
-  // Detect 0 -> 2+ transition.
-  //
-  if (prior_value == 0 && delta.ref_count > 0) {
-    BATT_CHECK_GE(delta.ref_count, 2);
-    if (obj->PageAllocatorFreePoolHook::is_linked()) {
-      this->free_pool_.erase(this->free_pool_.iterator_to(*obj));
-      this->free_pool_size_.fetch_sub(1);
-      metrics.pages_allocated.fetch_add(1);
-    }
-  }
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-void PageAllocatorState::learn_ref_count_1_to_0(const SlotRange& slot_offset,
-                                                const PackedPageRefCount& delta,
-                                                page_generation_int page_generation,
-                                                PageAllocatorRefCount* const obj, Metrics& metrics)
-{
-  LLFS_VLOG(1) << "lT[" << slot_offset.lower_bound
-               << "] -- page_id: " << PageId{delta.page_id.value()}  //
-               << ", ref_count: " << 1 << "->" << 0                  //
-               << ", generation: " << obj->get_generation() << "->" << page_generation;
-
-  BATT_CHECK_EQ(delta.ref_count, kRefCount_1_to_0);
-  BATT_CHECK_EQ(obj->get_generation(), page_generation);
-
-  // Atomic compare-and-swap loop to force the ref count to 0.
-  //
-  i32 count = obj->get_count();
-  while (count == 1) {
-    if (obj->compare_exchange_weak(count, 0)) {
-      LLFS_VLOG(1) << "page ref_count => 0 (adding to free pool): " << std::hex
-                   << delta.page_id.value();
-      if (!obj->PageAllocatorFreePoolHook::is_linked()) {
-        BATT_CHECK_EQ(obj->get_count(), 0);
-
-        this->free_pool_.push_back(*obj);
-        this->free_pool_size_.fetch_add(1);
-        metrics.pages_freed.fetch_add(1);
-      }
-      break;
-    }
-  }
+  return new_count;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -628,37 +671,17 @@ batt::Status PageAllocatorState::recover(const SlotRange& slot_offset,
 
   // Apply all ref count updates in the txn.
   //
-  for (const PackedPageRefCount& delta : txn.ref_counts) {
-    const PageId page_id{delta.page_id.value()};
+  for (const PackedPageRefCount& recovered : txn.ref_counts) {
+    const PageId page_id = recovered.page_id.unpack();
     const page_id_int physical_page = ids.get_physical_page(page_id);
     PageAllocatorRefCount* const obj = &this->page_ref_counts_[physical_page];
-    const page_generation_int new_generation = ids.get_generation(page_id);
-    const page_generation_int old_generation = obj->set_generation(new_generation);
+    const page_generation_int generation = ids.get_generation(page_id);
 
     obj->set_last_modified_by(txn.user_index);
+    obj->set_count(recovered.ref_count);
+    obj->set_generation(generation);
 
-    // Special case for 1 -> 0.
-    //
-    if (delta.ref_count == kRefCount_1_to_0) {
-      obj->set_count(0);
-      this->set_last_update(obj, slot_offset);
-
-      LLFS_VLOG(1) << "rT[" << slot_offset.lower_bound << "] -- page_id: " << page_id
-                   << ", ref_count: 1->0"  //
-                   << ", generation: " << old_generation << "->" << new_generation;
-    } else {
-      const i32 old_count = obj->fetch_add(delta.ref_count);
-      const i32 new_count = old_count + delta.ref_count;
-
-      if (!obj->PageAllocatorLRUHook::is_linked()) {
-        this->set_last_update(obj, slot_offset);
-      }
-
-      LLFS_VLOG(1) << "rT[" << slot_offset.lower_bound << "] -- page_id: " << page_id  //
-                   << ", ref_count: " << old_count << "->" << new_count                //
-                   << ", generation: " << old_generation << "->" << new_generation;
-    }
-
+    this->set_last_update(obj, slot_offset);
     this->update_free_pool_status(obj);
   }
 

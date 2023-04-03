@@ -48,6 +48,7 @@ class PageAllocatorState : public PageAllocatorStateNoLock
     kNoChange = 0,
     kValid = 1,
     kInvalid_NotAttached = 2,
+    kInvalid_OutOfAttachments = 3,
   };
 
   static bool is_valid(ProposalStatus proposal_status)
@@ -58,6 +59,8 @@ class PageAllocatorState : public PageAllocatorStateNoLock
       case ProposalStatus::kValid:
         return true;
       case ProposalStatus::kInvalid_NotAttached:
+        return false;
+      case ProposalStatus::kInvalid_OutOfAttachments:
         return false;
     }
     LLFS_LOG_WARNING() << "Invalid ProposalStatus value: " << (int)proposal_status;
@@ -101,7 +104,14 @@ class PageAllocatorState : public PageAllocatorStateNoLock
   // PackedPageAllocatorAttach event handlers.
   //----- --- -- -  -  -   -
 
-  ProposalStatus propose(const PackedPageAllocatorAttach& op);
+  /** \brief Determines the validity of `op` and whether it has already been applied to the state
+   * machine.
+   *
+   * This function requires that `op->user_index` is set to PageAllocatorState::kInvalidUserIndex.
+   * If the proposal is not invalid, then this member will be set to a newly allocated attachment
+   * number, which is used to identify the last modifier of a given page.
+   */
+  ProposalStatus propose(PackedPageAllocatorAttach* op);
 
   void learn(const SlotRange& slot_offset, const PackedPageAllocatorAttach& op,
              PageAllocatorMetrics&);
@@ -112,7 +122,7 @@ class PageAllocatorState : public PageAllocatorStateNoLock
   // PackedPageAllocatorDetach event handlers.
   //----- --- -- -  -  -   -
 
-  ProposalStatus propose(const PackedPageAllocatorDetach& op);
+  ProposalStatus propose(PackedPageAllocatorDetach* op);
 
   void learn(const SlotRange& slot_offset, const PackedPageAllocatorDetach& op,
              PageAllocatorMetrics&);
@@ -129,7 +139,17 @@ class PageAllocatorState : public PageAllocatorStateNoLock
   // PackedPageAllocatorTxn event handlers.
   //----- --- -- -  -  -   -
 
-  ProposalStatus propose(const PackedPageAllocatorTxn& op);
+  /** \brief Determines the validity of `op` and whether it has already been applied to the state
+   * machine.
+   *
+   * This function requires op->user_index to be PageAllocatorState::kInvalidUserIndex initially.
+   *
+   * Side-effects (only if ProposalStatus::kValid is returned):
+   *   - op->user_index is updated to the attachment num for the specified user_id
+   *   - op->ref_counts are updated to change all ref count _delta_ (relative) values to absolute
+   *     values, reflecting the post-transaction state.
+   */
+  ProposalStatus propose(PackedPageAllocatorTxn* op);
 
   void learn(const SlotRange& slot_offset, const PackedPageAllocatorTxn& op, PageAllocatorMetrics&);
 
@@ -144,16 +164,43 @@ class PageAllocatorState : public PageAllocatorStateNoLock
   Optional<PageAllocatorAttachmentStatus> get_client_attachment_status(
       const boost::uuids::uuid& uuid) const;
 
-  StatusOr<u32> allocate_attachment(const boost::uuids::uuid& uuid) noexcept;
-
-  void deallocate_attachment(u32 user_index,
-                             const Optional<boost::uuids::uuid>& expected_uuid = None) noexcept;
-
-  Optional<u32> get_attachment_num(const boost::uuids::uuid& uuid) noexcept;
-
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
  private:
+  /** \brief Finds an attachment number (aka `user_index`) not in use by any other uuid, and binds
+   * it to `user_id`.
+   *
+   * \return the allocated user_index
+   */
+  StatusOr<u32> allocate_attachment(const boost::uuids::uuid& uuid) noexcept;
+
+  /** \brief Returns the specified user_index (attachment number) to the set of available attachment
+   * numbers.
+   *
+   * If `expected_uuid` is non-None, then this function also checks that `user_index`, if currently
+   * in use, is associated with the given uuid (panicking otherwise).
+   */
+  void deallocate_attachment(u32 user_index,
+                             const Optional<boost::uuids::uuid>& expected_uuid = None) noexcept;
+
+  /** \brief Returns the `user_index` associated with a given user_id (uuid), if that user is
+   * attached; None otherwise.
+   */
+  Optional<u32> get_attachment_num(const boost::uuids::uuid& uuid) noexcept;
+
+  /** \brief Checks whether the specified user is attached, and if so, whether the current slot of
+   the attachment is "caught-up" with the slot offset specified in `user_slot`.
+   *
+   * \return
+   *   kValid
+   *     If the user is attached and the user slot is greater than the last known update for user_id
+   *   kNoChange
+   *     If the user is attached but the user slot is not greater than the last known update,
+   *     indicating that we have already seen this update
+   *   kInvalid_NotAttached
+   *     If the user is not attached (in which case we have no information on whether the update was
+   *     processed)
+   */
   ProposalStatus propose_exactly_once(const PackedPageUserSlot& user_slot,
                                       AllowAttach attach) const;
 
@@ -187,13 +234,14 @@ class PageAllocatorState : public PageAllocatorStateNoLock
   //
   void update_learned_upper_bound(slot_offset_type offset);
 
-  void learn_ref_count_delta(const SlotRange& slot_offset, const PackedPageRefCount& delta,
-                             PageAllocatorRefCount* const obj, PageAllocatorMetrics& metrics);
+  // Returns the new ref count that will result from applying the delta to the passed obj.
+  //
+  i32 calculate_new_ref_count(const PackedPageRefCount& delta) const;
 
-  void learn_ref_count_1_to_0(const SlotRange& slot_offset, const PackedPageRefCount& delta,
-                              page_generation_int page_generation, PageAllocatorRefCount* const obj,
-                              PageAllocatorMetrics& metrics);
-
+  /** \brief If the given ref count object has a positive ref count but *is* in the free pool, then
+   * this function removes it; otherwise if the object has a zero ref count but is *not* in the free
+   * pool, adds it.
+   */
   void update_free_pool_status(PageAllocatorRefCount* obj);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -

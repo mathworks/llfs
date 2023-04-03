@@ -237,16 +237,16 @@ Status PageAllocator::recover_page(PageId page_id)
 StatusOr<slot_offset_type> PageAllocator::attach_user(const boost::uuids::uuid& user_id,
                                                       slot_offset_type user_slot)
 {
-  BATT_ASSIGN_OK_RESULT(u32 user_index, this->state_.lock()->get()->allocate_attachment(user_id));
-
-  return this->update_sync(PackedPageAllocatorAttach{
+  PackedPageAllocatorAttach attach_event{
       .user_slot =
           PackedPageUserSlot{
               .user_id = user_id,
               .slot_offset = user_slot,
           },
-      .user_index = user_index,
-  });
+      .user_index = PageAllocatorState::kInvalidUserIndex,
+  };
+
+  return this->update_sync(attach_event);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -254,13 +254,15 @@ StatusOr<slot_offset_type> PageAllocator::attach_user(const boost::uuids::uuid& 
 StatusOr<slot_offset_type> PageAllocator::detach_user(const boost::uuids::uuid& user_id,
                                                       slot_offset_type user_slot)
 {
-  return this->update_sync(PackedPageAllocatorDetach{
+  PackedPageAllocatorDetach detach_event{
       .user_slot =
           PackedPageUserSlot{
               .user_id = user_id,
               .slot_offset = user_slot,
           },
-  });
+  };
+
+  return this->update_sync(detach_event);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

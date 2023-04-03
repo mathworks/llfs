@@ -15,8 +15,7 @@ namespace llfs {
 //
 std::ostream& operator<<(std::ostream& out, const PackedPageRefCount& t)
 {
-  out << "PackedPageRefCount{.page_id=" << std::hex << std::setw(5) << std::setfill('0')
-      << t.page_id.value() << ", .ref_count=";
+  out << "PackedPageRefCount{.page_id=" << t.page_id << ", .ref_count=";
 
   if (t.ref_count == kRefCount_1_to_0) {
     out << "kRefCount_1_to_0";

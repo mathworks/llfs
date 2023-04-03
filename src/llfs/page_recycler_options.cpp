@@ -27,7 +27,6 @@ PageRecyclerOptions& PageRecyclerOptions::set_info_refresh_rate(usize value) noe
 //
 PageRecyclerOptions& PageRecyclerOptions::set_max_refs_per_page(usize value) noexcept
 {
-  BATT_CHECK_LE(value, kMaxPageRefDepth);
   this->max_refs_per_page_ = BATT_CHECKED_CAST(u32, value);
   return *this;
 }

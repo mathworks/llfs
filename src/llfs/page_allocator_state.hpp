@@ -205,13 +205,23 @@ class PageAllocatorState : public PageAllocatorStateNoLock
                                       AllowAttach attach) const;
 
   /** \brief Unconditionally updates the user slot, attaching if necessary.
+   *
+   * \return true iff successful
    */
-  void update_attachment(const SlotRange& slot_offset, const PackedPageUserSlot& user_slot,
-                         u32 user_index, AllowAttach attach);
+  [[nodiscard]] bool update_attachment(const SlotRange& slot_offset,
+                                       const PackedPageUserSlot& user_slot, u32 user_index,
+                                       AllowAttach attach);
 
   /** \brief Unconditionally detaches the specified uuid.
    */
   void remove_attachment(const boost::uuids::uuid& user_id);
+
+  /** \brief The core implementation of `learn` and `recover` for PackedPageAllocatorTxn.
+   */
+  template <bool kInsideRecovery>
+  void process_txn(const SlotRange& slot_offset, const PackedPageAllocatorTxn& txn,
+                   PageAllocatorMetrics* metrics,
+                   std::integral_constant<bool, kInsideRecovery> inside_recovery);
 
   // Sets the `last_update` field on `obj` to `slot_offset.lower_bound` and moves `obj` to the back
   // of the LRU list.

@@ -125,9 +125,16 @@ class PageAllocator
   //
   Status sync(slot_offset_type min_slot);
 
-  // Atomically and durably update a set of page reference counts.  Repeated calls to this function
-  // with the same `user_id` and `user_slot` (even across crashes) are guaranteed to be idempotent.
-  //
+  /** \brief Atomically and durably update a set of page reference counts.
+   *
+   * Repeated calls to this function with the same `user_id` and `user_slot` (even across crashes)
+   * are guaranteed to be idempotent.
+   *
+   * WARNING: if a given `page_id` appears more than once in the passed `ref_count_updates`
+   * sequence, then only the **last** such item will have any effect on the PageAllocator state.
+   * Callers of this function must combine the deltas for each page_id prior to passing the
+   * sequence, if that is the desired behavior.
+   */
   template <typename PageRefCountSeq, typename GarbageCollectFn = DoNothing>
   StatusOr<slot_offset_type> update_page_ref_counts(
       const boost::uuids::uuid& user_id, slot_offset_type user_slot,

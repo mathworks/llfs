@@ -67,7 +67,8 @@ u64 PageAllocatorStateNoLock::free_pool_size() noexcept
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-PageAllocatorRefCountStatus PageAllocatorStateNoLock::get_ref_count_status(PageId id) const noexcept
+PageAllocatorRefCountStatus PageAllocatorStateNoLock::get_ref_count_status(
+    PageId page_id) const noexcept
 {
   //----- --- -- -  -  -   -
   // This must be first!
@@ -75,7 +76,7 @@ PageAllocatorRefCountStatus PageAllocatorStateNoLock::get_ref_count_status(PageI
   const slot_offset_type learned_upper_bound = this->learned_upper_bound_.get_value();
   //----- --- -- -  -  -   -
 
-  const page_id_int physical_page = this->page_ids_.get_physical_page(id);
+  const page_id_int physical_page = this->page_ids_.get_physical_page(page_id);
   BATT_CHECK_LT(physical_page, this->page_device_capacity());
 
   const auto& iprc = this->page_ref_counts_[physical_page];

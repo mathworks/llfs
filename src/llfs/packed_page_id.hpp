@@ -37,9 +37,14 @@ struct PackedPageId {
 
   little_page_id_int id_val;
 
-  PageId as_page_id() const
+  PageId as_page_id() const noexcept
   {
     return PageId{id_val.value()};
+  }
+
+  PageId unpack() const noexcept
+  {
+    return this->as_page_id();
   }
 
   auto debug_dump(const void* base) const

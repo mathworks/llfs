@@ -20,14 +20,14 @@
 namespace llfs {
 
 struct PackedPageRefCount {
-  little_page_id_int page_id;
+  PackedPageId page_id;
   little_i32 ref_count;
 
   PageRefCount as_page_ref_count() const
   {
     return PageRefCount{
-        .page_id = PageId{page_id},
-        .ref_count = ref_count,
+        .page_id = this->page_id.unpack(),
+        .ref_count = this->ref_count,
     };
   }
 };
@@ -45,7 +45,7 @@ inline usize packed_sizeof(const PackedPageRefCount&)
 template <typename Dst>
 [[nodiscard]] bool pack_object_to(const PageRefCount& prc, PackedPageRefCount* packed, Dst*)
 {
-  packed->page_id = prc.page_id.int_value();
+  packed->page_id = PackedPageId::from(prc.page_id);
   packed->ref_count = prc.ref_count;
   return true;
 }

@@ -85,18 +85,16 @@ TEST(PageAllocatorTest, UpdateRefCounts)
 
   auto fake_user_id = boost::uuids::random_generator{}();
 
-  const u32 user_index = BATT_OK_RESULT_OR_PANIC(index.allocate_attachment(fake_user_id));
+  PackedPageAllocatorAttach attach_event{
+      .user_slot =
+          {
+              .user_id = fake_user_id,
+              .slot_offset = 0,
+          },
+      .user_index = llfs::PageAllocatorState::kInvalidUserIndex,
+  };
 
-  ASSERT_TRUE(index
-                  .update_sync(PackedPageAllocatorAttach{
-                      .user_slot =
-                          {
-                              .user_id = fake_user_id,
-                              .slot_offset = 0,
-                          },
-                      .user_index = user_index,
-                  })
-                  .ok());
+  ASSERT_TRUE(index.update_sync(attach_event).ok());
 
   for (page_id_int update_count = 1; update_count < kNumPages * kCoverageFactor; ++update_count) {
     if (update_count % 100 == 0) {
@@ -832,6 +830,9 @@ TEST(PageAllocatorTest, RefCountDeltaCheckpointSliceTrim)
     const auto [actual_count, slot] = page_allocator2.get_ref_count(page_id);
     EXPECT_EQ(actual_count, expected_ref_count[physical_page]) << BATT_INSPECT(physical_page);
   }
+
+  LLFS_LOG_INFO()
+      << "TEST: Expect `Unable to allocate page (pool is empty); device=0` message; it is OK!";
 
   // Attempt to allocate - it should fail because our client hasn't notified the allocator it is
   // done with recovery.

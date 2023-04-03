@@ -24,6 +24,7 @@ struct PageRefCount {
   i32 ref_count;
 
   struct Delta {
+    // TODO [tastolfi 2023-03-31] Replace `page_id_int` with `PageId` here
     PageRefCount operator()(page_id_int page_id) const
     {
       return PageRefCount{PageId{page_id}, val_};

@@ -99,7 +99,7 @@ FileOffsetPtr<PackedConfigBlock&> StorageFileBuilder::allocate_config_block()
 
     // Check previous PackedConfigBlock crc, update it's next offset and crc
     //
-    BATT_CHECK(p_prev_block->crc64 == p_prev_block->true_crc64());
+    BATT_CHECK_EQ(p_prev_block->crc64, p_prev_block->true_crc64());
     p_prev_block.absolute_next_offset(rec.file_offset());
     p_prev_block->crc64 = p_prev_block->true_crc64();
   } else {

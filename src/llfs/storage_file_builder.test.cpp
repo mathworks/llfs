@@ -57,8 +57,9 @@ class StorageFileBuilderTest : public ::testing::Test
            config_block.crc64 == config_block.true_crc64();
   }
 
-  bool verify_storage_file_config_blocks(
-      std::vector<std::unique_ptr<llfs::StorageFileConfigBlock>>& config_blocks, u32 page_size_log2)
+  void verify_storage_file_config_blocks(
+      const std::vector<std::unique_ptr<llfs::StorageFileConfigBlock>>& config_blocks,
+      u32 page_size_log2)
   {
     // Cycle through each packed config block
     //  Cycle through each of the slots, calculating the offset for each
@@ -67,11 +68,10 @@ class StorageFileBuilderTest : public ::testing::Test
     i64 expected_prev_offset = 0;
     i64 expected_next_offset = 0;
     u64 expected_device_id = 0;
-    u64 expected_num_slots;
 
     // Iterate through each StorageFileConfigBlock
     //
-    for (std::unique_ptr<llfs::StorageFileConfigBlock>& config_block : config_blocks) {
+    for (const std::unique_ptr<llfs::StorageFileConfigBlock>& config_block : config_blocks) {
       const llfs::PackedConfigBlock& p_config_block = config_block->get_const();
       i64 expected_page0_offset =
           llfs::PackedConfigBlock::kPayloadCapacity + sizeof(llfs::PackedConfigBlock::crc64);
@@ -81,15 +81,14 @@ class StorageFileBuilderTest : public ::testing::Test
       for (const llfs::PackedConfigSlot& slot : p_config_block.slots) {
         // Verify PackedPageDeviceConfig
         //
-        BATT_ASSERT_EQ(slot.tag, llfs::PackedConfigSlotBase::Tag::kPageDevice);
+        ASSERT_EQ(slot.tag, llfs::PackedConfigSlotBase::Tag::kPageDevice);
         const llfs::PackedPageDeviceConfig& page_device_config =
             llfs::config_slot_cast<llfs::PackedPageDeviceConfig>(slot);
-        if (!(page_device_config.page_0_offset == expected_page0_offset &&
-              page_device_config.device_id == expected_device_id &&
-              page_device_config.page_count == kTestPageCount &&
-              page_device_config.page_size_log2 == page_size_log2)) {
-          return false;
-        }
+        ASSERT_EQ(page_device_config.page_0_offset, expected_page0_offset);
+        ASSERT_EQ(page_device_config.device_id, expected_device_id);
+        ASSERT_EQ(page_device_config.page_count, (little_i64)kTestPageCount);
+        ASSERT_EQ(page_device_config.page_size_log2, page_size_log2);
+
         // Update page offset numbers and device ID
         //
         expected_page0_offset +=
@@ -97,13 +96,11 @@ class StorageFileBuilderTest : public ::testing::Test
         expected_device_id += 1;
       }
 
-      // Set expected slots filled in config block. Full config block contains 62 slots
+      // Assuming 1 slot filled if back slot, all slots filled otherwise.
       //
-      if (expected_device_id % 62 == 0) {
-        expected_num_slots = 62;
-      } else {
-        expected_num_slots = expected_device_id % 62;
-      }
+      constexpr u64 kMaxPageDeviceSlots =
+          llfs::PackedConfigBlock::kPayloadCapacity / llfs::PackedPageDeviceConfig::kSize;
+      u64 expected_num_slots = (config_block == config_blocks.back()) ? 1 : kMaxPageDeviceSlots;
 
       // Set offsets of config block based on position
       //
@@ -115,45 +112,43 @@ class StorageFileBuilderTest : public ::testing::Test
       if (config_block == config_blocks.back()) {
         expected_next_offset = llfs::PackedConfigBlock::kNullFileOffset;
       } else {
-        expected_next_offset =
-            batt::round_up_bits(12, expected_page0_offset + 64 * expected_num_slots);
+        expected_next_offset = batt::round_up_bits(
+            12, expected_page0_offset + llfs::PackedPageDeviceConfig::kSize * expected_num_slots);
       }
 
-      // Verify the packed congig block
+      // Verify the packed config block
       //
-      if (!(p_config_block.magic == llfs::PackedConfigBlock::kMagic &&
-            p_config_block.version == llfs::make_version_u64(0, 1, 0) &&
-            p_config_block.prev_offset == expected_prev_offset &&
-            p_config_block.next_offset == expected_next_offset &&
-            p_config_block.slots.size() == expected_num_slots &&
-            p_config_block.crc64 == p_config_block.true_crc64())) {
-        return false;
-      }
+      ASSERT_EQ(p_config_block.magic, llfs::PackedConfigBlock::kMagic);
+      ASSERT_EQ(p_config_block.version, llfs::make_version_u64(0, 1, 0));
+      ASSERT_EQ(p_config_block.prev_offset, expected_prev_offset);
+      ASSERT_EQ(p_config_block.next_offset, expected_next_offset);
+      ASSERT_EQ(p_config_block.slots.size(), expected_num_slots);
+      ASSERT_EQ(p_config_block.crc64, p_config_block.true_crc64());
     }
-    return true;
   }
 
-  void write_rand_data(llfs::IoRingRawBlockFile& test_file, i64 write_offset, i64 rand_buffer_len)
+  // Writes random data to disk given the file, offset, and amount of data to write. Used to
+  // randomize data of a test file to verify repeated write and read testing.
+  //
+  void write_rand_data(llfs::IoRingRawBlockFile& test_file, i64 write_offset, i64 write_size)
   {
     constexpr i64 kBufferSize = 512;
-    i64 rand_data_len = batt::round_up_bits(9, rand_buffer_len);
+    i64 write_size_aligned = batt::round_up_bits(9, write_size);
     i64 offset_aligned = batt::round_up_bits(12, write_offset);
-    int rand_fd = open("/dev/random", O_RDONLY);
+    llfs::StatusOr<int> rand_fd = llfs::open_file_read_only("/dev/random");
+    ASSERT_TRUE(rand_fd.ok()) << BATT_INSPECT(rand_fd.status());
 
     std::vector<std::aligned_storage_t<kBufferSize, kBufferSize>> data_vector;
-    data_vector.resize(rand_data_len / kBufferSize);
+    data_vector.resize(write_size_aligned / kBufferSize);
     llfs::MutableBuffer read_buffer(data_vector.data(), data_vector.size() * kBufferSize);
 
-    for (u64 i = 0; i < data_vector.size(); i++) {
-      int count = ::read(rand_fd, read_buffer.data(), kBufferSize);
-      ASSERT_EQ(count, kBufferSize);
-      read_buffer += count;
-    }
+    int count = ::read(*rand_fd, read_buffer.data(), write_size);
+    ASSERT_EQ(count, write_size);
 
     const llfs::ConstBuffer write_buffer(data_vector.data(), data_vector.size() * kBufferSize);
     llfs::StatusOr<i64> write_count = test_file.write_some(offset_aligned, write_buffer);
     ASSERT_TRUE(write_count.ok()) << BATT_INSPECT(write_count.status());
-    ASSERT_EQ(rand_data_len, *write_count);
+    ASSERT_EQ(write_size_aligned, *write_count);
   }
 };
 
@@ -313,7 +308,8 @@ TEST_F(StorageFileBuilderTest, WriteReadFile)
 
       ASSERT_EQ(config_blocks->size(), 1u);
 
-      EXPECT_TRUE(this->verify_storage_file_config_blocks(*config_blocks, /*page_size_log2=*/12));
+      ASSERT_NO_FATAL_FAILURE(
+          this->verify_storage_file_config_blocks(*config_blocks, /*page_size_log2=*/12));
 
       auto storage_file =
           batt::make_shared<llfs::StorageFile>(test_file_name, std::move(*config_blocks));
@@ -402,7 +398,8 @@ TEST_F(StorageFileBuilderTest, WriteReadManyPackedConfigs)
 
     ASSERT_EQ(config_blocks->size(), 3u);
 
-    EXPECT_TRUE(this->verify_storage_file_config_blocks(*config_blocks, /*page_size_log2=*/9));
+    ASSERT_NO_FATAL_FAILURE(
+        this->verify_storage_file_config_blocks(*config_blocks, /*page_size_log2=*/9));
 
     auto storage_file =
         batt::make_shared<llfs::StorageFile>(test_file_name, std::move(*config_blocks));

@@ -62,7 +62,7 @@ BATT_STATIC_ASSERT_EQ(sizeof(PackedConfigSlotHeader), 20u);
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 struct PackedPageArenaConfig : PackedConfigSlotHeader {
-  static constexpr usize kSize = 64;
+  static constexpr usize kSize = PackedConfigSlot::kSize;
 
   // byte 20 +++++++++++-+-+--+----- --- -- -  -  -   -
 

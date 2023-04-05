@@ -132,23 +132,37 @@ class StorageFileBuilderTest : public ::testing::Test
   //
   void write_rand_data(llfs::IoRingRawBlockFile& test_file, i64 write_offset, i64 write_size)
   {
-    constexpr i64 kBufferSize = 512;
-    i64 write_size_aligned = batt::round_up_bits(9, write_size);
-    i64 offset_aligned = batt::round_up_bits(12, write_offset);
+    constexpr i64 kBufferSize = 32768;
+    i64 write_bytes_remaining = batt::round_up_bits(9, write_size);
+    i64 offset = batt::round_up_bits(llfs::PackedConfigBlock::kSize, write_offset);
+
     llfs::StatusOr<int> rand_fd = llfs::open_file_read_only("/dev/random");
     ASSERT_TRUE(rand_fd.ok()) << BATT_INSPECT(rand_fd.status());
 
-    std::vector<std::aligned_storage_t<kBufferSize, kBufferSize>> data_vector;
-    data_vector.resize(write_size_aligned / kBufferSize);
-    llfs::MutableBuffer read_buffer(data_vector.data(), data_vector.size() * kBufferSize);
+    const auto closer = batt::finally([rand_fd] {
+      llfs::Status close_status = llfs::close_fd(*rand_fd);
+      ASSERT_TRUE(close_status.ok()) << BATT_INSPECT(close_status);
+    });
 
-    int count = ::read(*rand_fd, read_buffer.data(), write_size);
-    ASSERT_EQ(count, write_size);
+    std::aligned_storage_t<kBufferSize, 512> rand_data;
 
-    const llfs::ConstBuffer write_buffer(data_vector.data(), data_vector.size() * kBufferSize);
-    llfs::StatusOr<i64> write_count = test_file.write_some(offset_aligned, write_buffer);
-    ASSERT_TRUE(write_count.ok()) << BATT_INSPECT(write_count.status());
-    ASSERT_EQ(write_size_aligned, *write_count);
+    while (write_bytes_remaining > 0) {
+      llfs::MutableBuffer read_buffer(&rand_data, kBufferSize);
+      int read_count = ::read(*rand_fd, read_buffer.data(), kBufferSize);
+      ASSERT_EQ(read_count, kBufferSize);
+
+      i64 write_buffer_size =
+          (write_bytes_remaining > kBufferSize) ? kBufferSize : write_bytes_remaining;
+
+      const llfs::ConstBuffer write_buffer(&rand_data, write_buffer_size);
+      llfs::StatusOr<i64> write_count = test_file.write_some(offset, write_buffer);
+      ASSERT_TRUE(write_count.ok()) << BATT_INSPECT(write_count.status());
+      ASSERT_EQ(write_buffer_size, *write_count);
+
+      offset += *write_count;
+      write_bytes_remaining -= *write_count;
+    }
+    ASSERT_EQ(write_bytes_remaining, 0);
   }
 };
 

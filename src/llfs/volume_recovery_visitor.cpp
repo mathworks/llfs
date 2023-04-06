@@ -87,8 +87,7 @@ Status VolumeRecoveryVisitor::resolve_pending_jobs(PageCache& cache, PageRecycle
             Optional<PageAllocatorAttachmentStatus> attachment =
                 page_allocator.get_client_attachment_status(volume_uuid);
             if (!attachment) {
-              overall_status.Update(
-                  ::llfs::make_status(StatusCode::kRecoverFailedAllocatorNotAttached));
+              overall_status.Update(::llfs::make_status(StatusCode::kPageAllocatorNotAttached));
               return false;
             }
             return slot_at_least(attachment->user_slot, prepare_slot);

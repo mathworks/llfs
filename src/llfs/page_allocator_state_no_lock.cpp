@@ -6,7 +6,7 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-#include <llfs/page_allocator/page_allocator_state_no_lock.hpp>
+#include <llfs/page_allocator_state_no_lock.hpp>
 //
 
 namespace llfs {
@@ -67,7 +67,8 @@ u64 PageAllocatorStateNoLock::free_pool_size() noexcept
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-PageRefCountInfo PageAllocatorStateNoLock::get_ref_count_info(PageId id) const noexcept
+PageAllocatorRefCountStatus PageAllocatorStateNoLock::get_ref_count_status(
+    PageId page_id) const noexcept
 {
   //----- --- -- -  -  -   -
   // This must be first!
@@ -75,7 +76,7 @@ PageRefCountInfo PageAllocatorStateNoLock::get_ref_count_info(PageId id) const n
   const slot_offset_type learned_upper_bound = this->learned_upper_bound_.get_value();
   //----- --- -- -  -  -   -
 
-  const page_id_int physical_page = this->page_ids_.get_physical_page(id);
+  const page_id_int physical_page = this->page_ids_.get_physical_page(page_id);
   BATT_CHECK_LT(physical_page, this->page_device_capacity());
 
   const auto& iprc = this->page_ref_counts_[physical_page];
@@ -90,7 +91,7 @@ PageRefCountInfo PageAllocatorStateNoLock::get_ref_count_info(PageId id) const n
   //       (^^^ count) (generation vvv)
   const page_generation_int generation = iprc.get_generation();
 
-  return PageRefCountInfo{
+  return PageAllocatorRefCountStatus{
       .page_id = this->page_ids_.make_page_id(physical_page, generation),
       .ref_count = ref_count,
       .generation = generation,

@@ -9,6 +9,8 @@
 #include <llfs/ioring_log_initializer.hpp>
 //
 
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <llfs/ioring_log_initializer.ipp>
 #include <llfs/logging.hpp>
 
@@ -72,3 +74,5 @@ Status initialize_ioring_log_device(RawBlockFile& file, const IoRingLogConfig& c
 }
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING

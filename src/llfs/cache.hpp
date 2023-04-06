@@ -481,7 +481,7 @@ class CacheSlot
 
     BATT_CHECK(this->is_pinned(new_state));
 
-    BATT_SUPPRESS("-Wmaybe-uninitialized")
+    BATT_SUPPRESS_IF_GCC("-Wmaybe-uninitialized")
 
     // We must always do this, even if the pin fails, so that we don't have an unmatched
     // `remove_ref` in `release_pin` below.
@@ -505,7 +505,7 @@ class CacheSlot
       this->notify_pinned(new_state);
     }
 
-    BATT_UNSUPPRESS()
+    BATT_UNSUPPRESS_IF_GCC()
 
     return PinnedCacheSlot<K, V>{this};
   }

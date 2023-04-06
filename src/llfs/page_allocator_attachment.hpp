@@ -12,7 +12,7 @@
 
 #include <llfs/config.hpp>
 //
-#include <llfs/page_allocator/page_allocator_object_base.hpp>
+#include <llfs/page_allocator_lru.hpp>
 
 #include <llfs/slot.hpp>
 
@@ -25,7 +25,7 @@ namespace llfs {
 /** \brief An attachment from a unique user to the index; facilitates idempotent ("exactly-once")
  * updates.
  */
-class PageAllocatorAttachment : public PageAllocatorObjectBase
+class PageAllocatorAttachment : public PageAllocatorLRUBase
 {
  public:
   /** \brief Create a new attachment setting the initial values of user id and slot.
@@ -76,7 +76,7 @@ class PageAllocatorAttachment : public PageAllocatorObjectBase
  private:
   const boost::uuids::uuid user_id_;
   slot_offset_type user_slot_;
-  u32 user_index_;
+  const u32 user_index_;
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

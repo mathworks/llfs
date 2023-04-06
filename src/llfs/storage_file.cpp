@@ -11,6 +11,8 @@
 
 #include <llfs/status_code.hpp>
 
+#include <batteries/math.hpp>
+
 namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

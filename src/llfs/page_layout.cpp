@@ -69,7 +69,7 @@ std::ostream& operator<<(std::ostream& out, const PackedPageUserSlot& t)
 std::ostream& operator<<(std::ostream& out, const PackedPageHeader& t)
 {
   return out << "PackedPageHeader{.magic=" << std::hex << t.magic.value()
-             << ", .page_id=" << t.page_id.as_page_id() << ", .layout_id=" << t.layout_id
+             << ", .page_id=" << t.page_id.unpack() << ", .layout_id=" << t.layout_id
              << ", .crc32=" << t.crc32.value() << ", .unused_begin=" << std::dec
              << t.unused_begin.value() << ", .unused_end=" << t.unused_end.value()
              << ", .user_slot=" << t.user_slot << ", .size=" << t.size << ",}";
@@ -80,7 +80,7 @@ std::ostream& operator<<(std::ostream& out, const PackedPageHeader& t)
 BoxedSeq<PageId> trace_refs(const PackedArray<PackedPageId>& packed)
 {
   return as_seq(packed) | seq::map([](const PackedPageId& ppi) {
-           return ppi.as_page_id();
+           return ppi.unpack();
          }) |
          seq::boxed();
 }

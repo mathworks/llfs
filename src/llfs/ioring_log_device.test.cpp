@@ -10,6 +10,8 @@
 //
 #include <llfs/ioring_log_device.hpp>
 
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -148,3 +150,5 @@ TEST(IoringLogDeviceTest, StorageFile)
 }
 
 }  // namespace
+
+#endif  // LLFS_DISABLE_IO_URING

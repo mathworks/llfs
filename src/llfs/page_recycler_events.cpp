@@ -41,11 +41,11 @@ PackedPageRecyclerInfo PackedPageRecyclerInfo::from(const boost::uuids::uuid& uu
 {
   return PackedPageRecyclerInfo{
       .uuid = uuid,
-      .info_refresh_rate = options.info_refresh_rate,
-      .batch_size = options.batch_size,
-      .refresh_factor = options.refresh_factor,
+      .info_refresh_rate = BATT_CHECKED_CAST(u32, options.info_refresh_rate()),
+      .batch_size = BATT_CHECKED_CAST(u32, options.batch_size()),
+      .refresh_factor = BATT_CHECKED_CAST(u32, options.refresh_factor()),
       .max_page_ref_depth = kMaxPageRefDepth,
-      .max_refs_per_page = options.max_refs_per_page,
+      .max_refs_per_page = BATT_CHECKED_CAST(u32, options.max_refs_per_page().value()),
   };
 }
 

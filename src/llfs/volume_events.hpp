@@ -43,7 +43,7 @@ struct VolumeAttachmentId {
   struct Hash {
     u64 operator()(const VolumeAttachmentId& id) const
     {
-      u64 seed = 0;
+      usize seed = 0;
       boost::hash_combine(seed, boost::hash<boost::uuids::uuid>{}(id.client));
       boost::hash_combine(seed, id.device.value());
       return seed;

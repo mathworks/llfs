@@ -73,10 +73,8 @@ enum struct StatusCode {
   kLogBlockCommitSizeOverflow = 55,
   kStorageFileBadConfigBlockMagic = 56,
   kStorageFileBadConfigBlockCrc = 57,
-  kRecoverFailedAllocatorNotAttached = 58,
-  kRecoverFailedRefCountNotUpdated = 59,
-  kOutOfAttachments = 60,
-  kPageAllocatorNotAttached = 61,
+  kOutOfAttachments = 58,
+  kPageAllocatorNotAttached = 59,
 };
 
 bool initialize_status_codes();

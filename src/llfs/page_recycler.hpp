@@ -56,17 +56,17 @@ class PageRecycler
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  static PageCount default_max_buffered_page_count(MaxRefsPerPage max_refs_per_page);
+  static PageCount default_max_buffered_page_count(const PageRecyclerOptions& options);
 
-  static u64 calculate_log_size(MaxRefsPerPage max_refs_per_page,
+  static u64 calculate_log_size(const PageRecyclerOptions& options,
                                 Optional<PageCount> max_buffered_page_count = None);
 
-  static PageCount calculate_max_buffered_page_count(MaxRefsPerPage max_refs_per_page,
+  static PageCount calculate_max_buffered_page_count(const PageRecyclerOptions& options,
                                                      u64 log_size);
 
   static StatusOr<std::unique_ptr<PageRecycler>> recover(batt::TaskScheduler& scheduler,
                                                          std::string_view name,
-                                                         MaxRefsPerPage max_refs_per_page,
+                                                         const PageRecyclerOptions& default_options,
                                                          PageDeleter& page_deleter,
                                                          LogDeviceFactory& log_device_factory);
 
@@ -96,11 +96,16 @@ class PageRecycler
   //
   void join();
 
-  // Schedule a page to be recycled; returns once the WAL has been appended, not necessarily flushed
-  // (see `await_flush`).
+  // Schedule a list of pages to be recycled; returns once the WAL has been appended, not
+  // necessarily flushed (see `await_flush`).
   //
   StatusOr<slot_offset_type> recycle_pages(const Slice<const PageId>& page_ids,
                                            batt::Grant* grant = nullptr, i32 depth = 0);
+
+  // Schedule a single page to be recycled.  \see recycle_pages
+  //
+  StatusOr<slot_offset_type> recycle_page(PageId page_id, batt::Grant* grant = nullptr,
+                                          i32 depth = 0);
 
   // Waits for the given slot to be flushed to durable storage.
   //
@@ -182,12 +187,7 @@ class PageRecycler
   struct NoLockState;
   class State;
 
-  u64 total_log_bytes_flushed() const
-  {
-    u64 total = 0;
-    total += this->wal_device_->slot_range(LogReadMode::kDurable).upper_bound;
-    return total;
-  }
+  u64 total_log_bytes_flushed() const;
 
  private:
   explicit PageRecycler(batt::TaskScheduler& scheduler, const std::string& name,

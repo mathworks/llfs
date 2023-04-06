@@ -45,12 +45,12 @@ using UnpackedTypeFor = batt::RemoveStatusOr<decltype(unpack_object(std::declval
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
 #define LLFS_DEFINE_PACKED_TYPE_FOR(type, packed_type)                                             \
-  inline [[maybe_unused]] ::batt::StaticType<packed_type> llfs_packed_type_for(                    \
+  [[maybe_unused]] inline ::batt::StaticType<packed_type> llfs_packed_type_for(                    \
       ::batt::StaticType<type>)                                                                    \
   {                                                                                                \
     return {};                                                                                     \
   }                                                                                                \
-  static inline [[maybe_unused]] constexpr int BOOST_PP_CAT(                                       \
+  [[maybe_unused]] static inline constexpr int BOOST_PP_CAT(                                       \
       Suppress_Warning_About_Extra_Semicolon_After_LLFS_DEFINE_PACKED_TYPE_FOR_,                   \
       BOOST_PP_CAT(__COUNTER__, BOOST_PP_CAT(_, __LINE__))) = 0
 

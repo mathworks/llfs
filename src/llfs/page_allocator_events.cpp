@@ -6,7 +6,7 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-#include <llfs/page_allocator/page_allocator_events.hpp>
+#include <llfs/page_allocator_events.hpp>
 //
 
 namespace llfs {

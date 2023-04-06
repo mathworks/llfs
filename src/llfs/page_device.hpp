@@ -33,8 +33,8 @@ class PageDevice
   using WriteResult = Status;
   using ReadResult = StatusOr<std::shared_ptr<const PageBuffer>>;
 
-  using WriteHandler = std::function<void(WriteResult)>;
-  using ReadHandler = std::function<void(ReadResult)>;
+  using WriteHandler = std::function<void(PageDevice::WriteResult)>;
+  using ReadHandler = std::function<void(PageDevice::ReadResult)>;
 
   PageDevice(const PageDevice&) = delete;
   PageDevice& operator=(const PageDevice&) = delete;
@@ -70,21 +70,22 @@ class PageDevice
   //
   virtual StatusOr<std::shared_ptr<PageBuffer>> prepare(PageId page_id) = 0;
 
-  virtual void write(std::shared_ptr<const PageBuffer>&& page_buffer, WriteHandler&& handler) = 0;
+  virtual void write(std::shared_ptr<const PageBuffer>&& page_buffer,
+                     PageDevice::WriteHandler&& handler) = 0;
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   // Read phase
   //
-  virtual void read(PageId id, ReadHandler&& handler) = 0;
+  virtual void read(PageId id, PageDevice::ReadHandler&& handler) = 0;
 
   // Convenience; shortcut for Task::await(...)
   //
-  ReadResult await_read(PageId id);
+  PageDevice::ReadResult await_read(PageId id);
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   // Delete phase
   //
-  virtual void drop(PageId id, WriteHandler&& handler) = 0;
+  virtual void drop(PageId id, PageDevice::WriteHandler&& handler) = 0;
 
  protected:
   PageDevice() = default;

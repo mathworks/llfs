@@ -8,7 +8,7 @@
 
 #include <batteries/suppress.hpp>
 
-BATT_SUPPRESS("-Wmaybe-uninitialized")
+BATT_SUPPRESS_IF_GCC("-Wmaybe-uninitialized")
 
 #include <llfs/page_recycler.hpp>
 //
@@ -61,39 +61,32 @@ StatusOr<SlotRange> refresh_recycler_info_slot(TypedSlotWriter<PageRecycleEvent>
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*static*/ PageCount PageRecycler::default_max_buffered_page_count(MaxRefsPerPage max_refs_per_page)
+/*static*/ PageCount PageRecycler::default_max_buffered_page_count(
+    const PageRecyclerOptions& options)
 {
-  return PageCount{max_refs_per_page.value()};
+  return PageCount{options.max_refs_per_page()};
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*static*/ u64 PageRecycler::calculate_log_size(MaxRefsPerPage max_refs_per_page,
+/*static*/ u64 PageRecycler::calculate_log_size(const PageRecyclerOptions& options,
                                                 Optional<PageCount> max_buffered_page_count)
 {
   static const PackedPageRecyclerInfo info = {};
 
-  PageRecyclerOptions options;
-
-  options.max_refs_per_page = max_refs_per_page;
-
   return options.total_page_grant_size() *
              (1 + max_buffered_page_count.value_or(
-                      PageRecycler::default_max_buffered_page_count(max_refs_per_page))) +
+                      PageRecycler::default_max_buffered_page_count(options))) +
          options.recycle_task_target() +
-         packed_sizeof_slot(info) * (options.info_refresh_rate + 1) + 1 * kKiB;
+         packed_sizeof_slot(info) * (options.info_refresh_rate() + 1) + 1 * kKiB;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 /*static*/ PageCount PageRecycler::calculate_max_buffered_page_count(
-    MaxRefsPerPage max_refs_per_page, u64 log_size)
+    const PageRecyclerOptions& options, u64 log_size)
 {
-  PageRecyclerOptions options;
-
-  options.max_refs_per_page = max_refs_per_page;
-
-  const u64 required_log_size = PageRecycler::calculate_log_size(max_refs_per_page, PageCount{0});
+  const u64 required_log_size = PageRecycler::calculate_log_size(options, PageCount{0});
   if (log_size <= required_log_size) {
     return PageCount{0};
   }
@@ -106,13 +99,11 @@ StatusOr<SlotRange> refresh_recycler_info_slot(TypedSlotWriter<PageRecycleEvent>
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 /*static*/ StatusOr<std::unique_ptr<PageRecycler>> PageRecycler::recover(
-    batt::TaskScheduler& scheduler, std::string_view name, MaxRefsPerPage max_refs_per_page,
-    PageDeleter& page_deleter, LogDeviceFactory& log_device_factory)
+    batt::TaskScheduler& scheduler, std::string_view name,
+    const PageRecyclerOptions& default_options, PageDeleter& page_deleter,
+    LogDeviceFactory& log_device_factory)
 {
   initialize_status_codes();
-
-  PageRecyclerOptions default_options;
-  default_options.max_refs_per_page = max_refs_per_page;
 
   PageRecyclerRecoveryVisitor visitor{default_options};
 
@@ -187,15 +178,13 @@ PageRecycler::PageRecycler(batt::TaskScheduler& scheduler, const std::string& na
 {
   const PageRecyclerOptions& options = this->state_.no_lock().options;
 
-  BATT_CHECK_LE(PageRecycler::calculate_log_size(MaxRefsPerPage{options.max_refs_per_page}),
-                this->slot_writer_.log_capacity())
+  BATT_CHECK_LE(PageRecycler::calculate_log_size(options), this->slot_writer_.log_capacity())
       << "The recycler WAL is too small for the given configuration (the recycler will never "
-         "make "
-         "progress...)"
+         "make progress...)"
       << BATT_INSPECT(options.total_page_grant_size())
       << BATT_INSPECT(options.recycle_task_target());
 
-  BATT_CHECK_GE(PageRecycler::calculate_log_size(MaxRefsPerPage{options.max_refs_per_page}),
+  BATT_CHECK_GE(PageRecycler::calculate_log_size(options),
                 options.recycle_task_target() + options.insert_grant_size())
       << BATT_INSPECT(options.recycle_task_target()) << BATT_INSPECT(options.insert_grant_size());
 
@@ -343,6 +332,14 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(const Slice<const PageId>
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+StatusOr<slot_offset_type> PageRecycler::recycle_page(PageId page_id, batt::Grant* grant, i32 depth)
+{
+  std::array<PageId, 1> page_ids{page_id};
+  return this->recycle_pages(batt::as_slice(page_ids), grant, depth);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 StatusOr<slot_offset_type> PageRecycler::insert_to_log(
     batt::Grant& grant, PageId page_id, i32 depth,
     batt::Mutex<std::unique_ptr<State>>::Lock& locked_state)
@@ -396,6 +393,15 @@ Status PageRecycler::await_flush(Optional<slot_offset_type> min_upper_bound)
   }
   return this->wal_device_->sync(LogReadMode::kDurable,
                                  SlotUpperBoundAt{.offset = *min_upper_bound});
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+u64 PageRecycler::total_log_bytes_flushed() const
+{
+  u64 total = 0;
+  total += this->wal_device_->slot_range(LogReadMode::kDurable).upper_bound;
+  return total;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -524,7 +530,7 @@ void PageRecycler::recycle_task_main()
       // from the same depth.
       //
       std::vector<PageToRecycle> to_recycle =
-          this->state_.lock()->get()->collect_batch(options.batch_size, this->metrics_);
+          this->state_.lock()->get()->collect_batch(options.batch_size(), this->metrics_);
 
       // We must write a PackedRecyclePagePrepare event to the WAL in case we need to recover from
       // a crash.
@@ -579,7 +585,7 @@ StatusOr<PageRecycler::Batch> PageRecycler::prepare_batch(std::vector<PageToRecy
       return Status{batt::StatusCode::kCancelled};
     }
 
-    LLFS_VLOG(1) << "[PageRecycler::recycle_task] writing PackedRecyclePagePrepare: " << next_page
+    LLFS_VLOG(1) << "[PageRecycler::recycle_task] writing batch_slot: " << next_page
                  << BATT_INSPECT(batch.slot_offset)
                  << BATT_INSPECT(this->recycle_task_grant_.size()) << " " << this->name_;
 
@@ -752,4 +758,4 @@ Status PageRecycler::trim_log()
 
 }  // namespace llfs
 
-BATT_UNSUPPRESS()
+BATT_UNSUPPRESS_IF_GCC()

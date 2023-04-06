@@ -10,8 +10,8 @@
 #ifndef LLFS_PAGE_ALLOCATOR_PAGE_ALLOCATOR_REF_COUNT_HPP
 #define LLFS_PAGE_ALLOCATOR_PAGE_ALLOCATOR_REF_COUNT_HPP
 
-#include <llfs/page_allocator/page_allocator_free_pool.hpp>
-#include <llfs/page_allocator/page_allocator_object_base.hpp>
+#include <llfs/page_allocator_free_pool.hpp>
+#include <llfs/page_allocator_lru.hpp>
 
 #include <llfs/int_types.hpp>
 #include <llfs/page_id_factory.hpp>
@@ -20,15 +20,56 @@
 
 namespace llfs {
 
+/** \brief Copyable summary of the current ref count state of a page tracked by a PageAllocator.
+ */
+struct PageAllocatorRefCountStatus {
+  /** \brief The current page_id; includes the highest known generation.
+   */
+  PageId page_id;
+
+  /** \brief The reference count for this page.
+   */
+  i32 ref_count;
+
+  /** \brief The generation number embedded within `this->page_id`.
+   */
+  page_generation_int generation;
+
+  /** \brief The user_index (attachment number) of the most recent client to update this page.
+   */
+  u32 user_index;
+
+  /** \brief The learned upper bound slot offset of the PageAllocator at the point when this info
+   * was read.
+   */
+  slot_offset_type learned_upper_bound;
+};
+
+inline std::ostream& operator<<(std::ostream& out, const PageAllocatorRefCountStatus& t)
+{
+  return out << "PageAllocatorRefCountStatus{.page_id=" << t.page_id
+             << ", .ref_count=" << t.ref_count << ", .generation=" << t.generation
+             << ", .user_index=" << t.user_index
+             << ", .learned_upper_bound=" << t.learned_upper_bound << ",}";
+}
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 // PageAllocatorRefCount - the current ref count value for a single page, with last modified slot
 // and hooks for the LRU list and free pool.
 //
 class PageAllocatorRefCount
-    : public PageAllocatorObjectBase
+    : public PageAllocatorLRUBase
     , public PageAllocatorFreePoolHook
 {
  public:
+  static constexpr u32 kInvalidUserIndex = ~u32{0};
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  using Self = PageAllocatorRefCount;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   /** \brief Constructs a new reference count object with count and generation both set to 0.
    */
   PageAllocatorRefCount() = default;
@@ -55,29 +96,6 @@ class PageAllocatorRefCount
   page_generation_int get_generation() const noexcept
   {
     return this->generation_.load();
-  }
-
-  /** \brief Atomically performs a weak compare-and-swap operation on the reference count value.
-   *
-   * \see std::atomic<int>::compare_exchange_weak
-   */
-  bool compare_exchange_weak(i32& expected, i32 desired) noexcept
-  {
-    return this->count_.compare_exchange_weak(expected, desired);
-  }
-
-  /** \brief Atomically increments the reference count by `delta`, returning the previous value.
-   */
-  i32 fetch_add(i32 delta) noexcept
-  {
-    return this->count_.fetch_add(delta);
-  }
-
-  /** \brief Atomically decrements the reference count by `delta`, returning the previous value.
-   */
-  i32 fetch_sub(i32 delta) noexcept
-  {
-    return this->count_.fetch_sub(delta);
   }
 
   /** \brief Atomically sets the reference count value, returning the previous value.
@@ -125,8 +143,17 @@ class PageAllocatorRefCount
  private:
   std::atomic<page_generation_int> generation_{0};
   std::atomic<i32> count_{0};
-  std::atomic<u32> last_modified_by_user_index_{~u32{0}};
+  std::atomic<u32> last_modified_by_user_index_{Self::kInvalidUserIndex};
 };
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+inline std::ostream& operator<<(std::ostream& out, const PageAllocatorRefCount& t)
+{
+  return out << "PageAllocatorRefCount{.count=" << t.get_count()
+             << ", .generation=" << t.get_generation()
+             << ", .last_modified_by=" << t.get_last_modified_by() << ",}";
+}
 
 }  // namespace llfs
 

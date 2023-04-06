@@ -120,15 +120,10 @@ bool initialize_status_codes()
                      "Failed to read storage file"),  // 56,
       CODE_WITH_MSG_(StatusCode::kStorageFileBadConfigBlockCrc,
                      "Failed to read storage file"),  // 57,
-      CODE_WITH_MSG_(
-          StatusCode::kRecoverFailedAllocatorNotAttached,
-          "Failed to recover page; the Volume is not attached to the PageAllocator"),  // 58,
-      CODE_WITH_MSG_(StatusCode::kRecoverFailedRefCountNotUpdated,
-                     "Failed to recover page; ref count not updated"),  // 59,
       CODE_WITH_MSG_(StatusCode::kOutOfAttachments,
-                     "Failed to attach to PageAllocator: no more available attachments"),  // 60,
+                     "Failed to attach to PageAllocator: no more available attachments"),  // 58,
       CODE_WITH_MSG_(StatusCode::kPageAllocatorNotAttached,
-                     "Client not attached to the PageAllocator"),  // 61,
+                     "Client not attached to the PageAllocator"),  // 59,
   });
   return initialized;
 }

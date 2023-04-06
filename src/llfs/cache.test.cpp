@@ -122,7 +122,9 @@ TEST(CacheTest, Basic)
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   // Test PinnedSlot copy assign to self.
   //
+  BATT_SUPPRESS_IF_CLANG("-Wself-assign-overloaded")
   slot2_copy4 = slot2_copy4;
+  BATT_UNSUPPRESS_IF_CLANG()
 
   EXPECT_TRUE(slot2_copy4);
   EXPECT_THAT(*slot2_copy4, ::testing::StrEq("foo2"));
@@ -130,7 +132,9 @@ TEST(CacheTest, Basic)
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   // Test PinnedSlot move assign to self.
   //
+  BATT_SUPPRESS_IF_CLANG("-Wself-move")
   slot2_copy4 = std::move(slot2_copy4);
+  BATT_UNSUPPRESS_IF_CLANG()
 
   EXPECT_TRUE(slot2_copy4);
   EXPECT_THAT(*slot2_copy4, ::testing::StrEq("foo2"));

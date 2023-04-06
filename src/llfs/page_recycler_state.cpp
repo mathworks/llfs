@@ -37,9 +37,11 @@ PageRecycler::State::State(const boost::uuids::uuid& uuid,
     , free_pool_{}
     , lru_{}
 {
-  BATT_CHECK_EQ(2, options.refresh_factor) << "implement generic refresh factors";
+  BATT_CHECK_EQ(2, options.refresh_factor()) << "implement generic refresh factors";
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void PageRecycler::State::bulk_load(Slice<const PageToRecycle> pages)
 {
   Optional<slot_offset_type> prev_slot;

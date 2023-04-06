@@ -45,8 +45,9 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
   const LogDeviceConfigOptions recycler_log_options{
       .uuid = random_uuid(),
       .pages_per_block_log2 = IoRingLogConfig::kDefaultPagesPerBlockLog2 + 1,
-      .log_size = PageRecycler::calculate_log_size(options.base.max_refs_per_page,
-                                                   options.recycler_max_buffered_page_count),
+      .log_size = PageRecycler::calculate_log_size(
+          PageRecyclerOptions{}.set_max_refs_per_page(options.base.max_refs_per_page),
+          options.recycler_max_buffered_page_count),
   };
 
   StatusOr<FileOffsetPtr<const PackedLogDeviceConfig&>> p_recycler_log_config =

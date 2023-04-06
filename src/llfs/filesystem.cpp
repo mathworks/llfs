@@ -41,7 +41,11 @@ StatusOr<int> open_file_read_write(std::string_view file_name, OpenForAppend ope
     flags |= O_APPEND;
   }
   if (open_raw_io) {
+#ifdef __linux__
     flags |= O_DIRECT | O_SYNC;
+#else
+    LLFS_LOG_WARNING() << "open_raw_io only supported on Linux!";
+#endif
   }
   const int fd = syscall_retry([&] {
     return ::open(std::string(file_name).c_str(), flags);
@@ -296,6 +300,8 @@ Status update_file_status_flags(int fd, EnableFileFlags enable_flags,
 //
 Status enable_raw_io_fd(int fd, bool enabled)
 {
+#ifdef __linux__  //----- --- -- -  -  -   -
+
   // TODO [tastolfi 2022-06-21] Add O_SYNC/O_DSYNC to the flags masks below once Linux supports this
   // (https://man7.org/linux/man-pages/man2/fcntl.2.html#BUGS)
   //
@@ -304,6 +310,17 @@ Status enable_raw_io_fd(int fd, bool enabled)
   } else {
     return update_file_status_flags(fd, EnableFileFlags{0}, DisableFileFlags{O_DIRECT});
   }
+
+#else  //----- --- -- -  -  -   -
+
+  (void)fd;
+  (void)enabled;
+
+  LLFS_LOG_WARNING() << "enable_raw_io_fd only supported on Linux!";
+
+  return OkStatus();
+
+#endif  //----- --- -- -  -  -   -
 }
 
 }  // namespace llfs

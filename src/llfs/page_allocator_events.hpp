@@ -7,8 +7,8 @@
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
 #pragma once
-#ifndef LLFS_PAGE_ALLOCATOR_PAGE_ALLOCATOR_EVENTS_HPP
-#define LLFS_PAGE_ALLOCATOR_PAGE_ALLOCATOR_EVENTS_HPP
+#ifndef LLFS_PAGE_ALLOCATOR_EVENTS_HPP
+#define LLFS_PAGE_ALLOCATOR_EVENTS_HPP
 
 #include <llfs/config.hpp>
 //
@@ -166,7 +166,7 @@ inline usize packed_sizeof_checkpoint(const PackedPageAllocatorTxn& txn)
 {
   static const PackedPageRefCountRefresh packed_ref_count{
       {
-          .page_id = 0,
+          .page_id = {0},
           .ref_count = 0,
       },
       .user_index = 0,
@@ -185,4 +185,4 @@ inline usize packed_sizeof_checkpoint(const PackedPageAllocatorTxn& txn)
 
 }  // namespace llfs
 
-#endif  // LLFS_PAGE_ALLOCATOR_PAGE_ALLOCATOR_EVENTS_HPP
+#endif  // LLFS_PAGE_ALLOCATOR_EVENTS_HPP

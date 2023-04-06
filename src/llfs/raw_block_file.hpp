@@ -88,10 +88,14 @@ class RawBlockFile
     return batt::StatusCode::kUnimplemented;
   }
 
+#ifndef LLFS_DISABLE_IO_URING
+  //
   virtual IoRing::File* get_io_ring_file()
   {
     return nullptr;
   }
+  //
+#endif  // LLFS_DISABLE_IO_URING
 
  protected:
   RawBlockFile() = default;

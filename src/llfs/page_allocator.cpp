@@ -25,7 +25,7 @@ u64 PageAllocator::calculate_log_size(u64 physical_page_count, u64 max_attachmen
 {
   static const PackedPageRefCountRefresh packed_ref_count{
       {
-          .page_id = 0,
+          .page_id = {0},
           .ref_count = 0,
       },
       .user_index = 0,
@@ -229,16 +229,16 @@ void PageAllocator::deallocate_page(PageId page_id)
 StatusOr<slot_offset_type> PageAllocator::attach_user(const boost::uuids::uuid& user_id,
                                                       slot_offset_type user_slot)
 {
-  BATT_ASSIGN_OK_RESULT(u32 user_index, this->state_.lock()->get()->allocate_attachment(user_id));
-
-  return this->update_sync(PackedPageAllocatorAttach{
+  PackedPageAllocatorAttach attach_event{
       .user_slot =
           PackedPageUserSlot{
               .user_id = user_id,
               .slot_offset = user_slot,
           },
-      .user_index = user_index,
-  });
+      .user_index = PageAllocatorState::kInvalidUserIndex,
+  };
+
+  return this->update_sync(attach_event);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -246,13 +246,15 @@ StatusOr<slot_offset_type> PageAllocator::attach_user(const boost::uuids::uuid& 
 StatusOr<slot_offset_type> PageAllocator::detach_user(const boost::uuids::uuid& user_id,
                                                       slot_offset_type user_slot)
 {
-  return this->update_sync(PackedPageAllocatorDetach{
+  PackedPageAllocatorDetach detach_event{
       .user_slot =
           PackedPageUserSlot{
               .user_id = user_id,
               .slot_offset = user_slot,
           },
-  });
+  };
+
+  return this->update_sync(detach_event);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -276,7 +278,7 @@ Status PageAllocator::notify_user_recovered(const boost::uuids::uuid& user_id)
 //
 std::pair<i32, slot_offset_type> PageAllocator::get_ref_count(PageId id)
 {
-  const auto info = this->state_->get_ref_count_info(id);
+  const auto info = this->state_->get_ref_count_status(id);
   return {info.ref_count, info.learned_upper_bound};
 }
 
@@ -288,8 +290,8 @@ BoxedSeq<PageRefCount> PageAllocator::page_ref_counts()
 
   return as_seq(boost::irange<std::size_t>(0, state->page_device_capacity()))  //
          | seq::map([state](page_id_int id_val) -> PageRefCount {
-             const auto info = state->get_ref_count_info(PageId{id_val});
-             return PageRefCount{info.page_id, info.ref_count};
+             const auto page_status = state->get_ref_count_status(PageId{id_val});
+             return PageRefCount{page_status.page_id, page_status.ref_count};
            })  //
          | seq::boxed();
 }
@@ -430,7 +432,7 @@ bool PageAllocator::await_ref_count(PageId page_id, i32 ref_count)
 {
   usize counter = 1;
   for (;;) {
-    PageRefCountInfo prc = this->state_->get_ref_count_info(page_id);
+    PageAllocatorRefCountStatus prc = this->state_->get_ref_count_status(page_id);
     if (prc.page_id != page_id) {
       return false;
     }
@@ -443,18 +445,11 @@ bool PageAllocator::await_ref_count(PageId page_id, i32 ref_count)
     if ((counter & 4095) == 0) {
       LLFS_LOG_INFO() << BATT_INSPECT(prc) << BATT_INSPECT(page_id) << BATT_INSPECT(ref_count)
                       << BATT_INSPECT(counter);
-      BATT_CHECK_LT(counter, 10 * 1000) << "[PageAllocator::await_ref_count] timed out (10s)";
+      BATT_CHECK_LT(counter, 10 * 1000) << "[PageAllocator::await_ref_count] timed out (10s)"
+                                        << BATT_INSPECT(page_id) << BATT_INSPECT(ref_count);
     }
   }
   return true;
-
-#if 0  // TODO [tastolfi 2022-09-16] find a way to make this work...
-    return batt::Runtime::instance().await_condition(
-        [this, ref_count](PageId page_id) -> bool {
-          return this->get_ref_count(page_id).first == ref_count;
-        },
-        page_id);
-#endif
 }
 
 }  // namespace llfs

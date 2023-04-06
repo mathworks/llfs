@@ -18,6 +18,7 @@
 #include <batteries/async/grant.hpp>
 #include <batteries/async/mutex.hpp>
 #include <batteries/async/types.hpp>
+#include <batteries/suppress.hpp>
 
 namespace llfs {
 
@@ -130,8 +131,12 @@ class SlotWriter::Append
   Append(const Append&) = delete;
   Append& operator=(const Append&) = delete;
 
+  BATT_SUPPRESS_IF_CLANG("-Wdefaulted-function-deleted")
+  //
   Append(Append&&) = default;
   Append& operator=(Append&&) = default;
+  //
+  BATT_UNSUPPRESS_IF_CLANG()
 
   ~Append() noexcept;
 

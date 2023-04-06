@@ -157,7 +157,7 @@ StatusOr<TrimmedPrepareJob> unpack_object(const PackedTrimmedPrepareJob& packed,
   object.prepare_slot = packed.prepare_slot;
   object.page_ids = as_seq(packed.page_ids)  //
                     | batt::seq::map([](const PackedPageId& page_id) {
-                        return page_id.as_page_id();
+                        return page_id.unpack();
                       })  //
                     | batt::seq::boxed();
 

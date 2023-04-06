@@ -12,15 +12,21 @@
 #include <llfs/ioring_log_flush_op.hpp>
 #include <llfs/ioring_log_flush_op.ipp>
 
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <llfs/ioring_log_flush_op.test.hpp>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <llfs/buffer.hpp>
 #include <llfs/config.hpp>
 #include <llfs/constants.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/logging.hpp>
+#include <llfs/optional.hpp>
+#include <llfs/slot.hpp>
+#include <llfs/status.hpp>
 
 #include <batteries/checked_cast.hpp>
 #include <batteries/small_fn.hpp>
@@ -631,3 +637,5 @@ TEST(IoRingLogFlushOpTest, StateMachineSimulation)
 }
 
 }  // namespace
+
+#endif  // LLFS_DISABLE_IO_URING

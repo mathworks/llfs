@@ -69,7 +69,7 @@ std::vector<PageToRecycle> PageRecyclerRecoveryVisitor::recovered_pages() const
   // Remove all the deleted/prepared pages from the list.
   //
   to_recycle.erase(std::remove_if(to_recycle.begin(), to_recycle.end(),
-                                  [this](const PageToRecycle& p) {
+                                  [](const PageToRecycle& p) {
                                     return p.batch_slot;
                                   }),
                    to_recycle.end());
@@ -208,10 +208,10 @@ Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
 
   this->recycler_uuid_ = info.uuid;
 
-  this->options_.info_refresh_rate = info.info_refresh_rate;
-  this->options_.max_refs_per_page = info.max_refs_per_page;
-  this->options_.batch_size = info.batch_size;
-  this->options_.refresh_factor = info.refresh_factor;
+  this->options_.set_info_refresh_rate(info.info_refresh_rate);
+  this->options_.set_max_refs_per_page(info.max_refs_per_page);
+  this->options_.set_batch_size(info.batch_size);
+  this->options_.set_refresh_factor(info.refresh_factor);
 
   // TODO [tastolfi 2021-12-10] kMaxPageRefDepth vs info.max_page_ref_depth?
 

@@ -41,6 +41,9 @@ std::ostream& operator<<(std::ostream& out, const PageRefCount& t);
 
 static_assert(i64{std::numeric_limits<i32>::max()} < -i64{std::numeric_limits<i32>::min()}, "");
 
+/** \brief When interpreted as a ref count delta, kRefCount_1_to_0 means that the ref count must
+ * currently be 1 and its new value shall be 0.
+ */
 constexpr i32 kRefCount_1_to_0 = std::numeric_limits<i32>::min();
 
 static_assert(kRefCount_1_to_0 != 0, "");
@@ -48,7 +51,9 @@ static_assert(kRefCount_1_to_0 != 0, "");
 }  // namespace llfs
 
 namespace boost {
+namespace operators_impl {
 template struct equality_comparable<::llfs::PageRefCount>;
 }
+}  //namespace boost
 
 #endif  // LLFS_PAGE_REF_COUNT_HPP

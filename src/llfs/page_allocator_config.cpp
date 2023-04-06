@@ -6,8 +6,10 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-#include <llfs/page_allocator/page_allocator_config.hpp>
+#include <llfs/page_allocator_config.hpp>
 //
+
+#ifndef LLFS_DISABLE_IO_URING
 
 #include <llfs/page_allocator.hpp>
 #include <llfs/uuid.hpp>
@@ -158,3 +160,5 @@ StatusOr<std::unique_ptr<PageAllocator>> recover_storage_object(
 }
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING

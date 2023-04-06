@@ -104,8 +104,8 @@ class LogDevice
 
   // Create a new reader.
   //
-  virtual std::unique_ptr<Reader> new_reader(Optional<slot_offset_type> slot_lower_bound,
-                                             LogReadMode mode) = 0;
+  virtual std::unique_ptr<LogDevice::Reader> new_reader(Optional<slot_offset_type> slot_lower_bound,
+                                                        LogReadMode mode) = 0;
 
   // Returns the current active slot range for the log.  `mode` determines whether the upper bound
   // will be the flushed or committed upper bound.
@@ -114,7 +114,7 @@ class LogDevice
 
   // There can be only one Writer at a time.
   //
-  virtual Writer& writer() = 0;
+  virtual LogDevice::Writer& writer() = 0;
 
   virtual Status close() = 0;
 
@@ -183,6 +183,46 @@ class LogDeviceFactory
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+/** \brief A simple implementation of LogDeviceFactory that wraps a function that returns LogDevice
+ * instances by std::unique_ptr.
+ */
+class BasicLogDeviceFactory : public LogDeviceFactory
+{
+ public:
+  /** \brief Creates a new BasicLogDeviceFactory.
+   *
+   * The passed function will be invoked whenever this->open_log_device is called.
+   */
+  explicit BasicLogDeviceFactory(
+      std::function<std::unique_ptr<LogDevice>()>&& create_log_device) noexcept
+      : create_log_device_{std::move(create_log_device)}
+  {
+  }
+
+  /** \brief Invokes the function passed in at construction time, creating a reader and invoking the
+   * passed `scan_fn`.
+   *
+   * \return the new LogDevice
+   */
+  StatusOr<std::unique_ptr<LogDevice>> open_log_device(const LogScanFn& scan_fn) override
+  {
+    std::unique_ptr<LogDevice> instance = this->create_log_device_();
+
+    StatusOr<slot_offset_type> scan_status =
+        scan_fn(*instance->new_reader(/*slot_lower_bound=*/None, LogReadMode::kDurable));
+
+    BATT_REQUIRE_OK(scan_status);
+
+    return instance;
+  }
+
+ private:
+  /** \brief Wrapped factory function for creating LogDevice instances.
+   */
+  std::function<std::unique_ptr<LogDevice>()> create_log_device_;
+};
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 class LogDevice::Reader
 {
@@ -217,7 +257,7 @@ class LogDevice::Reader
 
   // Wait for the log to reach the specified state.
   //
-  virtual Status await(ReaderEvent event) = 0;
+  virtual Status await(LogDevice::ReaderEvent event) = 0;
 };
 
 /** \brief Open the log without scanning its contents.
@@ -274,7 +314,7 @@ class LogDevice::Writer
 
   // Wait for the log to reach the specified state.
   //
-  virtual Status await(WriterEvent event) = 0;
+  virtual Status await(LogDevice::WriterEvent event) = 0;
 };
 
 }  // namespace llfs

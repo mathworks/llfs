@@ -9,6 +9,8 @@
 #include <llfs/log_device_config.hpp>
 //
 
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <llfs/ioring_log_device.hpp>
 #include <llfs/ioring_log_initializer.hpp>
 #include <llfs/raw_block_file.hpp>
@@ -90,3 +92,5 @@ StatusOr<std::unique_ptr<IoRingLogDeviceFactory>> recover_storage_object(
 }
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING

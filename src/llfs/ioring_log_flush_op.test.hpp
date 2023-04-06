@@ -10,6 +10,11 @@
 #ifndef LLFS_IORING_LOG_FLUSH_OP_TEST_HPP
 #define LLFS_IORING_LOG_FLUSH_OP_TEST_HPP
 
+#include <llfs/config.hpp>
+//
+
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <llfs/buffer.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/ioring_log_flush_op.hpp>
@@ -665,5 +670,7 @@ class ExpectedFlushOpState
 };  // namespace llfs
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING
 
 #endif  // LLFS_IORING_LOG_FLUSH_OP_TEST_HPP

@@ -209,7 +209,7 @@ class BasicRingBufferLogDevice<Impl>::WriterImpl : public LogDevice::Writer
     return this->device_->driver_.get_commit_pos();
   }
 
-  usize space() const override
+  u64 space() const override
   {
     const slot_offset_type readable_begin = this->device_->driver_.get_trim_pos();
     const slot_offset_type readable_end = this->device_->driver_.get_commit_pos();

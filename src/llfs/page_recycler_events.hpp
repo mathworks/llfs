@@ -71,7 +71,7 @@ std::ostream& operator<<(std::ostream& out, const PageToRecycle& t);
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
-struct PageRecyclerOptions;
+class PageRecyclerOptions;
 struct PackedPageToRecycle;
 struct PackedRecycleBatchCommit;
 struct PackedPageRecyclerInfo;

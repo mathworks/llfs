@@ -48,7 +48,10 @@ class SimulatedLogDevice::Impl : public SimulatedStorageObject
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-    explicit CommitChunk(Impl& impl) noexcept : impl{impl}
+    explicit CommitChunk(Impl& impl, slot_offset_type offset, usize size) noexcept
+        : impl{impl}
+        , slot_offset{offset}
+        , data(size)
     {
     }
 

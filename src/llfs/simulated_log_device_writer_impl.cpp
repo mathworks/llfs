@@ -44,9 +44,8 @@ StatusOr<MutableBuffer> SimulatedLogDevice::Impl::WriterImpl::prepare(usize byte
 
   BATT_CHECK_EQ(this->prepared_chunk_, nullptr);
 
-  this->prepared_chunk_ = std::make_shared<Impl::CommitChunk>(this->impl_);
-  this->prepared_chunk_->data.resize(byte_count);
-  this->prepared_chunk_->slot_offset = this->slot_offset();
+  this->prepared_chunk_ = std::make_shared<Impl::CommitChunk>(
+      this->impl_, /*offset=*/this->slot_offset(), /*size=*/byte_count);
 
   return MutableBuffer{this->prepared_chunk_->data.data(), this->prepared_chunk_->data.size()};
 }

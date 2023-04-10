@@ -154,4 +154,4 @@ See https://www.apache.org/licenses/LICENSE-2.0 for license information.
 
 SPDX short identifier: Apache-2.0
 
-&copy; 2022, The MathWorks, Inc.
+&copy; 2022-2023, The MathWorks, Inc.

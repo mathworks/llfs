@@ -214,8 +214,8 @@ class Volume
   //----- --- -- -  -  -   -
 
  private:
-  explicit Volume(const VolumeOptions& options, const boost::uuids::uuid& volume_uuid,
-                  batt::SharedPtr<PageCache>&& page_cache,
+  explicit Volume(batt::TaskScheduler& task_scheduler, const VolumeOptions& options,
+                  const boost::uuids::uuid& volume_uuid, batt::SharedPtr<PageCache>&& page_cache,
                   std::shared_ptr<SlotLockManager>&& trim_control,
                   std::unique_ptr<PageCache::PageDeleterImpl>&& page_deleter,
                   std::unique_ptr<LogDevice>&& root_log, std::unique_ptr<PageRecycler>&& recycler,
@@ -227,6 +227,10 @@ class Volume
   void start();
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  // TaskScheduler used to launch all background tasks that are created after recovery.
+  //
+  batt::TaskScheduler& task_scheduler_;
 
   // Configuration options for this volume.
   //

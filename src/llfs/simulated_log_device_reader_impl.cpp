@@ -41,7 +41,7 @@ ConstBuffer SimulatedLogDevice::Impl::ReaderImpl::data() /*override*/
     auto iter = locked_chunks->lower_bound(this->slot_offset_);
     if (iter != locked_chunks->end()) {
       std::shared_ptr<Impl::CommitChunk>& chunk = iter->second;
-      if (this->mode_ != LogReadMode::kDurable || chunk->flushed.get_value()) {
+      if (this->mode_ != LogReadMode::kDurable || chunk->is_flushed()) {
         if (!slot_less_than(this->slot_offset_, chunk->slot_offset)) {
           const auto reader_offset_within_chunk = (this->slot_offset_ - chunk->slot_offset);
           if (reader_offset_within_chunk <= chunk->data.size()) {

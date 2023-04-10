@@ -36,6 +36,8 @@ slot_offset_type SimulatedLogDevice::Impl::WriterImpl::slot_offset() /*override*
 StatusOr<MutableBuffer> SimulatedLogDevice::Impl::WriterImpl::prepare(usize byte_count,
                                                                       usize head_room) /*override*/
 {
+  this->impl_.log_event("prepare(", byte_count, ", extra=", head_room, ")");
+
   BATT_REQUIRE_OK(this->await(BytesAvailable{
       .size = byte_count + head_room,
   }));
@@ -58,9 +60,17 @@ StatusOr<slot_offset_type> SimulatedLogDevice::Impl::WriterImpl::commit(
   //
   BATT_CHECK_NOT_NULLPTR(this->prepared_chunk_);
 
+  this->impl_.log_event("commit(", byte_count,
+                        "); slot_range=", this->prepared_chunk_->slot_range());
+
   // Clear `prepared_chunk_` by moving to a local variable.
   //
   auto committed_chunk = std::move(this->prepared_chunk_);
+
+  // Move the state from prepared to committed, run sanity check.
+  //
+  const i32 old_state = committed_chunk->state.set_value(CommitChunk::kCommittedState);
+  BATT_CHECK_EQ(old_state, CommitChunk::kPreparedState);
 
   // Sanity check: commit may not be passed a larger size than was passed to prepare.
   //
@@ -84,18 +94,31 @@ StatusOr<slot_offset_type> SimulatedLogDevice::Impl::WriterImpl::commit(
   // Should the flush fail?
   //
   if (sim.inject_failure()) {
-    sim.post([this] {
+    sim.post([this, committed_chunk = std::move(committed_chunk)] {
       // The flush_pos will never be updated again, so wake up any tasks who are waiting on it.
       //
       this->impl_.flush_pos_.close();
+
+      this->impl_.log_event("slot_range ", committed_chunk->slot_range(),
+                            " flush failed (error injected)");
     });
 
   } else {
     // We are not injecting a failure; defer completion of the flush.
     //
     sim.post([this, committed_chunk = std::move(committed_chunk)] {
-      committed_chunk->flushed.set_value(true);
-      this->impl_.update_flush_pos();
+      const batt::Optional<i32> flushed =
+          committed_chunk->state.modify_if([](i32 old_value) -> batt::Optional<i32> {
+            if (old_value == CommitChunk::kCommittedState) {
+              return CommitChunk::kFlushedState;
+            }
+            return batt::None;
+          });
+
+      if (flushed) {
+        this->impl_.log_event("slot_range ", committed_chunk->slot_range(), " flushed");
+        this->impl_.update_flush_pos();
+      }
     });
   }
 

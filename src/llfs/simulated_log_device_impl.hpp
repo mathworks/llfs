@@ -35,11 +35,16 @@ class SimulatedLogDevice::Impl : public SimulatedStorageObject
   class WriterImpl;
 
   struct CommitChunk {
+    static constexpr i32 kPreparedState = 0;
+    static constexpr i32 kCommittedState = 1;
+    static constexpr i32 kFlushedState = 2;
+    static constexpr i32 kDroppedState = 3;
+
     Impl& impl;
     slot_offset_type slot_offset = 0;
     usize trim_size = 0;
     std::vector<char> data;
-    batt::Watch<bool> flushed{false};
+    batt::Watch<i32> state{kPreparedState};
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -63,11 +68,16 @@ class SimulatedLogDevice::Impl : public SimulatedStorageObject
     {
       return SlotRange{this->slot_lower_bound(), this->slot_upper_bound()};
     }
+
+    bool is_flushed() const noexcept
+    {
+      return this->state.get_value() == kFlushedState;
+    }
   };
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  explicit Impl(StorageSimulation& simulation, u64 log_capacity) noexcept;
+  explicit Impl(StorageSimulation& simulation, const std::string& name, u64 log_capacity) noexcept;
 
   Impl(const Impl&) = delete;
   Impl& operator=(const Impl&) = delete;
@@ -75,6 +85,15 @@ class SimulatedLogDevice::Impl : public SimulatedStorageObject
   ~Impl() noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief Logs a simulation event.
+   */
+  template <typename... Args>
+  void log_event(Args&&... args) const noexcept
+  {
+    this->simulation_.log_event("SimulatedLogDevice{", batt::c_str_literal(this->name_), "} ",
+                                BATT_FORWARD(args)...);
+  }
 
   /** \brief Simulates a process termination/restart by removing all non-flushed state.
    */
@@ -119,6 +138,8 @@ class SimulatedLogDevice::Impl : public SimulatedStorageObject
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   StorageSimulation& simulation_;
+
+  const std::string name_;
 
   const u64 capacity_;
 

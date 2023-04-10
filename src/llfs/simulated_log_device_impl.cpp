@@ -16,9 +16,10 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*explicit*/ SimulatedLogDevice::Impl::Impl(StorageSimulation& simulation,
+/*explicit*/ SimulatedLogDevice::Impl::Impl(StorageSimulation& simulation, const std::string& name,
                                             u64 log_capacity) noexcept
     : simulation_{simulation}
+    , name_{name}
     , capacity_{log_capacity}
     , writer_impl_{std::make_unique<WriterImpl>(*this)}
 {
@@ -45,9 +46,18 @@ void SimulatedLogDevice::Impl::crash_and_recover(u64 step) /*override*/
 
     // If the latest committed chunk is flushed, then we are done.
     //
-    if (iter->second->flushed.get_value()) {
+    const batt::Optional<i32> dropped =
+        iter->second->state.modify_if([](i32 old_value) -> batt::Optional<i32> {
+          if (old_value == CommitChunk::kCommittedState) {
+            return CommitChunk::kDroppedState;
+          }
+          return batt::None;
+        });
+
+    if (!dropped) {
       break;
     }
+    this->log_event("(crash_and_recover) dropped slot_range ", iter->second->slot_range());
 
     // Remove the unflushed chunk and keep going.
     //
@@ -61,6 +71,8 @@ void SimulatedLogDevice::Impl::crash_and_recover(u64 step) /*override*/
 //
 Status SimulatedLogDevice::Impl::trim(slot_offset_type new_trim_pos) /*override*/
 {
+  this->log_event("trim(", new_trim_pos, ")");
+
   // Update the volatile trim pos.  If no change (clamp_min_slot returns delta == 0), return.
   //
   if (clamp_min_slot(this->trim_pos_, new_trim_pos) != 0) {
@@ -138,7 +150,7 @@ SlotRange SimulatedLogDevice::Impl::slot_range(LogReadMode mode) /*override*/
   auto iter = locked_chunks->end();
   while (iter != locked_chunks->begin()) {
     --iter;
-    if (mode != LogReadMode::kDurable || iter->second->flushed.get_value()) {
+    if (mode != LogReadMode::kDurable || iter->second->is_flushed()) {
       return SlotRange{trim_pos, iter->second->slot_offset + iter->second->data.size()};
     }
   }
@@ -157,6 +169,7 @@ LogDevice::Writer& SimulatedLogDevice::Impl::writer() /*override*/
 //
 Status SimulatedLogDevice::Impl::close() /*override*/
 {
+  this->log_event("close()");
   this->closed_.set_value(true);
   return batt::OkStatus();
 }
@@ -185,7 +198,7 @@ void SimulatedLogDevice::Impl::update_flush_pos()
 
   // Keep iterating through chunks until we find one that hasn't been flushed...
   //
-  while (iter != locked_chunks->end() && iter->second->flushed.get_value() == true) {
+  while (iter != locked_chunks->end() && iter->second->is_flushed()) {
     // Advance flush_pos_ to include this (flushed) commit chunk.
     //
     clamp_min_slot(this->flush_pos_, iter->second->slot_upper_bound());

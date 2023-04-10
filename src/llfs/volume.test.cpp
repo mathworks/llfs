@@ -18,6 +18,7 @@
 #include <llfs/memory_log_device.hpp>
 #include <llfs/memory_page_cache.hpp>
 #include <llfs/opaque_page_view.hpp>
+#include <llfs/storage_simulation.hpp>
 
 #include <batteries/state_machine_model.hpp>
 
@@ -765,6 +766,36 @@ TEST_F(VolumeTest, ReaderInterruptedByVolumeClose)
 
   reader_task.join();
   test_volume->join();
+}
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+TEST(VolumeSimTest, RecoverySimulation)
+{
+  u32 seed = 253689123;
+  std::default_random_engine rng{seed};
+  llfs::StorageSimulation sim{batt::StateMachineEntropySource{
+      /*entropy_fn=*/[&rng](usize min_value, usize max_value) -> usize {
+        std::uniform_int_distribution<usize> pick_value{min_value, max_value};
+        return pick_value(rng);
+      }}};
+
+  ASSERT_NO_FATAL_FAILURE(sim.run_main_task([&] {
+    sim.add_page_arena(llfs::PageCount{10}, llfs::PageSize{1 * kKiB});
+
+    batt::StatusOr<std::unique_ptr<llfs::Volume>> recovered_volume = sim.get_volume(
+        "TestVolume", /*slot_visitor_fn=*/
+        [](auto&&...) {
+          return batt::OkStatus();
+        },
+        /*root_log_capacity=*/64 * kKiB);
+
+    ASSERT_TRUE(recovered_volume.ok()) << recovered_volume.status();
+
+    llfs::Volume& volume = **recovered_volume;
+
+    volume.halt();
+    volume.join();
+  }));
 }
 
 }  // namespace

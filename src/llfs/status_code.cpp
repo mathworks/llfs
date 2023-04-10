@@ -121,6 +121,10 @@ bool initialize_status_codes()
       CODE_WITH_MSG_(StatusCode::kStorageFileBadConfigBlockCrc,
                      "Failed to read storage file"),  // 57,
 
+      CODE_WITH_MSG_(StatusCode::kOutOfAttachments,
+                     "Failed to attach to PageAllocator: no more available attachments"),  // 58,
+      CODE_WITH_MSG_(StatusCode::kPageAllocatorNotAttached,
+                     "Client not attached to the PageAllocator"),  // 59,
   });
   return initialized;
 }

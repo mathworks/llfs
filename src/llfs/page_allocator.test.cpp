@@ -16,6 +16,7 @@
 #include <llfs/log_device_snapshot.hpp>
 #include <llfs/memory_log_device.hpp>
 #include <llfs/testing/fake_log_device.hpp>
+#include <llfs/uuid.hpp>
 
 #include <batteries/async/fake_task_scheduler.hpp>
 #include <batteries/env.hpp>
@@ -84,15 +85,16 @@ TEST(PageAllocatorTest, UpdateRefCounts)
 
   auto fake_user_id = boost::uuids::random_generator{}();
 
-  ASSERT_TRUE(index
-                  .update_sync(PackedPageAllocatorAttach{
-                      .user_slot =
-                          {
-                              .user_id = fake_user_id,
-                              .slot_offset = 0,
-                          },
-                  })
-                  .ok());
+  PackedPageAllocatorAttach attach_event{
+      .user_slot =
+          {
+              .user_id = fake_user_id,
+              .slot_offset = 0,
+          },
+      .user_index = llfs::PageAllocatorState::kInvalidUserIndex,
+  };
+
+  ASSERT_TRUE(index.update_sync(attach_event).ok());
 
   for (page_id_int update_count = 1; update_count < kNumPages * kCoverageFactor; ++update_count) {
     if (update_count % 100 == 0) {
@@ -101,7 +103,7 @@ TEST(PageAllocatorTest, UpdateRefCounts)
     std::vector<PageRefCount> updates;
     for (page_id_int page_index = 0; page_index < std::min(kNumPages, update_count); ++page_index) {
       updates.emplace_back(PageRefCount{
-          .page_id = page_index,
+          .page_id = PageId{page_index},
           .ref_count = +2,
       });
     }
@@ -222,12 +224,16 @@ TEST(PageAllocatorTest, LogCrashRecovery)
         PageRefCount& prc = prcs.back();
         const i32 delta = pick_ref_count_delta(rng);
 
-        prc.page_id = page_i;
+        prc.page_id = PageId{page_i};
 
         if (expect_ref_count[page_i] == 0) {
           prc.ref_count = +2;
-        } else if (expect_ref_count[page_i] == 1 && delta < 0) {
+
+        } else if (expect_ref_count[page_i] == 1) {
+          // This is the only valid delta for ref_count==1.
+          //
           prc.ref_count = llfs::kRefCount_1_to_0;
+
         } else {
           prc.ref_count = std::clamp<i32>(delta, 1 - expect_ref_count[page_i], +5);
         }
@@ -686,6 +692,538 @@ TEST(PageAllocatorTest, StateMachineSim)
                << r;
 
   EXPECT_TRUE(r.ok);
+}
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+// Plan:
+//  - append several checkpoint's worth of ref count updates, with small deltas
+//  - verify that the log was trimmed
+//  - close everything and recover from the saved log data; verify that the ref counts are correct
+//
+TEST(PageAllocatorTest, RefCountDeltaCheckpointSliceTrim)
+{
+  // Initialize test parameters.
+  //
+  constexpr usize kNumTxns = 5000;
+  constexpr usize kUpdatePagePercent = 20;
+  constexpr usize kNumPages = 1024;
+  constexpr usize kMaxAttachments = 64;
+  static const usize kLogSize = llfs::PageAllocator::calculate_log_size(kNumPages, kMaxAttachments);
+
+  const llfs::PageAllocatorRuntimeOptions options{
+      .scheduler = batt::Runtime::instance().default_scheduler(),
+      .name = "TestAllocator",
+  };
+
+  const llfs::PageIdFactory id_factory{llfs::PageCount{kNumPages}, /*device_id=*/0};
+
+  const boost::uuids::uuid user_id = llfs::random_uuid();
+
+  // Initialize test state.
+  //
+  llfs::slot_offset_type user_slot = 0;
+  std::default_random_engine rng{1971};
+
+  // Create the first PageAllocator.
+  //
+  llfs::MemoryLogDevice* p_mem_log = nullptr;
+
+  batt::StatusOr<std::unique_ptr<llfs::PageAllocator>> page_allocator_status =
+      llfs::PageAllocator::recover(
+          options, id_factory, *std::make_unique<llfs::BasicLogDeviceFactory>([&p_mem_log] {
+            auto mem_log = std::make_unique<llfs::MemoryLogDevice>(kLogSize);
+            p_mem_log = mem_log.get();
+            return mem_log;
+          }));
+
+  // Verify initial state.
+  //
+  ASSERT_TRUE(page_allocator_status.ok()) << BATT_INSPECT(page_allocator_status.status());
+  ASSERT_NE(p_mem_log, nullptr);
+  EXPECT_EQ(p_mem_log->driver().get_trim_pos(), 0u);
+  EXPECT_EQ(p_mem_log->driver().get_commit_pos(), 0u);
+  EXPECT_EQ(p_mem_log->driver().get_flush_pos(), 0u);
+
+  // Apply a bunch of random ref count updates.
+  //
+  llfs::PageAllocator& page_allocator = **page_allocator_status;
+  std::array<i32, kNumPages> expected_ref_count;
+  expected_ref_count.fill(0);
+
+  batt::StatusOr<llfs::slot_offset_type> attached = page_allocator.attach_user(user_id, user_slot);
+  ASSERT_TRUE(attached.ok()) << BATT_INSPECT(attached.status());
+  user_slot += 10;
+
+  llfs::slot_offset_type max_slot = 0;
+  usize total_updates = 0;
+  usize txn_count = 0;
+
+  std::uniform_int_distribution<usize> pick_percent{0, 100};
+
+  for (usize i = 0; i < kNumTxns; ++i) {
+    // Create a random update txn.
+    //
+    std::vector<llfs::PageRefCount> ref_counts;
+    for (usize physical_page = 0; physical_page < kNumPages; ++physical_page) {
+      if (pick_percent(rng) < kUpdatePagePercent) {
+        const i32 delta = expected_ref_count[physical_page] ? 1 : 2;
+        expected_ref_count[physical_page] += delta;
+        const llfs::PageId page_id = id_factory.make_page_id(physical_page, /*generation=*/1);
+        ref_counts.emplace_back(llfs::PageRefCount{
+            .page_id = page_id,
+            .ref_count = delta,
+        });
+      }
+    }
+
+    batt::StatusOr<llfs::slot_offset_type> update_status =
+        page_allocator.update_page_ref_counts(user_id, user_slot, batt::as_seq(ref_counts));
+
+    ASSERT_TRUE(update_status.ok()) << BATT_INSPECT(update_status);
+
+    total_updates += ref_counts.size();
+    txn_count += 1;
+
+    max_slot = llfs::slot_max(max_slot, *update_status);
+    user_slot += 10;
+  }
+  EXPECT_GT(max_slot, kLogSize);
+  const usize average_txn_size = total_updates / txn_count;
+
+  // Make sure at least one trim has happened.
+  //
+  LLFS_VLOG(1) << batt::dump_range(expected_ref_count) << BATT_INSPECT(max_slot)
+               << BATT_INSPECT(txn_count) << BATT_INSPECT(average_txn_size) << std::endl;
+
+  EXPECT_NE(p_mem_log->driver().get_trim_pos(), 0u);
+
+  for (usize physical_page = 0; physical_page < kNumPages; ++physical_page) {
+    const llfs::PageId page_id = id_factory.make_page_id(physical_page, /*generation=*/1);
+    const auto [actual_count, slot] = page_allocator.get_ref_count(page_id);
+    EXPECT_EQ(actual_count, expected_ref_count[physical_page]) << BATT_INSPECT(physical_page);
+  }
+
+  // Create a snapshot and try to recover.
+  //
+  auto snapshot = llfs::LogDeviceSnapshot::from_device(*p_mem_log, llfs::LogReadMode::kDurable);
+  page_allocator.halt();
+  page_allocator.join();
+
+  // Recover and verify the expected ref counts.
+  //
+  batt::StatusOr<std::unique_ptr<llfs::PageAllocator>> page_allocator2_status =
+      llfs::PageAllocator::recover(
+          options, id_factory, *std::make_unique<llfs::BasicLogDeviceFactory>([&snapshot] {
+            auto mem_log2 = std::make_unique<llfs::MemoryLogDevice>(kLogSize);
+            mem_log2->restore_snapshot(snapshot, llfs::LogReadMode::kDurable);
+            return mem_log2;
+          }));
+
+  // Verify the recovered PageAllocator.
+  //
+  ASSERT_TRUE(page_allocator2_status.ok()) << BATT_INSPECT(page_allocator2_status.status());
+
+  llfs::PageAllocator& page_allocator2 = **page_allocator2_status;
+
+  for (usize physical_page = 0; physical_page < kNumPages; ++physical_page) {
+    const llfs::PageId page_id = id_factory.make_page_id(physical_page, /*generation=*/1);
+    const auto [actual_count, slot] = page_allocator2.get_ref_count(page_id);
+    EXPECT_EQ(actual_count, expected_ref_count[physical_page]) << BATT_INSPECT(physical_page);
+  }
+
+  LLFS_LOG_INFO()
+      << "TEST: Expect `Unable to allocate page (pool is empty); device=0` message; it is OK!";
+
+  // Attempt to allocate - it should fail because our client hasn't notified the allocator it is
+  // done with recovery.
+  //
+  batt::StatusOr<llfs::PageId> failed_alloc1 =
+      page_allocator2.allocate_page(batt::WaitForResource::kFalse);
+
+  EXPECT_EQ(failed_alloc1.status(), batt::StatusCode::kUnavailable);
+
+  // Notify the allocator that recovery is done.
+  //
+  batt::Status notify_status = page_allocator2.notify_user_recovered(user_id);
+
+  EXPECT_TRUE(notify_status.ok());
+
+  // Try to allocate a page - should fail because all have been ref-counted.
+  //
+  batt::StatusOr<llfs::PageId> failed_alloc2 =
+      page_allocator2.allocate_page(batt::WaitForResource::kFalse);
+
+  EXPECT_EQ(failed_alloc2.status(), batt::StatusCode::kResourceExhausted);
+
+  // Free up a page to test allocate.
+  //
+  llfs::PageId lucky_page_id = id_factory.make_page_id(7, /*generation=*/1);
+  {
+    // Release all count but 1.
+    //
+    user_slot += 10;
+    batt::StatusOr<llfs::slot_offset_type> update_status =
+        page_allocator2.update_page_ref_counts(user_id, user_slot,
+                                               batt::seq::single_item(llfs::PageRefCount{
+                                                   .page_id = lucky_page_id,
+                                                   .ref_count = -(expected_ref_count[7] - 1),
+                                               }));
+
+    ASSERT_TRUE(update_status.ok()) << BATT_INSPECT(update_status);
+
+    // Update 1 -> 0 (special delta value).
+    //
+    user_slot += 10;
+    batt::StatusOr<llfs::slot_offset_type> update2_status =
+        page_allocator2.update_page_ref_counts(user_id, user_slot,
+                                               batt::seq::single_item(llfs::PageRefCount{
+                                                   .page_id = lucky_page_id,
+                                                   .ref_count = llfs::kRefCount_1_to_0,
+                                               }));
+    ASSERT_TRUE(update_status.ok()) << BATT_INSPECT(update_status);
+  }
+
+  // Now try again and assert that we got the one page we freed.
+  //
+  llfs::PageId new_lucky_page_id = id_factory.make_page_id(7, /*generation=*/2);
+  batt::StatusOr<llfs::PageId> good_alloc =
+      page_allocator2.allocate_page(batt::WaitForResource::kFalse);
+
+  ASSERT_TRUE(good_alloc.ok()) << BATT_INSPECT(good_alloc);
+  EXPECT_EQ(*good_alloc, new_lucky_page_id);
+}
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+// Plan:
+//  1. Attach two client uuids to PageAllocator, A and B
+//  2. Set all page ref counts (0..9) to 3
+//  3. A decrements odds
+//  4. B decrements evens
+//  5. A decrements evens, sees dead pages
+//  6. B decrements odds, sees dead pages
+//  7. B replays txn from (4) with same slot; no dead pages, no change in ref counts
+//  8. A replays txn from (3) with same slot; no dead pages, no change in ref counts
+//
+class MockDeadPageCollector
+{
+ public:
+  MOCK_METHOD(void, handle_dead_page, (llfs::PageId), ());
+
+  void operator()(llfs::PageId page_id)
+  {
+    this->handle_dead_page(page_id);
+  }
+};
+
+TEST(PageAllocatorTest, DeterministicDeadPage)
+{
+  constexpr usize kNumPages = 10;
+  constexpr usize kMaxAttachments = 64;
+  static const usize kLogSize = llfs::PageAllocator::calculate_log_size(kNumPages, kMaxAttachments);
+
+  const llfs::PageAllocatorRuntimeOptions options{
+      .scheduler = batt::Runtime::instance().default_scheduler(),
+      .name = "TestAllocator",
+  };
+
+  const llfs::PageIdFactory id_factory{llfs::PageCount{kNumPages}, /*device_id=*/0};
+
+  ::testing::StrictMock<MockDeadPageCollector> mock_dead_page_collector;
+
+  const boost::uuids::uuid user_A_id = llfs::random_uuid();
+  const boost::uuids::uuid user_B_id = llfs::random_uuid();
+
+  batt::StatusOr<std::unique_ptr<llfs::PageAllocator>> page_allocator_status =
+      llfs::PageAllocator::recover(options, id_factory,
+                                   *std::make_unique<llfs::MemoryLogDeviceFactory>(kLogSize));
+
+  // Verify initial state.
+  //
+  ASSERT_TRUE(page_allocator_status.ok()) << BATT_INSPECT(page_allocator_status.status());
+
+  llfs::PageAllocator& page_allocator = **page_allocator_status;
+
+  // 1. Attach A and B.
+  //
+  batt::StatusOr<llfs::slot_offset_type> attach_A =
+      page_allocator.attach_user(user_A_id, /*user_A_slot=*/100);
+
+  batt::StatusOr<llfs::slot_offset_type> attach_B =
+      page_allocator.attach_user(user_B_id, /*user_B_slot=*/100);
+
+  ASSERT_TRUE(attach_A.ok()) << BATT_INSPECT(attach_A.status());
+  ASSERT_TRUE(attach_B.ok()) << BATT_INSPECT(attach_B.status());
+
+  // 2. Set ref_counts to 3.
+  //
+  {
+    std::vector<llfs::PageRefCount> prc;
+    for (usize i = 0; i < kNumPages; ++i) {
+      prc.emplace_back(llfs::PageRefCount{
+          .page_id = id_factory.make_page_id(i, /*generation=*/1),
+          .ref_count = 3,
+      });
+    }
+
+    // It doesn't matter who sets the initial counts; we'll use A.
+    //
+    batt::StatusOr<llfs::slot_offset_type> update_status = page_allocator.update_page_ref_counts(
+        user_A_id, /*user_A_slot=*/150, batt::as_seq(prc), std::ref(mock_dead_page_collector));
+
+    ASSERT_TRUE(update_status.ok()) << BATT_INSPECT(update_status);
+  }
+
+  // Verify expected values.
+  //
+  for (usize physical_page = 0; physical_page < kNumPages; ++physical_page) {
+    const llfs::PageId page_id = id_factory.make_page_id(physical_page, /*generation=*/1);
+    const auto [actual_count, slot] = page_allocator.get_ref_count(page_id);
+    EXPECT_EQ(actual_count, 3);
+  }
+
+  // 3, A decrements odds
+  //
+  {
+    std::vector<llfs::PageRefCount> prc;
+    for (usize i = 1; i < kNumPages; i += 2) {
+      prc.emplace_back(llfs::PageRefCount{
+          .page_id = id_factory.make_page_id(i, /*generation=*/1),
+          .ref_count = -1,
+      });
+    }
+    batt::StatusOr<llfs::slot_offset_type> update_status = page_allocator.update_page_ref_counts(
+        user_A_id, /*user_A_slot=*/200, batt::as_seq(prc), std::ref(mock_dead_page_collector));
+
+    ASSERT_TRUE(update_status.ok()) << BATT_INSPECT(update_status);
+  }
+
+  // Verify expected values.
+  //
+  for (usize physical_page = 0; physical_page < kNumPages; ++physical_page) {
+    const llfs::PageId page_id = id_factory.make_page_id(physical_page, /*generation=*/1);
+    const auto [actual_count, slot] = page_allocator.get_ref_count(page_id);
+    EXPECT_EQ(actual_count, (physical_page % 2) ? 2 : 3);
+  }
+
+  // 4. B decrements evens
+  //
+  {
+    std::vector<llfs::PageRefCount> prc;
+    for (usize i = 0; i < kNumPages; i += 2) {
+      prc.emplace_back(llfs::PageRefCount{
+          .page_id = id_factory.make_page_id(i, /*generation=*/1),
+          .ref_count = -1,
+      });
+    }
+    batt::StatusOr<llfs::slot_offset_type> update_status = page_allocator.update_page_ref_counts(
+        user_B_id, /*user_B_slot=*/200, batt::as_seq(prc), std::ref(mock_dead_page_collector));
+
+    ASSERT_TRUE(update_status.ok()) << BATT_INSPECT(update_status);
+  }
+
+  // Verify expected values.
+  //
+  for (usize physical_page = 0; physical_page < kNumPages; ++physical_page) {
+    const llfs::PageId page_id = id_factory.make_page_id(physical_page, /*generation=*/1);
+    const auto [actual_count, slot] = page_allocator.get_ref_count(page_id);
+    EXPECT_EQ(actual_count, 2);
+  }
+
+  // 5. A decrements evens, sees dead pages
+  //
+  for (usize n = 0; n < 3; ++n) {
+    std::vector<llfs::PageRefCount> prc;
+    for (usize i = 0; i < kNumPages; i += 2) {
+      auto page_id = id_factory.make_page_id(i, /*generation=*/1);
+      prc.emplace_back(llfs::PageRefCount{
+          .page_id = page_id,
+          .ref_count = -1,
+      });
+      EXPECT_CALL(mock_dead_page_collector, handle_dead_page(page_id))
+          .WillOnce(::testing::Return());
+    }
+    batt::StatusOr<llfs::slot_offset_type> update_status = page_allocator.update_page_ref_counts(
+        user_A_id, /*user_A_slot=*/300, batt::as_seq(prc), std::ref(mock_dead_page_collector));
+
+    ASSERT_TRUE(update_status.ok()) << BATT_INSPECT(update_status);
+  }
+
+  // Verify expected values.
+  //
+  for (usize physical_page = 0; physical_page < kNumPages; ++physical_page) {
+    const llfs::PageId page_id = id_factory.make_page_id(physical_page, /*generation=*/1);
+    const auto [actual_count, slot] = page_allocator.get_ref_count(page_id);
+    EXPECT_EQ(actual_count, (physical_page % 2) ? 2 : 1);
+  }
+
+  // 6. B decrements odds, sees dead pages
+  //
+  for (usize n = 0; n < 3; ++n) {
+    std::vector<llfs::PageRefCount> prc;
+    for (usize i = 1; i < kNumPages; i += 2) {
+      auto page_id = id_factory.make_page_id(i, /*generation=*/1);
+      prc.emplace_back(llfs::PageRefCount{
+          .page_id = page_id,
+          .ref_count = -1,
+      });
+      EXPECT_CALL(mock_dead_page_collector, handle_dead_page(page_id))
+          .WillOnce(::testing::Return());
+    }
+    batt::StatusOr<llfs::slot_offset_type> update_status = page_allocator.update_page_ref_counts(
+        user_B_id, /*user_B_slot=*/300, batt::as_seq(prc), std::ref(mock_dead_page_collector));
+
+    ASSERT_TRUE(update_status.ok()) << BATT_INSPECT(update_status);
+  }
+
+  // Verify expected values.
+  //
+  for (usize physical_page = 0; physical_page < kNumPages; ++physical_page) {
+    const llfs::PageId page_id = id_factory.make_page_id(physical_page, /*generation=*/1);
+    const auto [actual_count, slot] = page_allocator.get_ref_count(page_id);
+    EXPECT_EQ(actual_count, 1);
+  }
+
+  //  7. B replays txn from (4) with same slot; no dead pages, no change in ref counts
+  //
+  for (usize n = 0; n < 3; ++n) {
+    std::vector<llfs::PageRefCount> prc;
+    for (usize i = 0; i < kNumPages; i += 2) {
+      prc.emplace_back(llfs::PageRefCount{
+          .page_id = id_factory.make_page_id(i, /*generation=*/1),
+          .ref_count = -1,
+      });
+    }
+    batt::StatusOr<llfs::slot_offset_type> update_status = page_allocator.update_page_ref_counts(
+        user_B_id, /*user_B_slot=*/200, batt::as_seq(prc), std::ref(mock_dead_page_collector));
+
+    ASSERT_TRUE(update_status.ok()) << BATT_INSPECT(update_status);
+  }
+
+  //  8. A replays txn from (3) with same slot; no dead pages, no change in ref counts
+  //
+  for (usize n = 0; n < 3; ++n) {
+    std::vector<llfs::PageRefCount> prc;
+    for (usize i = 1; i < kNumPages; i += 2) {
+      prc.emplace_back(llfs::PageRefCount{
+          .page_id = id_factory.make_page_id(i, /*generation=*/1),
+          .ref_count = -1,
+      });
+    }
+    batt::StatusOr<llfs::slot_offset_type> update_status = page_allocator.update_page_ref_counts(
+        user_A_id, /*user_A_slot=*/200, batt::as_seq(prc), std::ref(mock_dead_page_collector));
+
+    ASSERT_TRUE(update_status.ok()) << BATT_INSPECT(update_status);
+  }
+
+  // Verify expected values.
+  //
+  for (usize physical_page = 0; physical_page < kNumPages; ++physical_page) {
+    const llfs::PageId page_id = id_factory.make_page_id(physical_page, /*generation=*/1);
+    const auto [actual_count, slot] = page_allocator.get_ref_count(page_id);
+    EXPECT_EQ(actual_count, 1);
+  }
+}
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+// Plan:
+//  1. Create attachments until we exceed the limit
+//  2. Detach some, then attach up to the limit again
+//  3. Detach all, start over at (1) and repeat 2x more
+//
+TEST(PageAllocatorTest, TooManyAttachments)
+{
+  constexpr usize kNumLoops = 3;
+  constexpr usize kNumPages = 10;
+  constexpr usize kMaxAttachments = 64;
+  static const usize kLogSize = llfs::PageAllocator::calculate_log_size(kNumPages, kMaxAttachments);
+
+  const llfs::PageAllocatorRuntimeOptions options{
+      .scheduler = batt::Runtime::instance().default_scheduler(),
+      .name = "TestAllocator",
+  };
+
+  const llfs::PageIdFactory id_factory{llfs::PageCount{kNumPages}, /*device_id=*/0};
+
+  batt::StatusOr<std::unique_ptr<llfs::PageAllocator>> page_allocator_status =
+      llfs::PageAllocator::recover(options, id_factory,
+                                   *std::make_unique<llfs::MemoryLogDeviceFactory>(kLogSize));
+
+  // Verify initial state.
+  //
+  ASSERT_TRUE(page_allocator_status.ok()) << BATT_INSPECT(page_allocator_status.status());
+
+  llfs::PageAllocator& page_allocator = **page_allocator_status;
+
+  std::vector<boost::uuids::uuid> user_ids;
+  llfs::slot_offset_type slot = 0;
+
+  for (usize i = 0; i < kNumLoops; ++i) {
+    //  1. Create attachments until we exceed the limit
+    //
+    for (usize j = 0; j < kMaxAttachments * 2; ++j) {
+      user_ids.emplace_back(llfs::random_uuid());
+      slot += 100;
+      batt::StatusOr<llfs::slot_offset_type> attach =
+          page_allocator.attach_user(user_ids.back(), slot);
+
+      if (!attach.ok()) {
+        EXPECT_EQ(attach.status(), llfs::StatusCode::kOutOfAttachments);
+        user_ids.pop_back();
+        break;
+      }
+    }
+    EXPECT_EQ(user_ids.size(), kMaxAttachments);
+
+    //  2. Detach some, then attach up to the limit again
+    //
+    for (usize j = 0; j < kMaxAttachments / 3; ++j) {
+      slot += 100;
+      batt::StatusOr<llfs::slot_offset_type> detach =
+          page_allocator.detach_user(user_ids.back(), slot);
+
+      // This should succeed.
+      //
+      ASSERT_TRUE(detach.ok()) << BATT_INSPECT(detach);
+
+      slot += 100;
+      batt::StatusOr<llfs::slot_offset_type> detach2 =
+          page_allocator.detach_user(user_ids.back(), slot);
+
+      // This should fail because that uuid is no longer attached.
+      //
+      EXPECT_EQ(detach2.status(), llfs::StatusCode::kPageAllocatorNotAttached);
+
+      user_ids.pop_back();
+    }
+    EXPECT_LT(user_ids.size(), kMaxAttachments);
+    EXPECT_GT(user_ids.size(), kMaxAttachments / 2);
+
+    for (usize j = 0; j < kMaxAttachments * 2; ++j) {
+      user_ids.emplace_back(llfs::random_uuid());
+      slot += 100;
+      batt::StatusOr<llfs::slot_offset_type> attach =
+          page_allocator.attach_user(user_ids.back(), slot);
+
+      if (!attach.ok()) {
+        EXPECT_EQ(attach.status(), llfs::StatusCode::kOutOfAttachments);
+        user_ids.pop_back();
+        break;
+      }
+    }
+    EXPECT_EQ(user_ids.size(), kMaxAttachments);
+
+    //  3. Detach all, start over at (1) and repeat 2x more
+    //
+    while (!user_ids.empty()) {
+      slot += 100;
+      batt::StatusOr<llfs::slot_offset_type> detach =
+          page_allocator.detach_user(user_ids.back(), slot);
+
+      ASSERT_TRUE(detach.ok()) << BATT_INSPECT(detach);
+
+      user_ids.pop_back();
+    }
+  }
 }
 
 }  // namespace

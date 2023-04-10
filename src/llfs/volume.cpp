@@ -179,9 +179,12 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
                visitor.ids->payload.trimmer_uuid,
            }) {
         for (const PageArena& arena : cache->all_arenas()) {
-          const slot_offset_type slot_offset = [&] {
-            // Find the lowest available slot offset for the log associated with `uuid`.
-            //
+          Optional<PageAllocatorAttachmentStatus> attachment =
+              arena.allocator().get_client_attachment_status(uuid);
+
+          // Find the lowest available slot offset for the log associated with `uuid`.
+          //
+          const slot_offset_type next_available_slot_offset = [&] {
             if (uuid == visitor.ids->payload.recycler_uuid) {
               return recycler->slot_upper_bound(LogReadMode::kDurable);
             } else {
@@ -197,20 +200,22 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
                       .client = uuid,
                       .device = arena.device().get_id(),
                   },
-              .user_slot_offset = slot_offset,
+              .user_slot_offset = next_available_slot_offset,
           }};
 
           trimmer_grant_size += packed_sizeof_slot(attach_event);
 
-          if (visitor.device_attachments.count(attach_event.id)) {
+          // If already attached, then nothing to do; continue.
+          //
+          if (attachment || visitor.device_attachments.count(attach_event.id)) {
             continue;
           }
 
           LLFS_VLOG(1) << "[Volume::recover] attaching client " << uuid << " to device "
-                       << arena.device().get_id() << BATT_INSPECT(slot_offset);
+                       << arena.device().get_id() << BATT_INSPECT(next_available_slot_offset);
 
           StatusOr<slot_offset_type> sync_slot =
-              arena.allocator().attach_user(uuid, /*user_slot=*/slot_offset);
+              arena.allocator().attach_user(uuid, /*user_slot=*/next_available_slot_offset);
 
           BATT_UNTESTED_COND(!sync_slot.ok());
           BATT_REQUIRE_OK(sync_slot);
@@ -242,12 +247,25 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
     Status jobs_resolved = visitor.resolve_pending_jobs(
         *cache, *recycler, /*volume_uuid=*/visitor.ids->payload.main_uuid, slot_writer, grant);
 
-    BATT_UNTESTED_COND(!jobs_resolved.ok());
     BATT_REQUIRE_OK(jobs_resolved);
 
     LLFS_VLOG(1) << "Pending jobs resolved";
+
+    // Notify all PageAllocators that we are done with recovery.
+    //
+    for (const auto& uuid : {
+             visitor.ids->payload.main_uuid,
+             visitor.ids->payload.recycler_uuid,
+             visitor.ids->payload.trimmer_uuid,
+         }) {
+      for (const PageArena& arena : cache->all_arenas()) {
+        BATT_REQUIRE_OK(arena.allocator().notify_user_recovered(uuid));
+      }
+    }
   }
 
+  // Create the Volume object.
+  //
   std::unique_ptr<Volume> volume{
       new Volume{params.options, visitor.ids->payload.main_uuid, std::move(cache),
                  std::move(params.trim_control), std::move(page_deleter), std::move(root_log),

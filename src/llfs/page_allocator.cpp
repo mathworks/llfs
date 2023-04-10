@@ -23,14 +23,21 @@ namespace llfs {
 
 u64 PageAllocator::calculate_log_size(u64 physical_page_count, u64 max_attachments)
 {
-  static const PackedPageRefCount packed_ref_count{
-      .page_id = 0,
-      .ref_count = 0,
+  static const PackedPageRefCountRefresh packed_ref_count{
+      {
+          .page_id = 0,
+          .ref_count = 0,
+      },
+      .user_index = 0,
   };
-  static const PackedPageAllocatorAttach packed_attachment{.user_slot = {
-                                                               .user_id = {},
-                                                               .slot_offset = 0,
-                                                           }};
+  static const PackedPageAllocatorAttach packed_attachment{
+      .user_slot =
+          {
+              .user_id = {},
+              .slot_offset = 0,
+          },
+      .user_index = 0,
+  };
 
   const u64 attachment_checkpoints = packed_sizeof_slot(packed_attachment) * max_attachments;
 
@@ -51,28 +58,25 @@ u64 PageAllocator::calculate_log_size(u64 physical_page_count, u64 max_attachmen
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<std::unique_ptr<PageAllocator>> PageAllocator::recover(
-    const PageAllocatorRuntimeOptions& options, const PageIdFactory& page_ids,
+    const PageAllocatorRuntimeOptions& runtime_options, const PageIdFactory& page_ids,
     LogDeviceFactory& log_device_factory)
 {
   initialize_status_codes();
 
   // Create a State object to collect recovered events from the log.
   //
-  auto recovered_state = std::make_unique<PageAllocator::State>(page_ids);
+  auto recovered_state = std::make_unique<PageAllocator::State>(page_ids, /*max_attachments=*/64);
 
   PageAllocator::Metrics metrics;
 
   // For each recovered event in the log, update the state machine.
   //
-  auto process_recovered_event = [&recovered_state, &metrics](const SlotParse& slot,
-                                                              const auto& event_payload) -> Status {
-    if (!PageAllocatorState::is_valid(recovered_state->propose(event_payload))) {
-      return ::llfs::make_status(::llfs::StatusCode::kInvalidPageAllocatorProposal);
-    }
-
-    recovered_state->learn(slot.offset.lower_bound, event_payload, metrics);
-    return OkStatus();
+  auto process_recovered_event = [&recovered_state](const SlotParse& slot,
+                                                    const auto& event_payload) -> Status {
+    return recovered_state->recover(slot.offset, event_payload);
   };
+
+  recovered_state->check_post_recovery_invariants();
 
   // Read the log, scanning its contents.
   //
@@ -90,10 +94,30 @@ StatusOr<std::unique_ptr<PageAllocator>> PageAllocator::recover(
 
   BATT_REQUIRE_OK(recovered_log);
 
+  LLFS_VLOG(1) << "PageAllocator::recover()";
+
   // Now we can create the PageAllocator.
   //
-  return std::unique_ptr<PageAllocator>{new PageAllocator{
-      options.scheduler, options.name, std::move(*recovered_log), std::move(recovered_state)}};
+  auto page_allocator = std::unique_ptr<PageAllocator>{
+      new PageAllocator{runtime_options.scheduler, runtime_options.name, std::move(*recovered_log),
+                        std::move(recovered_state)}};
+
+  // Set the recovering_users state.
+  //
+  {
+    std::vector<PageAllocatorAttachmentStatus> attached =
+        page_allocator->get_all_clients_attachment_status();
+    auto locked = page_allocator->recovering_users_.lock();
+    locked->clear();
+    for (const auto& attachment : attached) {
+      locked->emplace(attachment.user_id);
+    }
+    page_allocator->recovering_user_count_.set_value(attached.size());
+  }
+
+  // Done!
+  //
+  return page_allocator;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -160,6 +184,17 @@ void PageAllocator::join() noexcept
 //
 StatusOr<PageId> PageAllocator::allocate_page(batt::WaitForResource wait_for_resource)
 {
+  // If some attached users are still recovering, then fail/block (to prevent accidental
+  // re-allocation of a page that belonged to some page job that was partially committed).
+  //
+  if (wait_for_resource == batt::WaitForResource::kFalse) {
+    if (BATT_HINT_FALSE(this->recovering_user_count_.get_value() > 0)) {
+      return {batt::StatusCode::kUnavailable};
+    }
+  } else {
+    BATT_REQUIRE_OK(this->recovering_user_count_.await_equal(0));
+  }
+
   for (;;) {
     {
       auto locked = this->state_.lock();
@@ -168,7 +203,8 @@ StatusOr<PageId> PageAllocator::allocate_page(batt::WaitForResource wait_for_res
         this->metrics_.pages_allocated.fetch_add(1);
         return *page_id;
       }
-      LLFS_LOG_INFO_FIRST_N(1) << "Unable to allocate page (pool is empty)";
+      LLFS_LOG_INFO_FIRST_N(1) << "Unable to allocate page (pool is empty)"
+                               << "; device=" << (**locked).page_ids().get_device_id();
       if (wait_for_resource == batt::WaitForResource::kFalse) {
         return Status{batt::StatusCode::kResourceExhausted};
       }
@@ -201,13 +237,16 @@ Status PageAllocator::recover_page(PageId page_id)
 StatusOr<slot_offset_type> PageAllocator::attach_user(const boost::uuids::uuid& user_id,
                                                       slot_offset_type user_slot)
 {
-  return this->update_sync(PackedPageAllocatorAttach{
+  PackedPageAllocatorAttach attach_event{
       .user_slot =
           PackedPageUserSlot{
               .user_id = user_id,
               .slot_offset = user_slot,
           },
-  });
+      .user_index = PageAllocatorState::kInvalidUserIndex,
+  };
+
+  return this->update_sync(attach_event);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -215,20 +254,40 @@ StatusOr<slot_offset_type> PageAllocator::attach_user(const boost::uuids::uuid& 
 StatusOr<slot_offset_type> PageAllocator::detach_user(const boost::uuids::uuid& user_id,
                                                       slot_offset_type user_slot)
 {
-  return this->update_sync(PackedPageAllocatorDetach{
+  PackedPageAllocatorDetach detach_event{
       .user_slot =
           PackedPageUserSlot{
               .user_id = user_id,
               .slot_offset = user_slot,
           },
-  });
+  };
+
+  return this->update_sync(detach_event);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status PageAllocator::notify_user_recovered(const boost::uuids::uuid& user_id)
+{
+  {
+    auto locked_recovering_users = this->recovering_users_.lock();
+    auto iter = locked_recovering_users->find(user_id);
+    if (iter == locked_recovering_users->end()) {
+      return batt::OkStatus();
+    }
+    const i64 old_count = this->recovering_user_count_.fetch_sub(1);
+    BATT_CHECK_GT(old_count, 0) << BATT_INSPECT(user_id)
+                                << BATT_INSPECT_RANGE(*locked_recovering_users);
+  }
+  return batt::OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 std::pair<i32, slot_offset_type> PageAllocator::get_ref_count(PageId id)
 {
-  return this->state_->get_ref_count(id);
+  const auto info = this->state_->get_ref_count_status(id);
+  return {info.ref_count, info.learned_upper_bound};
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -238,8 +297,9 @@ BoxedSeq<PageRefCount> PageAllocator::page_ref_counts()
   auto* state = &(this->state_.no_lock());
 
   return as_seq(boost::irange<std::size_t>(0, state->page_device_capacity()))  //
-         | seq::map([state](page_id_int id_val) {
-             return state->get_ref_count_obj(PageId{id_val});
+         | seq::map([state](page_id_int id_val) -> PageRefCount {
+             const auto page_status = state->get_ref_count_status(PageId{id_val});
+             return PageRefCount{page_status.page_id, page_status.ref_count};
            })  //
          | seq::boxed();
 }
@@ -380,8 +440,8 @@ bool PageAllocator::await_ref_count(PageId page_id, i32 ref_count)
 {
   usize counter = 1;
   for (;;) {
-    PageRefCount prc = this->state_->get_ref_count_obj(page_id);
-    if (prc.page_id != page_id.int_value()) {
+    PageAllocatorRefCountStatus prc = this->state_->get_ref_count_status(page_id);
+    if (prc.page_id != page_id) {
       return false;
     }
     if (prc.ref_count == ref_count) {
@@ -393,18 +453,11 @@ bool PageAllocator::await_ref_count(PageId page_id, i32 ref_count)
     if ((counter & 4095) == 0) {
       LLFS_LOG_INFO() << BATT_INSPECT(prc) << BATT_INSPECT(page_id) << BATT_INSPECT(ref_count)
                       << BATT_INSPECT(counter);
-      BATT_CHECK_LT(counter, 10 * 1000) << "[PageAllocator::await_ref_count] timed out (10s)";
+      BATT_CHECK_LT(counter, 10 * 1000) << "[PageAllocator::await_ref_count] timed out (10s)"
+                                        << BATT_INSPECT(page_id) << BATT_INSPECT(ref_count);
     }
   }
   return true;
-
-#if 0  // TODO [tastolfi 2022-09-16] find a way to make this work...
-    return batt::Runtime::instance().await_condition(
-        [this, ref_count](PageId page_id) -> bool {
-          return this->get_ref_count(page_id).first == ref_count;
-        },
-        page_id);
-#endif
 }
 
 }  // namespace llfs

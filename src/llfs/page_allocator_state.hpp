@@ -10,8 +10,14 @@
 #ifndef LLFS_PAGE_ALLOCATOR_STATE_HPP
 #define LLFS_PAGE_ALLOCATOR_STATE_HPP
 
+#include <llfs/config.hpp>
+//
+#include <llfs/page_allocator_attachment.hpp>
 #include <llfs/page_allocator_events.hpp>
 #include <llfs/page_allocator_metrics.hpp>
+#include <llfs/page_allocator_ref_count.hpp>
+#include <llfs/page_allocator_state_no_lock.hpp>
+
 #include <llfs/page_id_factory.hpp>
 #include <llfs/slot.hpp>
 #include <llfs/slot_writer.hpp>
@@ -21,250 +27,19 @@
 #include <boost/uuid/uuid.hpp>
 
 #include <unordered_map>
+#include <unordered_set>
 
 namespace llfs {
 
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-// PageAllocatorObject - base for all objects tracked by the PageAllocator; remembers when it was
-// last updated (and its place in an LRU list).
-//
-using PageAllocatorLRUHook =
-    boost::intrusive::list_base_hook<boost::intrusive::tag<struct PageAllocatorLRUTag>>;
-
-class PageAllocatorObject : public PageAllocatorLRUHook
-{
- public:
-  void set_last_update(slot_offset_type slot)
-  {
-    this->last_update_ = slot;
-  }
-
-  slot_offset_type last_update() const
-  {
-    return this->last_update_;
-  }
-
- private:
-  slot_offset_type last_update_ = ~slot_offset_type{0};
-};
-
-using PageAllocatorLRUList =
-    boost::intrusive::list<PageAllocatorObject, boost::intrusive::base_hook<PageAllocatorLRUHook>>;
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-// An attachment from a unique user to the index; facilitates idempotent ("exactly-once") updates.
-//
-class PageAllocatorAttachment : public PageAllocatorObject
-{
- public:
-  explicit PageAllocatorAttachment(const boost::uuids::uuid& user_id,
-                                   slot_offset_type user_slot) noexcept
-      : user_id_{user_id}
-      , user_slot_{user_slot}
-  {
-  }
-
-  const boost::uuids::uuid& get_user_id() const
-  {
-    return this->user_id_;
-  }
-
-  void set_user_slot(slot_offset_type slot_offset)
-  {
-    this->user_slot_ = slot_offset;
-  }
-
-  slot_offset_type get_user_slot() const
-  {
-    return this->user_slot_;
-  }
-
- private:
-  const boost::uuids::uuid user_id_;
-  slot_offset_type user_slot_;
-};
-
-struct PageAllocatorAttachmentStatus {
-  boost::uuids::uuid user_id;
-  slot_offset_type user_slot;
-};
-
-// (Hash) Map from client/user UUID to PageAllocatorAttachment.
-//
-using PageAllocatorAttachmentMap =
-    std::unordered_map<boost::uuids::uuid, std::unique_ptr<PageAllocatorAttachment>,
-                       boost::hash<boost::uuids::uuid>>;
-
-// Base list node hook that allows a PageAllocatorRefCount to be added to the free pool.
-//
-using PageAllocatorFreePoolHook =
-    boost::intrusive::list_base_hook<boost::intrusive::tag<struct PageAllocatorFreePoolTag>>;
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-// PageAllocatorRefCount - the current ref count value for a single page, with last modified slot
-// and hooks for the LRU list and free pool.
-//
-class PageAllocatorRefCount
-    : public PageAllocatorObject
-    , public PageAllocatorFreePoolHook
-{
- public:
-  PageAllocatorRefCount() = default;
-
-  PageAllocatorRefCount(const PageAllocatorRefCount&) = delete;
-  PageAllocatorRefCount& operator=(const PageAllocatorRefCount&) = delete;
-
-  i32 get_count() const
-  {
-    return this->count_.load();
-  }
-
-  page_generation_int get_generation() const
-  {
-    return this->generation_.load();
-  }
-
-  bool compare_exchange_weak(i32& expected, i32 desired)
-  {
-    return this->count_.compare_exchange_weak(expected, desired);
-  }
-
-  i32 fetch_add(i32 delta)
-  {
-    return this->count_.fetch_add(delta);
-  }
-
-  i32 set_count(i32 value)
-  {
-    return this->count_.exchange(value);
-  }
-
-  page_generation_int set_generation(page_generation_int generation)
-  {
-    return this->generation_.exchange(generation);
-  }
-
-  page_generation_int advance_generation()
-  {
-    return this->generation_.fetch_add(1) + 1;
-  }
-
-  page_generation_int revert_generation()
-  {
-    return this->generation_.fetch_sub(1) - 1;
-  }
-
- private:
-  std::atomic<page_generation_int> generation_{0};
-  std::atomic<i32> count_{0};
-};
-
-using PageAllocatorFreePoolList =
-    boost::intrusive::list<PageAllocatorRefCount,
-                           boost::intrusive::base_hook<PageAllocatorFreePoolHook>>;
-
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-// Base class of PageAllocatorState comprised of state that is safe to access without holding a
-// mutex lock.
-//
-class PageAllocatorStateNoLock
-{
- public:
-  explicit PageAllocatorStateNoLock(const PageIdFactory& ids) noexcept;
-
-  const PageIdFactory& page_ids() const
-  {
-    return this->page_ids_;
-  }
-
-  StatusOr<slot_offset_type> await_learned_slot(slot_offset_type min_learned_upper_bound);
-
-  slot_offset_type learned_upper_bound() const
-  {
-    return this->learned_upper_bound_.get_value();
-  }
-
-  Status await_free_page();
-
-  u64 page_device_capacity() const noexcept
-  {
-    return this->page_ids_.get_physical_page_count();
-  }
-
-  u64 free_pool_size()
-  {
-    return this->free_pool_size_.get_value();
-  }
-
-  std::pair<i32, slot_offset_type> get_ref_count(PageId id) const noexcept
-  {
-    const page_id_int physical_page = this->page_ids_.get_physical_page(id);
-    BATT_CHECK_LT(physical_page, this->page_device_capacity());
-
-    slot_offset_type slot = this->learned_upper_bound_.get_value();
-    return std::make_pair(this->page_ref_counts_[physical_page].get_count(), slot);
-  }
-
-  PageRefCount get_ref_count_obj(PageId id) const noexcept
-  {
-    const page_id_int physical_page = this->page_ids_.get_physical_page(id);
-    BATT_ASSERT_LT(physical_page, this->page_device_capacity());
-
-    const auto& iprc = this->page_ref_counts_[physical_page];
-
-    // Load count then generation, to avoid A-B-A race condition where we think we are observing a
-    // ref_count that goes down to 1 (which should indicate there are no races/concurrent updates
-    // going on to this page count since the caller is the sole owner), but that count is from a
-    // later generation.  If we load generation after count, then the caller observes the generation
-    // *not* to have changed, that means count was accurate for that generation in this case.
-    //
-    const auto physical_page_ref_count = iprc.get_count();
-    //  (^^^ count)  (generation vvv)
-    const auto physical_page_generation = iprc.get_generation();
-
-    return PageRefCount{
-        .page_id =
-            this->page_ids_.make_page_id(physical_page, physical_page_generation).int_value(),
-        .ref_count = physical_page_ref_count,
-    };
-  }
-
-  void halt() noexcept
-  {
-    this->learned_upper_bound_.close();
-    this->free_pool_size_.close();
-  }
-
- protected:
-  // Returns the index of `ref_count` in the `page_ref_counts_` array (which is also the physical
-  // page number for that page's device).  Panic if `ref_count` is not in our ref counts array.
-  //
-  isize index_of(const PageAllocatorRefCount* ref_count) const;
-
-  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-
-  batt::Watch<slot_offset_type> learned_upper_bound_{0};
-
-  // The size of the free pool; used to allow blocking on free pages becoming available.
-  //
-  batt::Watch<u64> free_pool_size_{0};
-
-  // The number of pages addressable by the device.
-  //
-  const PageIdFactory page_ids_;
-
-  // The array of page ref counts, indexed by the page id.
-  //
-  const std::unique_ptr<PageAllocatorRefCount[]> page_ref_counts_{
-      new PageAllocatorRefCount[this->page_device_capacity()]};
-};
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-// The internal state of a PageDeviceIndex; must be synchronized for concurrent access.
-//
+/** \brief The internal state of a PageDeviceIndex; must be externally synchronized for concurrent
+ * access.
+ */
 class PageAllocatorState : public PageAllocatorStateNoLock
 {
  public:
+  static constexpr u32 kInvalidUserIndex = PageAllocatorRefCount::kInvalidUserIndex;
+
   // Define `ThreadSafeBase` type member alias for the benefit of Mutex<PageAllocatorState>.
   //
   using ThreadSafeBase = PageAllocatorStateNoLock;
@@ -273,6 +48,7 @@ class PageAllocatorState : public PageAllocatorStateNoLock
     kNoChange = 0,
     kValid = 1,
     kInvalid_NotAttached = 2,
+    kInvalid_OutOfAttachments = 3,
   };
 
   static bool is_valid(ProposalStatus proposal_status)
@@ -284,6 +60,8 @@ class PageAllocatorState : public PageAllocatorStateNoLock
         return true;
       case ProposalStatus::kInvalid_NotAttached:
         return false;
+      case ProposalStatus::kInvalid_OutOfAttachments:
+        return false;
     }
     LLFS_LOG_WARNING() << "Invalid ProposalStatus value: " << (int)proposal_status;
     return false;
@@ -294,12 +72,16 @@ class PageAllocatorState : public PageAllocatorStateNoLock
     kTrue = true,
   };
 
-  explicit PageAllocatorState(const PageIdFactory& ids) noexcept;
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  explicit PageAllocatorState(const PageIdFactory& ids, u64 max_attachments) noexcept;
 
   PageAllocatorState(const PageAllocatorState&) = delete;
   PageAllocatorState& operator=(const PageAllocatorState&) = delete;
 
-  void revert(const PageAllocatorState& prior);
+  ~PageAllocatorState() noexcept;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   Optional<PageId> allocate_page();
 
@@ -318,53 +100,159 @@ class PageAllocatorState : public PageAllocatorStateNoLock
   StatusOr<slot_offset_type> write_checkpoint_slice(
       TypedSlotWriter<PackedPageAllocatorEvent>& slot_writer, batt::Grant& slice_grant);
 
-#define LLFS_PAGE_DEVICE_INDEX_OP(Type)                                                            \
-  ProposalStatus propose(const Type& op);                                                          \
-  void learn(slot_offset_type index_slot, const Type& op, PageAllocatorMetrics&)
+  //----- --- -- -  -  -   -
+  // PackedPageAllocatorAttach event handlers.
+  //----- --- -- -  -  -   -
 
-  LLFS_PAGE_DEVICE_INDEX_OP(PackedPageAllocatorAttach);
-  LLFS_PAGE_DEVICE_INDEX_OP(PackedPageAllocatorDetach);
-  LLFS_PAGE_DEVICE_INDEX_OP(PackedPageRefCount);
-  LLFS_PAGE_DEVICE_INDEX_OP(PackedPageAllocatorTxn);
+  /** \brief Determines the validity of `op` and whether it has already been applied to the state
+   * machine.
+   *
+   * This function requires that `op->user_index` is set to PageAllocatorState::kInvalidUserIndex.
+   * If the proposal is not invalid, then this member will be set to a newly allocated attachment
+   * number, which is used to identify the last modifier of a given page.
+   */
+  ProposalStatus propose(PackedPageAllocatorAttach* op);
 
-#undef LLFS_PAGE_DEVICE_INDEX_OP
+  void learn(const SlotRange& slot_offset, const PackedPageAllocatorAttach& op,
+             PageAllocatorMetrics&);
 
-  void set_recovering(bool value)
-  {
-    this->recovering_.store(value);
-  }
+  Status recover(const SlotRange& slot_offset, const PackedPageAllocatorAttach& op);
+
+  //----- --- -- -  -  -   -
+  // PackedPageAllocatorDetach event handlers.
+  //----- --- -- -  -  -   -
+
+  ProposalStatus propose(PackedPageAllocatorDetach* op);
+
+  void learn(const SlotRange& slot_offset, const PackedPageAllocatorDetach& op,
+             PageAllocatorMetrics&);
+
+  Status recover(const SlotRange& slot_offset, const PackedPageAllocatorDetach& op);
+
+  //----- --- -- -  -  -   -
+  // PackedPageRefCountRefresh event handlers.
+  //----- --- -- -  -  -   -
+
+  Status recover(const SlotRange& slot_offset, const PackedPageRefCountRefresh& op);
+
+  //----- --- -- -  -  -   -
+  // PackedPageAllocatorTxn event handlers.
+  //----- --- -- -  -  -   -
+
+  /** \brief Determines the validity of `op` and whether it has already been applied to the state
+   * machine.
+   *
+   * This function requires op->user_index to be PageAllocatorState::kInvalidUserIndex initially.
+   *
+   * Side-effects (only if ProposalStatus::kValid is returned):
+   *   - op->user_index is updated to the attachment num for the specified user_id
+   *   - op->ref_counts are updated to change all ref count _delta_ (relative) values to absolute
+   *     values, reflecting the post-transaction state.
+   */
+  ProposalStatus propose(PackedPageAllocatorTxn* op);
+
+  void learn(const SlotRange& slot_offset, const PackedPageAllocatorTxn& op, PageAllocatorMetrics&);
+
+  Status recover(const SlotRange& slot_offset, const PackedPageAllocatorTxn& op);
+
+  //----- --- -- -  -  -   -
+
+  void check_post_recovery_invariants() const;
 
   std::vector<PageAllocatorAttachmentStatus> get_all_clients_attachment_status() const;
 
   Optional<PageAllocatorAttachmentStatus> get_client_attachment_status(
       const boost::uuids::uuid& uuid) const;
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
  private:
+  /** \brief Finds an attachment number (aka `user_index`) not in use by any other uuid, and binds
+   * it to `user_id`.
+   *
+   * \return the allocated user_index
+   */
+  StatusOr<u32> allocate_attachment(const boost::uuids::uuid& uuid) noexcept;
+
+  /** \brief Returns the specified user_index (attachment number) to the set of available attachment
+   * numbers.
+   *
+   * If `expected_uuid` is non-None, then this function also checks that `user_index`, if currently
+   * in use, is associated with the given uuid (panicking otherwise).
+   */
+  void deallocate_attachment(u32 user_index,
+                             const Optional<boost::uuids::uuid>& expected_uuid = None) noexcept;
+
+  /** \brief Returns the `user_index` associated with a given user_id (uuid), if that user is
+   * attached; None otherwise.
+   */
+  Optional<u32> get_attachment_num(const boost::uuids::uuid& uuid) noexcept;
+
+  /** \brief Checks whether the specified user is attached, and if so, whether the current slot of
+   the attachment is "caught-up" with the slot offset specified in `user_slot`.
+   *
+   * \return
+   *   kValid
+   *     If the user is attached and the user slot is greater than the last known update for user_id
+   *   kNoChange
+   *     If the user is attached but the user slot is not greater than the last known update,
+   *     indicating that we have already seen this update
+   *   kInvalid_NotAttached
+   *     If the user is not attached (in which case we have no information on whether the update was
+   *     processed)
+   */
   ProposalStatus propose_exactly_once(const PackedPageUserSlot& user_slot,
                                       AllowAttach attach) const;
 
-  // Sets the `last_update` field on `obj` to `index_slot` and moves `obj` to the back of the LRU
-  // list.
+  /** \brief Unconditionally updates the user slot, attaching if necessary.
+   *
+   * \return true iff successful
+   */
+  [[nodiscard]] bool update_attachment(const SlotRange& slot_offset,
+                                       const PackedPageUserSlot& user_slot, u32 user_index,
+                                       AllowAttach attach);
+
+  /** \brief Unconditionally detaches the specified uuid.
+   */
+  void remove_attachment(const boost::uuids::uuid& user_id);
+
+  /** \brief The core implementation of `learn` and `recover` for PackedPageAllocatorTxn.
+   */
+  template <bool kInsideRecovery>
+  void process_txn(const SlotRange& slot_offset, const PackedPageAllocatorTxn& txn,
+                   PageAllocatorMetrics* metrics,
+                   std::integral_constant<bool, kInsideRecovery> inside_recovery);
+
+  // Sets the `last_update` field on `obj` to `slot_offset.lower_bound` and moves `obj` to the back
+  // of the LRU list.
   //
-  void set_last_update(PageAllocatorObject* obj, slot_offset_type index_slot);
+  void set_last_update(PageAllocatorLRUBase* obj, const SlotRange& slot_offset);
 
   // Returns true iff `obj` is an PageAllocatorRefCount belonging to _this_ PageAllocator.
   //
-  bool is_ref_count(const PageAllocatorObject* obj) const;
+  bool is_ref_count(const PageAllocatorLRUBase* obj) const;
 
   // Returns a range of all the page ref counts in this index.
   //
   boost::iterator_range<PageAllocatorRefCount*> page_ref_counts();
 
+  // Returns a range of all the page ref counts in this index (const).
+  //
+  boost::iterator_range<const PageAllocatorRefCount*> page_ref_counts() const;
+
   // Advance the current learned upper bound.
   //
   void update_learned_upper_bound(slot_offset_type offset);
 
-  void learn_ref_count_delta(const PackedPageRefCount& delta, PageAllocatorRefCount* const obj,
-                             PageAllocatorMetrics& metrics);
+  // Returns the new ref count that will result from applying the delta to the passed obj.
+  //
+  i32 calculate_new_ref_count(const PackedPageRefCount& delta) const;
 
-  void learn_ref_count_1_to_0(const PackedPageRefCount& delta, page_generation_int page_generation,
-                              PageAllocatorRefCount* const obj, PageAllocatorMetrics& metrics);
+  /** \brief If the given ref count object has a positive ref count but *is* in the free pool, then
+   * this function removes it; otherwise if the object has a zero ref count but is *not* in the free
+   * pool, adds it.
+   */
+  void update_free_pool_status(PageAllocatorRefCount* obj);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -380,9 +268,13 @@ class PageAllocatorState : public PageAllocatorStateNoLock
   //
   PageAllocatorFreePoolList free_pool_;
 
-  // Flag to indicate whether we are in steady-state.
+  // The set of attachment numbers (i.e., user_index) known to be free.
   //
-  std::atomic<bool> recovering_{true};
+  std::unordered_set<u32> free_attach_nums_;
+
+  // The current assignment of attachment number (i.e. user_index) to uuid (user_id).
+  //
+  std::vector<batt::Optional<boost::uuids::uuid>> attachment_by_index_;
 };
 
 }  // namespace llfs

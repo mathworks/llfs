@@ -16,6 +16,7 @@
 #include <llfs/packed_array.hpp>
 #include <llfs/page_id.hpp>
 #include <llfs/seq.hpp>
+#include <llfs/unpack_cast.hpp>
 
 #include <batteries/static_assert.hpp>
 
@@ -36,9 +37,14 @@ struct PackedPageId {
 
   little_page_id_int id_val;
 
-  PageId as_page_id() const
+  PageId as_page_id() const noexcept
   {
     return PageId{id_val.value()};
+  }
+
+  PageId unpack() const noexcept
+  {
+    return this->as_page_id();
   }
 
   auto debug_dump(const void* base) const
@@ -55,6 +61,11 @@ inline std::ostream& operator<<(std::ostream& out, const PackedPageId& t)
   return out << t.as_page_id();
 }
 
+inline PageId get_page_id(const PackedPageId& packed_page_id)
+{
+  return packed_page_id.as_page_id();
+}
+
 BATT_STATIC_ASSERT_EQ(sizeof(PackedPageId), 8);
 
 LLFS_DEFINE_PACKED_TYPE_FOR(PageId, PackedPageId);
@@ -62,6 +73,37 @@ LLFS_DEFINE_PACKED_TYPE_FOR(PageId, PackedPageId);
 BoxedSeq<PageId> trace_refs(const PackedArray<PackedPageId>& packed);
 
 BoxedSeq<PageId> trace_refs(const BoxedSeq<PageId>& page_ids);
+
+template <typename Dst>
+[[nodiscard]] PackedPageId* pack_object_to(const PackedPageId& from_id, PackedPageId* to_id, Dst*)
+{
+  *to_id = from_id;
+  return to_id;
+}
+
+template <typename Dst>
+[[nodiscard]] PackedPageId* pack_object_to(const PageId& id, PackedPageId* packed_id, Dst*)
+{
+  packed_id->id_val = id.int_value();
+
+  BATT_CHECK_EQ(packed_id->id_val, id.int_value());
+
+  return packed_id;
+}
+
+template <typename Src>
+inline StatusOr<PageId> unpack_object(const PackedPageId& packed_id, Src*)
+{
+  return PageId{packed_id.id_val};
+}
+
+inline batt::Status validate_packed_value(const PackedPageId& packed, const void* buffer_data,
+                                          usize buffer_size)
+{
+  BATT_REQUIRE_OK(validate_packed_struct(packed, buffer_data, buffer_size));
+
+  return batt::OkStatus();
+}
 
 }  // namespace llfs
 

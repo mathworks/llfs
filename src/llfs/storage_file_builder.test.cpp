@@ -2,6 +2,8 @@
 //
 #include <llfs/storage_file_builder.hpp>
 
+#include <random>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -98,9 +100,8 @@ class StorageFileBuilderTest : public ::testing::Test
 
       // Assuming 1 slot filled if back slot, all slots filled otherwise.
       //
-      constexpr u64 kMaxPageDeviceSlots =
-          llfs::PackedConfigBlock::kPayloadCapacity / llfs::PackedPageDeviceConfig::kSize;
-      u64 expected_num_slots = (config_block == config_blocks.back()) ? 1 : kMaxPageDeviceSlots;
+      u64 expected_num_slots =
+          (config_block == config_blocks.back()) ? 1 : llfs::PackedConfigBlock::kMaxSlots;
 
       // Set offsets of config block based on position
       //
@@ -127,42 +128,52 @@ class StorageFileBuilderTest : public ::testing::Test
     }
   }
 
-  // Writes random data to disk given the file, offset, and amount of data to write. Used to
-  // randomize data of a test file to verify repeated write and read testing.
+  // Writes random data to disk given the file, offset, and amount of data to write. write_offset
+  // and write_size must be multiples of 512.
   //
-  void write_rand_data(llfs::IoRingRawBlockFile& test_file, i64 write_offset, i64 write_size)
+  llfs::Status write_rand_data(llfs::IoRingRawBlockFile& test_file, i64 write_offset,
+                               i64 write_size)
   {
-    constexpr i64 kBufferSize = 32768;
-    i64 write_bytes_remaining = batt::round_up_bits(9, write_size);
-    i64 offset = batt::round_up_bits(llfs::PackedConfigBlock::kSize, write_offset);
-
-    llfs::StatusOr<int> rand_fd = llfs::open_file_read_only("/dev/random");
-    ASSERT_TRUE(rand_fd.ok()) << BATT_INSPECT(rand_fd.status());
-
-    const auto closer = batt::finally([rand_fd] {
-      llfs::Status close_status = llfs::close_fd(*rand_fd);
-      ASSERT_TRUE(close_status.ok()) << BATT_INSPECT(close_status);
-    });
-
-    std::aligned_storage_t<kBufferSize, 512> rand_data;
-
-    while (write_bytes_remaining > 0) {
-      llfs::MutableBuffer read_buffer(&rand_data, kBufferSize);
-      int read_count = ::read(*rand_fd, read_buffer.data(), kBufferSize);
-      ASSERT_EQ(read_count, kBufferSize);
-
-      i64 write_buffer_size =
-          (write_bytes_remaining > kBufferSize) ? kBufferSize : write_bytes_remaining;
-
-      const llfs::ConstBuffer write_buffer(&rand_data, write_buffer_size);
-      llfs::StatusOr<i64> write_count = test_file.write_some(offset, write_buffer);
-      ASSERT_TRUE(write_count.ok()) << BATT_INSPECT(write_count.status());
-      ASSERT_EQ(write_buffer_size, *write_count);
-
-      offset += *write_count;
-      write_bytes_remaining -= *write_count;
+    constexpr i64 kMaxBufferSize = 32768;
+    constexpr i64 kBufferAlign = 512;
+    if (write_offset % kBufferAlign != 0 || write_size % kBufferAlign != 0) {
+      return batt::Status{batt::StatusCode::kInvalidArgument};
     }
-    ASSERT_EQ(write_bytes_remaining, 0);
+
+    std::aligned_storage_t<kMaxBufferSize, kBufferAlign> rand_data;
+
+    std::random_device rd;
+    std::mt19937_64 gen(rd());
+    std::uniform_int_distribution<u64> distrib(std::numeric_limits<u64>::min(),
+                                               std::numeric_limits<u64>::max());
+
+    while (write_size > 0) {
+      u64 buffer_size = std::min(kMaxBufferSize, write_size);
+
+      llfs::MutableBuffer read_buffer(&rand_data, buffer_size);
+
+      for (u64 i = 0; i < (buffer_size / sizeof(u64)); i++) {
+        u64 temp = distrib(gen);
+        std::memcpy(read_buffer.data(), &temp, sizeof(temp));
+        read_buffer += sizeof(temp);
+      }
+      if (read_buffer.size() != 0) {
+        return batt::Status{batt::StatusCode::kUnknown};
+      }
+
+      llfs::ConstBuffer write_buffer(&rand_data, buffer_size);
+
+      llfs::StatusOr<u64> write_count = test_file.write_some(write_offset, write_buffer);
+      BATT_REQUIRE_OK(write_count);
+      if (*write_count != buffer_size) {
+        return batt::Status{batt::StatusCode::kUnknown};
+      }
+
+      write_offset += *write_count;
+      write_size -= *write_count;
+    }
+
+    return (write_size == 0) ? batt::OkStatus() : batt::StatusCode::kUnknown;
   }
 };
 
@@ -370,10 +381,14 @@ TEST_F(StorageFileBuilderTest, WriteReadManyPackedConfigs)
   }
   llfs::IoRingRawBlockFile test_file{llfs::IoRing::File{ioring->get_io_ring(), *test_fd}};
 
-  this->write_rand_data(test_file, /*write_offset=*/base_file_offset,
-                        /*rand_buffer_len=*/base_file_offset +
-                            (3 * llfs::PackedConfigBlock::kSize) +
-                            (125 * kTestPageCount * /*llfs::PageSizeLog2{9}*/ 512));
+  {
+    llfs::Status write_status = this->write_rand_data(
+        test_file, /*write_offset=*/base_file_offset,
+        /*write_size=*/base_file_offset + (3 * llfs::PackedConfigBlock::kSize) +
+            (125 * kTestPageCount * /*llfs::PageSizeLog2{9}*/ 512));
+
+    ASSERT_TRUE(write_status.ok()) << BATT_INSPECT(write_status);
+  }
 
   llfs::StorageFileBuilder builder{test_file, base_file_offset};
 

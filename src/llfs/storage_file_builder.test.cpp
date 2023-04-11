@@ -140,27 +140,27 @@ class StorageFileBuilderTest : public ::testing::Test
       return batt::Status{batt::StatusCode::kInvalidArgument};
     }
 
-    std::aligned_storage_t<kMaxBufferSize, kBufferAlign> rand_data;
-
     std::random_device rd;
     std::mt19937_64 gen(rd());
     std::uniform_int_distribution<u64> distrib(std::numeric_limits<u64>::min(),
                                                std::numeric_limits<u64>::max());
 
+    union {
+      std::aligned_storage_t<kBufferAlign, kBufferAlign> alignment;
+      std::array<u64, kMaxBufferSize / sizeof(u64)> items;
+    } rand_data;
+
     while (write_size > 0) {
       u64 buffer_size = std::min(kMaxBufferSize, write_size);
 
-      llfs::MutableBuffer read_buffer(&rand_data, buffer_size);
-
-      for (u64 i = 0; i < (buffer_size / sizeof(u64)); i++) {
-        u64 temp = distrib(gen);
-        std::memcpy(read_buffer.data(), &temp, sizeof(temp));
-        read_buffer += sizeof(temp);
-      }
-      if (read_buffer.size() != 0) {
-        return batt::Status{batt::StatusCode::kUnknown};
+      // Fill random data in 512 aligned rand_data
+      //
+      for (u64& dst : rand_data.items) {
+        dst = distrib(gen);
       }
 
+      // Write random data to disk and iterate offset and size counters
+      //
       llfs::ConstBuffer write_buffer(&rand_data, buffer_size);
 
       llfs::StatusOr<u64> write_count = test_file.write_some(write_offset, write_buffer);
@@ -297,7 +297,7 @@ TEST_F(StorageFileBuilderTest, WriteReadFile)
     ASSERT_TRUE(test_fd.ok()) << BATT_INSPECT(test_fd.status());
     {
       llfs::Status status = llfs::enable_raw_io_fd(*test_fd, /*enabled=*/true);
-      ASSERT_TRUE(status.ok()) << BATT_INSPECT(status);
+      EXPECT_TRUE(status.ok()) << BATT_INSPECT(status);
     }
     llfs::IoRingRawBlockFile test_file{llfs::IoRing::File{ioring->get_io_ring(), *test_fd}};
 
@@ -359,15 +359,24 @@ TEST_F(StorageFileBuilderTest, WriteReadFile)
 }
 
 //---------------------------------------------------------------------------------------------------
-
+// Create a storage file builder and populate with enough llfs::PageDeviceConfigOptions to create 3
+// llfs::PackedConfigBlock. Flush/Write to a flat file, and read from that file to verify each
+// llfs::PackedConfigBlock and associated llfs::PackedPageDeviceConfig is correct. Lastly, verify
+// PageDevice can be recovered from UUID.
+//
 TEST_F(StorageFileBuilderTest, WriteReadManyPackedConfigs)
 {
-  i64 base_file_offset = 0;
+  const i64 kBaseFileOffset = 0;
+  const u64 kNumPackedConfigBlocks = 3;
+  const u64 kSlots = (llfs::PackedConfigBlock::kMaxSlots * (kNumPackedConfigBlocks - 1)) + 1;
+
   llfs::StatusOr<llfs::ScopedIoRing> ioring =
       llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{1024}, llfs::ThreadPoolSize{1});
 
   ASSERT_TRUE(ioring.ok()) << BATT_INSPECT(ioring.status());
 
+  // Create flat storage file for testing
+  //
   const char* const test_file_name = "/tmp/llfs_test_file";
   std::filesystem::remove(test_file_name);
   boost::uuids::uuid page_device_uuid;
@@ -377,27 +386,32 @@ TEST_F(StorageFileBuilderTest, WriteReadManyPackedConfigs)
   ASSERT_TRUE(test_fd.ok()) << BATT_INSPECT(test_fd.status());
   {
     llfs::Status status = llfs::enable_raw_io_fd(*test_fd, /*enabled=*/true);
-    ASSERT_TRUE(status.ok()) << BATT_INSPECT(status);
+    EXPECT_TRUE(status.ok()) << BATT_INSPECT(status);
   }
   llfs::IoRingRawBlockFile test_file{llfs::IoRing::File{ioring->get_io_ring(), *test_fd}};
 
+  // Write random data to test storage file to eliminate drool from causing false test passes
+  //
   {
     llfs::Status write_status = this->write_rand_data(
-        test_file, /*write_offset=*/base_file_offset,
-        /*write_size=*/base_file_offset + (3 * llfs::PackedConfigBlock::kSize) +
-            (125 * kTestPageCount * /*llfs::PageSizeLog2{9}*/ 512));
+        test_file, /*write_offset=*/kBaseFileOffset,
+        /*write_size=*/kBaseFileOffset + (kNumPackedConfigBlocks * llfs::PackedConfigBlock::kSize) +
+            (kSlots * kTestPageCount * /*llfs::PageSizeLog2{9}*/ 512));
 
     ASSERT_TRUE(write_status.ok()) << BATT_INSPECT(write_status);
   }
 
-  llfs::StorageFileBuilder builder{test_file, base_file_offset};
+  llfs::StorageFileBuilder builder{test_file, kBaseFileOffset};
 
+  // Create StorageContext for testing recovery of PageDevice using UUID later
+  //
   auto storage_context = batt::make_shared<llfs::StorageContext>(
       batt::Runtime::instance().default_scheduler(), ioring->get_io_ring());
 
-  // Fill enough slots to create 3 PackedConfigBlocks
+  // Add PageDeviceConfigOptions to StorageFileBuilder to create 3 PackedConfigBlocks, where the
+  // last only has 1 slot filled
   //
-  for (i64 config_options_count = 0; config_options_count < 125; config_options_count++) {
+  for (u64 slot_count = 0; slot_count < kSlots; slot_count++) {
     const auto options = llfs::PageDeviceConfigOptions{
         .uuid = llfs::None,
         .device_id = llfs::None,
@@ -415,27 +429,34 @@ TEST_F(StorageFileBuilderTest, WriteReadManyPackedConfigs)
     page_device_uuid = (*packed_config)->uuid;
   }
 
+  // Flush StorageFileBuilder to the test storage file
+  //
   llfs::Status flush_status = builder.flush_all();
 
   ASSERT_TRUE(flush_status.ok()) << BATT_INSPECT(flush_status);
 
   {
+    // Read storage file and verify count and contents of the llfs::PackedConfigBlock and
+    // associated llfs::PackedPageDeviceConfig
+    //
     llfs::StatusOr<std::vector<std::unique_ptr<llfs::StorageFileConfigBlock>>> config_blocks =
-        llfs::read_storage_file(test_file, base_file_offset);
+        llfs::read_storage_file(test_file, kBaseFileOffset);
 
     ASSERT_TRUE(config_blocks.ok()) << BATT_INSPECT(config_blocks.status());
 
-    ASSERT_EQ(config_blocks->size(), 3u);
+    ASSERT_EQ(config_blocks->size(), kNumPackedConfigBlocks);
 
     ASSERT_NO_FATAL_FAILURE(
         this->verify_storage_file_config_blocks(*config_blocks, /*page_size_log2=*/9));
 
+    // Create StorageFile and add to StorageContext
+    //
     auto storage_file =
         batt::make_shared<llfs::StorageFile>(test_file_name, std::move(*config_blocks));
 
     EXPECT_EQ(
         storage_file->find_objects_by_type<llfs::PackedPageDeviceConfig>() | llfs::seq::count(),
-        125u);
+        kSlots);
 
     {
       llfs::Status status = storage_context->add_existing_file(storage_file);
@@ -443,6 +464,8 @@ TEST_F(StorageFileBuilderTest, WriteReadManyPackedConfigs)
     }
   }
 
+  // Verify PageDevice can be recovered using previously saved UUID from StorageContext
+  //
   llfs::StatusOr<std::unique_ptr<llfs::PageDevice>> recovered_device =
       storage_context->recover_object(
           batt::StaticType<llfs::PackedPageDeviceConfig>{}, page_device_uuid,

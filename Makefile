@@ -64,7 +64,7 @@ clean:
 
 
 unlink:
-
+	true
 
 .PHONY: rtags
 rtags:

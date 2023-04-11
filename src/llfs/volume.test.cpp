@@ -780,21 +780,39 @@ TEST(VolumeSimTest, RecoverySimulation)
       }}};
 
   ASSERT_NO_FATAL_FAILURE(sim.run_main_task([&] {
-    sim.add_page_arena(llfs::PageCount{10}, llfs::PageSize{1 * kKiB});
+    // Add three page devices so we can verify that the ref counts are correctly recovered from a
+    // subset.
+    //
+    sim.add_page_arena(llfs::PageCount{4}, llfs::PageSize{1 * kKiB});
+    sim.add_page_arena(llfs::PageCount{4}, llfs::PageSize{2 * kKiB});
+    sim.add_page_arena(llfs::PageCount{4}, llfs::PageSize{4 * kKiB});
 
-    batt::StatusOr<std::unique_ptr<llfs::Volume>> recovered_volume = sim.get_volume(
-        "TestVolume", /*slot_visitor_fn=*/
-        [](auto&&...) {
-          return batt::OkStatus();
-        },
-        /*root_log_capacity=*/64 * kKiB);
+    // Create the simulated Volume.
+    //
+    {
+      batt::StatusOr<std::unique_ptr<llfs::Volume>> recovered_volume = sim.get_volume(
+          "TestVolume", /*slot_visitor_fn=*/
+          [](auto&&...) {
+            return batt::OkStatus();
+          },
+          /*root_log_capacity=*/64 * kKiB);
 
-    ASSERT_TRUE(recovered_volume.ok()) << recovered_volume.status();
+      ASSERT_TRUE(recovered_volume.ok()) << recovered_volume.status();
 
-    llfs::Volume& volume = **recovered_volume;
+      llfs::Volume& volume = **recovered_volume;
 
-    volume.halt();
-    volume.join();
+      // Commit one job with a page from the 1kb device.
+      //
+      {
+        std::unique_ptr<llfs::PageCacheJob> job_1 = volume.new_job();
+        ASSERT_NE(job_1, nullptr);
+      }
+
+      // Terminate the volume.
+      //
+      volume.halt();
+      volume.join();
+    }
   }));
 }
 

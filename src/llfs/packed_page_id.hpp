@@ -74,6 +74,10 @@ BoxedSeq<PageId> trace_refs(const PackedArray<PackedPageId>& packed);
 
 BoxedSeq<PageId> trace_refs(const BoxedSeq<PageId>& page_ids);
 
+BoxedSeq<PageId> trace_refs(const PackedPageId& page_id);
+
+BoxedSeq<PageId> trace_refs(const PageId& page_id);
+
 template <typename Dst>
 [[nodiscard]] PackedPageId* pack_object_to(const PackedPageId& from_id, PackedPageId* to_id, Dst*)
 {

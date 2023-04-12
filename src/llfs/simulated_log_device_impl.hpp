@@ -104,6 +104,11 @@ class SimulatedLogDevice::Impl : public SimulatedStorageObject
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  StorageSimulation& simulation() const noexcept
+  {
+    return this->simulation_;
+  }
+
   u64 capacity() const noexcept
   {
     return this->capacity_;
@@ -119,7 +124,7 @@ class SimulatedLogDevice::Impl : public SimulatedStorageObject
     return this->capacity() - this->size();
   }
 
-  Status trim(slot_offset_type new_trim_pos);
+  Status trim(u64 device_create_step, slot_offset_type new_trim_pos);
 
   std::unique_ptr<LogDevice::Reader> new_reader(Optional<slot_offset_type> slot_lower_bound,
                                                 LogReadMode mode);
@@ -128,9 +133,9 @@ class SimulatedLogDevice::Impl : public SimulatedStorageObject
 
   LogDevice::Writer& writer();
 
-  Status close();
+  Status close(u64 device_create_step);
 
-  Status sync(LogReadMode mode, SlotUpperBoundAt event);
+  Status sync(u64 device_create_step, LogReadMode mode, SlotUpperBoundAt event);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:

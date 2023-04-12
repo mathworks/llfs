@@ -17,6 +17,7 @@ namespace llfs {
 //
 /*explicit*/ SimulatedLogDevice::SimulatedLogDevice(std::shared_ptr<Impl>&& impl) noexcept
     : impl_{std::move(impl)}
+    , create_step_{this->impl_->simulation().current_step()}
 {
 }
 
@@ -38,7 +39,7 @@ u64 SimulatedLogDevice::size() const /*override*/
 //
 Status SimulatedLogDevice::trim(slot_offset_type slot_lower_bound) /*override*/
 {
-  return this->impl_->trim(slot_lower_bound);
+  return this->impl_->trim(this->create_step_, slot_lower_bound);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -67,14 +68,18 @@ LogDevice::Writer& SimulatedLogDevice::writer() /*override*/
 //
 Status SimulatedLogDevice::close() /*override*/
 {
-  return this->impl_->close();
+  const bool already_closed = this->external_close_.exchange(true);
+  if (!already_closed) {
+    return this->impl_->close(this->create_step_);
+  }
+  return batt::OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 Status SimulatedLogDevice::sync(LogReadMode mode, SlotUpperBoundAt event) /*override*/
 {
-  return this->impl_->sync(mode, event);
+  return this->impl_->sync(this->create_step_, mode, event);
 }
 
 }  //namespace llfs

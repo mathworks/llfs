@@ -53,6 +53,7 @@ class SimulatedPageDevice : public PageDevice
 
  private:
   std::shared_ptr<Impl> impl_;
+  const u64 create_step_;
 };
 
 }  //namespace llfs

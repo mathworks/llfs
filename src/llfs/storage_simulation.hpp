@@ -68,6 +68,8 @@ class StorageSimulation
 
   const batt::SharedPtr<PageCache>& init_cache() noexcept;
 
+  void close_cache() noexcept;
+
   batt::TaskScheduler& task_scheduler() noexcept;
 
   batt::StateMachineEntropySource& entropy_source() noexcept
@@ -82,6 +84,7 @@ class StorageSimulation
 
   void set_inject_failures_mode(bool on) noexcept
   {
+    this->log_event("inject_failures_mode = ", on ? "ON" : "OFF");
     this->inject_failures_.set_value(on);
   }
 
@@ -98,6 +101,8 @@ class StorageSimulation
 
   void run_main_task(std::function<void()> main_fn);
 
+  void crash_and_recover();
+
   std::unique_ptr<LogDevice> get_log_device(const std::string& name, Optional<u64> capacity = None);
 
   std::unique_ptr<PageDevice> get_page_device(const std::string& name,
@@ -106,11 +111,18 @@ class StorageSimulation
 
   void add_page_arena(PageCount page_count, PageSize page_size);
 
+  void register_page_layout(const PageLayoutId& layout_id, const PageReader& reader);
+
   StatusOr<std::unique_ptr<Volume>> get_volume(
       const std::string& name, const VolumeReader::SlotVisitorFn& slot_visitor_fn,
       const Optional<u64> root_log_capacity = None,
       const Optional<VolumeOptions>& volume_options = None,
       std::shared_ptr<SlotLockManager> trim_control = nullptr);
+
+  u64 current_step() const noexcept
+  {
+    return this->step_.get_value();
+  }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
@@ -118,6 +130,10 @@ class StorageSimulation
     std::string page_device_name;
     std::string allocator_log_device_name;
   };
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  void handle_events();
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -167,6 +183,10 @@ class StorageSimulation
   // A counter to make unique object names.
   //
   std::atomic<i64> counter_{0};
+
+  // Page layouts that should be registered with PageCache instances on each recovery.
+  //
+  std::unordered_map<PageLayoutId, PageReader, PageLayoutId::Hash> page_layouts_;
 };
 
 }  //namespace llfs

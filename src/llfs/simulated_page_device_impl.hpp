@@ -15,6 +15,7 @@
 #include <llfs/page_size.hpp>
 #include <llfs/simulated_page_device.hpp>
 #include <llfs/simulated_storage_object.hpp>
+#include <llfs/storage_simulation.hpp>
 
 #include <batteries/async/mutex.hpp>
 #include <batteries/async/watch.hpp>
@@ -40,12 +41,26 @@ class SimulatedPageDevice::Impl : public SimulatedStorageObject
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  explicit Impl(StorageSimulation& simulation, PageSize page_size, PageCount page_count,
-                page_device_id_int device_id) noexcept;
+  explicit Impl(StorageSimulation& simulation, const std::string& name, PageSize page_size,
+                PageCount page_count, page_device_id_int device_id) noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  void crash_and_recover(u64 simulation_step) override;
+  /** \brief Logs a simulation event.
+   */
+  template <typename... Args>
+  void log_event(Args&&... args) const noexcept
+  {
+    this->simulation_.log_event("SimulatedPageDevice{", batt::c_str_literal(this->name_), "} ",
+                                BATT_FORWARD(args)...);
+  }
+
+  void crash_and_recover(u64 step) override;
+
+  StorageSimulation& simulation() const noexcept
+  {
+    return this->simulation_;
+  }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -59,13 +74,14 @@ class SimulatedPageDevice::Impl : public SimulatedStorageObject
     return this->page_size_;
   }
 
-  StatusOr<std::shared_ptr<PageBuffer>> prepare(PageId page_id);
+  StatusOr<std::shared_ptr<PageBuffer>> prepare(u32 device_create_step, PageId page_id);
 
-  void write(std::shared_ptr<const PageBuffer>&& page_buffer, PageDevice::WriteHandler&& handler);
+  void write(u32 device_create_step, std::shared_ptr<const PageBuffer>&& page_buffer,
+             PageDevice::WriteHandler&& handler);
 
-  void read(PageId page_id, PageDevice::ReadHandler&& handler);
+  void read(u32 device_create_step, PageId page_id, PageDevice::ReadHandler&& handler);
 
-  void drop(PageId page_id, PageDevice::WriteHandler&& handler);
+  void drop(u32 device_create_step, PageId page_id, PageDevice::WriteHandler&& handler);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
@@ -80,6 +96,8 @@ class SimulatedPageDevice::Impl : public SimulatedStorageObject
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   StorageSimulation& simulation_;
+
+  const std::string name_;
 
   const PageSize page_size_;
 
@@ -99,12 +117,13 @@ class SimulatedPageDevice::Impl : public SimulatedStorageObject
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
 struct SimulatedPageDevice::Impl::MultiBlockOp : batt::RefCounted<MultiBlockOp> {
+  Impl& impl;
   batt::Watch<i64> pending_blocks;
   std::vector<batt::Status> block_status;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  explicit MultiBlockOp(i64 n_blocks) noexcept;
+  explicit MultiBlockOp(Impl& impl, i64 n_blocks) noexcept;
 
   void set_block_result(i64 block_i, const batt::Status& status);
 

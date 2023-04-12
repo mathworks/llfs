@@ -26,6 +26,10 @@ namespace llfs {
 
   this->available_ += sizeof(PackedPageGraphNode);
   this->packed_->edges.initialize(0u);
+  {
+    PackedPageHeader* header = mutable_page_header(this->page_buffer_.get());
+    header->layout_id = PageGraphNodeView::page_layout_id();
+  }
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -68,6 +72,32 @@ StatusOr<PinnedPage> PageGraphNodeBuilder::build(PageCacheJob& job) &&
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+/*static*/ PageLayoutId PageGraphNodeView::page_layout_id()
+{
+  static const PageLayoutId id = PageLayoutId::from_str("grphnode");
+  return id;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*static*/ PageReader PageGraphNodeView::page_reader()
+{
+  return [](std::shared_ptr<const PageBuffer> page_buffer)
+             -> StatusOr<std::shared_ptr<const PageView>> {
+    return {PageGraphNodeView::make_shared(std::move(page_buffer))};
+  };
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*static*/ bool PageGraphNodeView::register_layout(PageCache& cache)
+{
+  return cache.register_page_layout(PageGraphNodeView::page_layout_id(),
+                                    PageGraphNodeView::page_reader());
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 /*static*/ StatusOr<std::shared_ptr<PageGraphNodeView>> PageGraphNodeView::make_shared(
     std::shared_ptr<const PageBuffer>&& page_buffer)
 {
@@ -92,8 +122,7 @@ StatusOr<PinnedPage> PageGraphNodeBuilder::build(PageCacheJob& job) &&
 //
 PageLayoutId PageGraphNodeView::get_page_layout_id() const /*override*/
 {
-  static const PageLayoutId id = PageLayoutId::from_str("grphnode");
-  return id;
+  return PageGraphNodeView::page_layout_id();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

@@ -36,7 +36,12 @@ slot_offset_type SimulatedLogDevice::Impl::WriterImpl::slot_offset() /*override*
 StatusOr<MutableBuffer> SimulatedLogDevice::Impl::WriterImpl::prepare(usize byte_count,
                                                                       usize head_room) /*override*/
 {
-  this->impl_.log_event("prepare(", byte_count, ", extra=", head_room, ")");
+  this->impl_.log_event("prepare(", byte_count, ", extra=", head_room,
+                        "); closed=", this->impl_.closed_.get_value());
+
+  if (this->impl_.closed_.get_value()) {
+    return {batt::StatusCode::kClosed};
+  }
 
   BATT_REQUIRE_OK(this->await(BytesAvailable{
       .size = byte_count + head_room,
@@ -60,7 +65,12 @@ StatusOr<slot_offset_type> SimulatedLogDevice::Impl::WriterImpl::commit(
   BATT_CHECK_NOT_NULLPTR(this->prepared_chunk_);
 
   this->impl_.log_event("commit(", byte_count,
-                        "); slot_range=", this->prepared_chunk_->slot_range());
+                        "); slot_range=", this->prepared_chunk_->slot_range(),
+                        " closed=", this->impl_.closed_.get_value());
+
+  if (this->impl_.closed_.get_value()) {
+    return {batt::StatusCode::kClosed};
+  }
 
   // Clear `prepared_chunk_` by moving to a local variable.
   //
@@ -106,6 +116,12 @@ StatusOr<slot_offset_type> SimulatedLogDevice::Impl::WriterImpl::commit(
     // We are not injecting a failure; defer completion of the flush.
     //
     sim.post([this, committed_chunk = std::move(committed_chunk)] {
+      if (this->impl_.closed_.get_value()) {
+        this->impl_.log_event("slot_range ", committed_chunk->slot_range(),
+                              " not flushed (device closed)");
+        return;
+      }
+
       const batt::Optional<i32> flushed =
           committed_chunk->state.modify_if([](i32 old_value) -> batt::Optional<i32> {
             if (old_value == CommitChunk::kCommittedState) {

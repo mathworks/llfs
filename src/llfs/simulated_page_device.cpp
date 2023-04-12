@@ -17,6 +17,7 @@ namespace llfs {
 //
 /*explicit*/ SimulatedPageDevice::SimulatedPageDevice(std::shared_ptr<Impl>&& impl) noexcept
     : impl_{std::move(impl)}
+    , create_step_{this->impl_->simulation().current_step()}
 {
 }
 
@@ -38,7 +39,7 @@ PageSize SimulatedPageDevice::page_size() /*override*/
 //
 StatusOr<std::shared_ptr<PageBuffer>> SimulatedPageDevice::prepare(PageId page_id) /*override*/
 {
-  return this->impl_->prepare(page_id);
+  return this->impl_->prepare(this->create_step_, page_id);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -46,21 +47,21 @@ StatusOr<std::shared_ptr<PageBuffer>> SimulatedPageDevice::prepare(PageId page_i
 void SimulatedPageDevice::write(std::shared_ptr<const PageBuffer>&& page_buffer,
                                 WriteHandler&& handler) /*override*/
 {
-  return this->impl_->write(std::move(page_buffer), std::move(handler));
+  return this->impl_->write(this->create_step_, std::move(page_buffer), std::move(handler));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 void SimulatedPageDevice::read(PageId id, ReadHandler&& handler) /*override*/
 {
-  return this->impl_->read(id, std::move(handler));
+  return this->impl_->read(this->create_step_, id, std::move(handler));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 void SimulatedPageDevice::drop(PageId id, WriteHandler&& handler) /*override*/
 {
-  return this->impl_->drop(id, std::move(handler));
+  return this->impl_->drop(this->create_step_, id, std::move(handler));
 }
 
 }  //namespace llfs

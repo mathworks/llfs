@@ -15,10 +15,11 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*explicit*/ SimulatedPageDevice::Impl::Impl(StorageSimulation& simulation, PageSize page_size,
-                                             PageCount page_count,
+/*explicit*/ SimulatedPageDevice::Impl::Impl(StorageSimulation& simulation, const std::string& name,
+                                             PageSize page_size, PageCount page_count,
                                              page_device_id_int device_id) noexcept
     : simulation_{simulation}
+    , name_{name}
     , page_size_{page_size}
     , page_count_{page_count}
     , device_id_{device_id}
@@ -28,17 +29,30 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void SimulatedPageDevice::Impl::crash_and_recover(u64 simulation_step) /*override*/
+void SimulatedPageDevice::Impl::crash_and_recover(u64 step) /*override*/
 {
+  this->log_event("entered crash_and_recover(step=", step, ")");
+  auto on_scope_exit = batt::finally([&] {
+    this->log_event("leaving crash_and_recover(step=", step, ")");
+  });
+
   auto locked_blocks = this->blocks_.lock();
 
-  this->latest_recovery_step_.set_value(simulation_step);
+  this->latest_recovery_step_.set_value(step);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<std::shared_ptr<PageBuffer>> SimulatedPageDevice::Impl::prepare(PageId page_id)
+StatusOr<std::shared_ptr<PageBuffer>> SimulatedPageDevice::Impl::prepare(u32 device_create_step,
+                                                                         PageId page_id)
 {
+  this->log_event("prepare(", page_id, "), device_create_step=", device_create_step);
+
+  if (this->latest_recovery_step_.get_value() > device_create_step) {
+    this->log_event(" -- ignoring (obsolete PageDevice)");
+    return {batt::StatusCode::kClosed};
+  }
+
   BATT_CHECK_EQ(this->device_id_, this->page_id_factory_.get_device_id(page_id));
 
   const i64 physical_page = this->get_physical_page(page_id);
@@ -56,9 +70,18 @@ StatusOr<std::shared_ptr<PageBuffer>> SimulatedPageDevice::Impl::prepare(PageId 
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void SimulatedPageDevice::Impl::write(std::shared_ptr<const PageBuffer>&& page_buffer,
+void SimulatedPageDevice::Impl::write(u32 device_create_step,
+                                      std::shared_ptr<const PageBuffer>&& page_buffer,
                                       PageDevice::WriteHandler&& handler)
 {
+  this->log_event("write(", page_buffer->page_id(), "[size=", page_buffer->size(), "])");
+
+  if (this->latest_recovery_step_.get_value() > device_create_step) {
+    this->log_event(" -- ignoring (obsolete PageDevice)");
+    std::move(handler)({batt::StatusCode::kClosed});
+    return;
+  }
+
   const PageId page_id = page_buffer->page_id();
   BATT_CHECK_EQ(this->device_id_, this->page_id_factory_.get_device_id(page_id));
 
@@ -67,64 +90,86 @@ void SimulatedPageDevice::Impl::write(std::shared_ptr<const PageBuffer>&& page_b
     return;
   }
 
-  auto op = batt::make_shared<MultiBlockOp>(this->blocks_per_page_);
+  auto op = batt::make_shared<MultiBlockOp>(*this, this->blocks_per_page_);
   {
     const u64 current_step = this->latest_recovery_step_.get_value();
 
     this->for_each_page_block(physical_page, [&](i64 block_0, i64 block_i) {
       this->simulation_.post(
           [this, block_0, block_i, current_step, op, page_buffer = batt::make_copy(page_buffer)] {
-            //----- --- -- -  -  -   -
-            auto locked_blocks = this->blocks_.lock();
+            this->log_event("writing block ", block_i, " (block_0=", block_0, ")");
 
-            // If `latest_recovery_step_` has changed, then we are on the other side of a simulated
-            // crash/recovery; do nothing.
-            //
-            if (current_step != this->latest_recovery_step_.get_value()) {
-              return;
-            }
-
-            // If the simulation decides that a failure should be injected at this point, then
-            // generate one and notify the op.
-            //
-            if (this->simulation_.inject_failure()) {
-              op->set_block_result(block_i, batt::Status{batt::StatusCode::kInternal});
-              return;
-            }
-
-            // No failure injected; grab the slice of the PageBuffer corresponding to this block.
-            //
-            ConstBuffer source = batt::slice_buffer(page_buffer->const_buffer(),
-                                                    batt::Interval<usize>{
-                                                        (block_i - block_0) * kDataBlockSize,
-                                                        (block_i - block_0 + 1) * kDataBlockSize,
-                                                    });
-
-            // Sanity checks (make sure sizes are all correct).
-            //
-            BATT_CHECK_EQ(source.size(), kDataBlockSize);
-            static_assert(kDataBlockSize == sizeof(DataBlock));
-
-            // Allocate a block buffer and copy our slice of the PageBuffer to it.
             {
-              auto block = std::make_unique<DataBlock>();
-              std::memcpy(block.get(), source.data(), source.size());
-              locked_blocks->emplace(block_i, std::move(block));
+              //----- --- -- -  -  -   -
+              auto locked_blocks = this->blocks_.lock();
+
+              // If `latest_recovery_step_` has changed, then we are on the other side of a
+              // simulated crash/recovery; do nothing.
+              //
+              const u64 latest_recovery_step = this->latest_recovery_step_.get_value();
+              if (current_step != latest_recovery_step) {
+                this->log_event(" -- operation is obsolete!  skipping (current_step=", current_step,
+                                ", latest_recovery_step=", latest_recovery_step);
+                return;
+              }
+
+              // If the simulation decides that a failure should be injected at this point, then
+              // generate one and notify the op.
+              //
+              if (this->simulation_.inject_failure()) {
+                this->log_event(" -- injecting failure");
+                op->set_block_result(block_i - block_0, batt::Status{batt::StatusCode::kInternal});
+                return;
+              }
+              this->log_event(" -- (block write will succeed)");
+
+              // No failure injected; grab the slice of the PageBuffer corresponding to this block.
+              //
+              ConstBuffer source = batt::slice_buffer(page_buffer->const_buffer(),
+                                                      batt::Interval<usize>{
+                                                          (block_i - block_0) * kDataBlockSize,
+                                                          (block_i - block_0 + 1) * kDataBlockSize,
+                                                      });
+
+              // Sanity checks (make sure sizes are all correct).
+              //
+              BATT_CHECK_EQ(source.size(), kDataBlockSize);
+              static_assert(kDataBlockSize == sizeof(DataBlock));
+
+              // Allocate a block buffer and copy our slice of the PageBuffer to it.
+              {
+                auto block = std::make_unique<DataBlock>();
+                std::memcpy(block.get(), source.data(), source.size());
+                locked_blocks->emplace(block_i, std::move(block));
+              }
             }
 
             // Notify the op that this block has completed.
             //
-            op->set_block_result(block_i, batt::OkStatus());
+            op->set_block_result(block_i - block_0, batt::OkStatus());
           });
     });
   }
-  op->on_completion(std::move(handler));
+  op->on_completion(
+      [this, page_id, handler = std::move(handler)](const batt::Status& status) mutable {
+        this->log_event("write(", page_id, ") completed with status ", status);
+        std::move(handler)(status);
+      });
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void SimulatedPageDevice::Impl::read(PageId page_id, PageDevice::ReadHandler&& handler)
+void SimulatedPageDevice::Impl::read(u32 device_create_step, PageId page_id,
+                                     PageDevice::ReadHandler&& handler)
 {
+  this->log_event("read(", page_id, ")");
+
+  if (this->latest_recovery_step_.get_value() > device_create_step) {
+    this->log_event(" -- ignoring (obsolete PageDevice)");
+    std::move(handler)({batt::StatusCode::kClosed});
+    return;
+  }
+
   BATT_CHECK_EQ(this->device_id_, this->page_id_factory_.get_device_id(page_id));
 
   const i64 physical_page = this->get_physical_page(page_id);
@@ -133,7 +178,7 @@ void SimulatedPageDevice::Impl::read(PageId page_id, PageDevice::ReadHandler&& h
   }
 
   std::shared_ptr<PageBuffer> page_buffer = PageBuffer::allocate(this->page_size_, page_id);
-  auto op = batt::make_shared<MultiBlockOp>(this->blocks_per_page_);
+  auto op = batt::make_shared<MultiBlockOp>(*this, this->blocks_per_page_);
 
   // We do a piecewise read of each block at a different step so we can simulate the effect
   // of data races at the block device level.
@@ -155,14 +200,16 @@ void SimulatedPageDevice::Impl::read(PageId page_id, PageDevice::ReadHandler&& h
       //
       auto iter = locked_blocks->find(block_i);
       if (iter == locked_blocks->end()) {
+        this->log_event("read block ", block_i, " -- no previous writes (returning zeros)");
         std::memset(target.data(), 0, target.size());
       } else {
+        this->log_event("read block ", block_i, " -- previous write found");
         std::memcpy(target.data(), iter->second.get(), target.size());
       }
 
       // Notify the op that this block has completed.
       //
-      op->set_block_result(block_i, batt::OkStatus());
+      op->set_block_result(block_i - block_0, batt::OkStatus());
     });
   });
 
@@ -170,17 +217,21 @@ void SimulatedPageDevice::Impl::read(PageId page_id, PageDevice::ReadHandler&& h
   // success/failure. We succeed entirely or not at all (hence the single call to
   // `inject_failure()` instead of one for each block).
   //
-  op->on_completion([should_fail = this->simulation_.inject_failure(),  //
+  op->on_completion([this, page_id,                                     //
+                     should_fail = this->simulation_.inject_failure(),  //
                      page_buffer = std::move(page_buffer),              //
                      handler = std::move(handler)](                     //
                         const batt::Status& status) mutable {
     if (!status.ok()) {
+      this->log_event("read(", page_id, ") failed with status ", status);
       std::move(handler)({status});
 
     } else if (should_fail) {
+      this->log_event("read(", page_id, ") -- failure injected (kUnavailable)");
       std::move(handler)({batt::StatusCode::kUnavailable});
 
     } else {
+      this->log_event("read(", page_id, ") ok");
       std::move(handler)({std::move(page_buffer)});
     }
   });
@@ -188,8 +239,17 @@ void SimulatedPageDevice::Impl::read(PageId page_id, PageDevice::ReadHandler&& h
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void SimulatedPageDevice::Impl::drop(PageId page_id, PageDevice::WriteHandler&& handler)
+void SimulatedPageDevice::Impl::drop(u32 device_create_step, PageId page_id,
+                                     PageDevice::WriteHandler&& handler)
 {
+  this->log_event("drop(", page_id, ")");
+
+  if (this->latest_recovery_step_.get_value() > device_create_step) {
+    this->log_event(" -- ignoring (obsolete PageDevice)");
+    std::move(handler)({batt::StatusCode::kClosed});
+    return;
+  }
+
   BATT_CHECK_EQ(this->device_id_, this->page_id_factory_.get_device_id(page_id));
 
   const i64 physical_page = this->get_physical_page(page_id);
@@ -197,18 +257,23 @@ void SimulatedPageDevice::Impl::drop(PageId page_id, PageDevice::WriteHandler&& 
     return;
   }
 
-  auto op = batt::make_shared<MultiBlockOp>(this->blocks_per_page_);
+  auto op = batt::make_shared<MultiBlockOp>(*this, this->blocks_per_page_);
   {
     const u64 current_step = this->latest_recovery_step_.get_value();
 
-    this->for_each_page_block(physical_page, [&](i64 /*block_0*/, i64 block_i) {
-      this->simulation_.post([this, block_i, current_step, op] {
+    this->for_each_page_block(physical_page, [&](i64 block_0, i64 block_i) {
+      this->simulation_.post([this, block_0, block_i, current_step, op] {
         auto locked_blocks = this->blocks_.lock();
+
+        this->log_event("dropping block ", block_i, " (block_0=", block_0, ")");
 
         // If `latest_recovery_step_` has changed, then we are on the other side of a simulated
         // crash/recovery; do nothing.
         //
-        if (current_step != this->latest_recovery_step_.get_value()) {
+        const u64 latest_recovery_step = this->latest_recovery_step_.get_value();
+        if (current_step != latest_recovery_step) {
+          this->log_event(" -- operation is obsolete!  skipping (current_step=", current_step,
+                          ", latest_recovery_step=", latest_recovery_step);
           return;
         }
 
@@ -216,18 +281,23 @@ void SimulatedPageDevice::Impl::drop(PageId page_id, PageDevice::WriteHandler&& 
         // generate one and notify the op.
         //
         if (this->simulation_.inject_failure()) {
-          op->set_block_result(block_i, batt::Status{batt::StatusCode::kInternal});
+          this->log_event(" -- injecting failure (kInternal)");
+          op->set_block_result(block_i - block_0, batt::Status{batt::StatusCode::kInternal});
           return;
         }
 
         // No failure injected; erase the DataBlock at the given index and notify the op.
         //
         locked_blocks->erase(block_i);
-        op->set_block_result(block_i, batt::OkStatus());
+        op->set_block_result(block_i - block_0, batt::OkStatus());
       });
     });
   }
-  op->on_completion(std::move(handler));
+  op->on_completion(
+      [this, page_id, handler = std::move(handler)](const batt::Status& status) mutable {
+        this->log_event("drop(", page_id, ") completed with status ", status);
+        std::move(handler)(status);
+      });
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -243,6 +313,8 @@ template <typename Handler>
 bool SimulatedPageDevice::Impl::validate_physical_page_async(i64 physical_page, Handler&& handler)
 {
   if (physical_page < 0 || physical_page >= BATT_CHECKED_CAST(i64, this->page_count_.value())) {
+    this->log_event(" -- physical_page=", physical_page,
+                    " not valid for this device! (kInvalidArgument)");
     std::move(handler)(batt::Status{batt::StatusCode::kInvalidArgument});
     return false;
   }
@@ -267,8 +339,10 @@ void SimulatedPageDevice::Impl::for_each_page_block(i64 physical_page, Fn&& fn)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*explicit*/ SimulatedPageDevice::Impl::MultiBlockOp::MultiBlockOp(i64 n_blocks) noexcept
-    : pending_blocks{n_blocks}
+/*explicit*/ SimulatedPageDevice::Impl::MultiBlockOp::MultiBlockOp(Impl& impl,
+                                                                   i64 n_blocks) noexcept
+    : impl{impl}
+    , pending_blocks{n_blocks}
     , block_status(n_blocks, batt::StatusCode::kUnknown)
 {
   BATT_CHECK_EQ(BATT_CHECKED_CAST(usize, this->pending_blocks.get_value()),
@@ -280,8 +354,15 @@ void SimulatedPageDevice::Impl::for_each_page_block(i64 physical_page, Fn&& fn)
 void SimulatedPageDevice::Impl::MultiBlockOp::set_block_result(i64 block_i,
                                                                const batt::Status& status)
 {
+  BATT_CHECK_LT(BATT_CHECKED_CAST(usize, block_i), this->block_status.size())
+      << "block_i is out-of-range; forgot to subtract block_0?";
   BATT_CHECK_NE(status, batt::StatusCode::kUnknown);
   BATT_CHECK_EQ(this->block_status[block_i], batt::StatusCode::kUnknown);
+
+  const i64 observed_pending = this->pending_blocks.get_value();
+
+  this->impl.log_event("set_block_result(", block_i, ", ", status,
+                       "), pending_blocks: ", observed_pending, "->", observed_pending - 1);
 
   this->block_status[block_i] = status;
   this->pending_blocks.fetch_sub(1);

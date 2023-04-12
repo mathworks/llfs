@@ -50,6 +50,16 @@ class PinnedPage
     return this->page_view_;
   }
 
+  /** \brief Returns the PageId for the page, if valid; otherwise returns PageId{kInvalidPageId}.
+   */
+  PageId page_id() const noexcept
+  {
+    if (BATT_HINT_FALSE(this->page_view_ == nullptr)) {
+      return PageId{};
+    }
+    return this->page_view_->page_id();
+  }
+
   // Give a hint to the cache that this page is being replaced and should be deprioritized.
   //
   void hint_obsolete() const

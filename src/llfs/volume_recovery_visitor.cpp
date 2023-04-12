@@ -103,7 +103,7 @@ Status VolumeRecoveryVisitor::resolve_pending_jobs(PageCache& cache, PageRecycle
     //
     if (!found_ref_count_updates) {
       //----- --- -- -  -  -   -
-      LLFS_LOG_INFO() << "Rolling back job at slot " << prepare_slot << "...";
+      LLFS_VLOG(1) << "Rolling back job at slot " << prepare_slot << "...";
 
       // Else (maybe) delete any pages that _did_ succeed, and then-and-only-then write a
       // rollback job slot.
@@ -124,10 +124,10 @@ Status VolumeRecoveryVisitor::resolve_pending_jobs(PageCache& cache, PageRecycle
 
       clamp_min_slot(&slot_upper_bound, rollback_slot->upper_bound);
 
-      LLFS_LOG_INFO() << "Successfully rolled back job at slot " << prepare_slot;
+      LLFS_VLOG(1) << "Successfully rolled back job at slot " << prepare_slot;
 
     } else {
-      LLFS_LOG_INFO() << "Committing job at slot " << prepare_slot << "...";
+      LLFS_VLOG(1) << "Committing job at slot " << prepare_slot << "...";
 
       //----- --- -- -  -  -   -
       // Call recover_page for all the new pages.
@@ -176,7 +176,7 @@ Status VolumeRecoveryVisitor::resolve_pending_jobs(PageCache& cache, PageRecycle
 
       clamp_min_slot(&slot_upper_bound, commit_slot->upper_bound);
 
-      LLFS_LOG_INFO() << "Successfully recovered (committed) job at slot " << prepare_slot;
+      LLFS_VLOG(1) << "Successfully recovered (committed) job at slot " << prepare_slot;
     }
 
     pending_jobs.erase(prepare_slot);

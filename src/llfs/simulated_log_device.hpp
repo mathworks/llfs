@@ -64,7 +64,9 @@ class SimulatedLogDevice : public LogDevice
   Status sync(LogReadMode mode, SlotUpperBoundAt event) override;
 
  private:
+  std::atomic<bool> external_close_{false};
   std::shared_ptr<Impl> impl_;
+  const u64 create_step_;
 };
 
 }  //namespace llfs

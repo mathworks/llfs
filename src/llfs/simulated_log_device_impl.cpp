@@ -35,6 +35,11 @@ SimulatedLogDevice::Impl::~Impl() noexcept
 //
 void SimulatedLogDevice::Impl::crash_and_recover(u64 step) /*override*/
 {
+  this->log_event("entered crash_and_recover(step=", step, ")");
+  auto on_scope_exit = batt::finally([&] {
+    this->log_event("leaving crash_and_recover(step=", step, ")");
+  });
+
   auto locked_chunks = this->chunks_.lock();
 
   this->latest_recovery_step_.set_value(step);
@@ -65,13 +70,26 @@ void SimulatedLogDevice::Impl::crash_and_recover(u64 step) /*override*/
   }
 
   this->commit_pos_.set_value(this->flush_pos_.get_value());
+
+  // IMPORTANT: these must be reset() after we update `latest_recover_step_`!
+  //
+  this->commit_pos_.reset();
+  this->flush_pos_.reset();
+
+  this->closed_.set_value(false);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status SimulatedLogDevice::Impl::trim(slot_offset_type new_trim_pos) /*override*/
+Status SimulatedLogDevice::Impl::trim(u64 device_create_step,
+                                      slot_offset_type new_trim_pos) /*override*/
 {
-  this->log_event("trim(", new_trim_pos, ")");
+  this->log_event("trim(", new_trim_pos, "), device_create_step=", device_create_step);
+
+  if (this->latest_recovery_step_.get_value() > device_create_step) {
+    this->log_event(" -- ignoring (obsolete LogDevice)");
+    return batt::StatusCode::kClosed;
+  }
 
   // Update the volatile trim pos.  If no change (clamp_min_slot returns delta == 0), return.
   //
@@ -132,7 +150,7 @@ std::unique_ptr<LogDevice::Reader> SimulatedLogDevice::Impl::new_reader(
     Optional<slot_offset_type> slot_lower_bound, LogReadMode mode) /*override*/
 {
   auto get_default_slot_lower_bound = [this] {
-    return this->flush_pos_.get_value();
+    return this->trim_pos_.get_value();
   };
 
   return std::make_unique<Impl::ReaderImpl>(
@@ -167,17 +185,33 @@ LogDevice::Writer& SimulatedLogDevice::Impl::writer() /*override*/
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status SimulatedLogDevice::Impl::close() /*override*/
+Status SimulatedLogDevice::Impl::close(u64 device_create_step) /*override*/
 {
   this->log_event("close()");
+  if (this->latest_recovery_step_.get_value() > device_create_step) {
+    this->log_event(" -- ignoring (obsolete LogDevice)");
+    return batt::OkStatus();
+  }
   this->closed_.set_value(true);
+  this->flush_pos_.close();
+  this->commit_pos_.close();
+
   return batt::OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status SimulatedLogDevice::Impl::sync(LogReadMode mode, SlotUpperBoundAt event) /*override*/
+Status SimulatedLogDevice::Impl::sync(u64 device_create_step, LogReadMode mode,
+                                      SlotUpperBoundAt event) /*override*/
 {
+  BATT_DEBUG_INFO("SimulatedLogDevice::sync(mode="
+                  << mode << ", event=" << event << ") flush_pos=" << this->flush_pos_.get_value()
+                  << ", commit_pos=" << this->commit_pos_.get_value());
+
+  if (this->latest_recovery_step_.get_value() > device_create_step) {
+    return batt::StatusCode::kClosed;
+  }
+
   if (mode == LogReadMode::kDurable) {
     BATT_REQUIRE_OK(await_slot_offset(event.offset, this->flush_pos_));
   } else {

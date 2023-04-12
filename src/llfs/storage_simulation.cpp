@@ -70,41 +70,18 @@ batt::TaskScheduler& StorageSimulation::task_scheduler() noexcept
 //
 void StorageSimulation::run_main_task(std::function<void()> main_fn)
 {
-  LLFS_LOG_SIM_EVENT() << "entered run_main_task;" << BATT_INSPECT(batt::this_thread_id());
+  LLFS_LOG_SIM_EVENT() << "entered run_main_task();" << BATT_INSPECT(batt::this_thread_id());
   auto on_scope_exit = batt::finally([&] {
-    LLFS_LOG_SIM_EVENT() << "leaving run_main_task";
+    LLFS_LOG_SIM_EVENT() << "leaving run_main_task()";
   });
 
   batt::Task main_task{this->task_scheduler().schedule_task(), main_fn, "SimulationMainTask"};
-
-  const auto handle_events = [&] {
-    for (;;) {
-      batt::UniqueHandler<> next_event_handler =
-          this->fake_io_context_.pop_ready_handler([this](usize n) -> usize {
-            BATT_CHECK_GT(n, 0);
-            usize i = this->entropy_source().pick_int(0, n - 1);
-            LLFS_LOG_SIM_EVENT() << "selected event index " << (i + 1) << " of " << n;
-            return i;
-          });
-
-      if (!next_event_handler) {
-        LLFS_LOG_SIM_EVENT() << "no more events to handle";
-        return;
-      }
-
-      try {
-        next_event_handler();
-      } catch (...) {
-        LLFS_LOG_ERROR() << "event handler threw exception!";
-      }
-    }
-  };
 
   //----- --- -- -  -  -   -
   // Run the main task until there are no more events to process (either we have terminated or
   // deadlocked).
   //
-  handle_events();
+  this->handle_events();
   //
   LLFS_LOG_SIM_EVENT() << "done handling events." << BATT_INSPECT(main_task.is_done());
 
@@ -112,22 +89,80 @@ void StorageSimulation::run_main_task(std::function<void()> main_fn)
   // Shut down the cache and call `handle_events` again to allow it to terminate all tasks
   // gracefully.
   //
-  if (this->cache_) {
-    LLFS_LOG_SIM_EVENT() << "shutting down the PageCache...";
-    this->cache_->close();
-    //
-    handle_events();
-    //
-    this->cache_->join();
-    this->cache_ = nullptr;
-    LLFS_LOG_SIM_EVENT() << "PageCache shut down successfully";
-  }
+  this->close_cache();
 
   //----- --- -- -  -  -   -
   // The main task should be terminated at this point.
   //
   BATT_CHECK_EQ(main_task.try_join(), batt::Task::IsDone{true})
-      << "main task failed to terminate (possible deadlock?)";
+      << "main task failed to terminate (possible deadlock?)" << [&main_task](std::ostream& out) {
+           batt::print_debug_info(main_task.debug_info, out);
+         };
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void StorageSimulation::crash_and_recover()
+{
+  const u64 recover_step = this->step_.fetch_add(1) + 1;
+
+  LLFS_LOG_SIM_EVENT() << "entered crash_and_recover() step=" << recover_step;
+  auto on_scope_exit = batt::finally([&] {
+    LLFS_LOG_SIM_EVENT() << "leaving crash_and_recover()";
+  });
+
+  for (const auto& [name, p_log_device_impl] : this->log_devices_) {
+    p_log_device_impl->crash_and_recover(recover_step);
+  }
+  for (const auto& [name, p_page_device_impl] : this->page_devices_) {
+    p_page_device_impl->crash_and_recover(recover_step);
+  }
+
+  this->close_cache();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void StorageSimulation::close_cache() noexcept
+{
+  if (this->cache_) {
+    LLFS_LOG_SIM_EVENT() << "shutting down the PageCache...";
+    this->cache_->close();
+    //
+    this->handle_events();
+    //
+    this->cache_->join();
+    this->cache_ = nullptr;
+    LLFS_LOG_SIM_EVENT() << "PageCache shut down successfully";
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void StorageSimulation::handle_events()
+{
+  for (;;) {
+    const u64 step = this->step_.fetch_add(1) + 1;
+    batt::UniqueHandler<> next_event_handler =
+        this->fake_io_context_.pop_ready_handler([this, step](usize n) -> usize {
+          BATT_CHECK_GT(n, 0);
+          usize i = this->entropy_source().pick_int(0, n - 1);
+          LLFS_LOG_SIM_EVENT() << "selected event index " << (i + 1) << " of " << n
+                               << "; step=" << step;
+          return i;
+        });
+
+    if (!next_event_handler) {
+      LLFS_LOG_SIM_EVENT() << "no more events to handle";
+      return;
+    }
+
+    try {
+      next_event_handler();
+    } catch (...) {
+      LLFS_LOG_ERROR() << "event handler threw exception!";
+    }
+  }
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -176,7 +211,7 @@ std::unique_ptr<PageDevice> StorageSimulation::get_page_device(const std::string
 
     iter = this->page_devices_
                .emplace(name, std::make_shared<SimulatedPageDevice::Impl>(
-                                  *this, *page_size, *page_count, next_page_device_id))
+                                  *this, name, *page_size, *page_count, next_page_device_id))
                .first;
   }
 
@@ -248,9 +283,19 @@ void StorageSimulation::add_page_arena(PageCount page_count, PageSize page_size)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+void StorageSimulation::register_page_layout(const PageLayoutId& layout_id,
+                                             const PageReader& reader)
+{
+  this->page_layouts_.emplace(layout_id, reader);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 const batt::SharedPtr<PageCache>& StorageSimulation::init_cache() noexcept
 {
   if (!this->cache_) {
+    this->log_event("creating PageCache");
+
     std::vector<PageArena> arenas;
     for (const PageArenaDeviceNames& arena : this->page_arena_device_names_) {
       //----- --- -- -  -  -   -
@@ -270,6 +315,13 @@ const batt::SharedPtr<PageCache>& StorageSimulation::init_cache() noexcept
                         }))});
     }
     this->cache_ = BATT_OK_RESULT_OR_PANIC(PageCache::make_shared(std::move(arenas)));
+
+    // Register all page layouts for this simulation.
+    //
+    for (const auto& [layout_id, reader] : this->page_layouts_) {
+      this->log_event("registering page layout: ", layout_id);
+      this->cache_->register_page_layout(layout_id, reader);
+    }
   }
   return this->cache_;
 }

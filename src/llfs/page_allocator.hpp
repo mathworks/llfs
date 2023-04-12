@@ -169,6 +169,11 @@ class PageAllocator
     };
   }
 
+  u64 free_pool_size() const
+  {
+    return this->state_.no_lock().free_pool_size();
+  }
+
   page_device_id_int get_device_id() const
   {
     return this->state_.no_lock().page_ids().get_device_id();

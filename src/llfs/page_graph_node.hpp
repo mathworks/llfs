@@ -42,6 +42,16 @@ inline Status validate_packed_value(const PackedPageGraphNode& packed, const voi
 class PageGraphNodeBuilder
 {
  public:
+  static StatusOr<PageGraphNodeBuilder> from_new_page(
+      const StatusOr<std::shared_ptr<PageBuffer>>& status_or_page_buffer)
+  {
+    BATT_REQUIRE_OK(std::move(status_or_page_buffer));
+
+    return PageGraphNodeBuilder{batt::make_copy(*status_or_page_buffer)};
+  }
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   explicit PageGraphNodeBuilder(std::shared_ptr<PageBuffer>&& page_buffer) noexcept;
 
   bool add_page(PageId page_id) noexcept;
@@ -60,6 +70,19 @@ class PageGraphNodeBuilder
 class PageGraphNodeView : public PageView
 {
  public:
+  /** \brief The page layout id for all instances of this class.
+   */
+  static PageLayoutId page_layout_id();
+
+  /** \brief Returns the PageReader for this layout.
+   */
+  static PageReader page_reader();
+
+  /** \brief Registers this page layout with the passed cache, so that pages using the layout can be
+   * correctly loaded and parsed by the PageCache.
+   */
+  static bool register_layout(PageCache& cache);
+
   /** \brief Returns a shared instance of PageGraphNodeView for the given page data.
    * \return error status if the page is ill-formed
    */

@@ -38,6 +38,8 @@ ConstBuffer SimulatedLogDevice::Impl::ReaderImpl::data() /*override*/
   {
     auto locked_chunks = this->impl_.chunks_.lock();
 
+    this->impl_.log_event("reading slot ", this->slot_offset_);
+
     auto iter = locked_chunks->lower_bound(this->slot_offset_);
     if (iter != locked_chunks->end()) {
       std::shared_ptr<Impl::CommitChunk>& chunk = iter->second;
@@ -55,6 +57,8 @@ ConstBuffer SimulatedLogDevice::Impl::ReaderImpl::data() /*override*/
   }
 
   this->data_size_ = buffer.size();
+
+  this->impl_.log_event(" -- buffer.size=", buffer.size());
 
   return buffer;
 }

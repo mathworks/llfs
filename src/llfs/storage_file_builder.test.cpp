@@ -155,8 +155,8 @@ class StorageFileBuilderTest : public ::testing::Test
 
       // Fill random data in 512 aligned rand_data
       //
-      for (u64& dst : rand_data.items) {
-        dst = distrib(gen);
+      for (u64 i = 0; i < buffer_size / sizeof(u64); i++) {
+        rand_data.items[i] = distrib(gen);
       }
 
       // Write random data to disk and iterate offset and size counters

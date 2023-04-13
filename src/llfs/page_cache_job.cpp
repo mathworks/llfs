@@ -323,19 +323,10 @@ void PageCacheJob::const_prefetch_hint(PageId page_id) const
 Status PageCacheJob::recover_page(PageId page_id, const boost::uuids::uuid& caller_uuid,
                                   slot_offset_type caller_slot)
 {
-  const PageArena& arena = this->cache_->arena_for_page_id(page_id);
-  PageAllocator& page_allocator = arena.allocator();
-
-  Status allocator_recovered = page_allocator.recover_page(page_id);
-  BATT_REQUIRE_OK(allocator_recovered);
-
   StatusOr<PinnedPage> pinned_page =
-      this->get(page_id, /*required_layout=*/None, PinPageToJob::kTrue, OkIfNotFound{true});
+      this->get(page_id, /*required_layout=*/None, PinPageToJob::kTrue, OkIfNotFound{false});
 
-  if (!pinned_page.ok()) {
-    page_allocator.deallocate_page(page_id);
-    return pinned_page.status();
-  }
+  BATT_REQUIRE_OK(pinned_page);
 
   const PackedPageHeader& page_header = get_page_header(*pinned_page->get_page_buffer());
   if (page_header.user_slot.user_id != caller_uuid ||
@@ -343,11 +334,12 @@ Status PageCacheJob::recover_page(PageId page_id, const boost::uuids::uuid& call
     return ::llfs::make_status(StatusCode::kRecoverFailedPageReallocated);
   }
 
-  // TODO [tastolfi 2022-01-03] FIX nullptr below!!!
   const auto& [iter, inserted] = this->new_pages_.emplace(page_id, NewPage{/*buffer=*/nullptr});
   if (inserted) {
     iter->second.set_view(pinned_page->get_shared_view());
   }
+
+  this->recovered_pages_.emplace(page_id);
 
   return OkStatus();
 }

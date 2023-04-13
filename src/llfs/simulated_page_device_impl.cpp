@@ -43,6 +43,27 @@ void SimulatedPageDevice::Impl::crash_and_recover(u64 step) /*override*/
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+bool SimulatedPageDevice::Impl::has_data_for_page_id(PageId page_id) const noexcept
+{
+  const i64 physical_page = this->get_physical_page(page_id);
+  i64 count = 0;
+  {
+    auto locked_blocks = this->blocks_.lock();
+    this->for_each_page_block(physical_page, [&](i64 /*block_0*/, i64 block_i) {
+      if (locked_blocks->count(block_i)) {
+        count += 1;
+      }
+    });
+  }
+  if (count == 0) {
+    return false;
+  }
+  BATT_CHECK_EQ(count, this->blocks_per_page_);
+  return true;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 StatusOr<std::shared_ptr<PageBuffer>> SimulatedPageDevice::Impl::prepare(u32 device_create_step,
                                                                          PageId page_id)
 {
@@ -324,7 +345,7 @@ bool SimulatedPageDevice::Impl::validate_physical_page_async(i64 physical_page, 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <typename Fn>
-void SimulatedPageDevice::Impl::for_each_page_block(i64 physical_page, Fn&& fn)
+void SimulatedPageDevice::Impl::for_each_page_block(i64 physical_page, Fn&& fn) const noexcept
 {
   const i64 first_block = physical_page * this->blocks_per_page_;
   const i64 last_block = first_block + this->blocks_per_page_;

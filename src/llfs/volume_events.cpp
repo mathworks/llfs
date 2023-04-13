@@ -29,7 +29,9 @@ usize packed_sizeof(const PrepareJob& obj)
   return sizeof(PackedPrepareJob) +                                                               //
          packed_array_size<PackedPageId>(batt::make_copy(obj.new_page_ids) | seq::count()) +      //
          packed_array_size<PackedPageId>(batt::make_copy(obj.deleted_page_ids) | seq::count()) +  //
-         packed_array_size<PackedPageId>(trace_refs(obj.user_data) | seq::count()) +              //
+         packed_array_size<little_page_device_id_int>(batt::make_copy(obj.page_device_ids) |
+                                                      seq::count()) +                 //
+         packed_array_size<PackedPageId>(trace_refs(obj.user_data) | seq::count()) +  //
          packed_sizeof(obj.user_data);
 }
 
@@ -54,6 +56,15 @@ PackedPrepareJob* pack_object_to(const PrepareJob& obj, PackedPrepareJob* packed
   }
   //----- --- -- -  -  -   -
   {
+    PackedArray<little_page_device_id_int>* packed_page_device_ids =
+        pack_object(obj.page_device_ids, dst);
+    if (!packed_page_device_ids) {
+      return nullptr;
+    }
+    packed->page_device_ids.reset(packed_page_device_ids, dst);
+  }
+  //----- --- -- -  -  -   -
+  {
     PackedArray<PackedPageId>* packed_root_page_ids = pack_object(trace_refs(obj.user_data), dst);
     if (!packed_root_page_ids) {
       return nullptr;
@@ -74,6 +85,7 @@ PackedPrepareJob* pack_object_to(const PrepareJob& obj, PackedPrepareJob* packed
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// TODO [tastolfi 2023-03-15] DEPRECATE (replace with unpack_cast/validate)
 //
 StatusOr<Ref<const PackedPrepareJob>> unpack_object(const PackedPrepareJob& packed, DataReader*)
 {
@@ -88,6 +100,7 @@ usize packed_sizeof(const PackedPrepareJob& obj)
          packed_sizeof(*obj.new_page_ids) +      //
          packed_sizeof(*obj.deleted_page_ids) +  //
          packed_sizeof(*obj.root_page_ids) +     //
+         packed_sizeof(*obj.page_device_ids) +   //
          packed_sizeof(*obj.user_data);
 }
 
@@ -144,7 +157,7 @@ StatusOr<TrimmedPrepareJob> unpack_object(const PackedTrimmedPrepareJob& packed,
   object.prepare_slot = packed.prepare_slot;
   object.page_ids = as_seq(packed.page_ids)  //
                     | batt::seq::map([](const PackedPageId& page_id) {
-                        return page_id.as_page_id();
+                        return page_id.unpack();
                       })  //
                     | batt::seq::boxed();
 

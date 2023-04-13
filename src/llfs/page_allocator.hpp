@@ -98,10 +98,6 @@ class PageAllocator
    */
   Status notify_user_recovered(const boost::uuids::uuid& user_id);
 
-  // Removes page from the free pool in order to recover a pending job.
-  //
-  Status recover_page(PageId id);
-
   // Return the current ref count value for a given page.
   //  TODO [tastolfi 2021-04-05] -- return generation too!
   //

@@ -43,7 +43,7 @@ struct VolumeAttachmentId {
   struct Hash {
     u64 operator()(const VolumeAttachmentId& id) const
     {
-      u64 seed = 0;
+      usize seed = 0;
       boost::hash_combine(seed, boost::hash<boost::uuids::uuid>{}(id.client));
       boost::hash_combine(seed, id.device.value());
       return seed;
@@ -217,6 +217,7 @@ LLFS_SIMPLE_PACKED_TYPE(PackedVolumeFormatUpgrade);
 struct PrepareJob {
   BoxedSeq<PageId> new_page_ids;
   BoxedSeq<PageId> deleted_page_ids;
+  BoxedSeq<page_device_id_int> page_device_ids;
   PackableRef user_data;
 };
 
@@ -233,6 +234,7 @@ struct PackedPrepareJob {
   PackedPointer<PackedArray<PackedPageId>> new_page_ids;
   PackedPointer<PackedArray<PackedPageId>> deleted_page_ids;
   PackedPointer<PackedArray<PackedPageId>> root_page_ids;
+  PackedPointer<PackedArray<little_page_device_id_int>> page_device_ids;
   PackedPointer<PackedRawData> user_data;
 };
 

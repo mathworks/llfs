@@ -40,6 +40,7 @@ PrepareJob prepare(const AppendableJob& appendable)
   return PrepareJob{
       .new_page_ids = appendable.job.new_page_ids(),
       .deleted_page_ids = appendable.job.deleted_page_ids(),
+      .page_device_ids = appendable.job.page_device_ids(),
       .user_data = appendable.user_data,
   };
 }

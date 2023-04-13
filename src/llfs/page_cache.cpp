@@ -530,12 +530,14 @@ auto PageCache::find_page_in_cache(PageId page_id, const Optional<PageLayoutId>&
 
           auto latch = std::move(captured_latch);
           if (!result.ok()) {
-            LLFS_LOG_WARNING() << "recent events for" << BATT_INSPECT(page_id)
-                               << BATT_INSPECT(ok_if_not_found) << " (now=" << this->history_end_
-                               << "):"
-                               << batt::dump_range(
-                                      this->find_new_page_events(page_id) | seq::collect_vec(),
-                                      batt::Pretty::True);
+            if (!ok_if_not_found) {
+              LLFS_LOG_WARNING() << "recent events for" << BATT_INSPECT(page_id)
+                                 << BATT_INSPECT(ok_if_not_found) << " (now=" << this->history_end_
+                                 << "):"
+                                 << batt::dump_range(
+                                        this->find_new_page_events(page_id) | seq::collect_vec(),
+                                        batt::Pretty::True);
+            }
             latch->set_value(result.status());
             return;
           }

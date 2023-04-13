@@ -177,7 +177,14 @@ Status FinalizedPageCacheJob::await_durable() const
   //
   job->unpin_all();
 
-  return CommittablePageCacheJob{std::move(job)};
+  auto committable_job = CommittablePageCacheJob{std::move(job)};
+
+  // Calculate page reference count updates for all devices.
+  //
+  BATT_ASSIGN_OK_RESULT(committable_job.ref_count_updates_,
+                        committable_job.get_page_ref_count_updates(callers));
+
+  return committable_job;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -202,6 +209,13 @@ CommittablePageCacheJob::~CommittablePageCacheJob() noexcept
       return PageCacheJobProgress::kAborted;
     });
   }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+u64 CommittablePageCacheJob::job_id() const
+{
+  return this->job_->job_id;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -234,9 +248,25 @@ BoxedSeq<PageRefCount> CommittablePageCacheJob::root_set_deltas() const
                 this->job_->get_root_set_delta().end())  //
          | seq::map([](const auto& kv_pair) {
              return PageRefCount{
-                 .page_id = kv_pair.first,
+                 .page_id = PageId{kv_pair.first.int_value()},
                  .ref_count = kv_pair.second,
              };
+           })  //
+         | seq::boxed();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+BoxedSeq<page_device_id_int> CommittablePageCacheJob::page_device_ids() const
+{
+  // Make sure the ref_count_updates_ is initialized!
+  //
+  BATT_CHECK(this->ref_count_updates_.initialized);
+
+  return as_seq(this->ref_count_updates_.per_device.begin(),
+                this->ref_count_updates_.per_device.end())  //
+         | seq::map([](const auto& kv_pair) -> page_device_id_int {
+             return kv_pair.first;
            })  //
          | seq::boxed();
 }
@@ -288,10 +318,9 @@ Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 c
                                              this->write_new_pages(params, callers));
   BATT_REQUIRE_OK(write_status);
 
-  // Calculate page reference count updates for all devices.
+  // Make sure the ref_count_updates_ is initialized!
   //
-  BATT_ASSIGN_OK_RESULT(PageRefCountUpdates ref_count_updates,
-                        this->get_page_ref_count_updates(callers | Caller::PageCacheJob_commit_1));
+  BATT_CHECK(this->ref_count_updates_.initialized);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
   // Wait until all previous commits in our pipeline have successfully updated ref counts.
@@ -304,15 +333,16 @@ Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 c
   // Update ref counts, keeping track of the sync point for each device's allocator; this allows the
   // updates to happen in parallel.  We go through again below to synchronize them.
   //
-  BATT_ASSIGN_OK_RESULT(
-      DeadPages dead_pages,
-      LLFS_COLLECT_LATENCY(job->cache().metrics().update_ref_counts_latency,
-                           this->start_ref_count_updates(params, ref_count_updates, callers)));
+  BATT_ASSIGN_OK_RESULT(DeadPages dead_pages,
+                        LLFS_COLLECT_LATENCY(job->cache().metrics().update_ref_counts_latency,
+                                             this->start_ref_count_updates(
+                                                 params, this->ref_count_updates_, callers)));
 
   // Wait for all ref count updates to complete.
   //
-  Status ref_count_status = LLFS_COLLECT_LATENCY(job->cache().metrics().ref_count_sync_latency,
-                                                 this->await_ref_count_updates(ref_count_updates));
+  Status ref_count_status =
+      LLFS_COLLECT_LATENCY(job->cache().metrics().ref_count_sync_latency,
+                           this->await_ref_count_updates(this->ref_count_updates_));
   BATT_REQUIRE_OK(ref_count_status);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -370,6 +400,14 @@ Status CommittablePageCacheJob::write_new_pages(const JobCommitParams& params, u
     usize i = 0;
     for (auto& p : job->get_new_pages()) {
       const PageId page_id = p.first;
+
+      // There's no need to write recovered pages, since they are already durable; skip.
+      //
+      if (job->is_recovered_page(page_id)) {
+        ops[i].get_handler()(batt::OkStatus());
+        continue;
+      }
+
       const PageCacheJob::NewPage& new_page = p.second;
       std::shared_ptr<const PageView> new_page_view = new_page.view();
       BATT_CHECK_NOT_NULLPTR(new_page_view);
@@ -380,20 +418,15 @@ Status CommittablePageCacheJob::write_new_pages(const JobCommitParams& params, u
       // guarantee exactly-once side effects in the presence of crashes.
       {
         std::shared_ptr<PageBuffer> mutable_page_buffer = new_page.buffer();
-        if (mutable_page_buffer == nullptr) {
-          LLFS_VLOG(1) << "Skipping page header update for recovered page " << page_id;
+        BATT_CHECK_NOT_NULLPTR(mutable_page_buffer);
+
+        PackedPageUserSlot& user_slot = mutable_page_header(mutable_page_buffer.get())->user_slot;
+        if (params.caller_uuid) {
+          user_slot.user_id = *params.caller_uuid;
         } else {
-          {
-            PackedPageUserSlot& user_slot =
-                mutable_page_header(mutable_page_buffer.get())->user_slot;
-            if (params.caller_uuid) {
-              user_slot.user_id = *params.caller_uuid;
-            } else {
-              std::memset(&user_slot.user_id, 0, sizeof(user_slot.user_id));
-            }
-            user_slot.slot_offset = params.caller_slot;
-          }
+          std::memset(&user_slot.user_id, 0, sizeof(user_slot.user_id));
         }
+        user_slot.slot_offset = params.caller_slot;
       }
 
       // We will need this information to update the metrics below.
@@ -493,8 +526,6 @@ Status CommittablePageCacheJob::await_ref_count_updates(const PageRefCountUpdate
   for (const auto& [device_id, device_state] : updates.per_device) {
     Status sync_status = device_state.p_arena->allocator().sync(device_state.sync_point);
     BATT_REQUIRE_OK(sync_status);
-    //
-    // ^^^ TODO [tastolfi 2021-09-13] deal with partial failure
   }
   //
   // NOTE: this is the "true" point at which a transaction is durably committed.  The commit slot
@@ -569,6 +600,9 @@ auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/) const
         .ref_count = p.second,
     });
   }
+
+  updates.initialized = true;
+
   return updates;
 }
 

@@ -210,7 +210,7 @@ TEST_F(VolumeEventsTest, TrimEventPackUnpack)
         EXPECT_EQ(job->page_ids.size(), i);
 
         for (usize j = 0; j < i; ++j) {
-          EXPECT_EQ(this->page_ids[j], job->page_ids[j].as_page_id())
+          EXPECT_EQ(this->page_ids[j], job->page_ids[j].unpack())
               << BATT_INSPECT(i) << BATT_INSPECT(j);
         }
       }

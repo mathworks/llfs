@@ -82,6 +82,8 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
                                 const VolumeReader::SlotVisitorFn& slot_visitor_fn)
     -> StatusOr<std::unique_ptr<Volume>>
 {
+  BATT_CHECK_NOT_NULLPTR(params.scheduler);
+
   batt::TaskScheduler& scheduler = *params.scheduler;
   const VolumeOptions& volume_options = params.options;
   const auto recycler_options = PageRecyclerOptions{}.  //
@@ -269,7 +271,7 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
   // Create the Volume object.
   //
   std::unique_ptr<Volume> volume{
-      new Volume{params.options, visitor.ids->payload.main_uuid, std::move(cache),
+      new Volume{scheduler, params.options, visitor.ids->payload.main_uuid, std::move(cache),
                  std::move(params.trim_control), std::move(page_deleter), std::move(root_log),
                  std::move(recycler), visitor.ids->payload.trimmer_uuid, *trimmer_visitor}};
 
@@ -288,7 +290,8 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*explicit*/ Volume::Volume(const VolumeOptions& options, const boost::uuids::uuid& volume_uuid,
+/*explicit*/ Volume::Volume(batt::TaskScheduler& task_scheduler, const VolumeOptions& options,
+                            const boost::uuids::uuid& volume_uuid,
                             batt::SharedPtr<PageCache>&& page_cache,
                             std::shared_ptr<SlotLockManager>&& trim_control,
                             std::unique_ptr<PageCache::PageDeleterImpl>&& page_deleter,
@@ -296,7 +299,8 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
                             std::unique_ptr<PageRecycler>&& recycler,
                             const boost::uuids::uuid& trimmer_uuid,
                             const VolumeTrimmer::RecoveryVisitor& trimmer_recovery_visitor) noexcept
-    : options_{options}
+    : task_scheduler_{task_scheduler}
+    , options_{options}
     , volume_uuid_{volume_uuid}
     , cache_{std::move(page_cache)}
     , trim_control_{std::move(trim_control)}
@@ -335,7 +339,7 @@ void Volume::start()
 
   if (!this->trimmer_task_) {
     this->trimmer_task_.emplace(
-        /*executor=*/batt::Runtime::instance().schedule_task(),
+        /*executor=*/this->task_scheduler_.schedule_task(),
         [this] {
           Status result = this->trimmer_.run();
           LLFS_VLOG(1) << "Volume::trimmer_task_ exited with status=" << result;

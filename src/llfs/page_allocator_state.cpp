@@ -68,11 +68,12 @@ StatusOr<slot_offset_type> PageAllocatorState::write_checkpoint_slice(
           slice_grant,
           PackedPageRefCountRefresh{
               {
-                  .page_id = this->page_ids_.make_page_id(physical_page, generation).int_value(),
+                  .page_id = {this->page_ids_.make_page_id(physical_page, generation).int_value()},
                   .ref_count = ref_count_obj->get_count(),
               },
               .user_index = user_index,
           });
+
     } else {
       PageAllocatorAttachment* const attachment =
           static_cast<PageAllocatorAttachment*>(oldest_object);
@@ -302,14 +303,17 @@ void PageAllocatorState::learn(const SlotRange& slot_offset,
 {
   LLFS_VLOG(1) << "learning " << attach;
 
-  this->update_attachment(slot_offset, attach.user_slot, attach.user_index, AllowAttach::kTrue);
+  const bool success =
+      this->update_attachment(slot_offset, attach.user_slot, attach.user_index, AllowAttach::kTrue);
+
+  BATT_CHECK(success);
 
   this->update_learned_upper_bound(slot_offset.upper_bound);
 }
 
 //----- --- -- -  -  -   -
 
-void PageAllocatorState::update_attachment(const SlotRange& slot_offset,
+bool PageAllocatorState::update_attachment(const SlotRange& slot_offset,
                                            const PackedPageUserSlot& user_slot, u32 user_index,
                                            AllowAttach attach)
 {
@@ -320,7 +324,10 @@ void PageAllocatorState::update_attachment(const SlotRange& slot_offset,
     p_attachment = iter->second.get();
     p_attachment->clamp_min_user_slot(user_slot.slot_offset);
 
-  } else if (attach == AllowAttach::kTrue) {
+  } else {
+    if (attach != AllowAttach::kTrue) {
+      return false;
+    }
     BATT_CHECK_NE(user_index, PageAllocatorState::kInvalidUserIndex);
 
     auto attachment = std::make_unique<PageAllocatorAttachment>(user_slot.user_id,
@@ -333,6 +340,8 @@ void PageAllocatorState::update_attachment(const SlotRange& slot_offset,
   if (p_attachment) {
     this->set_last_update(p_attachment, slot_offset);
   }
+
+  return true;
 }
 
 //----- --- -- -  -  -   -
@@ -352,7 +361,10 @@ Status PageAllocatorState::recover(const SlotRange& slot_offset,
     BATT_CHECK_EQ(*this->attachment_by_index_[attach.user_index], attach.user_slot.user_id);
   }
 
-  this->update_attachment(slot_offset, attach.user_slot, attach.user_index, AllowAttach::kTrue);
+  const bool success =
+      this->update_attachment(slot_offset, attach.user_slot, attach.user_index, AllowAttach::kTrue);
+
+  BATT_CHECK(success);
 
   this->update_learned_upper_bound(slot_offset.upper_bound);
 
@@ -488,30 +500,55 @@ PageAllocatorState::ProposalStatus PageAllocatorState::propose(PackedPageAllocat
 void PageAllocatorState::learn(const SlotRange& slot_offset, const PackedPageAllocatorTxn& txn,
                                Metrics& metrics)
 {
-  LLFS_VLOG(1) << "(device=" << this->page_ids_.get_device_id() << ") learning " << txn;
+  this->process_txn(slot_offset, txn, &metrics, /*inside_recovery=*/std::false_type{});
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+batt::Status PageAllocatorState::recover(const SlotRange& slot_offset,
+                                         const PackedPageAllocatorTxn& txn)
+{
+  this->process_txn(slot_offset, txn, /*metrics=*/nullptr, /*inside_recovery=*/std::true_type{});
+
+  return batt::OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <bool kInsideRecovery>
+void PageAllocatorState::process_txn(const SlotRange& slot_offset,
+                                     const PackedPageAllocatorTxn& txn,
+                                     PageAllocatorMetrics* metrics,
+                                     std::integral_constant<bool, kInsideRecovery> inside_recovery)
+{
+  LLFS_VLOG(1) << "(device=" << this->page_ids_.get_device_id()  //
+               << ") " << (kInsideRecovery ? "recovering" : "learning") << "[slot=" << slot_offset
+               << "] " << txn;
+
+  if (!kInsideRecovery) {
+    BATT_CHECK_NOT_NULLPTR(metrics);
+  }
 
   // Update the client attachment for this transaction so we don't double-commit.
+  //
   {
-    auto iter = this->attachments_.find(txn.user_slot.user_id);
-    BATT_CHECK_NE(iter, this->attachments_.end())
-        << "Tried to learn txn from a detached client; this event should have been filtered out by "
-           "propose!";
+    const bool success =
+        this->update_attachment(slot_offset, txn.user_slot, txn.user_index,
+                                kInsideRecovery ? AllowAttach::kTrue : AllowAttach::kFalse);
 
-    PageAllocatorAttachment* const attachment = iter->second.get();
-    BATT_CHECK(slot_less_than(attachment->get_user_slot(), txn.user_slot.slot_offset))
-        << "Tried to learn a txn that we have already learned!  This should have been filtered out "
-           "by propose_exactly_once!";
-
-    attachment->set_user_slot(txn.user_slot.slot_offset);
-    this->set_last_update(attachment, slot_offset);
+    BATT_CHECK(success);
   }
+
+  const PageIdFactory& ids = this->page_ids_;
 
   // Apply all ref count updates in the txn.
   //
-  for (const PackedPageRefCount& updated : txn.ref_counts) {
-    const PageId page_id = updated.page_id.unpack();
-    const page_id_int physical_page = this->page_ids_.get_physical_page(page_id);
-    const page_id_int new_generation = this->page_ids_.get_generation(page_id);
+  for (const PackedPageRefCount& prc : txn.ref_counts) {
+    const PageId page_id = prc.page_id.unpack();
+    const page_id_int physical_page = ids.get_physical_page(page_id);
+    const page_id_int new_generation = ids.get_generation(page_id);
+
+    BATT_CHECK_LT(physical_page, this->page_device_capacity());
     PageAllocatorRefCount* const obj = &this->page_ref_counts_[physical_page];
 
     // IMPORTANT: `set_last_modified_by` must come first!  This is required because we detect dead
@@ -521,15 +558,17 @@ void PageAllocatorState::learn(const SlotRange& slot_offset, const PackedPageAll
     //
     obj->set_last_modified_by(txn.user_index);
 
-    const i32 old_count = obj->set_count(updated.ref_count);
+    const i32 old_count = obj->set_count(prc.ref_count);
     const u64 old_generation = obj->set_generation(new_generation);
 
-    // Update metrics for alloc/free.
-    //
-    if (old_count == 0 && updated.ref_count >= 2 && old_generation < new_generation) {
-      metrics.pages_allocated.fetch_add(1);
-    } else if (updated.ref_count == 0 && old_count > 0) {
-      metrics.pages_freed.fetch_add(1);
+    if (!kInsideRecovery) {
+      // Update metrics for alloc/free.
+      //
+      if (old_count == 0 && prc.ref_count >= 2 && old_generation < new_generation) {
+        metrics->pages_allocated.fetch_add(1);
+      } else if (prc.ref_count == 0 && old_count > 0) {
+        metrics->pages_freed.fetch_add(1);
+      }
     }
 
     this->set_last_update(obj, slot_offset);
@@ -652,42 +691,6 @@ i32 PageAllocatorState::calculate_new_ref_count(const PackedPageRefCount& delta)
   run_ref_count_update_sanity_checks(delta, obj, old_count, new_count);
 
   return new_count;
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-batt::Status PageAllocatorState::recover(const SlotRange& slot_offset,
-                                         const PackedPageAllocatorTxn& txn)
-{
-  LLFS_VLOG(1) << "(device=" << this->page_ids_.get_device_id()
-               << ") recovering[slot=" << slot_offset << "] " << txn;
-
-  // Assume that the txn was correctly deduplicated when it was originally appended to the log;
-  // don't bother checking during recovery, just update the attachment slot.
-  //
-  this->update_attachment(slot_offset, txn.user_slot, txn.user_index, AllowAttach::kTrue);
-
-  auto& ids = this->page_ids_;
-
-  // Apply all ref count updates in the txn.
-  //
-  for (const PackedPageRefCount& recovered : txn.ref_counts) {
-    const PageId page_id = recovered.page_id.unpack();
-    const page_id_int physical_page = ids.get_physical_page(page_id);
-    PageAllocatorRefCount* const obj = &this->page_ref_counts_[physical_page];
-    const page_generation_int generation = ids.get_generation(page_id);
-
-    obj->set_last_modified_by(txn.user_index);
-    obj->set_count(recovered.ref_count);
-    obj->set_generation(generation);
-
-    this->set_last_update(obj, slot_offset);
-    this->update_free_pool_status(obj);
-  }
-
-  this->update_learned_upper_bound(slot_offset.upper_bound);
-
-  return batt::OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

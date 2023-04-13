@@ -23,7 +23,20 @@ namespace llfs {
 struct PageLayoutId
     : boost::totally_ordered<PageLayoutId>
     , boost::equality_comparable<PageLayoutId> {
-  u8 value[8];
+  static constexpr usize kMaxSize = 8;
+
+  u8 value[kMaxSize];
+
+  template <usize kLength>
+  static PageLayoutId from_str(const char (&c_str)[kLength])
+  {
+    static_assert(kLength <= kMaxSize + (1 /*null terminator*/));
+
+    PageLayoutId id = PageLayoutId::min_value();
+    std::memcpy(id.value, c_str, std::min(kLength, kMaxSize));
+
+    return id;
+  }
 
   static const PageLayoutId& min_value()
   {
@@ -57,7 +70,7 @@ struct PageLayoutId
 
       return std::hash<u64>{}(local_copy.i);
     }
-  };
+  };  //namespace llfs
 };
 
 inline std::ostream& operator<<(std::ostream& out, const PageLayoutId& t)

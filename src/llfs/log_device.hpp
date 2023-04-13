@@ -48,6 +48,21 @@ enum struct LogReadMode : unsigned {
 };
 constexpr unsigned kNumLogReadModes = 3;
 
+inline std::ostream& operator<<(std::ostream& out, const LogReadMode& t)
+{
+  switch (t) {
+    case LogReadMode::kInconsistent:
+      return out << "Inconsistent";
+
+    case LogReadMode::kSpeculative:
+      return out << "Speculative";
+
+    case LogReadMode::kDurable:
+      return out << "Durable";
+  }
+  return out << "(bad value:" << (int)t << ")";
+}
+
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 class LogDevice
@@ -89,8 +104,8 @@ class LogDevice
 
   // Create a new reader.
   //
-  virtual std::unique_ptr<Reader> new_reader(Optional<slot_offset_type> slot_lower_bound,
-                                             LogReadMode mode) = 0;
+  virtual std::unique_ptr<LogDevice::Reader> new_reader(Optional<slot_offset_type> slot_lower_bound,
+                                                        LogReadMode mode) = 0;
 
   // Returns the current active slot range for the log.  `mode` determines whether the upper bound
   // will be the flushed or committed upper bound.
@@ -99,7 +114,7 @@ class LogDevice
 
   // There can be only one Writer at a time.
   //
-  virtual Writer& writer() = 0;
+  virtual LogDevice::Writer& writer() = 0;
 
   virtual Status close() = 0;
 
@@ -242,7 +257,7 @@ class LogDevice::Reader
 
   // Wait for the log to reach the specified state.
   //
-  virtual Status await(ReaderEvent event) = 0;
+  virtual Status await(LogDevice::ReaderEvent event) = 0;
 };
 
 /** \brief Open the log without scanning its contents.
@@ -299,7 +314,7 @@ class LogDevice::Writer
 
   // Wait for the log to reach the specified state.
   //
-  virtual Status await(WriterEvent event) = 0;
+  virtual Status await(LogDevice::WriterEvent event) = 0;
 };
 
 }  // namespace llfs

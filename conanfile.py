@@ -8,7 +8,7 @@
 
 from conans import ConanFile, CMake
 
-import os, sys
+import os, sys, platform
 
 VERBOSE = os.getenv('VERBOSE') and True or False
 
@@ -26,16 +26,20 @@ class LlfsConan(ConanFile):
     generators = "cmake"
     build_policy = "missing"
     requires = [
+        "libbacktrace/cci.20210118",
+        "b2/4.9.3",
         "gtest/1.13.0",
         "boost/1.81.0",
         "openssl/3.0.7",
         "glog/0.6.0",
-        "libunwind/1.6.2",
-        "batteries/0.28.5@batteriescpp+batteries/stable",
-        "liburing/2.2",
+        #"batteries/0.28.5@batteriescpp+batteries/stable",
+        "batteries/0.29.1-devel",
         "cli11/2.3.2",
         "zlib/1.2.13",
-    ]
+    ] + ([
+        "libunwind/1.6.2",
+        "liburing/2.2",
+    ] if platform.system() == 'Linux' else [])
     exports_sources = [
         "src/CMakeLists.txt",
         "src/**/*.hpp",

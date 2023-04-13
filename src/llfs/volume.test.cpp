@@ -22,7 +22,10 @@
 #include <llfs/storage_simulation.hpp>
 
 #include <batteries/cpu_align.hpp>
+#include <batteries/env.hpp>
 #include <batteries/state_machine_model.hpp>
+
+#include <cstdlib>
 
 namespace {
 
@@ -778,7 +781,11 @@ void run_recovery_sim(u32 seed)
 
   const auto pages_per_device = llfs::PageCount{4};
 
-  std::default_random_engine rng{seed};
+  // std::default_random_engine //
+  // std::mt19937_64 //
+  // std::minstd_rand  //
+  std::ranlux48_base  //
+      rng{seed};
   llfs::StorageSimulation sim{batt::StateMachineEntropySource{
       /*entropy_fn=*/[&rng](usize min_value, usize max_value) -> usize {
         std::uniform_int_distribution<usize> pick_value{min_value, max_value};
@@ -1062,22 +1069,55 @@ void run_recovery_sim(u32 seed)
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 TEST(VolumeSimTest, RecoverySimulation)
 {
-  constexpr u32 kInitialSeed = 253689123;
-  constexpr u32 kNumSeeds = 256;
-  static const usize kNumThreads = std::thread::hardware_concurrency();
+  static const u32 kInitialSeed =  //
+      batt::getenv_as<u32>("LLFS_VOLUME_SIM_SEED").value_or(253689123);
+
+  static const u32 kNumSeeds =  //
+      batt::getenv_as<u32>("LLFS_VOLUME_SIM_COUNT").value_or(256);
+
+  static const u32 kCpuPin =  //
+      batt::getenv_as<u32>("LLFS_VOLUME_SIM_CPU").value_or(0);
+
+  static const usize kNumThreads =  //
+      batt::getenv_as<u32>("LLFS_VOLUME_SIM_THREADS")
+          .value_or(std::min<usize>(8, std::thread::hardware_concurrency()));
+
+  static const bool kMultiProcess =  //
+      batt::getenv_as<bool>("LLFS_VOLUME_SIM_MULTI_PROCESS").value_or(false);
+
   static const u32 kNumSeedsPerThread = (kNumSeeds + kNumThreads - 1) / kNumThreads;
 
   std::vector<std::thread> threads;
 
-  for (usize thread_i = 0; thread_i < kNumThreads; ++thread_i) {
-    threads.emplace_back([thread_i] {
-      batt::pin_thread_to_cpu(thread_i % std::thread::hardware_concurrency()).IgnoreError();
-      const u32 first_seed = kInitialSeed + kNumSeedsPerThread * thread_i;
-      const u32 last_seed = first_seed + kNumSeedsPerThread;
-      for (u32 seed = first_seed; seed < last_seed; ++seed) {
-        ASSERT_NO_FATAL_FAILURE(run_recovery_sim(seed));
-      }
-    });
+  if (kMultiProcess) {
+    for (usize thread_i = 0; thread_i < kNumThreads; thread_i += 1) {
+      std::string command = batt::to_string(                                      //
+          "LLFS_VOLUME_SIM_SEED=", kInitialSeed + kNumSeedsPerThread * thread_i,  //
+          " LLFS_VOLUME_SIM_COUNT=", kNumSeedsPerThread,                          //
+          " LLFS_VOLUME_SIM_CPU=", thread_i,                                      //
+          " LLFS_VOLUME_SIM_THREADS=1",                                           //
+          " LLFS_VOLUME_SIM_MULTI_PROCESS=0",                                     //
+          " GTEST_FILTER=VolumeSimTest.RecoverySimulation",                       //
+          " bin/llfs_Test");
+
+      std::cout << command << std::endl;
+
+      threads.emplace_back([command] {
+        EXPECT_EQ(0, std::system(command.c_str()));
+      });
+    }
+  } else {
+    for (usize thread_i = 0; thread_i < kNumThreads; thread_i += 1) {
+      threads.emplace_back([thread_i] {
+        batt::pin_thread_to_cpu((thread_i + kCpuPin) % std::thread::hardware_concurrency())
+            .IgnoreError();
+        const u32 first_seed = kInitialSeed + kNumSeedsPerThread * thread_i;
+        const u32 last_seed = first_seed + kNumSeedsPerThread;
+        for (u32 seed = first_seed; seed < last_seed; ++seed) {
+          ASSERT_NO_FATAL_FAILURE(run_recovery_sim(seed));
+        }
+      });
+    }
   }
 
   for (auto& t : threads) {

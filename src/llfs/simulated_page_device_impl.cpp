@@ -43,6 +43,29 @@ void SimulatedPageDevice::Impl::crash_and_recover(u64 step) /*override*/
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+StatusOr<bool> SimulatedPageDevice::Impl::has_data_for_page_id(PageId page_id) const noexcept
+{
+  const i64 physical_page = this->get_physical_page(page_id);
+  i64 count = 0;
+  {
+    auto locked_blocks = this->blocks_.lock();
+    this->for_each_page_block(physical_page, [&](i64 /*block_0*/, i64 block_i) {
+      if (locked_blocks->count(block_i)) {
+        count += 1;
+      }
+    });
+  }
+  if (count == 0) {
+    return {false};
+  }
+  if (count == this->blocks_per_page_) {
+    return {true};
+  }
+  return {batt::StatusCode::kUnknown};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 StatusOr<std::shared_ptr<PageBuffer>> SimulatedPageDevice::Impl::prepare(u32 device_create_step,
                                                                          PageId page_id)
 {
@@ -90,7 +113,7 @@ void SimulatedPageDevice::Impl::write(u32 device_create_step,
     return;
   }
 
-  auto op = batt::make_shared<MultiBlockOp>(*this, this->blocks_per_page_);
+  auto op = batt::make_shared<MultiBlockOp>(*this);
   {
     const u64 current_step = this->latest_recovery_step_.get_value();
 
@@ -178,7 +201,7 @@ void SimulatedPageDevice::Impl::read(u32 device_create_step, PageId page_id,
   }
 
   std::shared_ptr<PageBuffer> page_buffer = PageBuffer::allocate(this->page_size_, page_id);
-  auto op = batt::make_shared<MultiBlockOp>(*this, this->blocks_per_page_);
+  auto op = batt::make_shared<MultiBlockOp>(*this);
 
   // We do a piecewise read of each block at a different step so we can simulate the effect
   // of data races at the block device level.
@@ -257,7 +280,7 @@ void SimulatedPageDevice::Impl::drop(u32 device_create_step, PageId page_id,
     return;
   }
 
-  auto op = batt::make_shared<MultiBlockOp>(*this, this->blocks_per_page_);
+  auto op = batt::make_shared<MultiBlockOp>(*this);
   {
     const u64 current_step = this->latest_recovery_step_.get_value();
 
@@ -324,7 +347,7 @@ bool SimulatedPageDevice::Impl::validate_physical_page_async(i64 physical_page, 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <typename Fn>
-void SimulatedPageDevice::Impl::for_each_page_block(i64 physical_page, Fn&& fn)
+void SimulatedPageDevice::Impl::for_each_page_block(i64 physical_page, Fn&& fn) const noexcept
 {
   const i64 first_block = physical_page * this->blocks_per_page_;
   const i64 last_block = first_block + this->blocks_per_page_;
@@ -339,33 +362,32 @@ void SimulatedPageDevice::Impl::for_each_page_block(i64 physical_page, Fn&& fn)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*explicit*/ SimulatedPageDevice::Impl::MultiBlockOp::MultiBlockOp(Impl& impl,
-                                                                   i64 n_blocks) noexcept
-    : impl{impl}
-    , pending_blocks{n_blocks}
-    , block_status(n_blocks, batt::StatusCode::kUnknown)
+/*explicit*/ SimulatedPageDevice::Impl::MultiBlockOp::MultiBlockOp(Impl& impl) noexcept
+    : impl_{impl}
+    , pending_blocks_{this->impl_.blocks_per_page_}
+    , block_status_(this->impl_.blocks_per_page_, batt::StatusCode::kUnknown)
 {
-  BATT_CHECK_EQ(BATT_CHECKED_CAST(usize, this->pending_blocks.get_value()),
-                this->block_status.size());
+  BATT_CHECK_EQ(BATT_CHECKED_CAST(usize, this->pending_blocks_.get_value()),
+                this->block_status_.size());
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void SimulatedPageDevice::Impl::MultiBlockOp::set_block_result(i64 block_i,
+void SimulatedPageDevice::Impl::MultiBlockOp::set_block_result(i64 relative_block_i,
                                                                const batt::Status& status)
 {
-  BATT_CHECK_LT(BATT_CHECKED_CAST(usize, block_i), this->block_status.size())
-      << "block_i is out-of-range; forgot to subtract block_0?";
+  BATT_CHECK_LT(BATT_CHECKED_CAST(usize, relative_block_i), this->block_status_.size())
+      << "relative_block_i is out-of-range; forgot to subtract block_0?";
   BATT_CHECK_NE(status, batt::StatusCode::kUnknown);
-  BATT_CHECK_EQ(this->block_status[block_i], batt::StatusCode::kUnknown);
+  BATT_CHECK_EQ(this->block_status_[relative_block_i], batt::StatusCode::kUnknown);
 
-  const i64 observed_pending = this->pending_blocks.get_value();
+  const i64 observed_pending = this->pending_blocks_.get_value();
 
-  this->impl.log_event("set_block_result(", block_i, ", ", status,
-                       "), pending_blocks: ", observed_pending, "->", observed_pending - 1);
+  this->impl_.log_event("set_block_result(", relative_block_i, ", ", status,
+                        "), pending_blocks: ", observed_pending, "->", observed_pending - 1);
 
-  this->block_status[block_i] = status;
-  this->pending_blocks.fetch_sub(1);
+  this->block_status_[relative_block_i] = status;
+  this->pending_blocks_.fetch_sub(1);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -374,20 +396,20 @@ void SimulatedPageDevice::Impl::MultiBlockOp::on_completion(PageDevice::WriteHan
 {
   auto shared_this = batt::shared_ptr_from(this);
 
-  const i64 observed_pending = this->pending_blocks.get_value();
+  const i64 observed_pending = this->pending_blocks_.get_value();
   if (observed_pending == 0) {
     batt::Status combined_status = batt::OkStatus();
-    for (const auto& block_r : shared_this->block_status) {
+    for (const auto& block_r : shared_this->block_status_) {
       combined_status.Update(batt::to_status(block_r));
     }
     std::move(handler)(combined_status);
     return;
   }
 
-  // There are pending blocks.  Receive notification when `this->pending_blocks` changes from the
+  // There are pending blocks.  Receive notification when `this->pending_blocks_` changes from the
   // value observed above.
   //
-  this->pending_blocks.async_wait(
+  this->pending_blocks_.async_wait(
       observed_pending,
       batt::bind_handler(std::move(handler),
                          [shared_this = std::move(shared_this)](PageDevice::WriteHandler&& handler,

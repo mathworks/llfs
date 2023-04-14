@@ -124,6 +124,8 @@ class StorageSimulation
     return this->step_.get_value();
   }
 
+  StatusOr<bool> has_data_for_page_id(PageId page_id) const noexcept;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
   struct PageArenaDeviceNames {
@@ -179,6 +181,11 @@ class StorageSimulation
   // The set of all simulated page devices, indexed by name string (passed in by the test code).
   //
   std::unordered_map<std::string, std::shared_ptr<SimulatedPageDevice::Impl>> page_devices_;
+
+  // Map from page_device_id to impl.
+  //
+  std::unordered_map<page_device_id_int, std::shared_ptr<SimulatedPageDevice::Impl>>
+      page_device_id_map_;
 
   // A counter to make unique object names.
   //

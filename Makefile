@@ -31,6 +31,9 @@ endif
 
 BUILD_DIR := build/$(BUILD_TYPE)
 
+TCMALLOC_ENV := $(shell find /lib/ -name '*tcmalloc.so*' | sort -Vr | head -1 | xargs -I{} echo LD_PRELOAD={})
+$(info TCMALLOC_ENV=$(TCMALLOC_ENV))
+
 
 "$(BUILD_DIR)":
 	mkdir -p "$(BUILD_DIR)"
@@ -41,11 +44,11 @@ build: "$(BUILD_DIR)"
 test: "$(BUILD_DIR)"
 ifeq ("$(GTEST_FILTER)","")
 	@echo -e "\n\nRunning DEATH tests ==============================================\n"
-	(cd $(BUILD_DIR) && GTEST_OUTPUT='xml:../death-test-results.xml' GTEST_FILTER='*Death*' ctest --verbose)
+	(cd $(BUILD_DIR) && GTEST_OUTPUT='xml:../death-test-results.xml' GTEST_FILTER='*Death*' $(TCMALLOC_ENV) bin/llfs_Test)
 	@echo -e "\n\nRunning non-DEATH tests ==========================================\n"
-	(cd $(BUILD_DIR) && GTEST_OUTPUT='xml:../test-results.xml' GTEST_FILTER='*-*Death*' ctest --verbose)
+	(cd $(BUILD_DIR) && GTEST_OUTPUT='xml:../test-results.xml' GTEST_FILTER='*-*Death*' $(TCMALLOC_ENV) bin/llfs_Test)
 else
-	(cd $(BUILD_DIR) && GTEST_OUTPUT='xml:../test-results.xml' ctest --verbose)
+	(cd $(BUILD_DIR) && GTEST_OUTPUT='xml:../test-results.xml' $(TCMALLOC_ENV) bin/llfs_Test)
 endif
 
 install: "$(BUILD_DIR)"

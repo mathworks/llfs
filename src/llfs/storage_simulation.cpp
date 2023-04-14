@@ -213,6 +213,10 @@ std::unique_ptr<PageDevice> StorageSimulation::get_page_device(const std::string
                .emplace(name, std::make_shared<SimulatedPageDevice::Impl>(
                                   *this, name, *page_size, *page_count, next_page_device_id))
                .first;
+
+    BATT_CHECK_NOT_NULLPTR(iter->second);
+
+    this->page_device_id_map_.emplace(next_page_device_id, iter->second);
   }
 
   // At this point we should have a valid entry.
@@ -370,6 +374,18 @@ StatusOr<std::unique_ptr<Volume>> StorageSimulation::get_volume(
   LLFS_LOG_SIM_EVENT() << "recovering simulated Volume " << batt::c_str_literal(name);
 
   return Volume::recover(std::move(params), slot_visitor_fn);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<bool> StorageSimulation::has_data_for_page_id(PageId page_id) const noexcept
+{
+  auto iter = this->page_device_id_map_.find(PageIdFactory::get_device_id(page_id));
+  if (iter == this->page_device_id_map_.end()) {
+    return {false};
+  }
+
+  return iter->second->has_data_for_page_id(page_id);
 }
 
 }  //namespace llfs

@@ -21,6 +21,8 @@
 #include <llfs/seq.hpp>
 #include <llfs/unpack_cast.hpp>
 
+#include <batteries/static_assert.hpp>
+
 namespace llfs {
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
@@ -29,6 +31,13 @@ namespace llfs {
 struct PackedPageGraphNode {
   PackedArray<PackedPageId> edges;
 };
+
+BATT_STATIC_ASSERT_EQ(sizeof(PackedPageGraphNode), sizeof(PackedArray<PackedPageId>));
+
+inline usize packed_sizeof(const PackedPageGraphNode& n)
+{
+  return packed_sizeof(n.edges);
+}
 
 inline Status validate_packed_value(const PackedPageGraphNode& packed, const void* buffer_data,
                                     usize buffer_size)

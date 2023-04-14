@@ -11,6 +11,10 @@
 
 namespace llfs {
 
+namespace {
+constexpr usize kMarkerSpacing = 256;
+}
+
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 // class PageGraphNodeBuilder
 
@@ -23,6 +27,16 @@ namespace llfs {
     , packed_{reinterpret_cast<PackedPageGraphNode*>(this->available_.data())}
 {
   BATT_CHECK_GE(this->available_.size(), sizeof(PackedPageGraphNode));
+
+  {
+    MutableBuffer b = this->available_ + kMarkerSpacing;
+    u64 marker = this->page_buffer_->page_id().int_value();
+    while (b.size() >= sizeof(little_u64)) {
+      *((little_u64*)b.data()) = marker;
+      ++marker;
+      b += kMarkerSpacing;
+    }
+  }
 
   this->available_ += sizeof(PackedPageGraphNode);
   this->packed_->edges.initialize(0u);
@@ -104,6 +118,24 @@ StatusOr<PinnedPage> PageGraphNodeBuilder::build(PageCacheJob& job) &&
   BATT_ASSIGN_OK_RESULT(
       const PackedPageGraphNode& packed_ref,
       unpack_cast(page_buffer->const_payload(), batt::StaticType<PackedPageGraphNode>{}));
+
+  // Check markers.
+  //
+  {
+    ConstBuffer b =
+        page_buffer->const_payload() +
+        ((packed_sizeof(packed_ref) + kMarkerSpacing + 1) / kMarkerSpacing) * kMarkerSpacing;
+
+    u64 marker = page_buffer->page_id().int_value();
+
+    while (b.size() >= sizeof(little_u64)) {
+      if (*((const little_u64*)b.data()) != marker) {
+        return {batt::StatusCode::kDataLoss};
+      }
+      ++marker;
+      b += kMarkerSpacing;
+    }
+  }
 
   return std::shared_ptr<PageGraphNodeView>(
       new PageGraphNodeView{std::move(page_buffer), &packed_ref});

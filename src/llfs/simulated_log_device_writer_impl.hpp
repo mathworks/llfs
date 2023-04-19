@@ -60,9 +60,15 @@ class SimulatedLogDevice::Impl::WriterImpl : public LogDevice::Writer
   //
   Status await(LogDevice::WriterEvent event) override;
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
  private:
+  // The log device impl that created this writer.
+  //
   Impl& impl_;
 
+  // The slot/chunk currently being written.  Only valid between calls to prepare and commit.
+  //
   std::shared_ptr<Impl::CommitChunk> prepared_chunk_;
 };
 

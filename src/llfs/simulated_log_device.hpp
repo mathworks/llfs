@@ -22,7 +22,11 @@
 namespace llfs {
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-//
+
+/** \brief Simulation of a LogDevice.
+ *
+ * Used in the context of StorageSimulation, usually in some test.
+ */
 class SimulatedLogDevice : public LogDevice
 {
  public:
@@ -34,6 +38,8 @@ class SimulatedLogDevice : public LogDevice
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  // The maximum size of the log.
+  //
   u64 capacity() const override;
 
   // The current size of all committed data in the log.
@@ -59,13 +65,26 @@ class SimulatedLogDevice : public LogDevice
   //
   LogDevice::Writer& writer() override;
 
+  // Closes the log.
+  //
   Status close() override;
 
+  // Waits for a given slot to be committed or flushed (depending on mode).
+  //
   Status sync(LogReadMode mode, SlotUpperBoundAt event) override;
 
  private:
+  // Set to true when `this->close()` is called.
+  //
   std::atomic<bool> external_close_{false};
+
+  // The simulated log implementation; the Impl object persists across simluated crashes, but the
+  // SimulatedLogDevice object does not.
+  //
   std::shared_ptr<Impl> impl_;
+
+  // The simulation step at which this object was created.
+  //
   const u64 create_step_;
 };
 

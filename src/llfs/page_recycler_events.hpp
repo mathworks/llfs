@@ -23,8 +23,32 @@ struct PageToRecycle {
   // Which page to recycle.
   //
   PageId page_id;
-  slot_offset_type slot_offset;
+
+  // The highest slot at which this page was refreshed.
+  //
+  Optional<slot_offset_type> refresh_slot;
+
+  // The slot where this page is recycled.
+  //
+  Optional<slot_offset_type> batch_slot;
+
+  // The page reference depth at which this page was discovered to be dead.
+  //
   i32 depth;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  static PageToRecycle make_invalid()
+  {
+    return PageToRecycle{
+        .page_id = PageId{kInvalidPageId},
+        .refresh_slot = None,
+        .batch_slot = None,
+        .depth = 0,
+    };
+  }
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   bool is_valid() const
   {
@@ -35,20 +59,12 @@ struct PageToRecycle {
   {
     return this->is_valid();
   }
-
-  static PageToRecycle make_invalid()
-  {
-    return PageToRecycle{
-        .page_id = PageId{kInvalidPageId},
-        .slot_offset = 0,
-        .depth = 0,
-    };
-  }
 };
 
 inline slot_offset_type get_slot_offset(const PageToRecycle& to_recycle)
 {
-  return to_recycle.slot_offset;
+  BATT_CHECK(to_recycle.refresh_slot);
+  return *to_recycle.refresh_slot;
 }
 
 std::ostream& operator<<(std::ostream& out, const PageToRecycle& t);
@@ -56,14 +72,12 @@ std::ostream& operator<<(std::ostream& out, const PageToRecycle& t);
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
 struct PageRecyclerOptions;
-struct PackedRecyclePageInserted;
-struct PackedRecyclePagePrepare;
+struct PackedPageToRecycle;
 struct PackedRecycleBatchCommit;
 struct PackedPageRecyclerInfo;
 
 using PageRecycleEvent = PackedVariant<  //
-    PackedRecyclePageInserted,           //
-    PackedRecyclePagePrepare,            //
+    PackedPageToRecycle,                 //
     PackedRecycleBatchCommit,            //
     PackedPageRecyclerInfo               //
     >;
@@ -108,84 +122,61 @@ std::ostream& operator<<(std::ostream& out, const PackedPageRecyclerInfo& t);
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
-struct PackedRecyclePageInserted {
+struct PackedPageToRecycle {
+  enum Flags : u8 {
+    kHasBatchSlot = 0x01,
+  };
+
   little_page_id_int page_id;
-  little_u64 slot_offset;
+  little_u64 batch_slot;
   little_i32 depth;
-  u8 reserved_[4];
+  u8 flags;
+  u8 reserved_[3];
 };
 
-BATT_STATIC_ASSERT_EQ(24, sizeof(PackedRecyclePageInserted));
+BATT_STATIC_ASSERT_EQ(24, sizeof(PackedPageToRecycle));
 
-inline std::size_t packed_sizeof(const PackedRecyclePageInserted&)
+inline std::size_t packed_sizeof(const PackedPageToRecycle&)
 {
-  return sizeof(PackedRecyclePageInserted);
+  return sizeof(PackedPageToRecycle);
 }
 
 inline std::size_t packed_sizeof(const PageToRecycle&)
 {
-  return sizeof(PackedRecyclePageInserted);
+  return sizeof(PackedPageToRecycle);
 }
 
-LLFS_DEFINE_PACKED_TYPE_FOR(PageToRecycle, PackedRecyclePageInserted);
+LLFS_DEFINE_PACKED_TYPE_FOR(PageToRecycle, PackedPageToRecycle);
 
 template <typename Dst>
-inline bool pack_object_to(const PageToRecycle& from, PackedRecyclePageInserted* to, Dst*)
+inline bool pack_object_to(const PageToRecycle& from, PackedPageToRecycle* to, Dst*)
 {
   to->page_id = from.page_id.int_value();
-  to->slot_offset = from.slot_offset;
   to->depth = from.depth;
+  to->flags = 0;
+  std::memset(&to->reserved_, 0, sizeof(PackedPageToRecycle::reserved_));
+  if (from.batch_slot) {
+    to->flags |= PackedPageToRecycle::kHasBatchSlot;
+    to->batch_slot = *from.batch_slot;
+  } else {
+    to->batch_slot = 0;
+  }
   return true;
 }
 
-inline StatusOr<PageToRecycle> unpack_object(const PackedRecyclePageInserted& inserted, DataReader*)
+inline StatusOr<PageToRecycle> unpack_object(const PackedPageToRecycle& packed, DataReader*)
 {
   return PageToRecycle{
-      .page_id = PageId{inserted.page_id.value()},
-      .slot_offset = inserted.slot_offset,
-      .depth = inserted.depth,
+      .page_id = PageId{packed.page_id.value()},
+      .refresh_slot = None,
+      .batch_slot = [&]() -> Optional<slot_offset_type> {
+        if (packed.flags & PackedPageToRecycle::kHasBatchSlot) {
+          return packed.batch_slot;
+        }
+        return None;
+      }(),
+      .depth = packed.depth,
   };
-}
-
-inline slot_offset_type get_slot_offset(const PackedRecyclePageInserted& inserted)
-{
-  return inserted.slot_offset.value();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-
-struct PackedRecyclePagePrepare {
-  little_page_id_int page_id;
-  little_u64 batch_slot;
-};
-
-BATT_STATIC_ASSERT_EQ(16, sizeof(PackedRecyclePagePrepare));
-
-inline std::size_t packed_sizeof(const PackedRecyclePagePrepare&)
-{
-  return sizeof(PackedRecyclePagePrepare);
-}
-
-LLFS_DEFINE_PACKED_TYPE_FOR(PackedRecyclePagePrepare, PackedRecyclePagePrepare);
-
-template <typename Dst>
-inline bool pack_object_to(const PackedRecyclePagePrepare& from, PackedRecyclePagePrepare* to, Dst*)
-{
-  *to = from;
-  return true;
-}
-
-inline StatusOr<PackedRecyclePagePrepare> unpack_object(const PackedRecyclePagePrepare& removed,
-                                                        DataReader*)
-{
-  return removed;
-}
-
-std::ostream& operator<<(std::ostream& out, const PackedRecyclePagePrepare& t);
-
-inline slot_offset_type get_slot_offset(const PackedRecyclePagePrepare& prepare)
-{
-  return prepare.batch_slot.value();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

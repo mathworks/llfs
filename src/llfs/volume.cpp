@@ -83,7 +83,9 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
     -> StatusOr<std::unique_ptr<Volume>>
 {
   batt::TaskScheduler& scheduler = *params.scheduler;
-  const VolumeOptions& options = params.options;
+  const VolumeOptions& volume_options = params.options;
+  const auto recycler_options = PageRecyclerOptions{}.  //
+                                set_max_refs_per_page(volume_options.max_refs_per_page);
   batt::SharedPtr<PageCache> cache = params.cache;
   LogDeviceFactory& root_log_factory = *params.root_log_factory;
   LogDeviceFactory& recycler_log_factory = *params.recycler_log_factory;
@@ -96,7 +98,7 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
 
   BATT_ASSIGN_OK_RESULT(
       std::unique_ptr<PageRecycler> recycler,
-      PageRecycler::recover(scheduler, options.name + "_PageRecycler", options.max_refs_per_page,
+      PageRecycler::recover(scheduler, volume_options.name + "_PageRecycler", recycler_options,
                             *page_deleter, recycler_log_factory));
 
   VolumePendingJobsMap pending_jobs;
@@ -146,7 +148,7 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
           .slot_range = {0, 1},
           .payload =
               {
-                  .main_uuid = options.uuid.value_or(boost::uuids::random_generator{}()),
+                  .main_uuid = volume_options.uuid.value_or(boost::uuids::random_generator{}()),
                   .recycler_uuid = recycler->uuid(),
                   .trimmer_uuid = boost::uuids::random_generator{}(),
               },

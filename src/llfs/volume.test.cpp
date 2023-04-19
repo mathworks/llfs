@@ -781,11 +781,8 @@ void run_recovery_sim(u32 seed)
 
   const auto pages_per_device = llfs::PageCount{4};
 
-  // std::default_random_engine //
-  // std::mt19937_64 //
-  // std::minstd_rand  //
-  std::ranlux48_base  //
-      rng{seed};
+  std::mt19937 rng{seed};
+  
   llfs::StorageSimulation sim{batt::StateMachineEntropySource{
       /*entropy_fn=*/[&rng](usize min_value, usize max_value) -> usize {
         std::uniform_int_distribution<usize> pick_value{min_value, max_value};

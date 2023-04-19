@@ -15,6 +15,7 @@
 #include <llfs/array_packer.hpp>
 #include <llfs/data_layout.hpp>
 #include <llfs/packed_page_ref_count.hpp>
+#include <llfs/packed_page_user_slot.hpp>
 #include <llfs/slot.hpp>
 #include <llfs/slot_writer.hpp>
 

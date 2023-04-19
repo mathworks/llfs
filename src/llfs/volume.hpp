@@ -279,6 +279,14 @@ class Volume
   // Task that runs `trimmer_` continuously in the background.
   //
   Optional<batt::Task> trimmer_task_;
+
+  // Tracks the latest job appended.
+  //
+  std::atomic<slot_offset_type> latest_user_slot_{0};
+
+  // Tracks the latest job that is durable (will-commit).
+  //
+  batt::Watch<slot_offset_type> durable_user_slot_{0};
 };
 
 /** \brief For parsing raw log data, like that returned by Volume::get_root_log_data.

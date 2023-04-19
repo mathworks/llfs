@@ -511,9 +511,17 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
     this->trimmer_.push_grant(std::move(trim_refresh_grant));
   }
 
-  StatusOr<SlotRange> prepare_slot =
-      LLFS_COLLECT_LATENCY(this->metrics_.prepare_slot_append_latency,
-                           this->slot_writer_.append(grant, std::move(prepared_job)));
+  Optional<slot_offset_type> prev_user_slot;
+
+  StatusOr<SlotRange> prepare_slot = LLFS_COLLECT_LATENCY(
+      this->metrics_.prepare_slot_append_latency,
+      this->slot_writer_.append(
+          grant, std::move(prepared_job), [this, &prev_user_slot](StatusOr<SlotRange> slot_range) {
+            if (slot_range.ok()) {
+              prev_user_slot = this->latest_user_slot_.exchange(slot_range->lower_bound);
+            }
+            return slot_range;
+          }));
 
   if (sequencer) {
     if (!prepare_slot.ok()) {
@@ -525,6 +533,9 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
     }
   }
   BATT_REQUIRE_OK(prepare_slot);
+  BATT_CHECK(prev_user_slot);
+  BATT_CHECK(slot_at_most(*prev_user_slot, prepare_slot->lower_bound))
+      << BATT_INSPECT(prev_user_slot) << BATT_INSPECT(prepare_slot);
 
   BATT_DEBUG_INFO("flushing PrepareJob slot to storage");
 
@@ -548,9 +559,9 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
       .recycle_depth = -1,
   };
 
-  Status commit_job_result = commit(std::move(appendable.job), params, Caller::Unknown);
+  Status commit_job_result = commit(std::move(appendable.job), params, Caller::Unknown,
+                                    *prev_user_slot, &this->durable_user_slot_);
 
-  // BATT_UNTESTED_COND(!commit_job_result.ok());
   BATT_REQUIRE_OK(commit_job_result);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -

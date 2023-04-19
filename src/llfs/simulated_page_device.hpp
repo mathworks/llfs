@@ -18,6 +18,12 @@
 
 namespace llfs {
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+
+/** \brief A simulated PageDevice.
+ *
+ * \see SimulatedPageDevice::Impl
+ */
 class SimulatedPageDevice : public PageDevice
 {
  public:
@@ -52,7 +58,12 @@ class SimulatedPageDevice : public PageDevice
   void drop(PageId id, PageDevice::WriteHandler&& handler) override;
 
  private:
+  // The simulated page device impl for this object.
+  //
   std::shared_ptr<Impl> impl_;
+
+  // The simulation step at which this object was created.
+  //
   const u64 create_step_;
 };
 

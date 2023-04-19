@@ -247,7 +247,7 @@ BoxedSeq<PageRefCount> CommittablePageCacheJob::root_set_deltas() const
                 this->job_->get_root_set_delta().end())  //
          | seq::map([](const auto& kv_pair) {
              return PageRefCount{
-                 .page_id = PageId{kv_pair.first.int_value()},
+                 .page_id = kv_pair.first,
                  .ref_count = kv_pair.second,
              };
            })  //

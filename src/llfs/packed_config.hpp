@@ -101,6 +101,8 @@ struct alignas(512) PackedConfigBlock {
     // TODO [tastolfi 2022-02-16]  define some flags...
   };
 
+  static constexpr usize kMaxSlots = kPayloadCapacity / PackedConfigSlot::kSize;
+
   // byte 0 +++++++++++-+-+--+----- --- -- -  -  -   -
 
   // Must always be PackedPageArenaConfig::kMagic;

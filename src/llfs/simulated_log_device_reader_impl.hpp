@@ -53,14 +53,26 @@ class SimulatedLogDevice::Impl::ReaderImpl : public LogDevice::Reader
   Status await(ReaderEvent event) override;
 
  private:
+  // The simulated log impl that created this reader.
+  //
   Impl& impl_;
 
+  // The current position of the reader.
+  //
   slot_offset_type slot_offset_;
 
+  // Controls whether the reader can see committed data, or only flushed.
+  //
   const LogReadMode mode_;
 
+  // The size of the last chunk returned by `this->data()`; this may be less than the chunk size, if
+  // the slot has been partially trimmed.
+  //
   usize data_size_ = 0;
 
+  // Only valid between calls to data() and consume(); the chunk currently being read by the user of
+  // this reader.
+  //
   std::shared_ptr<Impl::CommitChunk> chunk_;
 };
 

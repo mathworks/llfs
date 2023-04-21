@@ -352,6 +352,36 @@ Optional<std::string_view> DataPacker::pack_raw_data(const void* data, usize siz
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+Optional<std::string_view> DataPacker::pack_raw_data(const void* data, usize size,
+                                                     UseParallelCopy use_parallel_copy)
+{
+  if (!use_parallel_copy || !this->worker_pool_) {
+    return this->pack_raw_data(data, size);
+  }
+
+  Optional<MutableBuffer> buf = this->arena_.allocate_front(size);
+  if (!buf) {
+    return None;
+  }
+
+  u8* const dst_begin = static_cast<u8*>(buf->data());
+  {
+    const batt::TaskCount max_tasks{this->worker_pool_->size() + 1};
+    const batt::TaskSize min_task_size{DataPacker::min_parallel_copy_size()};
+
+    batt::ScopedWorkContext work_context{*this->worker_pool_};
+
+    const u8* src_begin = reinterpret_cast<const u8*>(data);
+    const u8* src_end = src_begin + size;
+
+    batt::parallel_copy(work_context, src_begin, src_end, dst_begin, min_task_size, max_tasks);
+  }
+
+  return std::string_view{static_cast<const char*>(buf->data()), buf->size()};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 Optional<DataPacker::Arena> DataPacker::reserve_arena(usize size)
 {
   return this->arena_.reserve_back(size);

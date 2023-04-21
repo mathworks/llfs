@@ -27,40 +27,6 @@ inline StatusOr<TypedVolumeReader<T>> Volume::typed_reader(const SlotRangeSpec& 
   return TypedVolumeReader<T>{std::move(*reader)};
 }
 
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-template <typename SlotVisitorFn>
-batt::StatusOr<slot_offset_type> parse_raw_volume_log_data(const SlotRange& slot_range,
-                                                           const ConstBuffer& buffer,
-                                                           SlotVisitorFn&& slot_visitor_fn)
-{
-  slot_offset_type parsed_upper_bound = slot_range.lower_bound;
-
-  auto wrapped_visitor_fn = [&slot_visitor_fn, &parsed_upper_bound, &slot_range](
-                                const SlotParse& slot,
-                                const std::string_view& user_data) -> batt::Status {
-    if (slot_greater_than(slot.offset.upper_bound, slot_range.upper_bound)) {
-      return ::llfs::make_status(::llfs::StatusCode::kBreakSlotReaderLoop);
-    }
-    BATT_REQUIRE_OK(slot_visitor_fn(slot, user_data));
-    parsed_upper_bound = slot_max(parsed_upper_bound, slot.offset.upper_bound);
-    return batt::OkStatus();
-  };
-
-  VolumePendingJobsMap pending_jobs;
-
-  VolumeSlotDemuxer<NoneType, decltype(wrapped_visitor_fn)> demuxer{wrapped_visitor_fn,
-                                                                    pending_jobs};
-
-  BufferedLogDataReader log_data_reader{slot_range.lower_bound, buffer};
-
-  TypedSlotReader<VolumeEventVariant> slot_reader{log_data_reader};
-
-  BATT_REQUIRE_OK(slot_reader.run(batt::WaitForResource::kFalse, demuxer));
-
-  return parsed_upper_bound;
-}
-
 }  // namespace llfs
 
 #endif  // LLFS_VOLUME_IPP

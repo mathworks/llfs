@@ -8,8 +8,8 @@
 
 #include <llfs/volume_reader.hpp>
 //
-
 #include <llfs/volume.hpp>
+#include <llfs/volume_reader.ipp>
 #include <llfs/volume_slot_demuxer.hpp>
 
 namespace llfs {

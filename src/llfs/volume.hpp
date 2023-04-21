@@ -23,6 +23,7 @@
 #include <llfs/volume_metrics.hpp>
 #include <llfs/volume_options.hpp>
 #include <llfs/volume_reader.hpp>
+#include <llfs/volume_reader.ipp>
 #include <llfs/volume_trimmer.hpp>
 
 #include <batteries/async/grant.hpp>
@@ -288,16 +289,6 @@ class Volume
   //
   batt::Watch<slot_offset_type> durable_user_slot_{0};
 };
-
-/** \brief For parsing raw log data, like that returned by Volume::get_root_log_data.
- *
- * \return the slot upper bound of the last slot parsed.
- */
-template <typename SlotVisitorFn = batt::Status(const SlotParse& slot,
-                                                const std::string_view& user_data)>
-batt::StatusOr<slot_offset_type> parse_raw_volume_log_data(const SlotRange& slot_range,
-                                                           const ConstBuffer& buffer,
-                                                           SlotVisitorFn&& slot_visitor_fn);
 
 }  // namespace llfs
 

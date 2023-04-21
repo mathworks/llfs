@@ -52,6 +52,16 @@ struct PackedBasicInterval {
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  /** \brief Returns this as an Interval.
+   */
+  batt::BasicInterval<Traits> unpack() const noexcept
+  {
+    return batt::BasicInterval<Traits>{
+        .lower_bound = this->lower_bound.value(),
+        .upper_bound = this->upper_bound.value(),
+    };
+  }
+
   /** \brief Returns a function that can be printed via std::ostream to dump detailed information
    * about this object.
    */

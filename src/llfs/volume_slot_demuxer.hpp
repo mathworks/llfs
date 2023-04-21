@@ -13,9 +13,8 @@
 #include <llfs/slot.hpp>
 #include <llfs/slot_reader.hpp>
 #include <llfs/volume_event_visitor.hpp>
+#include <llfs/volume_pending_jobs_map.hpp>
 #include <llfs/volume_reader.hpp>
-
-#include <map>
 
 namespace llfs {
 
@@ -44,7 +43,7 @@ class VolumeSlotDemuxer : public VolumeEventVisitor<StatusOr<R>>
     this->pending_jobs_.clear();
   }
 
-  const VolumePendingJobsMap& get_pending_jobs() const
+  const VolumePendingJobsMap& get_pending_jobs() const noexcept
   {
     return this->pending_jobs_;
   }
@@ -52,6 +51,13 @@ class VolumeSlotDemuxer : public VolumeEventVisitor<StatusOr<R>>
   // Tracks the pending jobs to make sure that no prepare slots are trimmed before the commit slot.
   //
   Optional<slot_offset_type> get_safe_trim_pos() const;
+
+  // Returns the upper bound offset of the last visited slot.
+  //
+  Optional<slot_offset_type> get_visited_upper_bound() const noexcept
+  {
+    return this->visited_upper_bound_;
+  }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

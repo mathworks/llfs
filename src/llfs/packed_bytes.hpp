@@ -16,7 +16,9 @@
 #include <llfs/unpack_cast.hpp>
 
 #include <batteries/static_assert.hpp>
+#include <batteries/suppress.hpp>
 
+#include <cstring>
 #include <string>
 #include <string_view>
 
@@ -48,6 +50,13 @@ struct PackedBytes {
   //
   PackedBytes(const PackedBytes&) = delete;
   PackedBytes& operator=(const PackedBytes&) = delete;
+
+  void clear()
+  {
+    BATT_SUPPRESS_IF_GCC("-Wclass-memaccess")
+    std::memset(this, 0, sizeof(PackedBytes));
+    BATT_UNSUPPRESS_IF_GCC()
+  }
 
   const void* data() const
   {

@@ -265,6 +265,9 @@ class DataPacker
   //
   [[nodiscard]] Optional<std::string_view> pack_raw_data(const void* data, usize size);
 
+  [[nodiscard]] Optional<std::string_view> pack_raw_data(const void* data, usize size,
+                                                         UseParallelCopy use_parallel_copy);
+
   template <typename U, typename IntT, typename PackedIntT>
   [[nodiscard]] bool pack_int_impl(U val)
   {

@@ -300,6 +300,12 @@ class DataPacker
   }
 
   template <typename U>
+  [[nodiscard]] bool pack_u8(U val)
+  {
+    return this->pack_int_impl<U, u8, little_u8>(val);
+  }
+
+  template <typename U>
   [[nodiscard]] bool pack_i64(U val)
   {
     return this->pack_int_impl<U, i64, little_i64>(val);

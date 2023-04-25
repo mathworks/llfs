@@ -27,13 +27,13 @@ namespace llfs {
 // PackedPointer<T> - a pointer to data that lives in the same data block (either slot or page). The
 // pointer is always forward; this means we do not permit reference cycles.
 //
-template <typename T>
+template <typename T, typename Offset = little_u32>
 struct PackedPointer
     : boost::equality_comparable<PackedPointer<T>>
     , boost::totally_ordered<PackedPointer<T>> {
   using value_type = T;
 
-  little_u32 offset;
+  Offset offset;
 
   PackedPointer() = default;
   PackedPointer(const PackedPointer&) = delete;

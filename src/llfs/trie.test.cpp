@@ -61,228 +61,41 @@ inline std::ostream& operator<<(std::ostream& out, const BPTrieNode& t)
 
   out << std::endl
       << indent << "node: " << batt::c_str_literal(parent_prefix) << "+"
-      << batt::c_str_literal(t.prefix) << "/";
+      << batt::c_str_literal(t.prefix()) << "/";
 
-  out << batt::c_str_literal(std::string(1, t.pivot)) << "@" << t.pivot_pos;
+  out << batt::c_str_literal(std::string(1, t.pivot())) << "@" << t.pivot_pos();
 
-  if (t.left || t.right) {
+  if (t.left() || t.right()) {
     std::string old_parent_prefix = parent_prefix;
     auto on_scope_exit2 = batt::finally([&] {
       parent_prefix = std::move(old_parent_prefix);
     });
-    parent_prefix += t.prefix;
+    parent_prefix += t.prefix();
 
     out << std::endl << indent << "left: ";
-    if (!t.left) {
+    if (!t.left()) {
       out << "--";
     } else {
-      out << *t.left;
+      out << *t.left();
     }
     //----- --- -- -  -  -   -
-    offset += t.pivot_pos;
+    offset += t.pivot_pos();
     auto on_scope_exit3 = batt::finally([&] {
-      offset -= t.pivot_pos;
+      offset -= t.pivot_pos();
     });
     //----- --- -- -  -  -   -
     out << std::endl << indent << "right: ";
-    if (!t.right) {
+    if (!t.right()) {
       out << "--";
     } else {
-      out << *t.right;
+      out << *t.right();
     }
   } else {
-    BATT_CHECK_EQ(t.pivot, 0u);
+    BATT_CHECK_EQ(t.pivot(), 0u);
     out << std::endl << indent << "index: " << offset;
   }
 
   return out;
-}
-
-std::string_view find_common_prefix(usize skip_len, const std::string_view& a,
-                                    const std::string_view& b)
-{
-  usize len = std::min(a.size(), b.size());
-  if (skip_len >= len) {
-    return std::string_view{};
-  }
-
-  len -= skip_len;
-  auto a_first = a.begin() + skip_len;
-  auto b_first = b.begin() + skip_len;
-  const auto [a_match_end, b_match_end] = std::mismatch(a_first, std::next(a_first, len), b_first);
-  const usize prefix_len = std::distance(a_first, a_match_end);
-
-  return std::string_view{a.data() + skip_len, prefix_len};
-}
-
-struct CompareKthByte {
-  bool operator()(char ch, const std::string_view& str) const
-  {
-    if (this->k == str.size()) {
-      return false;
-    }
-    return ((u8)ch < (u8)str[this->k]);
-  }
-
-  bool operator()(const std::string_view& str, char ch) const
-  {
-    if (this->k == str.size()) {
-      return true;
-    }
-    return ((u8)str[this->k] < (u8)ch);
-  }
-
-  usize k;
-};
-
-template <typename Range>
-BPTrieNode* make_trie(usize skip_len, const Range& keys,
-                      std::vector<std::unique_ptr<BPTrieNode>>& nodes)
-{
-  thread_local int depth = 0;
-
-  BATT_CHECK_LT(depth, 25);
-
-  ++depth;
-  auto on_scope_exit = batt::finally([&] {
-    --depth;
-  });
-
-  auto first = std::begin(keys);
-  auto last = std::end(keys);
-  const usize count = std::distance(first, last);
-
-  if (count == 0) {
-    return nullptr;
-  }
-
-  auto new_node = std::make_unique<BPTrieNode>();
-  auto* node = new_node.get();
-  nodes.emplace_back(std::move(new_node));
-
-  if (count == 1) {
-    node->prefix = std::string_view{first->data() + skip_len, first->size() - skip_len};
-    return node;
-  }
-
-  // Find the longest common prefix of the input key range.
-  //
-  const std::string& min_key = *first;
-  const std::string& max_key = *std::prev(last);
-
-  node->prefix = find_common_prefix(skip_len, min_key, max_key);
-
-  // Find a pivot byte that best bisects the input range.
-  //
-  const usize k = node->prefix.size() + skip_len;
-
-  const auto get_kth_byte = [&](usize i) {
-    auto iter = std::next(first, i);
-    if (iter->size() == k) {
-      return '\0';
-    }
-    return (*iter)[k];
-  };
-
-  const usize middle_pos = count / 2;
-  const auto middle_iter = std::next(first, middle_pos);
-  const u8 middle_value = get_kth_byte(middle_pos);
-
-  const auto lo_iter = std::lower_bound(first, middle_iter, middle_value, CompareKthByte{k});
-  const auto hi_iter = std::upper_bound(middle_iter, last, middle_value, CompareKthByte{k});
-
-  const usize lo_distance = std::distance(lo_iter, middle_iter);
-  const usize hi_distance = std::distance(middle_iter, hi_iter);
-
-  const auto pivot_iter = [&] {
-    if (lo_distance < hi_distance) {
-      return lo_iter;
-    } else {
-      return hi_iter;
-    }
-  }();
-
-  node->pivot_pos = std::distance(first, pivot_iter);
-  node->pivot = get_kth_byte(node->pivot_pos);
-
-  node->left = make_trie(skip_len + node->prefix.size(),
-                         boost::make_iterator_range(first, pivot_iter), nodes);
-
-  node->right = make_trie(skip_len + node->prefix.size(),
-                          boost::make_iterator_range(pivot_iter, last), nodes);
-
-  return node;
-}
-
-i64 search_trie(const BPTrieNode* parent, std::string_view key, batt::Interval<i64> range)
-{
-  for (;;) {
-    if (!parent) {
-      return range.lower_bound + 1;
-    }
-
-    const usize prefix_len = parent->prefix.size();
-    if (prefix_len != 0) {
-      const usize key_len = key.size();
-      const usize common_len = std::min(prefix_len, key_len);
-      const batt::Order order = batt::compare(key.substr(0, common_len), parent->prefix);
-
-      if (order == batt::Order::Greater) {
-        return range.upper_bound;
-      }
-      if (order == batt::Order::Less || key_len < prefix_len) {
-        return range.lower_bound;
-      }
-    }
-
-    const i64 middle = range.lower_bound + parent->pivot_pos;
-
-    key = key.substr(prefix_len);
-
-    if ((u8)key[0] < (u8)parent->pivot) {
-      parent = parent->left;
-      range.upper_bound = middle;
-    } else {
-      parent = parent->right;
-      range.lower_bound = middle;
-    }
-  }
-}
-
-[[maybe_unused]] i64 search_packed_trie(const PackedBPTrieNode* parent, std::string_view key,
-                                        batt::Interval<i64> range)
-{
-  for (;;) {
-    if (!parent) {
-      return range.lower_bound + 1;
-    }
-
-    const usize prefix_len = parent->prefix().size();
-    if (prefix_len != 0) {
-      const usize key_len = key.size();
-      const usize common_len = std::min(prefix_len, key_len);
-      const batt::Order order = batt::compare(key.substr(0, common_len), parent->prefix());
-
-      if (order == batt::Order::Greater) {
-        return range.upper_bound;
-      }
-      if (order == batt::Order::Less || key_len < prefix_len) {
-        return range.lower_bound;
-      }
-    }
-
-    const i64 middle = range.lower_bound + parent->pivot_pos();
-
-    key = key.substr(prefix_len);
-
-    if ((u8)key[0] < (u8)parent->pivot()) {
-      parent = parent->left();
-      range.upper_bound = middle;
-    } else {
-      parent = parent->right();
-      range.lower_bound = middle;
-    }
-  }
 }
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
@@ -290,6 +103,7 @@ i64 search_trie(const BPTrieNode* parent, std::string_view key, batt::Interval<i
 constexpr usize kSkip = 1000;
 constexpr usize kStep = 0;
 constexpr usize kTake = 100;
+constexpr usize kBenchmarkRepeat = 25;
 
 TEST(Trie, Test)
 {
@@ -297,8 +111,13 @@ TEST(Trie, Test)
 
   LLFS_LOG_INFO() << BATT_INSPECT(words.size());
 
+  double trials = 0;
+  double compression_total = 0;
+  double mem_speedup = 0;
+  double packed_speedup = 0;
+
   for (const usize kTake : {10, 50, 80, 100, 200, 500, 1000, 2000, 5000}) {
-    for (const usize kStep : {1, 2, 3, 10, 50, 100, 200, 500}) {
+    for (const usize kStep : {1, 2, 3, 4, 5, 6, 7, 8, 10, 16, 32, 50, 100, 200}) {
       std::vector<std::string> sample;
       {
         usize i = 0;
@@ -317,10 +136,11 @@ TEST(Trie, Test)
       }
 
       std::vector<std::unique_ptr<BPTrieNode>> nodes;
-      auto* root = make_trie(0, sample, nodes);
+      auto* root = llfs::make_trie(sample, nodes);
 
       auto lookup = sample;
-      lookup.emplace_back("~");
+
+      lookup.emplace_back("\xFF\xFF\xFF\xFF");
       lookup.insert(lookup.begin(), " ");
 
       const usize size = packed_sizeof(*root);
@@ -341,56 +161,165 @@ TEST(Trie, Test)
                                sample.size() * sizeof(llfs::PackedBytes);
 
       const usize no_prefix_count = batt::as_seq(nodes) | batt::seq::map([](const auto& p_node) {
-                                      return (p_node->prefix.size() == 0) ? 1 : 0;
+                                      return (p_node->prefix().size() == 0) ? 1 : 0;
                                     }) |
                                     batt::seq::sum();
 
       const usize prefix_1_count = batt::as_seq(nodes) | batt::seq::map([](const auto& p_node) {
-                                     return (p_node->prefix.size() == 1) ? 1 : 0;
+                                     return (p_node->prefix().size() == 1) ? 1 : 0;
                                    }) |
                                    batt::seq::sum();
 
       const usize prefix_2_count = batt::as_seq(nodes) | batt::seq::map([](const auto& p_node) {
-                                     return (p_node->prefix.size() == 2) ? 1 : 0;
+                                     return (p_node->prefix().size() == 2) ? 1 : 0;
                                    }) |
                                    batt::seq::sum();
 
+      const usize prefix_8_16_count =
+          batt::as_seq(nodes) | batt::seq::map([](const auto& p_node) {
+            return (p_node->prefix().size() >= 8 && p_node->prefix().size() < 15) ? 1 : 0;
+          }) |
+          batt::seq::sum();
+
       const usize short_prefix_count = batt::as_seq(nodes) | batt::seq::map([](const auto& p_node) {
-                                         return (p_node->prefix.size() <= 2) ? 1 : 0;
+                                         return (p_node->prefix().size() <= 2) ? 1 : 0;
                                        }) |
                                        batt::seq::sum();
 
       const usize one_byte_pivot_pos_count = batt::as_seq(nodes) |
                                              batt::seq::map([](const auto& p_node) {
-                                               return (p_node->pivot_pos <= 127) ? 1 : 0;
+                                               return (p_node->pivot_pos() <= 127) ? 1 : 0;
                                              }) |
                                              batt::seq::sum();
 
-      VLOG(1) << BATT_INSPECT(size) << BATT_INSPECT(input_size) << BATT_INSPECT(nodes.size())
+      const double compression = double(size) / double(input_size);
+
+      VLOG(1) << BATT_INSPECT(kStep) << BATT_INSPECT(kTake) << BATT_INSPECT(size)
+              << BATT_INSPECT(input_size) << BATT_INSPECT(compression) << BATT_INSPECT(nodes.size())
               << BATT_INSPECT(no_prefix_count) << BATT_INSPECT(prefix_1_count)
               << BATT_INSPECT(prefix_2_count) << BATT_INSPECT(short_prefix_count)
-              << BATT_INSPECT(one_byte_pivot_pos_count);
+              << BATT_INSPECT(one_byte_pivot_pos_count) << BATT_INSPECT(prefix_8_16_count);
 
-      std::cout << BATT_INSPECT(kStep) << BATT_INSPECT(kTake) << BATT_INSPECT(size)
-                << BATT_INSPECT(input_size) << std::endl;
+      compression_total += compression;
+      trials += 1;
 
-      EXPECT_LT(size, input_size + 100);
+      batt::Interval<i64> search_range{-1, (i64)sample.size() - 1};
 
+      i64 expect_checksum = 0;
       for (usize i = 0; i < sample.size() * kStep; ++i) {
+        if (i + kSkip >= words.size()) {
+          break;
+        }
         std::string_view word = words[i + kSkip];
-        i64 pos = search_trie(root, word, {-1, (i64)kTake - 1});
-        EXPECT_GE(word, lookup[pos + 1]) << BATT_INSPECT(pos);
-        EXPECT_LT(word, lookup[pos + 2]) << BATT_INSPECT(pos);
+        i64 pos = llfs::search_trie(root, word, search_range);
 
-        i64 pos2 = search_packed_trie(packed_root, word, {-1, (i64)kTake - 1});
-        EXPECT_EQ(pos, pos2);
+        EXPECT_GE(word, lookup[pos + 1]) << BATT_INSPECT(pos);
+        EXPECT_LT(word, lookup[pos + 2])
+            << BATT_INSPECT(pos) << BATT_INSPECT(i) << BATT_INSPECT(lookup.size());
+
+        i64 pos2 = llfs::search_trie(packed_root, word, search_range);
+
+        EXPECT_EQ(pos, pos2) << BATT_INSPECT(pos2);
 
         VLOG(1) << batt::c_str_literal(word) << " => " << pos << "  ["
                 << batt::c_str_literal(lookup[pos + 1]) << ", "
                 << batt::c_str_literal(lookup[pos + 2]) << ")";
+
+        expect_checksum += pos;
       }
+
+      double in_mem_time = 0;
+      {
+        const auto start = std::chrono::steady_clock::now();
+
+        i64 checksum = 0;
+        for (usize n = 0; n < kBenchmarkRepeat; ++n) {
+          for (usize i = 0; i < sample.size() * kStep; ++i) {
+            if (i + kSkip >= words.size()) {
+              break;
+            }
+            std::string_view word = words[i + kSkip];
+            i64 pos = llfs::search_trie(root, word, search_range);
+            checksum += pos;
+          }
+        }
+
+        i64 usec = std::chrono::duration_cast<std::chrono::microseconds>(
+                       std::chrono::steady_clock::now() - start)
+                       .count();
+
+        in_mem_time = double(usec) / 1000000.0;
+
+        VLOG(1) << "(In-Memory) Trie took " << in_mem_time << "s" << std::endl;
+
+        EXPECT_EQ(checksum, i64(expect_checksum * kBenchmarkRepeat));
+      }
+
+      double packed_time = 0;
+      {
+        const auto start = std::chrono::steady_clock::now();
+
+        i64 checksum = 0;
+        for (usize n = 0; n < kBenchmarkRepeat; ++n) {
+          for (usize i = 0; i < sample.size() * kStep; ++i) {
+            if (i + kSkip >= words.size()) {
+              break;
+            }
+            std::string_view word = words[i + kSkip];
+            i64 pos = llfs::search_trie(packed_root, word, search_range);
+            checksum += pos;
+          }
+        }
+
+        i64 usec = std::chrono::duration_cast<std::chrono::microseconds>(
+                       std::chrono::steady_clock::now() - start)
+                       .count();
+
+        packed_time = double(usec) / 1000000.0;
+
+        VLOG(1) << "(Packed) Trie took " << packed_time << "s" << std::endl;
+
+        EXPECT_EQ(checksum, i64(expect_checksum * kBenchmarkRepeat));
+      }
+
+      double binsearch_time = 0;
+      {
+        const auto start = std::chrono::steady_clock::now();
+
+        i64 checksum = 0;
+        for (usize n = 0; n < kBenchmarkRepeat; ++n) {
+          for (usize i = 0; i < sample.size() * kStep; ++i) {
+            if (i + kSkip >= words.size()) {
+              break;
+            }
+            std::string_view word = words[i + kSkip];
+            i64 pos =
+                std::distance(sample.begin(), std::lower_bound(sample.begin(), sample.end(), word));
+            checksum += pos;
+          }
+        }
+
+        i64 usec = std::chrono::duration_cast<std::chrono::microseconds>(
+                       std::chrono::steady_clock::now() - start)
+                       .count();
+
+        binsearch_time = double(usec) / 1000000.0;
+
+        VLOG(1) << "Binary search took " << binsearch_time << "s" << std::endl;
+
+        EXPECT_GE(checksum, i64(expect_checksum * kBenchmarkRepeat));
+      }
+
+      mem_speedup += binsearch_time / in_mem_time;
+      packed_speedup += binsearch_time / packed_time;
     }
   }
+
+  double avg_compression = compression_total / trials;
+  double avg_speedup_mem = mem_speedup / trials;
+  double avg_speedup_packed = packed_speedup / trials;
+  LOG(INFO) << BATT_INSPECT(avg_compression) << BATT_INSPECT(avg_speedup_mem)
+            << BATT_INSPECT(avg_speedup_packed);
 }
 
 }  // namespace

@@ -1,3 +1,11 @@
+//#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
+//
+// Part of the LLFS Project, under Apache License v2.0.
+// See https://www.apache.org/licenses/LICENSE-2.0 for license information.
+// SPDX short identifier: Apache-2.0
+//
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+
 #pragma once
 #ifndef LLFS_TRIE_HPP
 #define LLFS_TRIE_HPP
@@ -13,18 +21,64 @@
 #include <batteries/utility.hpp>
 
 #include <deque>
+#include <memory>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace llfs {
 
 struct BPTrieNode {
-  std::string_view prefix;
-  u8 pivot = '\0';
-  i64 pivot_pos = 0;
-  BPTrieNode* left = nullptr;
-  BPTrieNode* right = nullptr;
+  const std::string_view& prefix() const noexcept
+  {
+    return this->prefix_;
+  }
+
+  u8 pivot() const noexcept
+  {
+    return this->pivot_;
+  }
+
+  i64 pivot_pos() const noexcept
+  {
+    return this->pivot_pos_;
+  }
+
+  const BPTrieNode* left() const noexcept
+  {
+    return this->left_;
+  }
+
+  const BPTrieNode* right() const noexcept
+  {
+    return this->right_;
+  }
+
+  template <typename Fn>
+  void optimized_layout(Fn&& fn) const noexcept
+  {
+    fn(this);
+  }
+
+  //----- --- -- -  -  -   -
+
+  std::string_view prefix_;
+  u8 pivot_ = '\0';
+  i64 pivot_pos_ = 0;
+  BPTrieNode* left_ = nullptr;
+  BPTrieNode* right_ = nullptr;
 };
+
+template <typename Range>
+BPTrieNode* make_trie(const Range& keys, std::vector<std::unique_ptr<BPTrieNode>>& nodes,
+                      usize current_prefix_len = 0);
+
+/** \brief Finds the lower-bound position of key in the given trie.
+ *
+ * T may be wither BPTrieNode or PackedBPTrieNode.
+ */
+template <typename T>
+i64 search_trie(const T* parent, std::string_view key, batt::Interval<i64> range);
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
@@ -45,11 +99,17 @@ struct PackedBPTrieNode {
       0b00001000;
   static constexpr u8 kHasPrefixLen16 =  //
       0b00010000;
-  static constexpr u8 kLayoutMask =  //
+  static constexpr u8 kLayoutMax =  //
       0b00011111;
   static constexpr u8 kPrefixLenMask =  //
-      0b11100000;
-  static constexpr i32 kPrefixLenShift = 5;
+      0b11111000;
+  static constexpr u8 kPrefixLenTinyMax =  //
+      0b11101000;
+  static constexpr u8 kPrefixLenIsU8 =  //
+      0b11110000;
+  static constexpr u8 kPrefixLenIsU16 =  //
+      0b11111000;
+  static constexpr i32 kPrefixLenShift = 3;
 
   template <u8 kLayoutFlags>
   struct DynamicLayout;
@@ -75,154 +135,26 @@ struct PackedBPTrieNode {
 
   template <typename R, typename Fn>
   R with_dynamic_layout(Fn&& fn) const noexcept;
+
+  template <typename Fn>
+  void optimized_layout(Fn&& fn) const noexcept
+  {
+    this->with_dynamic_layout<void>(BATT_FORWARD(fn));
+  }
 };
 
 LLFS_DEFINE_PACKED_TYPE_FOR(BPTrieNode, PackedBPTrieNode);
 
 using PackedBPTrieNodePointer = llfs::PackedPointer<PackedBPTrieNode, little_u16>;
 
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-inline usize packed_sizeof(const BPTrieNode& node)
-{
-  usize size = sizeof(PackedBPTrieNode) + node.prefix.size();
+/** \brief Calculate the size of the given sub-trie.
+ */
+usize packed_sizeof(const BPTrieNode& node);
 
-  // pivot
-  //
-  if (node.left || node.right) {
-    size += 1;
-
-    // pivot_pos
-    //
-    if (node.pivot_pos >= 256) {
-      size += 2;
-    } else {
-      size += 1;
-    }
-  }
-
-  // prefix_len
-  //
-  if (node.prefix.size() >= 8) {
-    if (node.prefix.size() >= 256) {
-      size += 2;
-    } else {
-      size += 1;
-    }
-  }
-
-  // left
-  //
-  if (node.left) {
-    size += sizeof(PackedBPTrieNodePointer) + packed_sizeof(*node.left);
-  }
-
-  // right
-  //
-  if (node.right) {
-    size += sizeof(PackedBPTrieNodePointer) + packed_sizeof(*node.right);
-  }
-
-  return size;
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-inline const PackedBPTrieNode* pack_object_to(const BPTrieNode& root, PackedBPTrieNode* packed_root,
-                                              llfs::DataPacker* dst)
-{
-  std::deque<std::pair<const BPTrieNode*, PackedBPTrieNodePointer*>> queue;
-
-  queue.emplace_back(&root, nullptr);
-
-  bool first = true;
-
-  while (!queue.empty()) {
-    const auto& [node, p_pointer] = queue.front();
-    queue.pop_front();
-
-    BATT_CHECK_NOT_NULLPTR(node);
-
-    PackedBPTrieNode* packed_node = [&]() -> PackedBPTrieNode* {
-      if (first) {
-        first = false;
-        return packed_root;
-      }
-      return dst->pack_record<PackedBPTrieNode>();
-    }();
-
-    if (!packed_node) {
-      return nullptr;
-    }
-
-    packed_node->flags = 0;
-
-    if (node->left || node->right) {
-      if (!dst->pack_u8(node->pivot)) {
-        return nullptr;
-      }
-
-      if (node->pivot_pos >= 256) {
-        packed_node->flags |= PackedBPTrieNode::kHasPivotPos16;
-        if (!dst->pack_u16(BATT_CHECKED_CAST(u16, node->pivot_pos))) {
-          return nullptr;
-        }
-      } else {
-        if (!dst->pack_u8(BATT_CHECKED_CAST(u8, node->pivot_pos))) {
-          return nullptr;
-        }
-      }
-    }
-
-    if (node->prefix.size() < 8) {
-      u8 prefix_len = node->prefix.size();
-      packed_node->flags |=
-          (prefix_len << PackedBPTrieNode::kPrefixLenShift) & PackedBPTrieNode::kPrefixLenMask;
-
-    } else if (node->prefix.size() < 256) {
-      packed_node->flags |= PackedBPTrieNode::kHasPrefixLen8;
-      if (!dst->pack_u8(BATT_CHECKED_CAST(u8, node->prefix.size()))) {
-        return nullptr;
-      }
-
-    } else {
-      packed_node->flags |= PackedBPTrieNode::kHasPrefixLen16;
-      if (!dst->pack_u16(BATT_CHECKED_CAST(u16, node->prefix.size()))) {
-        return nullptr;
-      }
-    }
-
-    if (node->left) {
-      packed_node->flags |= PackedBPTrieNode::kHasLeft;
-
-      PackedBPTrieNodePointer* p_left_packed = dst->pack_record<PackedBPTrieNodePointer>();
-      if (!p_left_packed) {
-        return nullptr;
-      }
-      queue.emplace_back(node->left, p_left_packed);
-    }
-
-    if (node->right) {
-      packed_node->flags |= PackedBPTrieNode::kHasRight;
-
-      PackedBPTrieNodePointer* p_right_packed = dst->pack_record<PackedBPTrieNodePointer>();
-      if (!p_right_packed) {
-        return nullptr;
-      }
-      queue.emplace_back(node->right, p_right_packed);
-    }
-
-    if (!dst->pack_raw_data(node->prefix.data(), node->prefix.size())) {
-      return nullptr;
-    }
-
-    if (p_pointer) {
-      p_pointer->reset(packed_node, dst);
-    }
-  }
-
-  return packed_root;
-}
+/** \brief Pack the trie into its compact serialization.
+ */
+const PackedBPTrieNode* pack_object_to(const BPTrieNode& root, PackedBPTrieNode* packed_root,
+                                       llfs::DataPacker* dst);
 
 //#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
 
@@ -294,7 +226,7 @@ template <bool kEnablePivot, bool kEnablePivotPos16, int kPrefixLenBits>
 struct PrefixLen;
 
 template <bool kEnablePivot, bool kEnablePivotPos16>
-struct PrefixLen<kEnablePivot, kEnablePivotPos16, 3>  //
+struct PrefixLen<kEnablePivot, kEnablePivotPos16, 5>  //
     : PivotPos<kEnablePivot, kEnablePivotPos16> {
   //
   usize prefix_len() const noexcept
@@ -407,81 +339,15 @@ struct PackedBPTrieNode::DynamicLayout
           /*PrefixLenBits=*/
           ((kFlags & binary_prefix_trie::Base::kHasPrefixLen16) != 0)
               ? 16
-              : (((kFlags & binary_prefix_trie::Base::kHasPrefixLen8) != 0) ? 8 : 3),
+              : (((kFlags & binary_prefix_trie::Base::kHasPrefixLen8) != 0) ? 8 : 5),
           //
           /*kEnableLeft=*/(kFlags& binary_prefix_trie::Base::kHasLeft) != 0,   //
           /*kEnableRight=*/(kFlags& binary_prefix_trie::Base::kHasRight) != 0  //
           > {
 };
 
-//#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-template <typename R, typename Fn>
-R PackedBPTrieNode::with_dynamic_layout(Fn&& fn) const noexcept
-{
-  return batt::static_dispatch<u8, 0, binary_prefix_trie::Base::kLayoutMask>(
-      (this->flags & binary_prefix_trie::Base::kLayoutMask), [this, &fn](auto layout_flags) {
-        return BATT_FORWARD(fn)(
-            reinterpret_cast<const DynamicLayout<decltype(layout_flags)::value>*>(this));
-      });
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-inline usize PackedBPTrieNode::prefix_len() const noexcept
-{
-  return this->with_dynamic_layout<usize>([](auto* layout) {
-    return layout->prefix_len();
-  });
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-inline usize PackedBPTrieNode::pivot_pos() const noexcept
-{
-  return this->with_dynamic_layout<usize>([](auto* layout) {
-    return layout->pivot_pos();
-  });
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-inline u8 PackedBPTrieNode::pivot() const noexcept
-{
-  return this->with_dynamic_layout<u8>([](auto* layout) {
-    return layout->pivot();
-  });
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-inline std::string_view PackedBPTrieNode::prefix() const noexcept
-{
-  return this->with_dynamic_layout<std::string_view>([this](auto* layout) {
-    return layout->prefix();
-  });
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-inline const PackedBPTrieNode* PackedBPTrieNode::left() const noexcept
-{
-  return this->with_dynamic_layout<const PackedBPTrieNode*>([this](auto* layout) {
-    return layout->left();
-  });
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-inline const PackedBPTrieNode* PackedBPTrieNode::right() const noexcept
-{
-  return this->with_dynamic_layout<const PackedBPTrieNode*>([this](auto* layout) {
-    return layout->right();
-  });
-}
-
 }  //namespace llfs
+
+#include <llfs/trie.ipp>
 
 #endif  // LLFS_TRIE_HPP

@@ -105,7 +105,7 @@ Status VolumeRecoveryVisitor::resolve_pending_jobs(PageCache& cache, PageRecycle
       //----- --- -- -  -  -   -
       LLFS_VLOG(1) << "Rolling back job at slot " << prepare_slot << "...";
 
-      // Else (maybe) delete any pages that _did_ succeed, and then-and-only-then write a
+      // Delete any pages that were successfully written, and then-and-only-then write a
       // rollback job slot.
       //
       Status drop_status = parallel_drop_pages(as_seq(*packed_prepare_job.get().new_page_ids)  //

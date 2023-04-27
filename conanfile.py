@@ -32,7 +32,7 @@ class LlfsConan(ConanFile):
         "boost/1.81.0",
         "openssl/3.0.7",
         "glog/0.6.0",
-        "batteries/0.30.2-devel", #"batteries/0.30.0@batteriescpp+batteries/stable",
+        "batteries/0.30.2@batteriescpp+batteries/stable",
         "cli11/2.3.2",
         "zlib/1.2.13",
     ] + ([

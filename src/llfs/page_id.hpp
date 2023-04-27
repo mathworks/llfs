@@ -23,7 +23,7 @@ using page_id_int = u64;
 
 constexpr page_id_int kInvalidPageId = ~page_id_int{0};
 
-struct PageBuffer;
+class PageBuffer;
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 // Identifies a Page on disk.

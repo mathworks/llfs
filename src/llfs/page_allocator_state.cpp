@@ -68,11 +68,12 @@ StatusOr<slot_offset_type> PageAllocatorState::write_checkpoint_slice(
           slice_grant,
           PackedPageRefCountRefresh{
               {
-                  .page_id = this->page_ids_.make_page_id(physical_page, generation).int_value(),
+                  .page_id = {this->page_ids_.make_page_id(physical_page, generation).int_value()},
                   .ref_count = ref_count_obj->get_count(),
               },
               .user_index = user_index,
           });
+
     } else {
       PageAllocatorAttachment* const attachment =
           static_cast<PageAllocatorAttachment*>(oldest_object);
@@ -200,35 +201,6 @@ void PageAllocatorState::deallocate_page(PageId page_id)
 
   this->free_pool_.push_back(ref_count_obj);
   this->free_pool_size_.fetch_add(1);
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Status PageAllocatorState::recover_page(PageId page_id)
-{
-  const page_id_int physical_page = this->page_ids_.get_physical_page(page_id);
-  const page_generation_int generation = this->page_ids_.get_generation(page_id);
-
-  BATT_CHECK_LT(physical_page, this->page_device_capacity());
-
-  if (kFastIoRingPageDeviceInit && generation == 0) {
-    return ::llfs::make_status(::llfs::StatusCode::kRecoverFailedGenerationZero);
-  }
-
-  PageAllocatorRefCount& ref_count_obj = this->page_ref_counts_[physical_page];
-
-  if (ref_count_obj.get_count() != 0 || !ref_count_obj.PageAllocatorFreePoolHook::is_linked()) {
-    return ::llfs::make_status(StatusCode::kRecoverFailedPageReallocated);
-  }
-
-  this->free_pool_.erase(this->free_pool_.iterator_to(ref_count_obj));
-  ref_count_obj.set_generation(generation);
-
-  BATT_CHECK_EQ(this->page_ids_.make_page_id(physical_page, generation), page_id);
-
-  this->free_pool_size_.fetch_sub(1);
-
-  return OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

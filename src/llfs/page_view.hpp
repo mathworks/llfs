@@ -45,34 +45,46 @@ class PageView
 
   virtual ~PageView() = default;
 
-  PageId page_id() const
+  PageId page_id() const noexcept
   {
     return this->data_->page_id();
   }
 
-  std::shared_ptr<const PageBuffer> data() const
+  std::shared_ptr<const PageBuffer> data() const noexcept
   {
     return this->data_;
+  }
+
+  ConstBuffer const_buffer() const noexcept
+  {
+    return this->data_->const_buffer();
+  }
+
+  ConstBuffer const_payload() const noexcept
+  {
+    return this->data_->const_payload();
   }
 
   // Check to make sure the page id matches the expected one, and that no data corruption is found.
   //
   Status validate(PageId expected_id);
 
-  /*! \brief Get the tag for this page view.
+  /** \brief Get the tag for this page view.
    */
   virtual PageLayoutId get_page_layout_id() const = 0;
 
-  // Returns a sequence of the ids of all pages directly referenced by this one.
-  //
+  /** \brief Returns a sequence of the ids of all pages directly referenced by this one.
+   */
   virtual BoxedSeq<PageId> trace_refs() const = 0;
-
-  // Returns the minimum key value contained within this page.
   //
+  //  TODO [tastolfi 2023-03-13] add parallel friendly API
+
+  /** \brief Returns the minimum key value contained within this page.
+   */
   virtual Optional<KeyView> min_key() const = 0;
 
-  // Returns the maximum key value contained within this page.
-  //
+  /** \brief Returns the maximum key value contained within this page.
+   */
   virtual Optional<KeyView> max_key() const = 0;
 
   // Builds a key-based approximate member query (AMQ) filter for the page, to answer the question

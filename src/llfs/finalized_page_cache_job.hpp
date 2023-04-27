@@ -145,6 +145,8 @@ Status commit(CommittablePageCacheJob committable_job, const JobCommitParams& pa
 class CommittablePageCacheJob
 {
  public:
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   static StatusOr<CommittablePageCacheJob> from(std::unique_ptr<PageCacheJob> job, u64 callers);
 
   friend Status commit(CommittablePageCacheJob committable_job, const JobCommitParams& params,
@@ -172,11 +174,15 @@ class CommittablePageCacheJob
   //
   FinalizedPageCacheJob finalized_job() const;
 
+  u64 job_id() const;
+
   BoxedSeq<PageId> new_page_ids() const;
 
   BoxedSeq<PageId> deleted_page_ids() const;
 
   BoxedSeq<PageRefCount> root_set_deltas() const;
+
+  BoxedSeq<page_device_id_int> page_device_ids() const;
 
   explicit operator bool() const
   {
@@ -194,6 +200,7 @@ class CommittablePageCacheJob
 
   struct PageRefCountUpdates {
     std::unordered_map<page_device_id_int, DeviceUpdateState> per_device;
+    bool initialized = false;
   };
 
   struct DeadPages {
@@ -225,6 +232,7 @@ class CommittablePageCacheJob
 
   std::shared_ptr<const PageCacheJob> job_;
   boost::intrusive_ptr<FinalizedJobTracker> tracker_;
+  PageRefCountUpdates ref_count_updates_;
 };
 
 // Convenience shortcut for use cases where we do not pipeline job commits.

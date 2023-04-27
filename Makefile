@@ -11,32 +11,51 @@
 CONAN_PROFILE := $(shell test -f /etc/conan_profile.default && echo '/etc/conan_profile.default' || echo 'default')
 $(info CONAN_PROFILE is $(CONAN_PROFILE))
 
+#----- --- -- -  -  -   -
+# Force some requirements to build from source to workaround
+# OS-specific bugs.
+#
+BUILD_FROM_SRC :=
+ifeq ($(OS),Windows_NT)
+else
+  UNAME_S := $(shell uname -s)
+  ifeq ($(UNAME_S),Darwin)
+    #BUILD_FROM_SRC += --build=b2
+  endif
+endif
+#----- --- -- -  -  -   -
 
 ifeq ($(BUILD_TYPE),)
 BUILD_TYPE := RelWithDebInfo
 endif
 
-build:
-	mkdir -p build/$(BUILD_TYPE)
-	(cd build/$(BUILD_TYPE) && time -f "Build Time: %e seconds." conan build ../..)
+BUILD_DIR := build/$(BUILD_TYPE)
 
-test:
-	mkdir -p build/$(BUILD_TYPE)
+TCMALLOC_ENV := $(shell find /lib/ -name '*tcmalloc.so*' | sort -Vr | head -1 | xargs -I{} echo LD_PRELOAD={})
+$(info TCMALLOC_ENV=$(TCMALLOC_ENV))
+
+
+"$(BUILD_DIR)":
+	mkdir -p "$(BUILD_DIR)"
+
+build: "$(BUILD_DIR)"
+	(cd $(BUILD_DIR) && conan build ../..)
+
+test: "$(BUILD_DIR)"
 ifeq ("$(GTEST_FILTER)","")
 	@echo -e "\n\nRunning DEATH tests ==============================================\n"
-	(cd build/$(BUILD_TYPE) && GTEST_OUTPUT='xml:../death-test-results.xml' GTEST_FILTER='*Death*' ctest --verbose)
+	(cd $(BUILD_DIR) && GTEST_OUTPUT='xml:../death-test-results.xml' GTEST_FILTER='*Death*' $(TCMALLOC_ENV) bin/llfs_Test)
 	@echo -e "\n\nRunning non-DEATH tests ==========================================\n"
-	(cd build/$(BUILD_TYPE) && GTEST_OUTPUT='xml:../test-results.xml' GTEST_FILTER='*-*Death*' ctest --verbose)
+	(cd $(BUILD_DIR) && GTEST_OUTPUT='xml:../test-results.xml' GTEST_FILTER='*-*Death*' $(TCMALLOC_ENV) bin/llfs_Test)
 else
-	(cd build/$(BUILD_TYPE) && GTEST_OUTPUT='xml:../test-results.xml' ctest --verbose)
+	(cd $(BUILD_DIR) && GTEST_OUTPUT='xml:../test-results.xml' $(TCMALLOC_ENV) bin/llfs_Test)
 endif
 
-install:
-	mkdir -p build/$(BUILD_TYPE)
-	(cd build/$(BUILD_TYPE) && conan install --profile "$(CONAN_PROFILE)" -s build_type=$(BUILD_TYPE) --build=missing ../..)
+install: "$(BUILD_DIR)"
+	(cd "$(BUILD_DIR)" && conan install --profile "$(CONAN_PROFILE)" -s build_type=$(BUILD_TYPE) --build=missing $(BUILD_FROM_SRC) ../..)
 
 create:
-	(conan remove -f "llfs/$(shell script/get-version.sh)" && cd build/$(BUILD_TYPE) && conan create  --profile "$(CONAN_PROFILE)" -s build_type=$(BUILD_TYPE) ../..)
+	(conan remove -f "llfs/$(shell script/get-version.sh)" && cd "$(BUILD_DIR)" && conan create  --profile "$(CONAN_PROFILE)" -s build_type=$(BUILD_TYPE) ../..)
 
 
 publish:
@@ -44,8 +63,12 @@ publish:
 
 
 clean:
-	rm -rf build/$(BUILD_TYPE)
+	rm -rf "$(BUILD_DIR)"
 
 
 unlink:
+	true
 
+.PHONY: rtags
+rtags:
+	rc -J  "$(BUILD_DIR)"

@@ -70,9 +70,20 @@ BATT_STATIC_ASSERT_EQ(sizeof(PackedPageId), 8);
 
 LLFS_DEFINE_PACKED_TYPE_FOR(PageId, PackedPageId);
 
+LLFS_DEFINE_PACKED_TYPE_FOR(PackedPageId, PackedPageId);
+
+inline constexpr usize packed_sizeof(const PackedPageId&)
+{
+  return sizeof(PackedPageId);
+}
+
 BoxedSeq<PageId> trace_refs(const PackedArray<PackedPageId>& packed);
 
 BoxedSeq<PageId> trace_refs(const BoxedSeq<PageId>& page_ids);
+
+BoxedSeq<PageId> trace_refs(const PackedPageId& page_id);
+
+BoxedSeq<PageId> trace_refs(const PageId& page_id);
 
 template <typename Dst>
 [[nodiscard]] PackedPageId* pack_object_to(const PackedPageId& from_id, PackedPageId* to_id, Dst*)

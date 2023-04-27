@@ -87,10 +87,6 @@ class PageAllocatorState : public PageAllocatorStateNoLock
 
   void deallocate_page(PageId page_id);
 
-  // Returns Ok if the given page_id was successfully removed from the free pool.
-  //
-  Status recover_page(PageId page_id);
-
   // Write index objects to the log in LRU order until we have written a minimum of
   // `min_byte_count`.
   //

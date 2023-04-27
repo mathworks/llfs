@@ -25,7 +25,7 @@ u64 PageAllocator::calculate_log_size(u64 physical_page_count, u64 max_attachmen
 {
   static const PackedPageRefCountRefresh packed_ref_count{
       {
-          .page_id = 0,
+          .page_id = {0},
           .ref_count = 0,
       },
       .user_index = 0,
@@ -222,14 +222,6 @@ void PageAllocator::deallocate_page(PageId page_id)
   LLFS_VLOG(1) << "page deallocated: " << page_id;
   this->state_.lock()->get()->deallocate_page(page_id);
   this->metrics_.pages_freed.fetch_add(1);
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Status PageAllocator::recover_page(PageId page_id)
-{
-  LLFS_VLOG(1) << "removing page from free pool for recovery: " << page_id;
-  return this->state_.lock()->get()->recover_page(page_id);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

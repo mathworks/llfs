@@ -23,7 +23,7 @@ namespace llfs {
 /*explicit*/ RingBuffer::RingBuffer(const Params& params) noexcept
     : RingBuffer{batt::case_of(
           params,
-          [this](const TempFile& p) {
+          [](const TempFile& p) {
             return FileDescriptor{
                 .fd = fileno(tmpfile()),
                 .byte_size = p.byte_size,
@@ -32,7 +32,7 @@ namespace llfs {
                 .close = true,
             };
           },
-          [this](const NamedFile& p) {
+          [](const NamedFile& p) {
             int flags = O_DSYNC | O_RDWR;
             if (p.create) {
               flags |= O_CREAT;
@@ -48,7 +48,7 @@ namespace llfs {
                 .close = true,
             };
           },
-          [this](const FileDescriptor& p) {
+          [](const FileDescriptor& p) {
             return p;
           })}
 {

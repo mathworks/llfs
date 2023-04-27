@@ -166,7 +166,7 @@ inline usize packed_sizeof_checkpoint(const PackedPageAllocatorTxn& txn)
 {
   static const PackedPageRefCountRefresh packed_ref_count{
       {
-          .page_id = 0,
+          .page_id = {0},
           .ref_count = 0,
       },
       .user_index = 0,

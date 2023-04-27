@@ -19,6 +19,20 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+/*static*/ PageAllocatorConfigOptions PageAllocatorConfigOptions::with_default_values() noexcept
+{
+  return PageAllocatorConfigOptions{
+      .uuid = None,
+      .max_attachments = 64,
+      .page_count = PageCount{0},
+      .log_device = CreateNewLogDeviceWithDefaultSize{},
+      .page_size_log2 = PageSizeLog2{0},
+      .page_device = LinkToNewPageDevice{},
+  };
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 BATT_PRINT_OBJECT_IMPL(PackedPageAllocatorConfig,  //
                        (tag)                       //
                        (max_attachments)           //

@@ -76,7 +76,7 @@ class PageAllocatorAttachment : public PageAllocatorLRUBase
  private:
   const boost::uuids::uuid user_id_;
   slot_offset_type user_slot_;
-  u32 user_index_;
+  const u32 user_index_;
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

@@ -52,6 +52,16 @@ struct PackedBasicInterval {
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  static Self from(const batt::BasicInterval<Traits>& interval) noexcept
+  {
+    return Self{
+        .lower_bound = interval.lower_bound,
+        .upper_bound = interval.upper_bound,
+    };
+  }
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   /** \brief Returns this as an Interval.
    */
   batt::BasicInterval<Traits> unpack() const noexcept

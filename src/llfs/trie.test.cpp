@@ -41,7 +41,7 @@ using llfs::PackedBPTrie;
 std::vector<std::string> load_words()
 {
   std::vector<std::string> words;
-  std::ifstream ifs{"/usr/share/dict/words"};
+  std::ifstream ifs{batt::to_string(std::getenv("PROJECT_DIR"), "/testdata/words")};
   std::string word;
   while (ifs.good()) {
     ifs >> word;

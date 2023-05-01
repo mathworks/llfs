@@ -17,6 +17,7 @@
 #include <llfs/int_types.hpp>
 #include <llfs/packed_pointer.hpp>
 
+#include <batteries/small_vec.hpp>
 #include <batteries/static_dispatch.hpp>
 #include <batteries/utility.hpp>
 
@@ -63,6 +64,11 @@ class BPTrie
     return this->root_;
   }
 
+  usize node_count() const noexcept
+  {
+    return this->nodes_.size();
+  }
+
   usize size() const noexcept
   {
     return this->size_;
@@ -79,6 +85,8 @@ class BPTrie
   {
     return this->layout_;
   }
+
+  std::string_view get_key(usize index, batt::SmallVecBase<char>& buffer) const noexcept;
 
  private:
   std::vector<std::unique_ptr<BPTrieNode>> nodes_;
@@ -119,9 +127,30 @@ struct PackedBPTrieNodeParent {
   PackedPointer<PackedBPTrieNodeBase, SubtreeOffset> right;
 };
 
-//BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<u8, u8>), 4);
-BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<little_u16, little_u16>), 7);
-BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<little_u32, little_u32>), 13);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedPointer<PackedBPTrieNodeBase, u8>), 1);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedPointer<PackedBPTrieNodeBase, little_u16>), 2);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedPointer<PackedBPTrieNodeBase, little_u24>), 3);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedPointer<PackedBPTrieNodeBase, little_u32>), 4);
+
+BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<u8, u8>), 1 + 1 + 1 + 1);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<u8, little_u16>), 1 + 1 + 2 + 2);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<u8, little_u24>), 1 + 1 + 3 + 3);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<u8, little_u32>), 1 + 1 + 4 + 4);
+
+BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<little_u16, u8>), 1 + 2 + 1 + 1);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<little_u16, little_u16>), 1 + 2 + 2 + 2);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<little_u16, little_u24>), 1 + 2 + 3 + 3);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<little_u16, little_u32>), 1 + 2 + 4 + 4);
+
+BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<little_u24, u8>), 1 + 3 + 1 + 1);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<little_u24, little_u16>), 1 + 3 + 2 + 2);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<little_u24, little_u24>), 1 + 3 + 3 + 3);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<little_u24, little_u32>), 1 + 3 + 4 + 4);
+
+BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<little_u32, u8>), 1 + 4 + 1 + 1);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<little_u32, little_u16>), 1 + 4 + 2 + 2);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<little_u32, little_u24>), 1 + 4 + 3 + 3);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedBPTrieNodeParent<little_u32, little_u32>), 1 + 4 + 4 + 4);
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
@@ -130,9 +159,15 @@ struct PackedBPTrie {
   static constexpr u8 kPrefixChunkLenMask = 0x7f;
   static constexpr u8 kParentNodeMask = 0x80;
 
+  static constexpr u8 kOffset8 = 0;
+  static constexpr u8 kOffset16 = 1;
+  static constexpr u8 kOffset24 = 2;
+  static constexpr u8 kOffset32 = 3;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   little_u64 size_;
+  u8 offset_kind_;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -141,7 +176,14 @@ struct PackedBPTrie {
     return this->size_;
   }
 
+  const PackedBPTrieNodeBase* root() const noexcept
+  {
+    return reinterpret_cast<const PackedBPTrieNodeBase*>(this + 1);
+  }
+
   batt::Interval<usize> find(std::string_view key) const noexcept;
+
+  std::string_view get_key(usize index, batt::SmallVecBase<char>& buffer) const noexcept;
 };
 
 LLFS_DEFINE_PACKED_TYPE_FOR(BPTrie, PackedBPTrie);

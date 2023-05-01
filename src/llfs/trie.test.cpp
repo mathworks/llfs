@@ -56,7 +56,7 @@ std::vector<std::string> load_words()
 constexpr usize kSkip = 1000;
 constexpr usize kStep = 0;
 constexpr usize kTake = 100;
-constexpr usize kBenchmarkRepeat = 25;
+constexpr usize kBenchmarkRepeat = 15;
 
 using batt::Optional;
 
@@ -115,7 +115,8 @@ TEST(Trie, Test)
   double speedup_total_packed_bfs = 0;
   double speedup_total_packed_veb = 0;
 
-  for (const usize kTake : {10, 50, 80, 100, 200, 500, 1000, 2000, 3000, 3100, 3200, 3300, 4000}) {
+  for (const usize kTake : {10, 50, 80, 100, 200, 500, 1000, 2000, 3000, 4000}) {
+    LOG(INFO) << BATT_INSPECT(kTake);
     for (const usize kStep :
          {1, 1, 1, 1, 1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 10, 16, 32, 50, 100, 200}) {
       std::vector<std::string> sample;
@@ -135,6 +136,8 @@ TEST(Trie, Test)
         }
       }
 
+      trials += 1;
+
       BPTrie trie{sample};
 
       // Pack the trie first in BFS order.
@@ -147,7 +150,7 @@ TEST(Trie, Test)
         llfs::DataPacker packer{llfs::MutableBuffer{buffer_bfs.get(), packed_size_bfs}};
         packed_bfs = llfs::pack_object(trie, &packer);
 
-        ASSERT_NE(packed_bfs, nullptr);
+        ASSERT_NE(packed_bfs, nullptr) << BATT_INSPECT(packed_size_bfs);
       }
 
       // Pack the trie again using VEB order.
@@ -186,8 +189,8 @@ TEST(Trie, Test)
       compression_total_bfs += compression_bfs;
       compression_total_veb += compression_veb;
 
-      trials += 1;
-
+      // Test BPTrie, PackedBPTrie for correctness.
+      //
       for (usize i = 0; i < sample.size() * kStep; ++i) {
         if (i + kSkip >= words.size()) {
           break;
@@ -224,6 +227,25 @@ TEST(Trie, Test)
         EXPECT_EQ(pos, pos3) << debug_info;
       }
 
+      batt::SmallVec<char, 64> buffer;
+      for (usize i = 0; i < trie.size(); ++i) {
+        buffer.clear();
+        {
+          std::string_view actual_key = trie.get_key(i, buffer);
+          EXPECT_EQ(actual_key, sample[i]);
+        }
+        buffer.clear();
+        {
+          std::string_view actual_key = packed_bfs->get_key(i, buffer);
+          EXPECT_EQ(actual_key, sample[i]);
+        }
+        buffer.clear();
+        {
+          std::string_view actual_key = packed_veb->get_key(i, buffer);
+          EXPECT_EQ(actual_key, sample[i]);
+        }
+      }
+
       const auto run_timed_bench = [&sample, &words, &kStep](const auto& target) -> double {
         const auto start = std::chrono::steady_clock::now();
 
@@ -258,6 +280,10 @@ TEST(Trie, Test)
       speedup_total_mem_sstable += packed_sstable_time / mem_sstable_time;
       speedup_total_packed_bfs += packed_sstable_time / packed_bfs_time;
       speedup_total_packed_veb += packed_sstable_time / packed_veb_time;
+
+      VLOG(1) << BATT_INSPECT(mem_trie_time) << BATT_INSPECT(mem_sstable_time)
+              << BATT_INSPECT(packed_bfs_time) << BATT_INSPECT(packed_veb_time)
+              << BATT_INSPECT(packed_sstable_time);
     }
   }
 
@@ -293,8 +319,6 @@ TEST(Trie, VEBLayoutTest)
     std::vector<unsigned> n((1 << max_depth) + 1);
     std::iota(n.begin(), n.end(), 1);
 
-    //std::cerr << BATT_INSPECT_RANGE(n) << std::endl;
-
     const auto left = [&](unsigned id) -> unsigned {
       if (id > n.size() / 2)
         return 0;
@@ -322,10 +346,6 @@ TEST(Trie, VEBLayoutTest)
       r[index_of(id)] = right(id);
       d[index_of(id)] = depth(id);
     }
-
-    //std::cerr << BATT_INSPECT_RANGE(l) << std::endl
-    //        << BATT_INSPECT_RANGE(r) << std::endl
-    //        << BATT_INSPECT_RANGE(d) << std::endl;
 
     std::vector<Rec> heap{Rec{1, 32}};
     std::vector<unsigned> layout;
@@ -371,10 +391,6 @@ TEST(Trie, VEBLayoutTest)
         return depth(l_id) < depth(r_id);
       });
 
-      if (max_depth == 4) {
-        //std::cerr << BATT_INSPECT_RANGE(rlayout) << std::endl;
-      }
-
       std::vector<unsigned> rpos(n.size());
       for (unsigned i = 0; i < rlayout.size(); ++i) {
         unsigned id = rlayout[i];
@@ -390,10 +406,7 @@ TEST(Trie, VEBLayoutTest)
       }
     }
 
-    //std::cerr << BATT_INSPECT_RANGE(layout) << std::endl;
-    //std::cerr << BATT_INSPECT_RANGE(pos) << std::endl;
-
-    std::array<usize, 32> heap_dist_log2, veb_dist_log2;
+    std::array<double, 32> heap_dist_log2, veb_dist_log2;
     heap_dist_log2.fill(0);
     veb_dist_log2.fill(0);
 
@@ -418,8 +431,8 @@ TEST(Trie, VEBLayoutTest)
     }
 
     const auto normalize_pct = [](auto& hist) {
-      usize total = batt::as_seq(hist) | batt::seq::decayed() | batt::seq::sum();
-      for (usize& n : hist) {
+      auto total = batt::as_seq(hist) | batt::seq::decayed() | batt::seq::sum();
+      for (auto& n : hist) {
         n = (n * 100) / total;
       }
     };

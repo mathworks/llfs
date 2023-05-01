@@ -140,7 +140,7 @@ class VanEmdeBoasOrder
   }
 
  private:
-  usize insert_count_;
+  usize insert_count_ = 0;
   i32 current_depth_ = -1;
   std::vector<Item> heap_;
 };

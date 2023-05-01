@@ -80,6 +80,18 @@ BPTrieNode* make_trie(const Range& keys, std::vector<std::unique_ptr<BPTrieNode>
 template <typename T>
 i64 search_trie(const T* parent, std::string_view key, batt::Interval<i64> range);
 
+/** \brief
+ */
+usize build_fast_packed_trie(const BPTrieNode* root, u8* const dst_begin, u8* const dst_end);
+
+/** \brief
+ */
+i64 fast_search_trie(const u8* src, std::string_view key, batt::Interval<i64> range);
+
+/** \brief
+ */
+usize packed_fast_trie_size(const BPTrieNode* root);
+
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 // Layout:
@@ -110,6 +122,12 @@ struct PackedBPTrieNode {
   static constexpr u8 kPrefixLenIsU16 =  //
       0b11111000;
   static constexpr i32 kPrefixLenShift = 3;
+
+  static std::atomic<bool>& use_van_emde_boas_layout()
+  {
+    static std::atomic<bool> value_{false};
+    return value_;
+  }
 
   template <u8 kLayoutFlags>
   struct DynamicLayout;

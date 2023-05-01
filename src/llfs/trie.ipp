@@ -115,7 +115,7 @@ inline BPTrieNode* make_trie(const Range& keys, std::vector<std::unique_ptr<BPTr
   // halves.
   //
   node->pivot_pos_ = std::distance(first, pivot_iter);
-  node->pivot_ = get_kth_byte(node->pivot_pos());
+  node->pivot_ = get_kth_byte(node->pivot_pos_);
 
   current_prefix_len = k;
 
@@ -123,135 +123,6 @@ inline BPTrieNode* make_trie(const Range& keys, std::vector<std::unique_ptr<BPTr
   node->right_ = make_trie(boost::make_iterator_range(pivot_iter, last), nodes, current_prefix_len);
 
   return node;
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-template <typename T>
-inline i64 search_trie(const T* parent, std::string_view key, batt::Interval<i64> range)
-{
-  i64 ans = 0;
-  bool done = false;
-  while (!done) {
-    if (!parent) {
-      return range.lower_bound + 1;
-    }
-    parent->optimized_layout([&](auto* node) {
-      const std::string_view& prefix = node->prefix();
-      const usize prefix_len = prefix.size();
-      if (prefix_len != 0) {
-        const usize key_len = key.size();
-        const usize common_len = std::min(prefix_len, key_len);
-        const batt::Order order = batt::compare(key.substr(0, common_len), prefix);
-
-        if (order == batt::Order::Greater) {
-          ans = range.upper_bound;
-          done = true;
-          return;
-        }
-        if (order == batt::Order::Less || key_len < prefix_len) {
-          ans = range.lower_bound;
-          done = true;
-          return;
-        }
-      }
-
-      const i64 middle = range.lower_bound + node->pivot_pos();
-
-      key = key.substr(prefix_len);
-
-      if (key.empty() || (u8)key[0] < (u8)node->pivot()) {
-        parent = node->left();
-        range.upper_bound = middle;
-      } else {
-        parent = node->right();
-        range.lower_bound = middle;
-      }
-    });
-  }
-  return ans;
-}
-
-//#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-template <typename R, typename Fn>
-R PackedBPTrieNode::with_dynamic_layout(Fn&& fn) const noexcept
-{
-  u8 layout = (this->flags & 0b111) | ([&]() -> u8 {
-                const u8 prefix_len = this->flags & kPrefixLenMask;
-                switch (prefix_len) {
-                  case kPrefixLenIsU8:
-                    return kHasPrefixLen8;
-
-                  case kPrefixLenIsU16:
-                    return kHasPrefixLen16;
-
-                  default:
-                    return 0;
-                }
-              }());
-
-  return batt::static_dispatch<u8, 0, binary_prefix_trie::Base::kLayoutMax>(
-      layout, [this, &fn](auto layout_flags) {
-        return BATT_FORWARD(fn)(
-            reinterpret_cast<const DynamicLayout<decltype(layout_flags)::value>*>(this));
-      });
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-inline usize PackedBPTrieNode::prefix_len() const noexcept
-{
-  return this->with_dynamic_layout<usize>([](auto* layout) {
-    return layout->prefix_len();
-  });
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-inline usize PackedBPTrieNode::pivot_pos() const noexcept
-{
-  return this->with_dynamic_layout<usize>([](auto* layout) {
-    return layout->pivot_pos();
-  });
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-inline u8 PackedBPTrieNode::pivot() const noexcept
-{
-  return this->with_dynamic_layout<u8>([](auto* layout) {
-    return layout->pivot();
-  });
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-inline std::string_view PackedBPTrieNode::prefix() const noexcept
-{
-  return this->with_dynamic_layout<std::string_view>([this](auto* layout) {
-    return layout->prefix();
-  });
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-inline const PackedBPTrieNode* PackedBPTrieNode::left() const noexcept
-{
-  return this->with_dynamic_layout<const PackedBPTrieNode*>([this](auto* layout) {
-    return layout->left();
-  });
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-inline const PackedBPTrieNode* PackedBPTrieNode::right() const noexcept
-{
-  return this->with_dynamic_layout<const PackedBPTrieNode*>([this](auto* layout) {
-    return layout->right();
-  });
 }
 
 }  //namespace llfs

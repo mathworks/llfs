@@ -10,6 +10,7 @@
 #include <llfs/int_types.hpp>
 #include <llfs/logging.hpp>
 #include <llfs/packed_pointer.hpp>
+#include <llfs/packed_seq.hpp>
 
 #include <batteries/compare.hpp>
 #include <batteries/interval.hpp>
@@ -34,8 +35,8 @@ namespace {
 
 using namespace llfs::int_types;
 
-using llfs::BPTrieNode;
-using llfs::PackedBPTrieNode;
+using llfs::BPTrie;
+using llfs::PackedBPTrie;
 
 std::vector<std::string> load_words()
 {
@@ -50,63 +51,55 @@ std::vector<std::string> load_words()
   return words;
 }
 
-inline std::ostream& operator<<(std::ostream& out, const BPTrieNode& t)
-{
-  thread_local usize offset = 0;
-  thread_local std::string indent;
-  thread_local std::string parent_prefix;
-
-  indent += "| ";
-  auto on_scope_exit = batt::finally([&] {
-    indent.pop_back();
-    indent.pop_back();
-  });
-
-  out << std::endl
-      << indent << "node: " << batt::c_str_literal(parent_prefix) << "+"
-      << batt::c_str_literal(t.prefix()) << "/";
-
-  out << batt::c_str_literal(std::string(1, t.pivot())) << "@" << t.pivot_pos();
-
-  if (t.left() || t.right()) {
-    std::string old_parent_prefix = parent_prefix;
-    auto on_scope_exit2 = batt::finally([&] {
-      parent_prefix = std::move(old_parent_prefix);
-    });
-    parent_prefix += t.prefix();
-
-    out << std::endl << indent << "left: ";
-    if (!t.left()) {
-      out << "--";
-    } else {
-      out << *t.left();
-    }
-    //----- --- -- -  -  -   -
-    offset += t.pivot_pos();
-    auto on_scope_exit3 = batt::finally([&] {
-      offset -= t.pivot_pos();
-    });
-    //----- --- -- -  -  -   -
-    out << std::endl << indent << "right: ";
-    if (!t.right()) {
-      out << "--";
-    } else {
-      out << *t.right();
-    }
-  } else {
-    BATT_CHECK_EQ(t.pivot(), 0u);
-    out << std::endl << indent << "index: " << offset;
-  }
-
-  return out;
-}
-
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
 constexpr usize kSkip = 1000;
 constexpr usize kStep = 0;
 constexpr usize kTake = 100;
 constexpr usize kBenchmarkRepeat = 25;
+
+using batt::Optional;
+
+struct Trial {
+  usize skip = 0;
+  double step = 1.0;
+  usize take = 100;
+  Optional<usize> ss_table_size;
+  Optional<usize> packed_trie_size;
+};
+
+struct SSTableWrapper {
+  const std::vector<std::string>& items;
+
+  batt::Interval<usize> find(const std::string_view& key) const
+  {
+    const auto first = items.begin();
+    const auto& [lower, upper] = std::equal_range(first, items.end(), key);
+    return {usize(lower - first), usize(upper - first)};
+  }
+};
+
+struct PackedSSTableWrapper {
+  const llfs::PackedArray<llfs::PackedBytes>& items;
+
+  struct Compare {
+    bool operator()(const std::string_view& l, const llfs::PackedBytes& r) const
+    {
+      return l < r.as_str();
+    }
+    bool operator()(const llfs::PackedBytes& l, const std::string_view& r) const
+    {
+      return l.as_str() < r;
+    }
+  };
+
+  batt::Interval<usize> find(const std::string_view& key) const
+  {
+    const auto first = items.begin();
+    const auto& [lower, upper] = std::equal_range(first, items.end(), key, Compare{});
+    return {usize(lower - first), usize(upper - first)};
+  }
+};
 
 TEST(Trie, Test)
 {
@@ -115,15 +108,16 @@ TEST(Trie, Test)
   LLFS_LOG_INFO() << BATT_INSPECT(words.size());
 
   double trials = 0;
-  double compression_total = 0;
-  double compression_total_fast_veb = 0;
-  double mem_speedup = 0;
-  double packed_speedup = 0;
-  double packed_speedup_veb = 0;
-  double packed_speedup_fast_veb = 0;
+  double compression_total_bfs = 0;
+  double compression_total_veb = 0;
+  double speedup_total_mem_trie = 0;
+  double speedup_total_mem_sstable = 0;
+  double speedup_total_packed_bfs = 0;
+  double speedup_total_packed_veb = 0;
 
-  for (const usize kTake : {10, 50, 80, 100, 200, 500, 1000, 2000, 4000}) {
-    for (const usize kStep : {1, 2, 3, 4, 5, 6, 7, 8, 10, 16, 32, 50, 100, 200}) {
+  for (const usize kTake : {10, 50, 80, 100, 200, 500, 1000, 2000, 3000, 3100, 3200, 3300, 4000}) {
+    for (const usize kStep :
+         {1, 1, 1, 1, 1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 10, 16, 32, 50, 100, 200}) {
       std::vector<std::string> sample;
       {
         usize i = 0;
@@ -141,139 +135,107 @@ TEST(Trie, Test)
         }
       }
 
-      std::vector<std::unique_ptr<BPTrieNode>> nodes;
-      auto* root = llfs::make_trie(sample, nodes);
+      BPTrie trie{sample};
 
-      auto lookup = sample;
-
-      lookup.emplace_back("\xFF\xFF\xFF\xFF");
-      lookup.insert(lookup.begin(), " ");
-
-      const usize size = packed_sizeof(*root);
-
-      std::unique_ptr<u8[]> buffer{new u8[size]};
-      const PackedBPTrieNode* packed_root = nullptr;
+      // Pack the trie first in BFS order.
+      //
+      trie.set_packed_layout(BPTrie::PackedLayout::kBreadthFirst);
+      const usize packed_size_bfs = llfs::packed_sizeof(trie);
+      std::unique_ptr<u8[]> buffer_bfs{new u8[packed_size_bfs]};
+      const PackedBPTrie* packed_bfs = nullptr;
       {
-        llfs::DataPacker packer{llfs::MutableBuffer{buffer.get(), size}};
-        packed_root = llfs::pack_object(*root, &packer);
+        llfs::DataPacker packer{llfs::MutableBuffer{buffer_bfs.get(), packed_size_bfs}};
+        packed_bfs = llfs::pack_object(trie, &packer);
 
-        ASSERT_NE(packed_root, nullptr);
+        ASSERT_NE(packed_bfs, nullptr);
       }
 
-      std::unique_ptr<u8[]> buffer2{new u8[size]};
-      const PackedBPTrieNode* packed_root2 = nullptr;
+      // Pack the trie again using VEB order.
+      //
+      trie.set_packed_layout(BPTrie::PackedLayout::kVanEmdeBoas);
+      const usize packed_size_veb = llfs::packed_sizeof(trie);
+      std::unique_ptr<u8[]> buffer_veb{new u8[packed_size_veb]};
+      const PackedBPTrie* packed_veb = nullptr;
       {
-        PackedBPTrieNode::use_van_emde_boas_layout() = true;
-        llfs::DataPacker packer{llfs::MutableBuffer{buffer2.get(), size}};
-        packed_root2 = llfs::pack_object(*root, &packer);
+        llfs::DataPacker packer{llfs::MutableBuffer{buffer_veb.get(), packed_size_veb}};
+        packed_veb = llfs::pack_object(trie, &packer);
 
-        ASSERT_NE(packed_root, nullptr);
-        PackedBPTrieNode::use_van_emde_boas_layout() = false;
+        ASSERT_NE(packed_veb, nullptr);
       }
 
-      const usize fast_packed_size = llfs::packed_fast_trie_size(root);
-      std::unique_ptr<u8[]> buffer3{new u8[fast_packed_size]};
-      BATT_CHECK_EQ(build_fast_packed_trie(root, buffer3.get(), buffer3.get() + fast_packed_size),
-                    fast_packed_size);
+      // Finally, pack in SSTable layout.
+      //
+      const usize packed_size_sstable =
+          sizeof(llfs::PackedArray<llfs::PackedBytes>) +
+          (batt::as_seq(sample)                                      //
+           | batt::seq::map(BATT_OVERLOADS_OF(llfs::packed_sizeof))  //
+           | batt::seq::sum()                                        //
+          );
+      std::unique_ptr<u8[]> buffer_sstable{new u8[packed_size_sstable]};
+      const llfs::PackedArray<llfs::PackedBytes>* packed_sstable = nullptr;
+      {
+        llfs::DataPacker packer{llfs::MutableBuffer{buffer_sstable.get(), packed_size_sstable}};
+        packed_sstable = llfs::pack_object(batt::as_seq(sample) | batt::seq::boxed(), &packer);
 
-      LOG(INFO) << BATT_INSPECT(fast_packed_size);
+        ASSERT_NE(packed_sstable, nullptr) << BATT_INSPECT(packed_size_sstable);
+      }
 
-      const usize input_size = (batt::as_seq(sample) | batt::seq::map([](const std::string& s) {
-                                  return (s.size() <= 4) ? 0 : s.size();
-                                }) |
-                                batt::seq::sum()) +
-                               sample.size() * sizeof(llfs::PackedBytes);
+      const double compression_bfs = double(packed_size_bfs) / double(packed_size_sstable);
+      const double compression_veb = double(packed_size_veb) / double(packed_size_sstable);
 
-      const usize no_prefix_count = batt::as_seq(nodes) | batt::seq::map([](const auto& p_node) {
-                                      return (p_node->prefix().size() == 0) ? 1 : 0;
-                                    }) |
-                                    batt::seq::sum();
-
-      const usize prefix_1_count = batt::as_seq(nodes) | batt::seq::map([](const auto& p_node) {
-                                     return (p_node->prefix().size() == 1) ? 1 : 0;
-                                   }) |
-                                   batt::seq::sum();
-
-      const usize prefix_2_count = batt::as_seq(nodes) | batt::seq::map([](const auto& p_node) {
-                                     return (p_node->prefix().size() == 2) ? 1 : 0;
-                                   }) |
-                                   batt::seq::sum();
-
-      const usize prefix_8_16_count =
-          batt::as_seq(nodes) | batt::seq::map([](const auto& p_node) {
-            return (p_node->prefix().size() >= 8 && p_node->prefix().size() < 15) ? 1 : 0;
-          }) |
-          batt::seq::sum();
-
-      const usize short_prefix_count = batt::as_seq(nodes) | batt::seq::map([](const auto& p_node) {
-                                         return (p_node->prefix().size() <= 2) ? 1 : 0;
-                                       }) |
-                                       batt::seq::sum();
-
-      const usize one_byte_pivot_pos_count = batt::as_seq(nodes) |
-                                             batt::seq::map([](const auto& p_node) {
-                                               return (p_node->pivot_pos() <= 127) ? 1 : 0;
-                                             }) |
-                                             batt::seq::sum();
-
-      const double compression = double(size) / double(input_size);
-
-      VLOG(1) << BATT_INSPECT(kStep) << BATT_INSPECT(kTake) << BATT_INSPECT(size)
-              << BATT_INSPECT(input_size) << BATT_INSPECT(compression) << BATT_INSPECT(nodes.size())
-              << BATT_INSPECT(no_prefix_count) << BATT_INSPECT(prefix_1_count)
-              << BATT_INSPECT(prefix_2_count) << BATT_INSPECT(short_prefix_count)
-              << BATT_INSPECT(one_byte_pivot_pos_count) << BATT_INSPECT(prefix_8_16_count);
-
-      const double compression_fast_veb = double(fast_packed_size) / double(input_size);
-
-      compression_total += compression;
-      compression_total_fast_veb += compression_fast_veb;
+      compression_total_bfs += compression_bfs;
+      compression_total_veb += compression_veb;
 
       trials += 1;
 
-      batt::Interval<i64> search_range{-1, (i64)sample.size() - 1};
-
-      i64 expect_checksum = 0;
       for (usize i = 0; i < sample.size() * kStep; ++i) {
         if (i + kSkip >= words.size()) {
           break;
         }
         std::string_view word = words[i + kSkip];
-        i64 pos = llfs::search_trie(root, word, search_range);
+        const auto debug_info = [&](std::ostream& out) {
+          out << BATT_INSPECT(i) << BATT_INSPECT(kSkip) << BATT_INSPECT(kStep)
+              << " word == " << batt::c_str_literal(word)
+              << batt::dump_range(sample, batt::Pretty::True);
+        };
+        batt::Interval<usize> pos = trie.find(word);
 
-        EXPECT_GE(word, lookup[pos + 1]) << BATT_INSPECT(pos);
-        EXPECT_LT(word, lookup[pos + 2])
-            << BATT_INSPECT(pos) << BATT_INSPECT(i) << BATT_INSPECT(lookup.size());
+        EXPECT_LE(pos.lower_bound, pos.upper_bound);
 
-        //        i64 pos2 = llfs::search_trie(packed_root, word, search_range);
-        i64 pos2 = llfs::fast_search_trie(buffer3.get(), word, search_range);
+        if (i > 0 && ((i + kSkip) % kStep) == 0) {
+          EXPECT_EQ(pos.lower_bound + 1, pos.upper_bound)
+              << BATT_INSPECT(pos) << BATT_INSPECT(i) << BATT_INSPECT(kSkip) << BATT_INSPECT(kStep)
+              << BATT_INSPECT(word) << debug_info;
+          EXPECT_EQ(sample[pos.lower_bound], word);
+        }
 
-        EXPECT_GE(word, lookup[pos2 + 1]) << BATT_INSPECT(pos) << BATT_INSPECT(i);
-        EXPECT_LT(word, lookup[pos2 + 2])
-            << BATT_INSPECT(pos) << BATT_INSPECT(i) << BATT_INSPECT(lookup.size());
+        if (pos.upper_bound > pos.lower_bound) {
+          ASSERT_GE(word, sample[pos.lower_bound]) << BATT_INSPECT(pos) << debug_info;
+        }
+        if (pos.upper_bound < sample.size()) {
+          ASSERT_LT(word, sample[pos.upper_bound])
+              << BATT_INSPECT(pos) << BATT_INSPECT(i) << BATT_INSPECT(sample.size()) << debug_info;
+        }
 
-        EXPECT_EQ(pos, pos2) << BATT_INSPECT(pos2) << BATT_INSPECT(kTake) << BATT_INSPECT(kStep);
+        auto pos2 = packed_bfs->find(word);
+        auto pos3 = packed_veb->find(word);
 
-        VLOG(1) << batt::c_str_literal(word) << " => " << pos << "  ["
-                << batt::c_str_literal(lookup[pos + 1]) << ", "
-                << batt::c_str_literal(lookup[pos + 2]) << ")";
-
-        expect_checksum += pos;
+        EXPECT_EQ(pos, pos2) << debug_info;
+        EXPECT_EQ(pos, pos3) << debug_info;
       }
 
-      double in_mem_time = 0;
-      {
+      const auto run_timed_bench = [&sample, &words, &kStep](const auto& target) -> double {
         const auto start = std::chrono::steady_clock::now();
 
-        i64 checksum = 0;
+        usize checksum = 0;
         for (usize n = 0; n < kBenchmarkRepeat; ++n) {
           for (usize i = 0; i < sample.size() * kStep; ++i) {
             if (i + kSkip >= words.size()) {
               break;
             }
             std::string_view word = words[i + kSkip];
-            i64 pos = llfs::search_trie(root, word, search_range);
-            checksum += pos;
+            batt::Interval<usize> pos = target.find(word);
+            checksum += pos.lower_bound;
           }
         }
 
@@ -281,138 +243,36 @@ TEST(Trie, Test)
                        std::chrono::steady_clock::now() - start)
                        .count();
 
-        in_mem_time = double(usec) / 1000000.0;
+        EXPECT_GT(checksum, 1u);
 
-        VLOG(1) << "(In-Memory) Trie took " << in_mem_time << "s" << std::endl;
+        return double(usec) / 1000000.0;
+      };
 
-        EXPECT_EQ(checksum, i64(expect_checksum * kBenchmarkRepeat));
-      }
+      double mem_trie_time = run_timed_bench(trie);
+      double mem_sstable_time = run_timed_bench(SSTableWrapper{sample});
+      double packed_bfs_time = run_timed_bench(*packed_bfs);
+      double packed_veb_time = run_timed_bench(*packed_veb);
+      double packed_sstable_time = run_timed_bench(PackedSSTableWrapper{*packed_sstable});
 
-      double packed_time = 0;
-      {
-        const auto start = std::chrono::steady_clock::now();
-
-        i64 checksum = 0;
-        for (usize n = 0; n < kBenchmarkRepeat; ++n) {
-          for (usize i = 0; i < sample.size() * kStep; ++i) {
-            if (i + kSkip >= words.size()) {
-              break;
-            }
-            std::string_view word = words[i + kSkip];
-            i64 pos = llfs::search_trie(packed_root, word, search_range);
-            checksum += pos;
-          }
-        }
-
-        i64 usec = std::chrono::duration_cast<std::chrono::microseconds>(
-                       std::chrono::steady_clock::now() - start)
-                       .count();
-
-        packed_time = double(usec) / 1000000.0;
-
-        VLOG(1) << "(Packed) Trie took " << packed_time << "s" << std::endl;
-
-        EXPECT_EQ(checksum, i64(expect_checksum * kBenchmarkRepeat));
-      }
-
-      double packed_veb_time = 0;
-      {
-        const auto start = std::chrono::steady_clock::now();
-
-        i64 checksum = 0;
-        for (usize n = 0; n < kBenchmarkRepeat; ++n) {
-          for (usize i = 0; i < sample.size() * kStep; ++i) {
-            if (i + kSkip >= words.size()) {
-              break;
-            }
-            std::string_view word = words[i + kSkip];
-            i64 pos = llfs::search_trie(packed_root2, word, search_range);
-            checksum += pos;
-          }
-        }
-
-        i64 usec = std::chrono::duration_cast<std::chrono::microseconds>(
-                       std::chrono::steady_clock::now() - start)
-                       .count();
-
-        packed_veb_time = double(usec) / 1000000.0;
-
-        VLOG(1) << "(Packed) Trie took " << packed_time << "s" << std::endl;
-
-        EXPECT_EQ(checksum, i64(expect_checksum * kBenchmarkRepeat));
-      }
-
-      double packed_fast_veb_time = 0;
-      {
-        const auto start = std::chrono::steady_clock::now();
-
-        i64 checksum = 0;
-        for (usize n = 0; n < kBenchmarkRepeat; ++n) {
-          for (usize i = 0; i < sample.size() * kStep; ++i) {
-            if (i + kSkip >= words.size()) {
-              break;
-            }
-            std::string_view word = words[i + kSkip];
-            i64 pos = llfs::fast_search_trie(buffer3.get(), word, search_range);
-            checksum += pos;
-          }
-        }
-
-        i64 usec = std::chrono::duration_cast<std::chrono::microseconds>(
-                       std::chrono::steady_clock::now() - start)
-                       .count();
-
-        packed_fast_veb_time = double(usec) / 1000000.0;
-
-        VLOG(1) << "(Fast Packed) Trie took " << packed_fast_veb_time << "s" << std::endl;
-
-        //        EXPECT_EQ(checksum, i64(expect_checksum * kBenchmarkRepeat));
-      }
-
-      double binsearch_time = 0;
-      {
-        const auto start = std::chrono::steady_clock::now();
-
-        i64 checksum = 0;
-        for (usize n = 0; n < kBenchmarkRepeat; ++n) {
-          for (usize i = 0; i < sample.size() * kStep; ++i) {
-            if (i + kSkip >= words.size()) {
-              break;
-            }
-            std::string_view word = words[i + kSkip];
-            i64 pos =
-                std::distance(sample.begin(), std::lower_bound(sample.begin(), sample.end(), word));
-            checksum += pos;
-          }
-        }
-
-        i64 usec = std::chrono::duration_cast<std::chrono::microseconds>(
-                       std::chrono::steady_clock::now() - start)
-                       .count();
-
-        binsearch_time = double(usec) / 1000000.0;
-
-        VLOG(1) << "Binary search took " << binsearch_time << "s" << std::endl;
-
-        EXPECT_GE(checksum, i64(expect_checksum * kBenchmarkRepeat));
-      }
-
-      mem_speedup += binsearch_time / in_mem_time;
-      packed_speedup += binsearch_time / packed_time;
-      packed_speedup_veb += binsearch_time / packed_veb_time;
-      packed_speedup_fast_veb += binsearch_time / packed_fast_veb_time;
+      speedup_total_mem_trie += packed_sstable_time / mem_trie_time;
+      speedup_total_mem_sstable += packed_sstable_time / mem_sstable_time;
+      speedup_total_packed_bfs += packed_sstable_time / packed_bfs_time;
+      speedup_total_packed_veb += packed_sstable_time / packed_veb_time;
     }
   }
 
-  double avg_compression = compression_total / trials;
-  double avg_compression_fast_veb = compression_total_fast_veb / trials;
-  double avg_speedup_mem = mem_speedup / trials;
-  double avg_speedup_packed = packed_speedup / trials;
-  double avg_speedup_packed_veb = packed_speedup_veb / trials;
-  double avg_speedup_fast_veb = packed_speedup_fast_veb / trials;
-  LOG(INFO) << BATT_INSPECT(avg_compression) << BATT_INSPECT(avg_compression_fast_veb)
-            << BATT_INSPECT(avg_speedup_mem) << BATT_INSPECT(avg_speedup_packed)
-            << BATT_INSPECT(avg_speedup_packed_veb) << BATT_INSPECT(avg_speedup_fast_veb);
+  double avg_compression_bfs = (1.0 - compression_total_bfs / trials) * 100.0;
+  double avg_compression_veb = (1.0 - compression_total_veb / trials) * 100.0;
+  double avg_speedup_mem_trie = speedup_total_mem_trie / trials;
+  double avg_speedup_mem_sstable = speedup_total_mem_sstable / trials;
+  double avg_speedup_packed_bfs = speedup_total_packed_bfs / trials;
+  double avg_speedup_packed_veb = speedup_total_packed_veb / trials;
+
+  LOG(INFO) << BATT_INSPECT(avg_compression_bfs) << "%" << BATT_INSPECT(avg_compression_veb) << "%";
+  LOG(INFO) << BATT_INSPECT(avg_speedup_mem_trie);
+  LOG(INFO) << BATT_INSPECT(avg_speedup_mem_sstable);
+  LOG(INFO) << BATT_INSPECT(avg_speedup_packed_bfs);
+  LOG(INFO) << BATT_INSPECT(avg_speedup_packed_veb);
 }
 
 //#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
@@ -427,7 +287,7 @@ inline bool operator<(const Rec& l, const Rec& r)
   return l.priority < r.priority || (l.priority == r.priority && (l.id > r.id));
 }
 
-TEST(VEBLayoutTest, Test)
+TEST(Trie, VEBLayoutTest)
 {
   for (int max_depth = 1; max_depth <= 24; ++max_depth) {
     std::vector<unsigned> n((1 << max_depth) + 1);
@@ -500,7 +360,7 @@ TEST(VEBLayoutTest, Test)
       pos[index_of(id)] = i;
     }
 
-    double n_seeds = 100.0;
+    double n_seeds = 10.0;
     for (unsigned seed = 0; seed < unsigned(n_seeds); ++seed) {
       std::default_random_engine rng{seed};
 
@@ -533,22 +393,49 @@ TEST(VEBLayoutTest, Test)
     //std::cerr << BATT_INSPECT_RANGE(layout) << std::endl;
     //std::cerr << BATT_INSPECT_RANGE(pos) << std::endl;
 
+    std::array<usize, 32> heap_dist_log2, veb_dist_log2;
+    heap_dist_log2.fill(0);
+    veb_dist_log2.fill(0);
+
     double total_dist_heap_layout = 0;
     double total_dist_veb_layout = 0;
     for (unsigned id : n) {
       if (id > n.size() / 2) {
         break;
       }
+
+      heap_dist_log2[batt::log2_ceil(index_of(left(id)) - index_of(id))] += 1;
+      heap_dist_log2[batt::log2_ceil(index_of(right(id)) - index_of(id))] += 1;
+
       total_dist_heap_layout += index_of(left(id)) - index_of(id);
       total_dist_heap_layout += index_of(right(id)) - index_of(id);
+
+      veb_dist_log2[batt::log2_ceil(pos[index_of(left(id))] - pos[index_of(id)])] += 1;
+      veb_dist_log2[batt::log2_ceil(pos[index_of(right(id))] - pos[index_of(id)])] += 1;
 
       total_dist_veb_layout += pos[index_of(left(id))] - pos[index_of(id)];
       total_dist_veb_layout += pos[index_of(right(id))] - pos[index_of(id)];
     }
 
-    std::cerr << "avg(heap)=" << total_dist_heap_layout / double(n.size() / 2) << "  "
+    const auto normalize_pct = [](auto& hist) {
+      usize total = batt::as_seq(hist) | batt::seq::decayed() | batt::seq::sum();
+      for (usize& n : hist) {
+        n = (n * 100) / total;
+      }
+    };
+
+    normalize_pct(heap_dist_log2);
+    normalize_pct(veb_dist_log2);
+
+    std::cerr << "(depth=" << max_depth
+              << ") avg(heap)=" << total_dist_heap_layout / double(n.size() / 2) << "  "
               << "avg(veb)=" << total_dist_veb_layout / double(n.size() / 2) << "  "
-              << "avg(rnd)=" << total_dist_rlayout / double(n.size() / 2 * n_seeds) << std::endl;
+              << "avg(rnd)=" << total_dist_rlayout / double(n.size() / 2 * n_seeds) << std::endl
+              << "veb distribution=" << batt::dump_range(veb_dist_log2, batt::Pretty::False)
+              << std::endl
+              << "heap distribution=" << batt::dump_range(heap_dist_log2, batt::Pretty::False)
+              << std::endl
+              << std::endl;
   }
 }
 

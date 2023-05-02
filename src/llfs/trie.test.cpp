@@ -48,14 +48,13 @@ std::vector<std::string> load_words()
     words.emplace_back(word);
   }
   std::sort(words.begin(), words.end());
+  words.erase(std::unique(words.begin(), words.end()), words.end());
   return words;
 }
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
-constexpr usize kSkip = 1000;
-constexpr usize kStep = 0;
-constexpr usize kTake = 100;
+constexpr usize kSkip = 0;
 constexpr usize kBenchmarkRepeat = 15;
 
 using batt::Optional;
@@ -115,10 +114,10 @@ TEST(Trie, Test)
   double speedup_total_packed_bfs = 0;
   double speedup_total_packed_veb = 0;
 
-  for (const usize kTake : {10, 50, 80, 100, 200, 500, 1000, 2000, 3000, 4000}) {
+  for (const usize kTake : {10, 50, 80, 100, 200, 500, 1000, 2000, 3000, 4000, 8000, 16000, 32000,
+                            64000, 128000, (int)words.size()}) {
     LOG(INFO) << BATT_INSPECT(kTake);
-    for (const usize kStep :
-         {1, 1, 1, 1, 1, 1, 1, 1, 2, 3, 4, 5, 6, 7, 8, 10, 16, 32, 50, 100, 200}) {
+    for (const usize kStep : {1, 2, 3, 4, 5, 6, 7, 8, 16, 32, 64, 128, 256}) {
       std::vector<std::string> sample;
       {
         usize i = 0;

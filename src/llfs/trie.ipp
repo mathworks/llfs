@@ -118,6 +118,11 @@ inline BPTrieNode* make_trie(const Range& keys, std::vector<std::unique_ptr<BPTr
   node->pivot_ = get_kth_byte(node->pivot_pos_);
 
   current_prefix_len = k;
+  BATT_CHECK_NE(first, pivot_iter) << BATT_INSPECT(lo_distance) << BATT_INSPECT(hi_distance);
+  BATT_CHECK_NE(last, pivot_iter) << BATT_INSPECT(lo_distance) << BATT_INSPECT(hi_distance)
+                                  << BATT_INSPECT(middle_pos) << BATT_INSPECT(count)
+                                  << batt::dump_range(boost::make_iterator_range(first, last))
+                                  << BATT_INSPECT(current_prefix_len);
 
   node->left_ = make_trie(boost::make_iterator_range(first, pivot_iter), nodes, current_prefix_len);
   node->right_ = make_trie(boost::make_iterator_range(pivot_iter, last), nodes, current_prefix_len);

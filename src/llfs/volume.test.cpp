@@ -214,7 +214,7 @@ class VolumeTest : public ::testing::Test
     bool ok = true;
 
     llfs::StatusOr<llfs::PinnedPage> loaded =
-        this->page_cache->get(page_id, llfs::OkIfNotFound{false});
+        this->page_cache->get_page(page_id, llfs::OkIfNotFound{false});
 
     EXPECT_TRUE(loaded.ok());
     if (!loaded.ok()) {

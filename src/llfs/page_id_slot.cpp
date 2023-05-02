@@ -38,8 +38,8 @@ batt::StatusOr<PinnedPage> PageIdSlot::load_through(PageLoader& loader,
       return pinned;
     }
   }
-  batt::StatusOr<PinnedPage> pinned =
-      loader.get(this->page_id, required_layout, pin_page_to_job, ok_if_not_found);
+  batt::StatusOr<PinnedPage> pinned = loader.get_page_with_layout_in_job(
+      this->page_id, required_layout, pin_page_to_job, ok_if_not_found);
   if (pinned.ok()) {
     this->cache_slot_ref = pinned->get_cache_slot();
   }

@@ -34,31 +34,35 @@ class PageLoader
 
   virtual void prefetch_hint(PageId page_id) = 0;
 
-  virtual StatusOr<PinnedPage> get(PageId page_id, const Optional<PageLayoutId>& required_layout,
-                                   PinPageToJob pin_page_to_job, OkIfNotFound ok_if_not_found) = 0;
+  virtual StatusOr<PinnedPage> get_page_with_layout_in_job(
+      PageId page_id, const Optional<PageLayoutId>& required_layout, PinPageToJob pin_page_to_job,
+      OkIfNotFound ok_if_not_found) = 0;
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  virtual StatusOr<PinnedPage> get(const PageIdSlot& page_id_slot,
-                                   const Optional<PageLayoutId>& required_layout,
-                                   PinPageToJob pin_page_to_job, OkIfNotFound ok_if_not_found);
+  virtual StatusOr<PinnedPage> get_page_slot_with_layout_in_job(
+      const PageIdSlot& page_id_slot, const Optional<PageLayoutId>& required_layout,
+      PinPageToJob pin_page_to_job, OkIfNotFound ok_if_not_found);
 
-  virtual StatusOr<PinnedPage> get(const PageIdSlot& page_id_slot,
-                                   const Optional<PageLayoutId>& required_layout,
-                                   OkIfNotFound ok_if_not_found);
+  virtual StatusOr<PinnedPage> get_page_slot_with_layout(
+      const PageIdSlot& page_id_slot, const Optional<PageLayoutId>& required_layout,
+      OkIfNotFound ok_if_not_found);
 
-  virtual StatusOr<PinnedPage> get(const PageIdSlot& page_id_slot, PinPageToJob pin_page_to_job,
-                                   OkIfNotFound ok_if_not_found);
+  virtual StatusOr<PinnedPage> get_page_slot_in_job(const PageIdSlot& page_id_slot,
+                                                    PinPageToJob pin_page_to_job,
+                                                    OkIfNotFound ok_if_not_found);
 
-  virtual StatusOr<PinnedPage> get(const PageIdSlot& page_id_slot, OkIfNotFound ok_if_not_found);
+  virtual StatusOr<PinnedPage> get_page_slot(const PageIdSlot& page_id_slot,
+                                             OkIfNotFound ok_if_not_found);
 
-  virtual StatusOr<PinnedPage> get(PageId page_id, const Optional<PageLayoutId>& required_layout,
-                                   OkIfNotFound ok_if_not_found);
+  virtual StatusOr<PinnedPage> get_page_with_layout(PageId page_id,
+                                                    const Optional<PageLayoutId>& required_layout,
+                                                    OkIfNotFound ok_if_not_found);
 
-  virtual StatusOr<PinnedPage> get(PageId page_id, PinPageToJob pin_page_to_job,
-                                   OkIfNotFound ok_if_not_found);
+  virtual StatusOr<PinnedPage> get_page_in_job(PageId page_id, PinPageToJob pin_page_to_job,
+                                               OkIfNotFound ok_if_not_found);
 
-  virtual StatusOr<PinnedPage> get(PageId page_id, OkIfNotFound ok_if_not_found);
+  virtual StatusOr<PinnedPage> get_page(PageId page_id, OkIfNotFound ok_if_not_found);
 
  protected:
   PageLoader() = default;

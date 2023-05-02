@@ -438,8 +438,9 @@ void PageCache::purge(PageId page_id, u64 callers, u64 job_id)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<PinnedPage> PageCache::get(PageId page_id, const Optional<PageLayoutId>& require_layout,
-                                    PinPageToJob pin_page_to_job, OkIfNotFound ok_if_not_found)
+StatusOr<PinnedPage> PageCache::get_page_with_layout_in_job(
+    PageId page_id, const Optional<PageLayoutId>& require_layout, PinPageToJob pin_page_to_job,
+    OkIfNotFound ok_if_not_found)
 {
   if (bool_from(pin_page_to_job, /*default_value=*/false)) {
     return Status{batt::StatusCode::kUnimplemented};

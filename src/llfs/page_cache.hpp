@@ -165,7 +165,13 @@ class PageCache : public PageLoader
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   // PageLoader interface
   //
-  using PageLoader::get;
+  using PageLoader::get_page;
+  using PageLoader::get_page_in_job;
+  using PageLoader::get_page_slot;
+  using PageLoader::get_page_slot_in_job;
+  using PageLoader::get_page_slot_with_layout;
+  using PageLoader::get_page_slot_with_layout_in_job;
+  using PageLoader::get_page_with_layout;
 
   // Gives a hint to the cache to fetch the pages for the given ids in the background because we are
   // going to need them soon.
@@ -174,8 +180,10 @@ class PageCache : public PageLoader
 
   // Loads the specified page or retrieves from cache.
   //
-  StatusOr<PinnedPage> get(PageId page_id, const Optional<PageLayoutId>& required_layout,
-                           PinPageToJob pin_page_to_job, OkIfNotFound ok_if_not_found) override;
+  StatusOr<PinnedPage> get_page_with_layout_in_job(PageId page_id,
+                                                   const Optional<PageLayoutId>& required_layout,
+                                                   PinPageToJob pin_page_to_job,
+                                                   OkIfNotFound ok_if_not_found) override;
   //
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 

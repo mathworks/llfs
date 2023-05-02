@@ -55,7 +55,7 @@ std::vector<std::string> load_words()
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
 constexpr usize kSkip = 0;
-constexpr usize kBenchmarkRepeat = 15;
+constexpr usize kBenchmarkRepeat = 10;
 
 using batt::Optional;
 

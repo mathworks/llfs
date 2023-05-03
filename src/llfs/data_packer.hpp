@@ -34,9 +34,15 @@ namespace llfs {
 class DataPacker
 {
  public:
+   // Derived experimentally via benchmarks on an AMD Ryzen 5950x (16/32 core) system.
+   //
+   static constexpr usize kDefaultMinParallelCopySize = 64 * kKiB;
+ 
+  /** \brief Determines the minimum threshold (in bytes) at which data copying will be parallelized.
+   */
   static std::atomic<usize>& min_parallel_copy_size()
   {
-    static std::atomic<usize> value{64 * kKiB};
+    static std::atomic<usize> value{kDefaultMinParallelCopySize};
     return value;
   }
 
@@ -323,6 +329,12 @@ class DataPacker
     return this->pack_int_impl<U, i16, little_i16>(val);
   }
 
+  template <typename U>
+  [[nodiscard]] bool pack_i8(U val)
+  {
+    return this->pack_int_impl<U, i8, little_i8>(val);
+  }
+  
   template <typename T>
   Optional<ArrayPacker<T>> pack_array()
   {

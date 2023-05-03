@@ -303,14 +303,26 @@ batt::Interval<usize> BPTrie::find(std::string_view key) const noexcept
     }
 
     const usize middle = range.lower_bound + node->pivot_pos_;
+    const u8 parent_pivot = node->pivot_;
 
     key = key.substr(prefix_len);
 
-    if (key.empty() || (u8)key[0] < (u8)node->pivot_) {
+    if (key.empty() || (u8)key[0] < parent_pivot) {
       node = node->left_;
       range.upper_bound = middle;
     } else {
       node = node->right_;
+
+      // Implement right-leaf optimization (the parent pivot is always prefix[0] in this case).
+      //
+      if (!node->left_) {
+        if ((u8)key[0] != parent_pivot) {
+          range.lower_bound = range.upper_bound;
+          return range;
+        }
+        key = key.substr(1);
+      }
+
       range.lower_bound = middle;
     }
   }
@@ -336,11 +348,22 @@ std::string_view BPTrie::get_key(usize index, batt::SmallVecBase<char>& buffer) 
     const usize middle = range.lower_bound + node->pivot_pos_;
 
     if (index < middle) {
-      range.upper_bound = middle;
       node = node->left_;
+      range.upper_bound = middle;
     } else {
-      range.lower_bound = middle;
+      const char parent_pivot = (char)node->pivot_;
       node = node->right_;
+
+      // Implement right-leaf optimization (the parent pivot is always prefix[0] in this case).
+      //
+      if (node && !node->left_) {
+        buffer.push_back(parent_pivot);
+        buffer.insert(buffer.end(), node->prefix_.data(),
+                      node->prefix_.data() + node->prefix_.size());
+        break;
+      }
+
+      range.lower_bound = middle;
     }
   }
 
@@ -419,12 +442,24 @@ batt::Interval<usize> find_impl(const PackedBPTrieNodeBase* node, std::string_vi
         &node->prefix_[prefix_chunk_len]);
 
     const usize middle = range.lower_bound + (usize)parent->pivot_pos;
+    const u8 parent_pivot = parent->pivot;
 
-    if (key.empty() || (u8)key[0] < (u8)parent->pivot) {
+    if (key.empty() || (u8)key[0] < parent_pivot) {
       node = parent->left.get();
       range.upper_bound = middle;
     } else {
       node = parent->right.get();
+
+      // Implement right-leaf optimization (the parent pivot is always prefix[0] in this case).
+      //
+      if ((node->header & PackedBPTrie::kParentNodeMask) == 0) {
+        if ((u8)key[0] != parent_pivot) {
+          range.lower_bound = range.upper_bound;
+          return range;
+        }
+        key = key.substr(1);
+      }
+
       range.lower_bound = middle;
     }
   }
@@ -506,7 +541,15 @@ std::string_view get_key_impl(const PackedBPTrieNodeBase* node, usize index,
       node = parent->left.get();
       range.upper_bound = middle;
     } else {
+      const char parent_pivot = (char)parent->pivot;
       node = parent->right.get();
+
+      // Implement right-leaf optimization (the parent pivot is always prefix[0] in this case).
+      //
+      if ((node->header & PackedBPTrie::kParentNodeMask) == 0) {
+        buffer.push_back(parent_pivot);
+      }
+
       range.lower_bound = middle;
     }
   }

@@ -39,7 +39,7 @@ struct BPTrieNode {
 
 template <typename Range>
 BPTrieNode* make_trie(const Range& keys, std::vector<std::unique_ptr<BPTrieNode>>& nodes,
-                      usize current_prefix_len = 0);
+                      usize current_prefix_len = 0, bool is_right_subtree = false);
 
 class BPTrie
 {

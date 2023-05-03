@@ -199,6 +199,41 @@ TEST(Trie, Test)
           out << BATT_INSPECT(i) << BATT_INSPECT(kSkip) << BATT_INSPECT(kStep)
               << " word == " << batt::c_str_literal(word)
               << batt::dump_range(sample, batt::Pretty::True);
+
+          //----- --- -- -  -  -   -
+          // Dump the Trie as Mermaid graph diagram markdown (https://mermaid.live/edit)
+          //
+          out << std::endl;
+
+          using llfs::BPTrieNode;
+
+          std::vector<const BPTrieNode*> stack;
+          stack.push_back(trie.root());
+          std::unordered_map<const BPTrieNode*, int> node_to_id;
+          int next_id = 0;
+          while (!stack.empty()) {
+            const BPTrieNode* next = stack.back();
+            stack.pop_back();
+
+            node_to_id[next] = ++next_id;
+            out << "  " << next_id << "[";
+            out << batt::c_str_literal(batt::to_string(next->prefix_, "/", (char)next->pivot_));
+            out << "]" << std::endl;
+
+            if (next->left_) {
+              stack.push_back(next->right_);
+              stack.push_back(next->left_);
+            }
+          }
+
+          for (const auto& [node, id] : node_to_id) {
+            if (node->left_) {
+              out << "  " << id << " -->|left| " << node_to_id[node->left_] << std::endl;
+              out << "  " << id << " -->|right| " << node_to_id[node->right_] << std::endl;
+            }
+          }
+          // (end Mermaid markdown)
+          //----- --- -- -  -  -   -
         };
         batt::Interval<usize> pos = trie.find(word);
 
@@ -314,6 +349,14 @@ inline bool operator<(const Rec& l, const Rec& r)
 
 TEST(Trie, VEBLayoutTest)
 {
+  std::cerr << "depth, avg(BFS), avg(vEB), avg(RND),";
+  for (usize i = 0; i < 32; ++i) {
+    std::cerr << " vEB(offset=" << (2 << i) << " %branch),";
+  }
+  for (usize i = 0; i < 32; ++i) {
+    std::cerr << " BFS(offset=" << (2 << i) << " %branch),";
+  }
+  std::cerr << std::endl;
   for (int max_depth = 1; max_depth <= 24; ++max_depth) {
     std::vector<unsigned> n((1 << max_depth) + 1);
     std::iota(n.begin(), n.end(), 1);
@@ -439,15 +482,18 @@ TEST(Trie, VEBLayoutTest)
     normalize_pct(heap_dist_log2);
     normalize_pct(veb_dist_log2);
 
-    std::cerr << "(depth=" << max_depth
-              << ") avg(heap)=" << total_dist_heap_layout / double(n.size() / 2) << "  "
-              << "avg(veb)=" << total_dist_veb_layout / double(n.size() / 2) << "  "
-              << "avg(rnd)=" << total_dist_rlayout / double(n.size() / 2 * n_seeds) << std::endl
-              << "veb distribution=" << batt::dump_range(veb_dist_log2, batt::Pretty::False)
-              << std::endl
-              << "heap distribution=" << batt::dump_range(heap_dist_log2, batt::Pretty::False)
-              << std::endl
-              << std::endl;
+    std::cerr << max_depth << ", "                                            //
+              << total_dist_heap_layout / double(n.size() / 2) << ", "        //
+              << total_dist_veb_layout / double(n.size() / 2) << ", "         //
+              << total_dist_rlayout / double(n.size() / 2 * n_seeds) << ", "  //
+        ;
+    for (auto pct : veb_dist_log2) {
+      std::cerr << pct << ", ";
+    }
+    for (auto pct : heap_dist_log2) {
+      std::cerr << pct << ", ";
+    }
+    std::cerr << std::endl;
   }
 }
 

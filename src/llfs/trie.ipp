@@ -26,7 +26,7 @@ namespace llfs {
 //
 template <typename Range>
 inline BPTrieNode* make_trie(const Range& keys, std::vector<std::unique_ptr<BPTrieNode>>& nodes,
-                             usize current_prefix_len)
+                             usize current_prefix_len, bool is_right_subtree)
 {
   // Guard against too much recursion.
   //
@@ -60,6 +60,12 @@ inline BPTrieNode* make_trie(const Range& keys, std::vector<std::unique_ptr<BPTr
   // Base case 1: single key.
   //
   if (count == 1) {
+    // Implement right-leaf optimization (the parent pivot is always prefix[0] in this case).
+    //
+    if (is_right_subtree) {
+      current_prefix_len += 1;
+    }
+
     node->prefix_ = std::string_view{first->data() + current_prefix_len,  //
                                      first->size() - current_prefix_len};
     return node;
@@ -124,8 +130,11 @@ inline BPTrieNode* make_trie(const Range& keys, std::vector<std::unique_ptr<BPTr
                                   << batt::dump_range(boost::make_iterator_range(first, last))
                                   << BATT_INSPECT(current_prefix_len);
 
-  node->left_ = make_trie(boost::make_iterator_range(first, pivot_iter), nodes, current_prefix_len);
-  node->right_ = make_trie(boost::make_iterator_range(pivot_iter, last), nodes, current_prefix_len);
+  node->left_ =
+      make_trie(boost::make_iterator_range(first, pivot_iter), nodes, current_prefix_len, false);
+
+  node->right_ =
+      make_trie(boost::make_iterator_range(pivot_iter, last), nodes, current_prefix_len, true);
 
   return node;
 }

@@ -207,7 +207,8 @@ class Volume
    *
    * The returned buffer is valid only as long as the lock is held.
    */
-  StatusOr<ConstBuffer> get_root_log_data(const SlotReadLock& read_lock) const;
+  StatusOr<ConstBuffer> get_root_log_data(const SlotReadLock& read_lock,
+                                          Optional<SlotRange> slot_range = None) const;
 
   //----- --- -- -  -  -   -
   // FOR TESTING ONLY

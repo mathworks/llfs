@@ -52,12 +52,14 @@ namespace llfs {
 //
 /*explicit*/ VolumeTrimmer::VolumeTrimmer(const boost::uuids::uuid& trimmer_uuid,
                                           SlotLockManager& trim_control,
+                                          TrimDelayByteCount trim_delay,
                                           std::unique_ptr<LogDevice::Reader>&& log_reader,
                                           TypedSlotWriter<VolumeEventVariant>& slot_writer,
                                           VolumeDropRootsFn&& drop_roots,
                                           const RecoveryVisitor& recovery_visitor) noexcept
     : trimmer_uuid_{trimmer_uuid}
     , trim_control_{trim_control}
+    , trim_delay_byte_count_{trim_delay.value()}
     , log_reader_{std::move(log_reader)}
     , slot_reader_{*this->log_reader_}
     , slot_writer_{slot_writer}
@@ -125,16 +127,22 @@ Status VolumeTrimmer::run()
                     << BATT_INSPECT(this->trim_control_.debug_info()) << BATT_INSPECT(loop_counter)
                     << BATT_INSPECT(this->trim_control_.is_closed()));
 
-    StatusOr<slot_offset_type> trim_upper_bound =
-        this->trim_control_.await_lower_bound(least_upper_bound);
+    u64 trim_delay = 0;
+    StatusOr<slot_offset_type> trim_upper_bound;
+    do {
+      trim_delay = this->trim_delay_byte_count_.load();
+      trim_upper_bound = this->trim_control_.await_lower_bound(least_upper_bound + trim_delay);
+      BATT_REQUIRE_OK(trim_upper_bound);
 
-    BATT_REQUIRE_OK(trim_upper_bound);
+    } while (this->trim_delay_byte_count_.load() > trim_delay);
 
     // If we are recovering a previously initiated trim, then limit the trim upper bound.
     //
     if (this->latest_trim_event_) {
       *trim_upper_bound = this->latest_trim_event_->trimmed_region_slot_range.upper_bound;
     }
+
+    *trim_upper_bound -= trim_delay;
 
     // The next time we wait for a new trim target, it should be at least one past the previously
     // observed offset.
@@ -201,6 +209,13 @@ Status VolumeTrimmer::run()
     LLFS_VLOG(1) << "Trim(" << new_trim_target << ") is complete; awaiting new target ("
                  << BATT_INSPECT(least_upper_bound) << ")";
   }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void VolumeTrimmer::set_trim_delay(u64 byte_count)
+{
+  this->trim_delay_byte_count_.store(byte_count);
 }
 
 //#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++

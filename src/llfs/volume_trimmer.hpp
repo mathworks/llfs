@@ -141,6 +141,7 @@ class VolumeTrimmer
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   explicit VolumeTrimmer(const boost::uuids::uuid& trimmer_uuid, SlotLockManager& trim_control,
+                         TrimDelayByteCount trim_delay,
                          std::unique_ptr<LogDevice::Reader>&& log_reader,
                          TypedSlotWriter<VolumeEventVariant>& slot_writer,
                          VolumeDropRootsFn&& drop_roots,
@@ -163,6 +164,10 @@ class VolumeTrimmer
 
   Status run();
 
+  /** \brief Sets the number of bytes by which trimming should be delayed.
+   */
+  void set_trim_delay(u64 byte_count);
+
  private:
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -173,6 +178,10 @@ class VolumeTrimmer
   /** \brief The lock manager that determines when it is safe to trim part of the log.
    */
   SlotLockManager& trim_control_;
+
+  /** \brief The number of bytes by which to defer log trimming.
+   */
+  std::atomic<u64> trim_delay_byte_count_{};
 
   /** \brief Used to scan the log as it is trimmed.
    */

@@ -313,6 +313,7 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
     , trimmer_{
           trimmer_uuid,
           *this->trim_control_,
+          this->options_.trim_delay_byte_count,
           this->root_log_->new_reader(/*slot_lower_bound=*/None, LogReadMode::kDurable),
           this->slot_writer_,
           VolumeTrimmer::make_default_drop_roots_fn(this->cache(), *this->recycler_, trimmer_uuid),
@@ -641,6 +642,13 @@ struct PrepareJob_must_be_passed_to_Volume_append_by_move* Volume::append(const 
 Status Volume::await_trim(slot_offset_type slot_lower_bound)
 {
   return this->slot_writer_.await_trim(slot_lower_bound);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void Volume::set_trim_delay(u64 byte_count)
+{
+  this->trimmer_.set_trim_delay(byte_count);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

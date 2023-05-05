@@ -36,6 +36,8 @@ struct VolumeOptions {
   MaxRefsPerPage max_refs_per_page;
 
   TrimLockUpdateInterval trim_lock_update_interval;
+
+  TrimDelayByteCount trim_delay_byte_count;
 };
 
 }  // namespace llfs

@@ -137,6 +137,7 @@ class VolumeTest : public ::testing::Test
                 .uuid = llfs::None,
                 .max_refs_per_page = max_refs_per_page,
                 .trim_lock_update_interval = llfs::TrimLockUpdateInterval{0u},
+                .trim_delay_byte_count = llfs::TrimDelayByteCount{0},
             },
             this->page_cache,
             /*root_log=*/&root_log,

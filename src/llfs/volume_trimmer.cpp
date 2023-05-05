@@ -213,9 +213,16 @@ Status VolumeTrimmer::run()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void VolumeTrimmer::set_trim_delay(u64 byte_count)
+void VolumeTrimmer::set_trim_delay(u64 byte_count) noexcept
 {
   this->trim_delay_byte_count_.store(byte_count);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TrimDelayByteCount VolumeTrimmer::get_trim_delay() const noexcept
+{
+  return TrimDelayByteCount{this->trim_delay_byte_count_.load()};
 }
 
 //#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++

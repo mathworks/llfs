@@ -166,12 +166,17 @@ class VolumeTrimmer
 
   /** \brief Sets the number of bytes by which trimming should be delayed.
    */
-  void set_trim_delay(u64 byte_count);
+  void set_trim_delay(u64 byte_count) noexcept;
+
+  /** \brief Returns the current trim delay byte count.
+   */
+  TrimDelayByteCount get_trim_delay() const noexcept;
 
  private:
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  /** \brief The unique identifier for this trimmer; used to prevent page refcount double-updates.
+  /** \brief The unique identifier for this trimmer; used to prevent page refcount
+   * double-updates.
    */
   const boost::uuids::uuid trimmer_uuid_;
 

@@ -311,7 +311,9 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
     , recycler_{std::move(recycler)}
     , slot_writer_{*this->root_log_}
     , trimmer_{
+          task_scheduler,
           trimmer_uuid,
+          batt::to_string(this->options_.name, "_Trimmer"),
           *this->trim_control_,
           this->options_.trim_delay_byte_count,
           this->root_log_->new_reader(/*slot_lower_bound=*/None, LogReadMode::kDurable),
@@ -370,6 +372,7 @@ void Volume::join()
     this->trimmer_task_->join();
     this->trimmer_task_ = None;
   }
+  this->trimmer_.join();
   if (this->recycler_) {
     this->recycler_->join();
   }
@@ -646,13 +649,6 @@ Status Volume::await_trim(slot_offset_type slot_lower_bound)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void Volume::set_trim_delay(u64 byte_count)
-{
-  this->trimmer_.set_trim_delay(byte_count);
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
 PageCache& Volume::cache() const
 {
   return *this->cache_;
@@ -724,7 +720,7 @@ StatusOr<ConstBuffer> Volume::get_root_log_data(const SlotReadLock& read_lock,
     slot_range = read_lock.slot_range();
   } else {
     BATT_CHECK(!slot_less_than(slot_range->lower_bound, read_lock.slot_range().lower_bound -
-                                                            this->trimmer_.get_trim_delay()))
+                                                            this->options_.trim_delay_byte_count))
         << BATT_INSPECT(slot_range) << BATT_INSPECT(read_lock.slot_range());
   }
 

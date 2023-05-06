@@ -71,6 +71,13 @@ class SlotWriter
   //
   StatusOr<batt::Grant> trim_and_reserve(slot_offset_type slot_lower_bound);
 
+  /** \brief Returns the current log device trim position.
+   */
+  slot_offset_type get_trim_pos() const noexcept
+  {
+    return this->log_device_.slot_range(LogReadMode::kSpeculative).lower_bound;
+  }
+
   // Wait for the log to be trimmed to a point not-less-than `slot_lower_bound`.  NOTE: this does
   // *NOT* initiate a log trim, it merely blocks until the log's lower bound advances.
   //

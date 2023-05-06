@@ -214,7 +214,8 @@ class VolumeTrimmerTest : public ::testing::Test
                  << BATT_INSPECT(this->recovery_visitor->get_trimmer_grant_size());
 
     this->trimmer = std::make_unique<llfs::VolumeTrimmer>(
-        this->volume_ids.trimmer_uuid, *this->trim_control, llfs::TrimDelayByteCount{0},
+        batt::Runtime::instance().default_scheduler(), this->volume_ids.trimmer_uuid, "TestTrimmer",
+        *this->trim_control, llfs::TrimDelayByteCount{0},
         this->fake_log->new_reader(/*slot_lower_bound=*/batt::None,
                                    llfs::LogReadMode::kSpeculative),
         *this->fake_slot_writer,

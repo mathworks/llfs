@@ -311,7 +311,6 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
     , recycler_{std::move(recycler)}
     , slot_writer_{*this->root_log_}
     , trimmer_{
-          task_scheduler,
           trimmer_uuid,
           batt::to_string(this->options_.name, "_Trimmer"),
           *this->trim_control_,
@@ -372,7 +371,6 @@ void Volume::join()
     this->trimmer_task_->join();
     this->trimmer_task_ = None;
   }
-  this->trimmer_.join();
   if (this->recycler_) {
     this->recycler_->join();
   }

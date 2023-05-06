@@ -140,8 +140,7 @@ class VolumeTrimmer
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  explicit VolumeTrimmer(batt::TaskScheduler& task_scheduler,
-                         const boost::uuids::uuid& trimmer_uuid, std::string&& name,
+  explicit VolumeTrimmer(const boost::uuids::uuid& trimmer_uuid, std::string&& name,
                          SlotLockManager& trim_control, TrimDelayByteCount trim_delay,
                          std::unique_ptr<LogDevice::Reader>&& log_reader,
                          TypedSlotWriter<VolumeEventVariant>& slot_writer,
@@ -170,14 +169,12 @@ class VolumeTrimmer
 
   void halt();
 
-  void join();
-
   Status run();
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
  private:
-  void trim_target_update_task_main(SlotLockManager& trim_control, u64 trim_delay);
+  StatusOr<slot_offset_type> await_trim_target(slot_offset_type min_offset);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -192,7 +189,11 @@ class VolumeTrimmer
 
   /** \brief The lock manager that determines when it is safe to trim part of the log.
    */
-  batt::Watch<slot_offset_type> trim_target_;
+  SlotLockManager& trim_control_;
+
+  /** \brief The number of bytes by which to delay trimming.
+   */
+  const TrimDelayByteCount trim_delay_;
 
   /** \brief Used to scan the log as it is trimmed.
    */
@@ -236,10 +237,6 @@ class VolumeTrimmer
   /** \brief When present, contains information about the most recent durable TrimEvent slot.
    */
   Optional<VolumeTrimEventInfo> latest_trim_event_;
-
-  /** \brief Updates `trim_target_`.
-   */
-  batt::Task trim_target_update_task_;
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

@@ -50,8 +50,7 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*explicit*/ VolumeTrimmer::VolumeTrimmer(batt::TaskScheduler& task_scheduler,
-                                          const boost::uuids::uuid& trimmer_uuid,
+/*explicit*/ VolumeTrimmer::VolumeTrimmer(const boost::uuids::uuid& trimmer_uuid,
                                           std::string&& name, SlotLockManager& trim_control,
                                           TrimDelayByteCount trim_delay,
                                           std::unique_ptr<LogDevice::Reader>&& log_reader,
@@ -60,8 +59,8 @@ namespace llfs {
                                           const RecoveryVisitor& recovery_visitor) noexcept
     : trimmer_uuid_{trimmer_uuid}
     , name_{std::move(name)}
-    , trim_target_{slot_max(trim_control.get_lower_bound() - trim_delay,
-                            slot_writer.get_trim_pos())}
+    , trim_control_{trim_control}
+    , trim_delay_{trim_delay}
     , log_reader_{std::move(log_reader)}
     , slot_reader_{*this->log_reader_}
     , slot_writer_{slot_writer}
@@ -74,11 +73,6 @@ namespace llfs {
     , pending_jobs_{recovery_visitor.get_pending_jobs()}
     , refresh_info_{recovery_visitor.get_refresh_info()}
     , latest_trim_event_{recovery_visitor.get_trim_event_info()}
-    , trim_target_update_task_{task_scheduler.schedule_task(),
-                               [this, &trim_control, trim_delay] {
-                                 this->trim_target_update_task_main(trim_control, trim_delay);
-                               },
-                               batt::to_string(this->name_, "_trim_target_update_task")}
 {
 }
 
@@ -87,7 +81,6 @@ namespace llfs {
 VolumeTrimmer::~VolumeTrimmer() noexcept
 {
   this->halt();
-  this->join();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -98,14 +91,6 @@ void VolumeTrimmer::halt()
 
   this->halt_requested_ = true;  // IMPORTANT: must come first!
   this->trimmer_grant_.revoke();
-  this->trim_target_.close();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-void VolumeTrimmer::join()
-{
-  this->trim_target_update_task_.join();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -144,12 +129,13 @@ Status VolumeTrimmer::run()
     // Wait for the trim point to advance.
     //
     BATT_DEBUG_INFO("waiting for trim target to advance; "
-                    << BATT_INSPECT(this->trim_target_.get_value())
+                    << BATT_INSPECT(this->trim_control_.get_lower_bound())
                     << BATT_INSPECT(least_upper_bound) << BATT_INSPECT(bytes_trimmed)
-                    << BATT_INSPECT(trim_lower_bound) << std::endl);
+                    << BATT_INSPECT(trim_lower_bound) << std::endl
+                    << BATT_INSPECT(this->trim_control_.debug_info()) << BATT_INSPECT(loop_counter)
+                    << BATT_INSPECT(this->trim_control_.is_closed()));
 
-    StatusOr<slot_offset_type> trim_upper_bound =
-        await_slot_offset(least_upper_bound, this->trim_target_);
+    StatusOr<slot_offset_type> trim_upper_bound = this->await_trim_target(least_upper_bound);
 
     BATT_REQUIRE_OK(trim_upper_bound);
 
@@ -230,27 +216,18 @@ Status VolumeTrimmer::run()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void VolumeTrimmer::trim_target_update_task_main(SlotLockManager& trim_control, u64 trim_delay)
+StatusOr<slot_offset_type> VolumeTrimmer::await_trim_target(slot_offset_type min_offset)
 {
-  Status status = [&]() -> Status {
-    for (;;) {
-      StatusOr<slot_offset_type> trim_upper_bound =
-          trim_control.await_lower_bound(this->trim_target_.get_value() + trim_delay + 1);
+  StatusOr<slot_offset_type> trim_upper_bound =
+      this->trim_control_.await_lower_bound(min_offset + this->trim_delay_);
 
-      BATT_REQUIRE_OK(trim_upper_bound);
+  BATT_REQUIRE_OK(trim_upper_bound);
 
-      const slot_offset_type new_trim_target = *trim_upper_bound - trim_delay;
-      BATT_CHECK_GT(new_trim_target, this->trim_target_.get_value());
-      BATT_CHECK_GT(new_trim_target, this->slot_writer_.get_trim_pos());
+  const slot_offset_type new_trim_target = *trim_upper_bound - this->trim_delay_;
 
-      clamp_min_slot(this->trim_target_, new_trim_target);
-    }
-  }();
+  BATT_CHECK(!slot_less_than(new_trim_target, min_offset));
 
-  if (!status.ok() && !this->halt_requested_) {
-    LLFS_LOG_WARNING() << "VolumeTrimmer::trim_target_update_task exited unexpectedly with status: "
-                       << status;
-  }
+  return new_trim_target;
 }
 
 //#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++

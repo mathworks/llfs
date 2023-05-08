@@ -14,6 +14,7 @@
 #include <llfs/array_packer.hpp>
 #include <llfs/buffer.hpp>
 #include <llfs/data_layout.hpp>
+#include <llfs/data_packer_arena.hpp>
 #include <llfs/interval.hpp>
 #include <llfs/optional.hpp>
 #include <llfs/packed_variant.hpp>
@@ -49,92 +50,12 @@ class DataPacker
   template <typename T>
   using ArrayPacker = BasicArrayPacker<T, DataPacker>;
 
+  friend class DataPackerArena;
+
+  using Arena = DataPackerArena;
+
   struct AllocFrontPolicy;
   struct AllocBackPolicy;
-
-  /*! \brief A sub-region of the buffer used for allocation/reservation.
-   *
-   * Arena is movable but not copyable.
-   */
-  class Arena
-  {
-    friend class DataPacker;
-
-   public:
-    //----- --- -- -  -  -   -
-    Arena(const Arena&) = delete;
-    Arena& operator=(const Arena&) = delete;
-
-    Arena(Arena&&) = default;
-    Arena& operator=(Arena&&) = default;
-    //----- --- -- -  -  -   -
-
-    /*! \brief The number of bytes available in this Arena for reservation/allocation.
-     */
-    usize space() const;
-
-    /*! \brief The original size of this arena.
-     */
-    usize capacity() const;
-
-    /*! \brief Returns true iff some prior reserve or allocate has failed
-     */
-    bool full() const;
-
-    /*! \brief Returns the available region of this arena as offsets relative to the packer's
-     * buffer.
-     */
-    Interval<isize> unused() const;
-
-    /*! \brief Clears this object, detaching it from its buffer and packer.
-     */
-    void invalidate();
-
-    /*! \brief Set the `full` flag to true, disabling future reservation/allocation.
-     */
-    void set_full();
-
-    /*! \brief Split this arena by removing `size` bytes from the front of the available region.
-     */
-    Optional<Arena> reserve_front(usize size);
-
-    /*! \brief Split this arena by removing `size` bytes from the back of the available region.
-     */
-    Optional<Arena> reserve_back(usize size);
-
-    /*! \brief Allocate `size` bytes at the front of the available region.
-     */
-    Optional<MutableBuffer> allocate_front(usize size);
-
-    /*! \brief Allocate `size` bytes at the back of the available region.
-     */
-    Optional<MutableBuffer> allocate_back(usize size);
-
-    /*! \brief Pack `n` as a variable-length integer at the front of this arena.
-     *
-     * \return nullptr if there isn't enough space to pack n; otherwise return pointer to the first
-     * byte of the packed var-int.
-     */
-    u8* pack_varint(u64 n);
-
-   private:
-    explicit Arena(DataPacker* packer, boost::iterator_range<u8*> avail) noexcept;
-
-    /*! \brief The DataPacker object with which this Arena is associated, for sanity checking.
-     */
-    DataPacker* get_packer() const;
-
-    boost::iterator_range<u8*> nocheck_alloc_front(isize size);
-
-    boost::iterator_range<u8*> nocheck_alloc_back(isize size);
-
-    //+++++++++++-+-+--+----- --- -- -  -  -   -
-
-    usize capacity_;
-    batt::UniqueNonOwningPtr<DataPacker> packer_;
-    boost::iterator_range<u8*> avail_;
-    bool full_ = false;
-  };
 
   /*! \brief Allocates from Arena in front-to-back order.
    */

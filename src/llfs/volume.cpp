@@ -647,6 +647,13 @@ Status Volume::await_trim(slot_offset_type slot_lower_bound)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+slot_offset_type Volume::get_trim_pos() const noexcept
+{
+  return this->slot_writer_.get_trim_pos();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 PageCache& Volume::cache() const
 {
   return *this->cache_;

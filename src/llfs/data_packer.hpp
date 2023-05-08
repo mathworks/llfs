@@ -10,6 +10,7 @@
 #ifndef LLFS_DATA_PACKER_HPP
 #define LLFS_DATA_PACKER_HPP
 
+#include <llfs/api_types.hpp>
 #include <llfs/array_packer.hpp>
 #include <llfs/buffer.hpp>
 #include <llfs/data_layout.hpp>
@@ -19,6 +20,8 @@
 #include <llfs/seq.hpp>
 #include <llfs/slice.hpp>
 
+#include <batteries/async/worker_pool.hpp>
+#include <batteries/optional.hpp>
 #include <batteries/pointers.hpp>
 #include <batteries/type_traits.hpp>
 
@@ -31,6 +34,18 @@ namespace llfs {
 class DataPacker
 {
  public:
+  // Derived experimentally via benchmarks on an AMD Ryzen 5950x (16/32 core) system.
+  //
+  static constexpr usize kDefaultMinParallelCopySize = 64 * kKiB;
+
+  /** \brief Determines the minimum threshold (in bytes) at which data copying will be parallelized.
+   */
+  static std::atomic<usize>& min_parallel_copy_size()
+  {
+    static std::atomic<usize> value{kDefaultMinParallelCopySize};
+    return value;
+  }
+
   template <typename T>
   using ArrayPacker = BasicArrayPacker<T, DataPacker>;
 
@@ -221,9 +236,19 @@ class DataPacker
   [[nodiscard]] const void* pack_data(const void* data, usize size);
   [[nodiscard]] const void* pack_data(const void* data, usize size, Arena* arena);
 
+  [[nodiscard]] const void* pack_data(const void* data, usize size,
+                                      UseParallelCopy use_parallel_copy);
+  [[nodiscard]] const void* pack_data(const void* data, usize size, Arena* arena,
+                                      UseParallelCopy use_parallel_copy);
+
   [[nodiscard]] const void* pack_data_to(PackedBytes* rec, const void* data, usize size);
   [[nodiscard]] const void* pack_data_to(PackedBytes* rec, const void* data, usize size,
                                          Arena* arena);
+
+  [[nodiscard]] const void* pack_data_to(PackedBytes* rec, const void* data, usize size,
+                                         UseParallelCopy use_parallel_copy);
+  [[nodiscard]] const void* pack_data_to(PackedBytes* rec, const void* data, usize size,
+                                         Arena* arena, UseParallelCopy use_parallel_copy);
 
   [[nodiscard]] const PackedBytes* pack_data_copy(const PackedBytes& src);
   [[nodiscard]] const PackedBytes* pack_data_copy(const PackedBytes& src, Arena* arena);
@@ -245,6 +270,9 @@ class DataPacker
   // is insufficient space, set the full flag to true and return None.
   //
   [[nodiscard]] Optional<std::string_view> pack_raw_data(const void* data, usize size);
+
+  [[nodiscard]] Optional<std::string_view> pack_raw_data(const void* data, usize size,
+                                                         UseParallelCopy use_parallel_copy);
 
   template <typename U, typename IntT, typename PackedIntT>
   [[nodiscard]] bool pack_int_impl(U val)
@@ -278,6 +306,12 @@ class DataPacker
   }
 
   template <typename U>
+  [[nodiscard]] bool pack_u8(U val)
+  {
+    return this->pack_int_impl<U, u8, little_u8>(val);
+  }
+
+  template <typename U>
   [[nodiscard]] bool pack_i64(U val)
   {
     return this->pack_int_impl<U, i64, little_i64>(val);
@@ -293,6 +327,12 @@ class DataPacker
   [[nodiscard]] bool pack_i16(U val)
   {
     return this->pack_int_impl<U, i16, little_i16>(val);
+  }
+
+  template <typename U>
+  [[nodiscard]] bool pack_i8(U val)
+  {
+    return this->pack_int_impl<U, i8, little_i8>(val);
   }
 
   template <typename T>
@@ -390,6 +430,21 @@ class DataPacker
     return this->buffer_begin() + this->buffer_.size();
   }
 
+  void set_worker_pool(batt::WorkerPool& worker_pool) noexcept
+  {
+    this->worker_pool_.emplace(worker_pool);
+  }
+
+  void clear_worker_pool() noexcept
+  {
+    this->worker_pool_ = batt::None;
+  }
+
+  batt::Optional<batt::WorkerPool&> worker_pool() const noexcept
+  {
+    return this->worker_pool_;
+  }
+
  private:
   usize estimate_packed_data_size(usize size) const;
 
@@ -398,6 +453,10 @@ class DataPacker
   template <typename Policy>
   const void* nocheck_pack_data_to(PackedBytes* rec, const void* data, usize size, Arena* arena,
                                    batt::StaticType<Policy> = {});
+
+  template <typename Policy>
+  const void* nocheck_pack_data_to(PackedBytes* rec, const void* data, usize size, Arena* arena,
+                                   batt::StaticType<Policy>, UseParallelCopy use_parallel_copy);
 
   // Copy data into newly "allocated" space at the end of the avail range.
   //
@@ -417,6 +476,11 @@ class DataPacker
 
   MutableBuffer buffer_;
   Arena arena_{this, boost::iterator_range<u8*>{this->buffer_begin(), this->buffer_end()}};
+
+  /** \brief Available as a convenience to users of this DataPacker, to speed up the packing of
+   * large data using parallelism.
+   */
+  batt::Optional<batt::WorkerPool&> worker_pool_ = batt::None;
 };
 
 }  // namespace llfs

@@ -11,6 +11,7 @@
 
 #include <llfs/varint.hpp>
 
+#include <batteries/algo/parallel_copy.hpp>
 #include <batteries/checked_cast.hpp>
 #include <batteries/stream_util.hpp>
 #include <batteries/suppress.hpp>
@@ -110,6 +111,45 @@ const void* DataPacker::pack_data(const void* data, usize size, Arena* arena)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+const void* DataPacker::pack_data(const void* data, usize size, UseParallelCopy use_parallel_copy)
+{
+  if (this->full() || this->space() < this->estimate_packed_data_size(size)) {
+    this->set_full();
+    return nullptr;
+  }
+
+  auto* rec = this->pack_record<PackedBytes>();
+  BATT_ASSERT_NOT_NULLPTR(rec);
+
+  return this->nocheck_pack_data_to(rec, data, size, &this->arena_,
+                                    batt::StaticType<AllocBackPolicy>{}, use_parallel_copy);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const void* DataPacker::pack_data(const void* data, usize size, Arena* arena,
+                                  UseParallelCopy use_parallel_copy)
+{
+  if (BATT_HINT_FALSE(arena == &this->arena_)) {
+    return this->pack_data(data, size);
+  }
+
+  if (this->full() || arena->full() || this->space() < sizeof(PackedBytes) ||
+      arena->space() < (this->estimate_packed_data_size(size) - sizeof(PackedBytes))) {
+    this->set_full();
+    arena->set_full();
+    return nullptr;
+  }
+
+  auto* rec = this->pack_record<PackedBytes>();
+  BATT_ASSERT_NOT_NULLPTR(rec);
+
+  return this->nocheck_pack_data_to(rec, data, size, arena, batt::StaticType<AllocFrontPolicy>{},
+                                    use_parallel_copy);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 const void* DataPacker::pack_data_to(PackedBytes* rec, const void* data, usize size)
 {
   if (this->full() || this->space() < this->estimate_packed_data_size(size) - sizeof(PackedBytes)) {
@@ -135,6 +175,38 @@ const void* DataPacker::pack_data_to(PackedBytes* rec, const void* data, usize s
     return nullptr;
   }
   return this->nocheck_pack_data_to(rec, data, size, arena, batt::StaticType<AllocFrontPolicy>{});
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const void* DataPacker::pack_data_to(PackedBytes* rec, const void* data, usize size,
+                                     UseParallelCopy use_parallel_copy)
+{
+  if (this->full() || this->space() < this->estimate_packed_data_size(size) - sizeof(PackedBytes)) {
+    this->set_full();
+    return nullptr;
+  }
+  return this->nocheck_pack_data_to(rec, data, size, &this->arena_,
+                                    batt::StaticType<AllocBackPolicy>{}, use_parallel_copy);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const void* DataPacker::pack_data_to(PackedBytes* rec, const void* data, usize size, Arena* arena,
+                                     UseParallelCopy use_parallel_copy)
+{
+  if (BATT_HINT_FALSE(arena == &this->arena_)) {
+    return this->pack_data_to(rec, data, size);
+  }
+
+  if (arena->full() ||
+      arena->space() < (this->estimate_packed_data_size(size) - sizeof(PackedBytes))) {
+    arena->set_full();
+    this->set_full();
+    return nullptr;
+  }
+  return this->nocheck_pack_data_to(rec, data, size, arena, batt::StaticType<AllocFrontPolicy>{},
+                                    use_parallel_copy);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -280,6 +352,36 @@ Optional<std::string_view> DataPacker::pack_raw_data(const void* data, usize siz
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+Optional<std::string_view> DataPacker::pack_raw_data(const void* data, usize size,
+                                                     UseParallelCopy use_parallel_copy)
+{
+  if (!use_parallel_copy || !this->worker_pool_) {
+    return this->pack_raw_data(data, size);
+  }
+
+  Optional<MutableBuffer> buf = this->arena_.allocate_front(size);
+  if (!buf) {
+    return None;
+  }
+
+  u8* const dst_begin = static_cast<u8*>(buf->data());
+  {
+    const batt::TaskCount max_tasks{this->worker_pool_->size() + 1};
+    const batt::TaskSize min_task_size{DataPacker::min_parallel_copy_size()};
+
+    batt::ScopedWorkContext work_context{*this->worker_pool_};
+
+    const u8* src_begin = reinterpret_cast<const u8*>(data);
+    const u8* src_end = src_begin + size;
+
+    batt::parallel_copy(work_context, src_begin, src_end, dst_begin, min_task_size, max_tasks);
+  }
+
+  return std::string_view{static_cast<const char*>(buf->data()), buf->size()};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 Optional<DataPacker::Arena> DataPacker::reserve_arena(usize size)
 {
   return this->arena_.reserve_back(size);
@@ -303,6 +405,43 @@ usize DataPacker::estimate_packed_data_size(const PackedBytes& src) const
     return sizeof(PackedBytes);
   }
   return sizeof(PackedBytes) + src.data_size;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename Policy>
+const void* DataPacker::nocheck_pack_data_to(PackedBytes* dst, const void* data, usize size,
+                                             Arena* arena, batt::StaticType<Policy> policy,
+                                             UseParallelCopy use_parallel_copy)
+{
+  if (!use_parallel_copy || !this->worker_pool_ || size <= 4) {
+    return this->nocheck_pack_data_to(dst, data, size, arena, policy);
+  }
+
+  boost::iterator_range<u8*> buf = Policy::nocheck_alloc(arena, static_cast<isize>(size));
+
+  u8* const before = buf.end();
+  u8* const packed = buf.begin();
+
+  BATT_CHECK_EQ(before - size, packed);
+  BATT_CHECK_GE((const void*)packed, (const void*)dst);
+
+  dst->data_offset = packed - reinterpret_cast<const u8*>(dst);
+  dst->data_size = size;
+
+  BATT_CHECK_EQ(reinterpret_cast<const u8*>(dst) + dst->data_offset, const_cast<const u8*>(packed));
+  {
+    const batt::TaskCount max_tasks{this->worker_pool_->size() + 1};
+    const batt::TaskSize min_task_size{DataPacker::min_parallel_copy_size()};
+
+    batt::ScopedWorkContext work_context{*this->worker_pool_};
+
+    const u8* src_begin = reinterpret_cast<const u8*>(data);
+    const u8* src_end = src_begin + size;
+
+    batt::parallel_copy(work_context, src_begin, src_end, packed, min_task_size, max_tasks);
+  }
+  return packed;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

@@ -15,16 +15,51 @@
 #include <llfs/int_types.hpp>
 #include <llfs/optional.hpp>
 
+#include <batteries/static_assert.hpp>
+
+#include <limits>
 #include <tuple>
 
 namespace llfs {
 
+/** \brief Returns the size of the varint representation of `n`.
+ */
 inline constexpr usize packed_sizeof_varint(u64 n)
 {
   return (n == 0) ? 1 : (64 - __builtin_clzll(n) + 6) / 7;
 }
 
+/** \brief Returns the maximum size of a packed varint for a fixed-size integer of the given number
+ * of bits.
+ */
+inline constexpr usize max_packed_sizeof_varint(u8 bits)
+{
+  // To handle the case of bits=64, shift up by one fewer bits, then shift up and set the final bit
+  // (otherwise we may get a compiler warning that we are shifting by more than the size of the
+  // integer).
+  //
+  return packed_sizeof_varint((((u64{1} << (bits - 1)) - 1) << 1) | 1);
+}
+
+constexpr usize kMaxVarInt8Size = 2;
+BATT_STATIC_ASSERT_EQ(kMaxVarInt8Size, packed_sizeof_varint(std::numeric_limits<u8>::max()));
+BATT_STATIC_ASSERT_EQ(kMaxVarInt8Size, max_packed_sizeof_varint(8));
+
+constexpr usize kMaxVarInt16Size = 3;
+BATT_STATIC_ASSERT_EQ(kMaxVarInt16Size, packed_sizeof_varint(std::numeric_limits<u16>::max()));
+BATT_STATIC_ASSERT_EQ(kMaxVarInt16Size, max_packed_sizeof_varint(16));
+
+constexpr usize kMaxVarInt24Size = 4;
+BATT_STATIC_ASSERT_EQ(kMaxVarInt24Size, packed_sizeof_varint((u64{1} << 24) - 1));
+BATT_STATIC_ASSERT_EQ(kMaxVarInt24Size, max_packed_sizeof_varint(24));
+
 constexpr usize kMaxVarInt32Size = 5;
+BATT_STATIC_ASSERT_EQ(kMaxVarInt32Size, packed_sizeof_varint(std::numeric_limits<u32>::max()));
+BATT_STATIC_ASSERT_EQ(kMaxVarInt32Size, max_packed_sizeof_varint(32));
+
+constexpr usize kMaxVarInt64Size = 10;
+BATT_STATIC_ASSERT_EQ(kMaxVarInt64Size, packed_sizeof_varint(std::numeric_limits<u64>::max()));
+BATT_STATIC_ASSERT_EQ(kMaxVarInt64Size, max_packed_sizeof_varint(64));
 
 // Packs the passed integer value `n` into the byte range specified by [first, last).  If there
 // isn't enough space in the given destination range, then this function will return nullptr.

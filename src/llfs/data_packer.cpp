@@ -11,30 +11,12 @@
 
 #include <llfs/varint.hpp>
 
+#include <batteries/algo/parallel_copy.hpp>
 #include <batteries/checked_cast.hpp>
 #include <batteries/stream_util.hpp>
 #include <batteries/suppress.hpp>
 
 namespace llfs {
-
-namespace {
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-MutableBuffer buffer_from(const boost::iterator_range<u8*>& byte_range)
-{
-  return MutableBuffer{byte_range.begin(), byte_range.size()};
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-boost::iterator_range<u8*> byte_range_from(const MutableBuffer& buffer)
-{
-  u8* const data = static_cast<u8*>(buffer.data());
-  return boost::iterator_range<u8*>{data, data + buffer.size()};
-}
-
-}  // namespace
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
@@ -110,6 +92,45 @@ const void* DataPacker::pack_data(const void* data, usize size, Arena* arena)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+const void* DataPacker::pack_data(const void* data, usize size, UseParallelCopy use_parallel_copy)
+{
+  if (this->full() || this->space() < this->estimate_packed_data_size(size)) {
+    this->set_full();
+    return nullptr;
+  }
+
+  auto* rec = this->pack_record<PackedBytes>();
+  BATT_ASSERT_NOT_NULLPTR(rec);
+
+  return this->nocheck_pack_data_to(rec, data, size, &this->arena_,
+                                    batt::StaticType<AllocBackPolicy>{}, use_parallel_copy);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const void* DataPacker::pack_data(const void* data, usize size, Arena* arena,
+                                  UseParallelCopy use_parallel_copy)
+{
+  if (BATT_HINT_FALSE(arena == &this->arena_)) {
+    return this->pack_data(data, size);
+  }
+
+  if (this->full() || arena->full() || this->space() < sizeof(PackedBytes) ||
+      arena->space() < (this->estimate_packed_data_size(size) - sizeof(PackedBytes))) {
+    this->set_full();
+    arena->set_full();
+    return nullptr;
+  }
+
+  auto* rec = this->pack_record<PackedBytes>();
+  BATT_ASSERT_NOT_NULLPTR(rec);
+
+  return this->nocheck_pack_data_to(rec, data, size, arena, batt::StaticType<AllocFrontPolicy>{},
+                                    use_parallel_copy);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 const void* DataPacker::pack_data_to(PackedBytes* rec, const void* data, usize size)
 {
   if (this->full() || this->space() < this->estimate_packed_data_size(size) - sizeof(PackedBytes)) {
@@ -135,6 +156,38 @@ const void* DataPacker::pack_data_to(PackedBytes* rec, const void* data, usize s
     return nullptr;
   }
   return this->nocheck_pack_data_to(rec, data, size, arena, batt::StaticType<AllocFrontPolicy>{});
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const void* DataPacker::pack_data_to(PackedBytes* rec, const void* data, usize size,
+                                     UseParallelCopy use_parallel_copy)
+{
+  if (this->full() || this->space() < this->estimate_packed_data_size(size) - sizeof(PackedBytes)) {
+    this->set_full();
+    return nullptr;
+  }
+  return this->nocheck_pack_data_to(rec, data, size, &this->arena_,
+                                    batt::StaticType<AllocBackPolicy>{}, use_parallel_copy);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+const void* DataPacker::pack_data_to(PackedBytes* rec, const void* data, usize size, Arena* arena,
+                                     UseParallelCopy use_parallel_copy)
+{
+  if (BATT_HINT_FALSE(arena == &this->arena_)) {
+    return this->pack_data_to(rec, data, size);
+  }
+
+  if (arena->full() ||
+      arena->space() < (this->estimate_packed_data_size(size) - sizeof(PackedBytes))) {
+    arena->set_full();
+    this->set_full();
+    return nullptr;
+  }
+  return this->nocheck_pack_data_to(rec, data, size, arena, batt::StaticType<AllocFrontPolicy>{},
+                                    use_parallel_copy);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -280,6 +333,36 @@ Optional<std::string_view> DataPacker::pack_raw_data(const void* data, usize siz
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+Optional<std::string_view> DataPacker::pack_raw_data(const void* data, usize size,
+                                                     UseParallelCopy use_parallel_copy)
+{
+  if (!use_parallel_copy || !this->worker_pool_) {
+    return this->pack_raw_data(data, size);
+  }
+
+  Optional<MutableBuffer> buf = this->arena_.allocate_front(size);
+  if (!buf) {
+    return None;
+  }
+
+  u8* const dst_begin = static_cast<u8*>(buf->data());
+  {
+    const batt::TaskCount max_tasks{this->worker_pool_->size() + 1};
+    const batt::TaskSize min_task_size{DataPacker::min_parallel_copy_size()};
+
+    batt::ScopedWorkContext work_context{*this->worker_pool_};
+
+    const u8* src_begin = reinterpret_cast<const u8*>(data);
+    const u8* src_end = src_begin + size;
+
+    batt::parallel_copy(work_context, src_begin, src_end, dst_begin, min_task_size, max_tasks);
+  }
+
+  return std::string_view{static_cast<const char*>(buf->data()), buf->size()};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 Optional<DataPacker::Arena> DataPacker::reserve_arena(usize size)
 {
   return this->arena_.reserve_back(size);
@@ -303,6 +386,43 @@ usize DataPacker::estimate_packed_data_size(const PackedBytes& src) const
     return sizeof(PackedBytes);
   }
   return sizeof(PackedBytes) + src.data_size;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename Policy>
+const void* DataPacker::nocheck_pack_data_to(PackedBytes* dst, const void* data, usize size,
+                                             Arena* arena, batt::StaticType<Policy> policy,
+                                             UseParallelCopy use_parallel_copy)
+{
+  if (!use_parallel_copy || !this->worker_pool_ || size <= 4) {
+    return this->nocheck_pack_data_to(dst, data, size, arena, policy);
+  }
+
+  boost::iterator_range<u8*> buf = Policy::nocheck_alloc(arena, static_cast<isize>(size));
+
+  u8* const before = buf.end();
+  u8* const packed = buf.begin();
+
+  BATT_CHECK_EQ(before - size, packed);
+  BATT_CHECK_GE((const void*)packed, (const void*)dst);
+
+  dst->data_offset = packed - reinterpret_cast<const u8*>(dst);
+  dst->data_size = size;
+
+  BATT_CHECK_EQ(reinterpret_cast<const u8*>(dst) + dst->data_offset, const_cast<const u8*>(packed));
+  {
+    const batt::TaskCount max_tasks{this->worker_pool_->size() + 1};
+    const batt::TaskSize min_task_size{DataPacker::min_parallel_copy_size()};
+
+    batt::ScopedWorkContext work_context{*this->worker_pool_};
+
+    const u8* src_begin = reinterpret_cast<const u8*>(data);
+    const u8* src_end = src_begin + size;
+
+    batt::parallel_copy(work_context, src_begin, src_end, packed, min_task_size, max_tasks);
+  }
+  return packed;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -378,171 +498,6 @@ const PackedBytes* DataPacker::nocheck_pack_data_copy_to(PackedBytes* dst, const
     BATT_CHECK_EQ(dst->data(), packed_data);
   }
   return dst;
-}
-
-//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-// class DataPacker::Arena
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-/*explicit*/ DataPacker::Arena::Arena(DataPacker* packer, boost::iterator_range<u8*> avail) noexcept
-    : capacity_{avail.size()}
-    , packer_{packer}
-    , avail_{avail}
-    , full_{false}
-{
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-DataPacker* DataPacker::Arena::get_packer() const
-{
-  return this->packer_.get();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-usize DataPacker::Arena::space() const
-{
-  return this->avail_.size();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-usize DataPacker::Arena::capacity() const
-{
-  return this->capacity_;
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-bool DataPacker::Arena::full() const
-{
-  return this->full_;
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Interval<isize> DataPacker::Arena::unused() const
-{
-  BATT_CHECK_NOT_NULLPTR(this->packer_.get());
-
-  u8* const buffer_begin = this->packer_->buffer_begin();
-
-  return Interval<isize>{
-      this->avail_.begin() - buffer_begin,
-      this->avail_.end() - buffer_begin,
-  };
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-void DataPacker::Arena::invalidate()
-{
-  this->capacity_ = 0;
-  this->packer_.reset();
-  this->avail_ = boost::iterator_range<u8*>{nullptr, nullptr};
-  this->full_ = true;
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-void DataPacker::Arena::set_full()
-{
-  this->full_ = true;
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Optional<DataPacker::Arena> DataPacker::Arena::reserve_front(usize size)
-{
-  Optional<MutableBuffer> buf = this->allocate_front(size);
-  if (!buf) {
-    return None;
-  }
-  return Arena{this->get_packer(), byte_range_from(*buf)};
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Optional<DataPacker::Arena> DataPacker::Arena::reserve_back(usize size)
-{
-  Optional<MutableBuffer> buf = this->allocate_back(size);
-  if (!buf) {
-    return None;
-  }
-  return Arena{this->get_packer(), byte_range_from(*buf)};
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Optional<MutableBuffer> DataPacker::Arena::allocate_front(usize size)
-{
-  if (size > this->space()) {
-    this->full_ = true;
-    return None;
-  }
-
-  return buffer_from(this->nocheck_alloc_front(BATT_CHECKED_CAST(isize, size)));
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Optional<MutableBuffer> DataPacker::Arena::allocate_back(usize size)
-{
-  if (size > this->space()) {
-    this->full_ = true;
-    return None;
-  }
-
-  return buffer_from(this->nocheck_alloc_back(BATT_CHECKED_CAST(isize, size)));
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-u8* DataPacker::Arena::pack_varint(u64 n)
-{
-  if (this->full_) {
-    return nullptr;
-  }
-
-  // Attempt to pack the varint to the front of the available range.
-  //
-  u8* const dst_begin = this->avail_.begin();
-  u8* const avail_end = this->avail_.end();
-  u8* dst_end = pack_varint_to(dst_begin, avail_end, n);
-  if (dst_end == nullptr) {
-    this->full_ = true;
-    return nullptr;
-  }
-
-  // Commit the packed bytes.
-  //
-  this->avail_ = boost::iterator_range<u8*>{dst_end, avail_end};
-
-  return dst_end;
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-boost::iterator_range<u8*> DataPacker::Arena::nocheck_alloc_front(isize size)
-{
-  u8* const buf_begin = this->avail_.begin();
-  this->avail_.advance_begin(size);
-  u8* const buf_end = this->avail_.begin();
-
-  return boost::iterator_range<u8*>{buf_begin, buf_end};
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-boost::iterator_range<u8*> DataPacker::Arena::nocheck_alloc_back(isize size)
-{
-  u8* const buf_end = this->avail_.end();
-  this->avail_.advance_end(-size);
-  u8* const buf_begin = this->avail_.end();
-
-  return boost::iterator_range<u8*>{buf_begin, buf_end};
 }
 
 }  // namespace llfs

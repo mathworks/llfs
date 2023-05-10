@@ -199,7 +199,7 @@ class Volume
 
   LogDevice& root_log() const noexcept
   {
-    return *this->root_log_;
+    return *(this->root_log_);
   }
 
  private:

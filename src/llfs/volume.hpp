@@ -214,14 +214,10 @@ class Volume
   StatusOr<ConstBuffer> get_root_log_data(const SlotReadLock& read_lock,
                                           Optional<SlotRange> slot_range = None) const;
 
-  //----- --- -- -  -  -   -
-  // FOR TESTING ONLY
-  //
   LogDevice& root_log() const noexcept
   {
-    return *this->root_log_;
+    return *(this->root_log_);
   }
-  //----- --- -- -  -  -   -
 
  private:
   explicit Volume(batt::TaskScheduler& task_scheduler, const VolumeOptions& options,

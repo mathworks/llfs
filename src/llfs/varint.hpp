@@ -22,11 +22,16 @@
 
 namespace llfs {
 
+/** \brief Returns the size of the varint representation of `n`.
+ */
 inline constexpr usize packed_sizeof_varint(u64 n)
 {
   return (n == 0) ? 1 : (64 - __builtin_clzll(n) + 6) / 7;
 }
 
+/** \brief Returns the maximum size of a packed varint for a fixed-size integer of the given number
+ * of bits.
+ */
 inline constexpr usize max_packed_sizeof_varint(u8 bits)
 {
   // To handle the case of bits=64, shift up by one fewer bits, then shift up and set the final bit

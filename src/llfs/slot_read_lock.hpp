@@ -21,6 +21,8 @@
 #endif  // __GNUC__ >= 9
 #endif  // __GNUC__
 
+#include <batteries/hint.hpp>
+
 #include <boost/heap/d_ary_heap.hpp>
 #include <boost/heap/policies.hpp>
 
@@ -163,8 +165,32 @@ class SlotReadLock
   SlotReadLock(const SlotReadLock&) = delete;
   SlotReadLock& operator=(const SlotReadLock&) = delete;
 
-  SlotReadLock(SlotReadLock&&) = default;
-  SlotReadLock& operator=(SlotReadLock&&) = default;
+  SlotReadLock(SlotReadLock&& other) noexcept
+      : sponsor_{std::move(other.sponsor_)}
+      , range_{std::move(other.range_)}
+      , handle_{std::move(other.handle_)}
+      , upper_bound_updated_{other.upper_bound_updated_}
+  {
+    other.range_ = SlotRange{};
+    other.handle_ = SlotLockHeap::handle_type{};
+    other.upper_bound_updated_ = false;
+  }
+
+  SlotReadLock& operator=(SlotReadLock&& other) noexcept
+  {
+    if (BATT_HINT_TRUE(this != &other)) {
+      this->clear();
+      this->sponsor_ = std::move(other.sponsor_);
+      this->range_ = std::move(other.range_);
+      this->handle_ = std::move(other.handle_);
+      this->upper_bound_updated_ = other.upper_bound_updated_;
+
+      other.range_ = SlotRange{};
+      other.handle_ = SlotLockHeap::handle_type{};
+      other.upper_bound_updated_ = false;
+    }
+    return *this;
+  }
 
  private:
   UniqueNonOwningPtr<Sponsor> sponsor_;

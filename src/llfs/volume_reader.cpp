@@ -25,7 +25,8 @@ namespace {
     : volume_{volume}
     , read_lock_{std::move(read_lock)}
     , job_{this->volume_.cache().new_job()}
-    , log_reader_{this->volume_.root_log_->new_reader(read_lock.slot_range().lower_bound, mode)}
+    , log_reader_{this->volume_.root_log_->new_reader(this->read_lock_.slot_range().lower_bound,
+                                                      mode)}
     , slot_reader_{*this->log_reader_}
     , paused_{true}
     , pending_jobs_{}

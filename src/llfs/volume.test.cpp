@@ -782,6 +782,21 @@ class VolumeSimTest : public ::testing::Test
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  /** \brief Builds and commits a new page in the specified job, with references to the
+   * specified page ids.
+   */
+  static batt::StatusOr<llfs::PageId> build_page_with_refs_to(
+      const std::vector<llfs::PageId>& referenced_page_ids, llfs::PageSize page_size,
+      llfs::PageCacheJob& job, llfs::StorageSimulation& sim);
+
+  /** \brief Commits a slot and job as a page transaction to the volume.
+   */
+  static batt::StatusOr<llfs::SlotRange> commit_job_to_root_log(
+      std::unique_ptr<llfs::PageCacheJob> job, llfs::PageId root_page_id, llfs::Volume& volume,
+      llfs::StorageSimulation& sim);
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   /** \brief Runs the Volume crash/recovery simulation test.
    *
    * \param seed Used to initialize the pseudo-random number generator that drives the simulation.
@@ -798,20 +813,6 @@ class VolumeSimTest : public ::testing::Test
    * Unlike the first job, this one is allowed (in fact, expected) to fail.
    */
   batt::Status commit_second_job_pre_crash(llfs::StorageSimulation& sim, llfs::Volume& volume);
-
-  /** \brief Builds and commits a new page in the specified job, with references to the
-   * specified page ids.
-   */
-  batt::StatusOr<llfs::PageId> build_page_with_refs_to(
-      const std::vector<llfs::PageId>& referenced_page_ids, llfs::PageSize page_size,
-      llfs::PageCacheJob& job, llfs::StorageSimulation& sim);
-
-  /** \brief Commits a slot and job as a page transaction to the volume.
-   */
-  batt::StatusOr<llfs::SlotRange> commit_job_to_root_log(std::unique_ptr<llfs::PageCacheJob> job,
-                                                         llfs::PageId root_page_id,
-                                                         llfs::Volume& volume,
-                                                         llfs::StorageSimulation& sim);
 
   /** \brief Returns a slot visitor function for use when recovering/verifying the Volume,
    * post-crash.
@@ -915,6 +916,103 @@ TEST_F(VolumeSimTest, RecoverySimulation)
 
   for (auto& t : threads) {
     t.join();
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(VolumeSimTest, ConcurrentAppendJobs)
+{
+  for (usize seed = 0; seed < 256; ++seed) {
+    std::mt19937 rng{seed};
+
+    llfs::StorageSimulation sim{batt::StateMachineEntropySource{
+        /*entropy_fn=*/[&rng](usize min_value, usize max_value) -> usize {
+          std::uniform_int_distribution<usize> pick_value{min_value, max_value};
+          return pick_value(rng);
+        }}};
+
+    // Add three page devices so we can verify that the ref counts are correctly recovered from
+    // a subset.
+    //
+    sim.add_page_arena(this->pages_per_device, llfs::PageSize{1 * kKiB});
+
+    sim.register_page_layout(llfs::PageGraphNodeView::page_layout_id(),
+                             llfs::PageGraphNodeView::page_reader());
+
+    const auto main_task_fn = [&] {
+      // Create the simulated Volume.
+      //
+      {
+        batt::StatusOr<std::unique_ptr<llfs::Volume>> recovered_volume = sim.get_volume(
+            "TestVolume", /*slot_visitor_fn=*/
+            [](auto&&...) {
+              return batt::OkStatus();
+            },
+            /*root_log_capacity=*/64 * kKiB);
+
+        ASSERT_TRUE(recovered_volume.ok()) << recovered_volume.status();
+
+        llfs::Volume& volume = **recovered_volume;
+
+        // Test plan:
+        //  1. Concurrently, on `this->pages_per_device` different tasks:
+        //     - build a page and commit it to the volume
+        //  2. Wait for everything to be flushed
+        //  3. Verify that the page ref count for each page is 2.
+
+        std::vector<llfs::PageId> page_ids(this->pages_per_device);
+        std::vector<std::unique_ptr<batt::Task>> tasks;
+        for (usize task_i = 0; task_i < this->pages_per_device; ++task_i) {
+          tasks.emplace_back(std::make_unique<batt::Task>(
+              sim.task_scheduler().schedule_task(),
+              [task_i, &page_ids, &sim, &volume] {
+                std::unique_ptr<llfs::PageCacheJob> job = volume.new_job();
+
+                llfs::PageId page_id =
+                    BATT_OK_RESULT_OR_PANIC(VolumeSimTest::build_page_with_refs_to(
+                        /*refs=*/{}, llfs::PageSize{1 * kKiB}, *job, sim));
+
+                page_ids[task_i] = page_id;
+
+                LLFS_VLOG(1) << BATT_INSPECT(task_i) << BATT_INSPECT(page_id)
+                             << " starting commit...";
+
+                llfs::SlotRange slot = BATT_OK_RESULT_OR_PANIC(
+                    VolumeSimTest::commit_job_to_root_log(std::move(job), page_id, volume, sim));
+
+                LLFS_VLOG(1) << BATT_INSPECT(task_i) << BATT_INSPECT(page_id)
+                             << " commit finished!";
+
+                BATT_CHECK_OK(
+                    volume.sync(llfs::LogReadMode::kDurable, llfs::SlotUpperBoundAt{
+                                                                 .offset = slot.upper_bound,
+                                                             }));
+              },
+              batt::Task::DeferStart{true}, /*name=*/batt::to_string("TestCommitTask", task_i)));
+        }
+
+        for (auto& p_task : tasks) {
+          p_task->start();
+        }
+
+        for (auto& p_task : tasks) {
+          p_task->join();
+        }
+
+        for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(1 * kKiB)) {
+          for (llfs::PageId page_id : page_ids) {
+            EXPECT_EQ(arena.allocator().get_ref_count(page_id).first, 2);
+          }
+          break;
+        }
+
+        volume.halt();
+        volume.join();
+      }
+    };
+
+    sim.run_main_task(main_task_fn);
   }
 }
 

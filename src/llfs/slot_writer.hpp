@@ -204,8 +204,18 @@ class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
   using Append = typename SlotWriter::Append;
   using SlotWriter::SlotWriter;
 
-  template <typename T>
-  StatusOr<SlotRange> append(batt::Grant& caller_grant, T&& payload)
+  struct NullPostCommitFn {
+    using result_type = StatusOr<SlotRange>;
+
+    result_type operator()(StatusOr<SlotRange> slot_range) const noexcept
+    {
+      return slot_range;
+    }
+  };
+
+  template <typename T, typename PostCommitFn = NullPostCommitFn>
+  StatusOr<SlotRange> append(batt::Grant& caller_grant, T&& payload,
+                             PostCommitFn&& post_commit_fn = {})
   {
     const usize slot_body_size = sizeof(PackedVariant<Ts...>) + packed_sizeof(payload);
     BATT_CHECK_NE(slot_body_size, 0u);
@@ -225,7 +235,7 @@ class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
       return ::llfs::make_status(StatusCode::kFailedToPackSlotVarTail);
     }
 
-    return op->commit();
+    return post_commit_fn(op->commit());
   }
 };
 

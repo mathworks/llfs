@@ -70,6 +70,8 @@ class SlotSequencer
 
   StatusOr<SlotRange> await_prev() const;
 
+  StatusOr<SlotRange> await_current() const;
+
   Optional<SlotRange> get_current() const;
 
   bool set_current(const SlotRange& slot_range);

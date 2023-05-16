@@ -41,7 +41,7 @@ StatusOr<int> open_file_read_write(std::string_view file_name, OpenForAppend ope
     flags |= O_APPEND;
   }
   if (open_raw_io) {
-#ifdef __linux__
+#ifdef LLFS_PLATFORM_IS_LINUX
     flags |= O_DIRECT | O_SYNC;
 #else
     LLFS_LOG_WARNING() << "open_raw_io only supported on Linux!";
@@ -300,7 +300,7 @@ Status update_file_status_flags(int fd, EnableFileFlags enable_flags,
 //
 Status enable_raw_io_fd(int fd, bool enabled)
 {
-#ifdef __linux__  //----- --- -- -  -  -   -
+#ifdef LLFS_PLATFORM_IS_LINUX  //----- --- -- -  -  -   -
 
   // TODO [tastolfi 2022-06-21] Add O_SYNC/O_DSYNC to the flags masks below once Linux supports this
   // (https://man7.org/linux/man-pages/man2/fcntl.2.html#BUGS)

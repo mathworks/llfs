@@ -13,13 +13,10 @@
 #include <llfs/pointers.hpp>
 #include <llfs/slot.hpp>
 
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#if __GNUC__ >= 9
-#pragma GCC diagnostic ignored "-Wdeprecated-copy"
-#endif  // __GNUC__ >= 9
-#endif  // __GNUC__
+#include <batteries/suppress.hpp>
+
+BATT_SUPPRESS_IF_GCC("-Wunused-parameter")
+BATT_SUPPRESS_IF_GCC("-Wdeprecated-copy")
 
 #include <batteries/hint.hpp>
 
@@ -201,8 +198,7 @@ class SlotReadLock
 
 }  // namespace llfs
 
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif  // __GNUC__
+BATT_UNSUPPRESS_IF_GCC()  // "-Wdeprecated-copy"
+BATT_UNSUPPRESS_IF_GCC()  // "-Wunused-parameter"
 
 #endif  // LLFS_SLOT_READ_LOCK_HPP

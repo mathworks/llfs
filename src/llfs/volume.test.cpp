@@ -1014,9 +1014,15 @@ TEST_F(VolumeSimTest, ConcurrentAppendJobs)
           p_task->join();
         }
 
+        // We expect the ref count for each page in the 1kib device to have the default initial ref
+        // count (2).  If there are ordering problems between the phases of the jobs, then some of
+        // the page ref count (PRC) updates may be dropped (due to user_slot de-duping).
+        //
+        constexpr usize kExpectedRefCount = 2;
+
         for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(1 * kKiB)) {
           for (llfs::PageId page_id : page_ids) {
-            EXPECT_EQ(arena.allocator().get_ref_count(page_id).first, 2);
+            EXPECT_EQ(arena.allocator().get_ref_count(page_id).first, kExpectedRefCount);
           }
           break;
         }

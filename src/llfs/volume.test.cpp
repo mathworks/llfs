@@ -963,18 +963,27 @@ TEST_F(VolumeSimTest, ConcurrentAppendJobs)
 
         std::vector<llfs::PageId> page_ids(this->pages_per_device);
         std::vector<std::unique_ptr<batt::Task>> tasks;
+
+        // Create the tasks; one per page.
+        //
         for (usize task_i = 0; task_i < this->pages_per_device; ++task_i) {
           tasks.emplace_back(std::make_unique<batt::Task>(
               sim.task_scheduler().schedule_task(),
               [task_i, &page_ids, &sim, &volume] {
                 std::unique_ptr<llfs::PageCacheJob> job = volume.new_job();
 
+                //----- --- -- -  -  -   -
+                // Build the page and save its id.
+                //
                 llfs::PageId page_id =
                     BATT_OK_RESULT_OR_PANIC(VolumeSimTest::build_page_with_refs_to(
                         /*refs=*/{}, llfs::PageSize{1 * kKiB}, *job, sim));
 
                 page_ids[task_i] = page_id;
 
+                //----- --- -- -  -  -   -
+                // Commit the job to the Volume root log.
+                //
                 LLFS_VLOG(1) << BATT_INSPECT(task_i) << BATT_INSPECT(page_id)
                              << " starting commit...";
 
@@ -984,12 +993,17 @@ TEST_F(VolumeSimTest, ConcurrentAppendJobs)
                 LLFS_VLOG(1) << BATT_INSPECT(task_i) << BATT_INSPECT(page_id)
                              << " commit finished!";
 
+                //----- --- -- -  -  -   -
+                // Wait for everything to be flushed.
+                //
                 BATT_CHECK_OK(
                     volume.sync(llfs::LogReadMode::kDurable, llfs::SlotUpperBoundAt{
                                                                  .offset = slot.upper_bound,
                                                              }));
+                // Done!
               },
-              batt::Task::DeferStart{true}, /*name=*/batt::to_string("TestCommitTask", task_i)));
+              batt::Task::DeferStart{true},  //
+              /*name=*/batt::to_string("TestCommitTask", task_i)));
         }
 
         for (auto& p_task : tasks) {

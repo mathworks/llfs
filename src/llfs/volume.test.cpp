@@ -1018,7 +1018,7 @@ TEST_F(VolumeSimTest, ConcurrentAppendJobs)
         // count (2).  If there are ordering problems between the phases of the jobs, then some of
         // the page ref count (PRC) updates may be dropped (due to user_slot de-duping).
         //
-        constexpr usize kExpectedRefCount = 2;
+        constexpr i32 kExpectedRefCount = 2;
 
         for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(1 * kKiB)) {
           for (llfs::PageId page_id : page_ids) {

@@ -213,6 +213,17 @@ class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
     }
   };
 
+  /** \brief Appends `payload` to the log using the passed `caller_grant`.
+   *
+   * \param caller_grant Must be at least as large as packed_sizeof(payload)
+   * \param payload The event data to append
+   * \param post_commit_fn (StatusOr<SlotRange>(StatusOr<SlotRange>)) Called after the payload has
+   *                       been committed to the log, while still holding the LogDevice::Writer
+   *                       mutex; must return the passed slot_range (which is the interval where
+   *                       `payload` was written)
+   *
+   * \return The slot offset range where `payload` was appended in the log
+   */
   template <typename T, typename PostCommitFn = NullPostCommitFn>
   StatusOr<SlotRange> append(batt::Grant& caller_grant, T&& payload,
                              PostCommitFn&& post_commit_fn = {})

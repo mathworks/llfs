@@ -27,12 +27,12 @@ class LlfsConan(ConanFile):
     build_policy = "missing"
     requires = [
         "libbacktrace/cci.20210118",
-        "b2/4.9.3",
+        "b2/4.9.6",
         "gtest/1.13.0",
         "boost/1.81.0",
-        "openssl/3.0.7",
+        "openssl/3.1.0",
         "glog/0.6.0",
-        "batteries/0.30.0@batteriescpp+batteries/stable",
+        "batteries/0.31.4@batteriescpp+batteries/stable",
         "cli11/2.3.2",
         "zlib/1.2.13",
     ] + ([

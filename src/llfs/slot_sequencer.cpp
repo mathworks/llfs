@@ -66,6 +66,16 @@ StatusOr<SlotRange> SlotSequencer::await_prev() const
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+StatusOr<SlotRange> SlotSequencer::await_current() const
+{
+  if (this->current_ == nullptr) {
+    return {batt::StatusCode::kUnavailable};
+  }
+  return this->current_->await();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 Optional<SlotRange> SlotSequencer::get_current() const
 {
   if (this->current_ == nullptr) {

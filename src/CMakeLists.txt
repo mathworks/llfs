@@ -34,10 +34,6 @@ if(NOT APPLE)
     add_compile_definitions(BOOST_STACKTRACE_USE_BACKTRACE)
 endif()
 
-# Configuration macros for Batteries.
-#
-add_compile_definitions(BATT_GLOG_AVAILABLE)
-
 # liburing/2.1 Conan package conflicts with linux system headers, but
 # defining this macro resolves the conflict.
 #

@@ -64,6 +64,7 @@ class LlfsConan(ConanFile):
     def configure(self):
         self.options["gtest"].shared = False
         self.options["boost"].shared = False
+        self.options["batteries"].glog_support = True
 
     def build(self):
         cmake = CMake(self)

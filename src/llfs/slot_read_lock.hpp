@@ -20,6 +20,8 @@ BATT_SUPPRESS_IF_GCC("-Wdeprecated-copy")
 
 #include <batteries/hint.hpp>
 
+#include <batteries/hint.hpp>
+
 #include <boost/heap/d_ary_heap.hpp>
 #include <boost/heap/policies.hpp>
 

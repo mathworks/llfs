@@ -31,7 +31,7 @@ usize packed_sizeof(const batt::Status& status)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<batt::Status> unpack_object(const PackedStatus& packed_status, DataReader*)
+StatusOr<batt::Status> unpack_object(const PackedStatus& /*packed_status*/, DataReader*)
 {
   // This is complicated by the fact that the remote group type may not have been registered
   // locally.  TODO [tastolfi 2022-11-04]

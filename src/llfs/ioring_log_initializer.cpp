@@ -23,7 +23,7 @@ template class BasicIoRingLogInitializer<IoRing>;
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 Status initialize_ioring_log_device(RawBlockFile& file, const IoRingLogConfig& config,
-                                    ConfirmThisWillEraseAllMyData confirm)
+                                    ConfirmThisWillEraseAllMyData /*confirm*/)
 {
   LLFS_VLOG(1) << "initializing IoRingLogDevice; " << BATT_INSPECT(config.block_count())
                << BATT_INSPECT(config.block_size()) << BATT_INSPECT(config.block_capacity());

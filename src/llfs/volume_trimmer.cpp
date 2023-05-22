@@ -501,8 +501,10 @@ Status refresh_volume_metadata(TypedSlotWriter<VolumeEventVariant>& slot_writer,
 StatusOr<VolumeTrimEventInfo> write_trim_event(TypedSlotWriter<VolumeEventVariant>& slot_writer,
                                                batt::Grant& grant,
                                                VolumeTrimmedRegionInfo& trimmed_region,
-                                               VolumePendingJobsUMap& prior_pending_jobs)
+                                               VolumePendingJobsUMap& /*prior_pending_jobs*/)
 {
+  // TODO [tastolfi 2023-05-22] use or remove `prior_pending_jobs` arg
+
   VolumeTrimEvent event;
 
   event.old_trim_pos = trimmed_region.slot_range.lower_bound;

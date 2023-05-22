@@ -173,15 +173,15 @@ class VolumeTest : public ::testing::Test
     for (;;) {
       llfs::StatusOr<usize> n_slots_visited = reader.visit_typed_next(
           batt::WaitForResource::kFalse,
-          [&data](const llfs::SlotParse& slot, const UpsertEvent& event) {
+          [&data](const llfs::SlotParse& /*slot*/, const UpsertEvent& event) {
             data[event.key] = event.value;
             return llfs::OkStatus();
           },
-          [&data](const llfs::SlotParse& slot, const RemoveEvent& event) {
+          [&data](const llfs::SlotParse& /*slot*/, const RemoveEvent& event) {
             data.erase(event.key);
             return llfs::OkStatus();
           },
-          [](const llfs::SlotParse& slot, const llfs::BoxedSeq<llfs::PageId>&) {
+          [](const llfs::SlotParse& /*slot*/, const llfs::BoxedSeq<llfs::PageId>&) {
             return llfs::OkStatus();
           });
 
@@ -307,7 +307,7 @@ TEST_F(VolumeTest, RecoverEmptyVolume)
 
       std::unique_ptr<llfs::Volume> test_volume = this->open_volume_or_die(
           fake_root_log, fake_recycler_log,
-          /*slot_visitor_fn=*/[](const llfs::SlotParse&, const std::string_view& user_data) {
+          /*slot_visitor_fn=*/[](const llfs::SlotParse&, const std::string_view& /*user_data*/) {
             return llfs::OkStatus();
           });
 
@@ -1041,7 +1041,7 @@ TEST_F(VolumeSimTest, ConcurrentAppendJobs)
 //
 auto VolumeSimTest::get_slot_visitor()
 {
-  return [this](const llfs::SlotParse slot, const llfs::PageId& page_id) {
+  return [this](const llfs::SlotParse /*slot*/, const llfs::PageId& page_id) {
     if (page_id == this->first_page_id) {
       this->recovered_first_page = true;
     } else if (page_id == this->second_root_page_id) {
@@ -1290,7 +1290,7 @@ void VolumeSimTest::verify_post_recovery_expectations(llfs::StorageSimulation& s
 //
 batt::StatusOr<llfs::PageId> VolumeSimTest::build_page_with_refs_to(
     const std::vector<llfs::PageId>& referenced_page_ids, llfs::PageSize page_size,
-    llfs::PageCacheJob& job, llfs::StorageSimulation& sim)
+    llfs::PageCacheJob& job, llfs::StorageSimulation& /*sim*/)
 {
   batt::StatusOr<llfs::PageGraphNodeBuilder> page_builder =
       llfs::PageGraphNodeBuilder::from_new_page(

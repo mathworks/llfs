@@ -78,7 +78,7 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<std::unique_ptr<Volume>> recover_storage_object(
-    const batt::SharedPtr<StorageContext>& storage_context, const std::string file_name,
+    const batt::SharedPtr<StorageContext>& storage_context, const std::string /*file_name*/,
     const FileOffsetPtr<const PackedVolumeConfig&>& p_volume_config,
     VolumeRuntimeOptions&& volume_runtime_options)
 {

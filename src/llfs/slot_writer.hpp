@@ -102,8 +102,7 @@ class SlotWriter
 
   // Prepare space in the log to append a slot.
   //
-  StatusOr<Append> prepare(batt::Grant& grant, usize slot_body_size,
-                           Optional<std::string_view> name = None);
+  StatusOr<Append> prepare(batt::Grant& grant, usize slot_body_size);
 
  private:
   LogDevice& log_device_;
@@ -132,8 +131,8 @@ class SlotWriter::Append
 {
  public:
   explicit Append(SlotWriter* that, batt::Mutex<LogDevice::Writer*>::Lock writer_lock,
-                  batt::Grant&& slot_grant, const MutableBuffer& slot_buffer, usize slot_body_size,
-                  Optional<std::string_view> name) noexcept;
+                  batt::Grant&& slot_grant, const MutableBuffer& slot_buffer,
+                  usize slot_body_size) noexcept;
 
   Append(const Append&) = delete;
   Append& operator=(const Append&) = delete;

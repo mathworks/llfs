@@ -18,6 +18,7 @@
 #include <batteries/async/grant.hpp>
 #include <batteries/async/mutex.hpp>
 #include <batteries/async/types.hpp>
+#include <batteries/suppress.hpp>
 
 namespace llfs {
 
@@ -70,6 +71,13 @@ class SlotWriter
   //
   StatusOr<batt::Grant> trim_and_reserve(slot_offset_type slot_lower_bound);
 
+  /** \brief Returns the current log device trim position.
+   */
+  slot_offset_type get_trim_pos() const noexcept
+  {
+    return this->log_device_.slot_range(LogReadMode::kSpeculative).lower_bound;
+  }
+
   // Wait for the log to be trimmed to a point not-less-than `slot_lower_bound`.  NOTE: this does
   // *NOT* initiate a log trim, it merely blocks until the log's lower bound advances.
   //
@@ -94,8 +102,7 @@ class SlotWriter
 
   // Prepare space in the log to append a slot.
   //
-  StatusOr<Append> prepare(batt::Grant& grant, usize slot_body_size,
-                           Optional<std::string_view> name = None);
+  StatusOr<Append> prepare(batt::Grant& grant, usize slot_body_size);
 
  private:
   LogDevice& log_device_;
@@ -124,14 +131,18 @@ class SlotWriter::Append
 {
  public:
   explicit Append(SlotWriter* that, batt::Mutex<LogDevice::Writer*>::Lock writer_lock,
-                  batt::Grant&& slot_grant, const MutableBuffer& slot_buffer, usize slot_body_size,
-                  Optional<std::string_view> name) noexcept;
+                  batt::Grant&& slot_grant, const MutableBuffer& slot_buffer,
+                  usize slot_body_size) noexcept;
 
   Append(const Append&) = delete;
   Append& operator=(const Append&) = delete;
 
+  BATT_SUPPRESS_IF_CLANG("-Wdefaulted-function-deleted")
+  //
   Append(Append&&) = default;
   Append& operator=(Append&&) = default;
+  //
+  BATT_UNSUPPRESS_IF_CLANG()
 
   ~Append() noexcept;
 

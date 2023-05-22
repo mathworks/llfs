@@ -32,7 +32,7 @@ class LlfsConan(ConanFile):
         "boost/1.81.0",
         "openssl/3.1.0",
         "glog/0.6.0",
-        "batteries/0.33.1@batteriescpp+batteries/stable",
+        "batteries/0.34.1@batteriescpp+batteries/stable",
         "cli11/2.3.2",
         "zlib/1.2.13",
     ] + ([
@@ -64,7 +64,8 @@ class LlfsConan(ConanFile):
     def configure(self):
         self.options["gtest"].shared = False
         self.options["boost"].shared = False
-        self.options["batteries"].glog_support = True
+        self.options["batteries"].with_glog = True
+        self.options["batteries"].header_only = False
 
     def build(self):
         cmake = CMake(self)

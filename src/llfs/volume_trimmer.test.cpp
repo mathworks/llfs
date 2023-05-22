@@ -18,6 +18,8 @@
 #include <llfs/testing/fake_log_device.hpp>
 #include <llfs/uuid.hpp>
 
+#include <batteries/async/fake_execution_context.hpp>
+#include <batteries/async/fake_executor.hpp>
 #include <batteries/env.hpp>
 
 #include <random>
@@ -306,7 +308,9 @@ class VolumeTrimmerTest : public ::testing::Test
     batt::StatusOr<usize> n_read = slot_reader.run(
         batt::WaitForResource::kFalse,
         batt::make_case_of_visitor(
-            [&](const llfs::SlotParse& slot, const llfs::VolumeTrimEvent& trim_event) {
+            [&](const llfs::SlotParse& /*slot*/, const llfs::VolumeTrimEvent& trim_event) {
+              // TODO [tastolfi 2023-05-22] use/verify `slot` arg
+
               for (auto iter = this->committed_jobs.begin(); iter != this->committed_jobs.end();
                    iter = this->committed_jobs.erase(iter)) {
                 const auto& [prepare_slot, page_ids] = *iter;

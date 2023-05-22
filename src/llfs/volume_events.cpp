@@ -150,7 +150,8 @@ PackedTrimmedPrepareJob* pack_object_to(const TrimmedPrepareJob& object,
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<TrimmedPrepareJob> unpack_object(const PackedTrimmedPrepareJob& packed, DataReader* src)
+StatusOr<TrimmedPrepareJob> unpack_object(const PackedTrimmedPrepareJob& packed,
+                                          DataReader* /*src*/)
 {
   TrimmedPrepareJob object;
 

@@ -59,8 +59,7 @@ void SlotWriter::halt()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-auto SlotWriter::prepare(batt::Grant& caller_grant, usize slot_body_size,
-                         Optional<std::string_view> name) -> StatusOr<Append>
+auto SlotWriter::prepare(batt::Grant& caller_grant, usize slot_body_size) -> StatusOr<Append>
 {
   BATT_CHECK_NE(slot_body_size, 0);
 
@@ -83,7 +82,6 @@ auto SlotWriter::prepare(batt::Grant& caller_grant, usize slot_body_size,
       std::move(*slot_grant),
       *slot_buffer,
       slot_body_size,
-      name,
   }};
 }
 
@@ -91,7 +89,7 @@ auto SlotWriter::prepare(batt::Grant& caller_grant, usize slot_body_size,
 //
 SlotWriter::Append::Append(SlotWriter* that, batt::Mutex<LogDevice::Writer*>::Lock writer_lock,
                            batt::Grant&& slot_grant, const MutableBuffer& slot_buffer,
-                           usize slot_body_size, Optional<std::string_view> name) noexcept
+                           usize slot_body_size) noexcept
     : that_{that}
     , writer_lock_{std::move(writer_lock)}
     , slot_grant_{std::move(slot_grant)}

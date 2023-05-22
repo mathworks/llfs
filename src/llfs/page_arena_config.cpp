@@ -71,14 +71,14 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
                       },
 
                       //----- --- -- -  -  -   -
-                      [&](const LinkToExistingPageDevice& opts) -> Status {
+                      [&](const LinkToExistingPageDevice& /*opts*/) -> Status {
                         LLFS_LOG_ERROR() << "Config not supported: arena.page_device = CreateNew, "
                                             "arena.page_allocator.page_device = LinkToExisting";
                         return batt::StatusCode::kInvalidArgument;
                       },
 
                       //----- --- -- -  -  -   -
-                      [&](const LinkToNewPageDevice& opts) -> Status {
+                      [&](const LinkToNewPageDevice& /*opts*/) -> Status {
                         link_new_page_device = true;
                         return OkStatus();
                       });
@@ -112,7 +112,7 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
           },
 
           //----- --- -- -  -  -   -
-          [&](const LinkToNewPageDevice& link_to_new) -> StatusOr<boost::uuids::uuid> {
+          [&](const LinkToNewPageDevice& /*link_to_new*/) -> StatusOr<boost::uuids::uuid> {
             LLFS_LOG_ERROR() << "Config not supported: arena.page_device = LinkToNew";
             return {batt::StatusCode::kInvalidArgument};
           }));
@@ -170,7 +170,7 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
 //
 StatusOr<PageArena> recover_storage_object(
     const batt::SharedPtr<StorageContext>& storage_context,       //
-    const std::string& file_name,                                 //
+    const std::string& /*file_name*/,                             //
     const FileOffsetPtr<const PackedPageArenaConfig&>& p_config,  //
     const PageAllocatorRuntimeOptions& allocator_options,         //
     const IoRingLogDriverOptions& allocator_log_options,          //

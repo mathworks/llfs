@@ -371,7 +371,8 @@ class VolumeTrimmerTest : public ::testing::Test
     std::vector<char> buffer(data_size, 'a');
     std::string_view data_str{buffer.data(), buffer.size()};
 
-    auto&& payload = llfs::PackableRef{llfs::pack_as_raw(data_str)};
+    llfs::PackAsRawData pack_as_raw{data_str};
+    auto&& payload = llfs::PackableRef{pack_as_raw};
 
     const usize slot_size = llfs::packed_sizeof_slot(payload);
     batt::StatusOr<batt::Grant> slot_grant =
@@ -384,9 +385,12 @@ class VolumeTrimmerTest : public ::testing::Test
     batt::StatusOr<llfs::SlotRange> slot_range =
         this->fake_slot_writer->append(*slot_grant, payload);
 
-    ASSERT_TRUE(slot_range.ok() || this->fake_log_has_failed());
+    ASSERT_TRUE(slot_range.ok() || this->fake_log_has_failed())
+        << BATT_INSPECT(slot_range) << BATT_INSPECT(this->fake_log_has_failed());
 
-    this->trim_control->update_upper_bound(slot_range->upper_bound);
+    if (slot_range.ok()) {
+      this->trim_control->update_upper_bound(slot_range->upper_bound);
+    }
 
     LLFS_VLOG(1) << "Appended opaque data: " << batt::c_str_literal(data_str);
   }

@@ -371,8 +371,8 @@ class VolumeTrimmerTest : public ::testing::Test
     std::vector<char> buffer(data_size, 'a');
     std::string_view data_str{buffer.data(), buffer.size()};
 
-    llfs::PackAsRawData pack_as_raw{data_str};
-    auto&& payload = llfs::PackableRef{pack_as_raw};
+    llfs::PackAsRawData to_pack_as_raw{data_str};
+    auto&& payload = llfs::PackableRef{to_pack_as_raw};
 
     const usize slot_size = llfs::packed_sizeof_slot(payload);
     batt::StatusOr<batt::Grant> slot_grant =

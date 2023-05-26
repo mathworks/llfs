@@ -93,7 +93,8 @@ class Volume
 
   // Returns the number of bytes needed to append `payload`.
   //
-  u64 calculate_grant_size(const PackableRef& payload) const;
+  template <typename T>
+  u64 calculate_grant_size(const T& payload) const;
 
   // Returns the number of bytes needed to append `payload`.
   //
@@ -105,7 +106,8 @@ class Volume
 
   // Atomically append a new slot containing `payload` to the end of the root log.
   //
-  StatusOr<SlotRange> append(const PackableRef& payload, batt::Grant& grant);
+  template <typename T>
+  StatusOr<SlotRange> append(const T& payload, batt::Grant& grant);
 
   // Atomically append a new slot containing `payload` to the end of the root log.
   //

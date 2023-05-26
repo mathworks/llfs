@@ -22,6 +22,18 @@ inline StatusOr<TypedVolumeReader<T>> Volume::typed_reader(const SlotRangeSpec& 
   return TypedVolumeReader<T>{std::move(*reader)};
 }
 
+template <typename T>
+u64 Volume::calculate_grant_size(const T& payload) const
+{
+  return packed_sizeof_slot(payload);
+}
+
+template <typename T>
+StatusOr<SlotRange> Volume::append(const T& payload, batt::Grant& grant)
+{
+  return this->slot_writer_.append(grant, payload);
+}
+
 }  // namespace llfs
 
 #endif  // LLFS_VOLUME_IPP

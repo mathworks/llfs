@@ -646,7 +646,7 @@ TEST_F(PageRecyclerTest, DuplicatePageDeletion)
                                  /*recycle_grant=*/testing::_, /*recycle_depth=*/0))
             .WillOnce(::testing::Invoke(
                 [&](const batt::Slice<const llfs::PageToRecycle>& to_delete,
-                    llfs::PageRecycler& recycler, llfs::slot_offset_type caller_slot,
+                    llfs::PageRecycler& /*recycler*/, llfs::slot_offset_type /*caller_slot*/,
                     batt::Grant& recycle_grant, i32 recycle_depth) -> batt::Status {
                   LLFS_VLOG(1) << "First delete: " << batt::dump_range(to_delete)
                                << BATT_INSPECT(this->p_mem_log_->driver().get_trim_pos());
@@ -680,8 +680,8 @@ TEST_F(PageRecyclerTest, DuplicatePageDeletion)
                                      /*recycle_grant=*/testing::_, /*recycle_depth=*/1))
                 .WillOnce(::testing::Invoke(
                     [&](const batt::Slice<const llfs::PageToRecycle>& to_delete,
-                        llfs::PageRecycler& recycler, llfs::slot_offset_type caller_slot,
-                        batt::Grant& recycle_grant, i32 recycle_depth) -> batt::Status {
+                        llfs::PageRecycler& /*recycler*/, llfs::slot_offset_type /*caller_slot*/,
+                        batt::Grant& /*recycle_grant*/, i32 /*recycle_depth*/) -> batt::Status {
                       LLFS_VLOG(1) << "Second delete: " << batt::dump_range(to_delete)
                                    << BATT_INSPECT(this->p_mem_log_->driver().get_trim_pos());
 
@@ -734,9 +734,11 @@ TEST_F(PageRecyclerTest, DuplicatePageDeletion)
                                  /*recycle_grant=*/testing::_, /*recycle_depth=*/0))
             .WillRepeatedly(::testing::Invoke(
                 [&](const batt::Slice<const llfs::PageToRecycle>& to_delete,
-                    llfs::PageRecycler& recycler, llfs::slot_offset_type caller_slot,
-                    batt::Grant& recycle_grant, i32 recycle_depth) -> batt::Status  //
+                    llfs::PageRecycler& /*recycler*/, llfs::slot_offset_type /*caller_slot*/,
+                    batt::Grant& /*recycle_grant*/, i32 /*recycle_depth*/) -> batt::Status  //
                 {
+                  // TODO [tastolfi 2023-05-22] check more of the inputs to this function
+
                   LLFS_VLOG(1) << "Post-recovery delete: " << batt::dump_range(to_delete);
 
                   for (const llfs::PageToRecycle& p : to_delete) {

@@ -34,19 +34,19 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-auto driver_config_from_arena_config(const FileOffsetPtr<PackedPageArenaConfig>& config)
+auto driver_config_from_arena_config(const FileOffsetPtr<PackedPageArenaConfig>& /*config*/)
 {
   return;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<PageArena> open_page_device_file_impl(batt::TaskScheduler& scheduler, IoRing& ioring,
-                                               const FileSegmentRef& file_ref,
-                                               const PageArenaFileRuntimeOptions& options,
-                                               PackedPageArenaConfig* config, bool write_config,
-                                               ConfirmThisWillEraseAllMyData confirm)
+StatusOr<PageArena> open_page_device_file_impl(
+    batt::TaskScheduler& /*scheduler*/, IoRing& /*ioring*/, const FileSegmentRef& /*file_ref*/,
+    const PageArenaFileRuntimeOptions& /*options*/, PackedPageArenaConfig* /*config*/,
+    bool /*write_config*/, ConfirmThisWillEraseAllMyData /*confirm*/)
 {
+  //TODO [tastolfi 2023-05-22] implement me!
   return {batt::StatusCode::kUnimplemented};
 }
 
@@ -58,7 +58,8 @@ StatusOr<PageArena> page_arena_from_file(batt::TaskScheduler& scheduler, IoRing&
                                          PackedPageArenaConfig* config_out)
 {
   return open_page_device_file_impl(scheduler, ioring, file_ref, options, config_out,
-                                    /*write_config=*/false, ConfirmThisWillEraseAllMyData::kNo);
+                                    /*write_config=*/
+                                    false, ConfirmThisWillEraseAllMyData::kNo);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -66,7 +67,7 @@ StatusOr<PageArena> page_arena_from_file(batt::TaskScheduler& scheduler, IoRing&
 StatusOr<PageArena> initialize_page_arena_file(batt::TaskScheduler& scheduler, IoRing& ioring,
                                                const FileSegmentRef& file_ref,
                                                const PageArenaFileRuntimeOptions& options,
-                                               const PackedPageArenaConfig& config,
+                                               const PackedPageArenaConfig& /*config*/,
                                                ConfirmThisWillEraseAllMyData confirm)
 {
   if (confirm != ConfirmThisWillEraseAllMyData::kYes) {
@@ -84,8 +85,9 @@ StatusOr<PageArena> initialize_page_arena_file(batt::TaskScheduler& scheduler, I
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<std::vector<std::unique_ptr<PageArenaConfigInFile>>> read_arena_configs_from_file(
-    const std::string& filename)
+    const std::string& /*filename*/)
 {
+  //TODO [tastolfi 2023-05-22] implement me!
   return {batt::StatusCode::kUnimplemented};
 }
 

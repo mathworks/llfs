@@ -26,8 +26,7 @@ usize max_pages_for_wal_capacity(const PageRecyclerOptions& options, usize wal_c
 //
 PageRecycler::State::State(const boost::uuids::uuid& uuid,
                            slot_offset_type latest_info_refresh_slot,
-                           const PageRecyclerOptions& options, usize wal_capacity,
-                           const SlotRange& initial_wal_range)
+                           const PageRecyclerOptions& options, usize wal_capacity)
     : NoLockState{uuid, latest_info_refresh_slot, options}
     , arena_used_{0}
     , arena_size_{max_pages_for_wal_capacity(options, wal_capacity)}

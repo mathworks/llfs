@@ -19,7 +19,7 @@ namespace llfs {
 
 batt::SharedPtr<PageCache> make_memory_page_cache(
     batt::TaskScheduler& scheduler, const std::vector<std::pair<PageCount, PageSize>>& arena_sizes,
-    MaxRefsPerPage max_refs_per_page)
+    MaxRefsPerPage /*max_refs_per_page*/)  // TODO [tastolfi 2023-05-22] use max_refs_per_page
 {
   std::unordered_map<PageSize, PageCount, PageSize::Hash> dedup;
   for (const auto& [count, size] : arena_sizes) {

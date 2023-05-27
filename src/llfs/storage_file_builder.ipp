@@ -72,7 +72,7 @@ StatusOr<FileOffsetPtr<const PackedConfigT&>> StorageFileBuilder::Transaction::a
 //
 template <typename ConfigOptionsT, typename PackedConfigT>
 StatusOr<FileOffsetPtr<PackedConfigT&>> StorageFileBuilder::Transaction::add_config_slot(
-    const ConfigOptionsT& options)
+    const ConfigOptionsT& /*options*/)
 {
   verify_config_slot_type_requirements<PackedConfigT>();
 

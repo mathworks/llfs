@@ -169,7 +169,7 @@ class TypedSlotReader<PackedVariant<Ts...>> : public SlotReader
 
     const bool ok = data_reader.read_variant(  //
         batt::StaticType<PackedVariant<Ts...>>{},
-        [&](const PackedVariant<Ts...>& head, const auto& tail) {
+        [&](const PackedVariant<Ts...>& /*head*/, const auto& tail) {
           auto unpacked_object = unpack_object(tail, &data_reader);
 
           if (!unpacked_object.ok()) {

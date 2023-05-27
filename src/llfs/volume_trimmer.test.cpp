@@ -18,6 +18,8 @@
 #include <llfs/testing/fake_log_device.hpp>
 #include <llfs/uuid.hpp>
 
+#include <batteries/async/fake_execution_context.hpp>
+#include <batteries/async/fake_executor.hpp>
 #include <batteries/env.hpp>
 
 #include <random>
@@ -306,7 +308,9 @@ class VolumeTrimmerTest : public ::testing::Test
     batt::StatusOr<usize> n_read = slot_reader.run(
         batt::WaitForResource::kFalse,
         batt::make_case_of_visitor(
-            [&](const llfs::SlotParse& slot, const llfs::VolumeTrimEvent& trim_event) {
+            [&](const llfs::SlotParse& /*slot*/, const llfs::VolumeTrimEvent& trim_event) {
+              // TODO [tastolfi 2023-05-22] use/verify `slot` arg
+
               for (auto iter = this->committed_jobs.begin(); iter != this->committed_jobs.end();
                    iter = this->committed_jobs.erase(iter)) {
                 const auto& [prepare_slot, page_ids] = *iter;
@@ -367,7 +371,8 @@ class VolumeTrimmerTest : public ::testing::Test
     std::vector<char> buffer(data_size, 'a');
     std::string_view data_str{buffer.data(), buffer.size()};
 
-    auto&& payload = llfs::PackableRef{llfs::pack_as_raw(data_str)};
+    llfs::PackAsRawData to_pack_as_raw{data_str};
+    auto&& payload = llfs::PackableRef{to_pack_as_raw};
 
     const usize slot_size = llfs::packed_sizeof_slot(payload);
     batt::StatusOr<batt::Grant> slot_grant =
@@ -380,9 +385,12 @@ class VolumeTrimmerTest : public ::testing::Test
     batt::StatusOr<llfs::SlotRange> slot_range =
         this->fake_slot_writer->append(*slot_grant, payload);
 
-    ASSERT_TRUE(slot_range.ok() || this->fake_log_has_failed());
+    ASSERT_TRUE(slot_range.ok() || this->fake_log_has_failed())
+        << BATT_INSPECT(slot_range) << BATT_INSPECT(this->fake_log_has_failed());
 
-    this->trim_control->update_upper_bound(slot_range->upper_bound);
+    if (slot_range.ok()) {
+      this->trim_control->update_upper_bound(slot_range->upper_bound);
+    }
 
     LLFS_VLOG(1) << "Appended opaque data: " << batt::c_str_literal(data_str);
   }

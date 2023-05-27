@@ -138,7 +138,9 @@ class FinalizedPageCacheJob : public PageLoader
 
 // Write all changes in `job` to durable storage.  This is guaranteed to be atomic.
 //
-Status commit(CommittablePageCacheJob committable_job, const JobCommitParams& params, u64 callers);
+Status commit(CommittablePageCacheJob committable_job, const JobCommitParams& params, u64 callers,
+              slot_offset_type prev_caller_slot = 0,
+              batt::Watch<slot_offset_type>* durable_caller_slot = nullptr);
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 // Represents a unique PageCacheJob that has been finalized and is ready to be committed to durable
@@ -152,7 +154,8 @@ class CommittablePageCacheJob
   static StatusOr<CommittablePageCacheJob> from(std::unique_ptr<PageCacheJob> job, u64 callers);
 
   friend Status commit(CommittablePageCacheJob committable_job, const JobCommitParams& params,
-                       u64 callers);
+                       u64 callers, slot_offset_type prev_caller_slot,
+                       batt::Watch<slot_offset_type>* durable_caller_slot);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -213,7 +216,8 @@ class CommittablePageCacheJob
 
   explicit CommittablePageCacheJob(std::unique_ptr<PageCacheJob> finalized_job) noexcept;
 
-  Status commit_impl(const JobCommitParams& params, u64 callers);
+  Status commit_impl(const JobCommitParams& params, u64 callers, slot_offset_type prev_caller_slot,
+                     batt::Watch<slot_offset_type>* durable_caller_slot);
 
   Status write_new_pages(const JobCommitParams& params, u64 callers);
 
@@ -239,7 +243,9 @@ class CommittablePageCacheJob
 
 // Convenience shortcut for use cases where we do not pipeline job commits.
 //
-Status commit(std::unique_ptr<PageCacheJob> job, const JobCommitParams& params, u64 callers);
+Status commit(std::unique_ptr<PageCacheJob> job, const JobCommitParams& params, u64 callers,
+              slot_offset_type prev_caller_slot = 0,
+              batt::Watch<slot_offset_type>* durable_caller_slot = nullptr);
 
 }  // namespace llfs
 

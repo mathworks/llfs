@@ -55,8 +55,7 @@ class PageRecycler::State : public PageRecycler::NoLockState
   using ThreadSafeBase = NoLockState;
 
   explicit State(const boost::uuids::uuid& uuid, slot_offset_type latest_info_refresh_slot,
-                 const PageRecyclerOptions& options, usize wal_capacity,
-                 const SlotRange& initial_wal_range);
+                 const PageRecyclerOptions& options, usize wal_capacity);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   --
 

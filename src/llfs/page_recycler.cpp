@@ -8,7 +8,7 @@
 
 #include <batteries/suppress.hpp>
 
-BATT_SUPPRESS("-Wmaybe-uninitialized")
+BATT_SUPPRESS_IF_GCC("-Wmaybe-uninitialized")
 
 #include <llfs/page_recycler.hpp>
 //
@@ -145,9 +145,9 @@ StatusOr<SlotRange> refresh_recycler_info_slot(TypedSlotWriter<PageRecycleEvent>
   //
   BATT_ASSIGN_OK_RESULT(Optional<PageRecycler::Batch> latest_batch, visitor.consume_latest_batch());
 
-  auto state = std::make_unique<State>(
-      visitor.recycler_uuid(), latest_info_refresh_slot->lower_bound, visitor.options(),
-      recovered_log->get()->capacity(), recovered_log->get()->slot_range(LogReadMode::kDurable));
+  auto state =
+      std::make_unique<State>(visitor.recycler_uuid(), latest_info_refresh_slot->lower_bound,
+                              visitor.options(), recovered_log->get()->capacity());
 
   state->bulk_load(as_slice(visitor.recovered_pages()));
 
@@ -758,4 +758,4 @@ Status PageRecycler::trim_log()
 
 }  // namespace llfs
 
-BATT_UNSUPPRESS()
+BATT_UNSUPPRESS_IF_GCC()

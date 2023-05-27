@@ -25,20 +25,25 @@ class LlfsConan(ConanFile):
     default_options = {"shared": False}
     generators = "cmake"
     build_policy = "missing"
+
     requires = [
         "libbacktrace/cci.20210118",
-        "b2/4.9.3",
+        "b2/4.9.6",
         "gtest/1.13.0",
         "boost/1.81.0",
-        "openssl/3.0.7",
         "glog/0.6.0",
-        "batteries/0.30.0@batteriescpp+batteries/stable",
+        "batteries/0.34.1@batteriescpp+batteries/stable",
         "cli11/2.3.2",
-        "zlib/1.2.13",
+
+        # Version overrides (conflict resolutions)
+        #
+        ("openssl/3.1.0", "override"),
+        ("zlib/1.2.13", "override"),
     ] + ([
         "libunwind/1.6.2",
         "liburing/2.2",
     ] if platform.system() == 'Linux' else [])
+
     exports_sources = [
         "src/CMakeLists.txt",
         "src/**/*.hpp",
@@ -59,11 +64,13 @@ class LlfsConan(ConanFile):
         self.version = batt.get_version(no_check_conan=True)
         batt.verbose(f'VERSION={self.version}')
         #
-        #+++++++++++-+-+--+----- --- -- -  -  -   -        
+        #+++++++++++-+-+--+----- --- -- -  -  -   -
     
     def configure(self):
         self.options["gtest"].shared = False
         self.options["boost"].shared = False
+        self.options["batteries"].with_glog = True
+        self.options["batteries"].header_only = False
 
     def build(self):
         cmake = CMake(self)

@@ -23,6 +23,7 @@
 #include <llfs/volume_metrics.hpp>
 #include <llfs/volume_options.hpp>
 #include <llfs/volume_reader.hpp>
+#include <llfs/volume_reader.ipp>
 #include <llfs/volume_trimmer.hpp>
 
 #include <batteries/async/grant.hpp>
@@ -270,6 +271,14 @@ class Volume
   // Task that runs `trimmer_` continuously in the background.
   //
   Optional<batt::Task> trimmer_task_;
+
+  // Tracks the latest job appended.
+  //
+  std::atomic<slot_offset_type> latest_user_slot_{0};
+
+  // Tracks the latest job that is durable (will-commit).
+  //
+  batt::Watch<slot_offset_type> durable_user_slot_{0};
 };
 
 }  // namespace llfs

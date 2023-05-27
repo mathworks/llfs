@@ -277,16 +277,30 @@ FinalizedPageCacheJob CommittablePageCacheJob::finalized_job() const
   return FinalizedPageCacheJob{batt::make_copy(this->tracker_)};
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status commit(std::unique_ptr<PageCacheJob> job, const JobCommitParams& params, u64 callers,
+              slot_offset_type prev_caller_slot, batt::Watch<slot_offset_type>* durable_caller_slot)
+{
+  BATT_ASSIGN_OK_RESULT(auto committable_job,
+                        CommittablePageCacheJob::from(std::move(job), callers));
+
+  return commit(std::move(committable_job), params, callers, prev_caller_slot, durable_caller_slot);
+}
+
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-Status commit(CommittablePageCacheJob committable_job, const JobCommitParams& params, u64 callers)
+Status commit(CommittablePageCacheJob committable_job, const JobCommitParams& params, u64 callers,
+              slot_offset_type prev_caller_slot, batt::Watch<slot_offset_type>* durable_caller_slot)
 {
-  return committable_job.commit_impl(params, callers);
+  return committable_job.commit_impl(params, callers, prev_caller_slot, durable_caller_slot);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 callers)
+Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 callers,
+                                            slot_offset_type prev_caller_slot,
+                                            batt::Watch<slot_offset_type>* durable_caller_slot)
 {
   BATT_CHECK_NOT_NULLPTR(params.caller_uuid);
 
@@ -329,6 +343,11 @@ Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 c
                            this->job_->await_base_job_durable());
   BATT_REQUIRE_OK(pipeline_status);
 
+  if (durable_caller_slot) {
+    BATT_CHECK(slot_less_than(prev_caller_slot, params.caller_slot));
+    BATT_REQUIRE_OK(await_slot_offset(prev_caller_slot, *durable_caller_slot));
+  }
+
   // Update ref counts, keeping track of the sync point for each device's allocator; this allows the
   // updates to happen in parallel.  We go through again below to synchronize them.
   //
@@ -348,6 +367,11 @@ Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 c
   // Now we can allow future commits in our pipeline to continue.
   //
   this->tracker_->progress_.set_value(PageCacheJobProgress::kDurable);
+
+  if (durable_caller_slot) {
+    const slot_offset_type prev_durable_slot = durable_caller_slot->set_value(params.caller_slot);
+    BATT_CHECK_EQ(prev_durable_slot, prev_caller_slot);
+  }
 
   // If there are any dead pages, assign their ownership to the recycler.
   //  - TODO [tastolfi 2021-06-12] this can be moved to its own pipeline stage/task.
@@ -657,15 +681,6 @@ Status CommittablePageCacheJob::drop_deleted_pages(u64 callers)
                                    })  //
                                  | seq::collect_vec(),
                              this->job_->cache(), this->job_->job_id, callers);
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Status commit(std::unique_ptr<PageCacheJob> job, const JobCommitParams& params, u64 callers)
-{
-  BATT_ASSIGN_OK_RESULT(auto committable_job,
-                        CommittablePageCacheJob::from(std::move(job), callers));
-  return commit(std::move(committable_job), params, callers);
 }
 
 }  // namespace llfs

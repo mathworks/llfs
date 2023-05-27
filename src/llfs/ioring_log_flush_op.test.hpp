@@ -10,6 +10,11 @@
 #ifndef LLFS_IORING_LOG_FLUSH_OP_TEST_HPP
 #define LLFS_IORING_LOG_FLUSH_OP_TEST_HPP
 
+#include <llfs/config.hpp>
+//
+
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <llfs/buffer.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/ioring_log_flush_op.hpp>
@@ -198,8 +203,10 @@ class FakeLogState
   }
 
   Status write_data(i64 file_offset, ConstBuffer src, std::function<bool()> inject_block_failure,
-                    usize flush_op_index)
+                    usize /*flush_op_index*/)
   {
+    //TODO [tastolfi 2023-05-22] use/verify `flush_op_index` arg
+
     const i64 end_file_offset = file_offset + BATT_CHECKED_CAST(i64, src.size());
 
     // Make sure the entire range of written data is within the range of valid disk blocks.
@@ -665,5 +672,7 @@ class ExpectedFlushOpState
 };  // namespace llfs
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING
 
 #endif  // LLFS_IORING_LOG_FLUSH_OP_TEST_HPP

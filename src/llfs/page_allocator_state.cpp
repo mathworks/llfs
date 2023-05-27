@@ -487,10 +487,9 @@ batt::Status PageAllocatorState::recover(const SlotRange& slot_offset,
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <bool kInsideRecovery>
-void PageAllocatorState::process_txn(const SlotRange& slot_offset,
-                                     const PackedPageAllocatorTxn& txn,
-                                     PageAllocatorMetrics* metrics,
-                                     std::integral_constant<bool, kInsideRecovery> inside_recovery)
+void PageAllocatorState::process_txn(
+    const SlotRange& slot_offset, const PackedPageAllocatorTxn& txn, PageAllocatorMetrics* metrics,
+    std::integral_constant<bool, kInsideRecovery> /*inside_recovery*/)
 {
   LLFS_VLOG(1) << "(device=" << this->page_ids_.get_device_id()  //
                << ") " << (kInsideRecovery ? "recovering" : "learning") << "[slot=" << slot_offset

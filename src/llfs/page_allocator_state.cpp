@@ -67,10 +67,11 @@ StatusOr<slot_offset_type> PageAllocatorState::write_checkpoint_slice(
       slot_range = slot_writer.append(
           slice_grant,
           PackedPageRefCountRefresh{
-              {
-                  .page_id = {this->page_ids_.make_page_id(physical_page, generation).int_value()},
-                  .ref_count = ref_count_obj->get_count(),
-              },
+              .page_id =
+                  {
+                      .id_val = this->page_ids_.make_page_id(physical_page, generation).int_value(),
+                  },
+              .ref_count = ref_count_obj->get_count(),
               .user_index = user_index,
           });
 

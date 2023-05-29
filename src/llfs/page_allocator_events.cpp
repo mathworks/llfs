@@ -29,7 +29,7 @@ std::ostream& operator<<(std::ostream& out, const PackedPageAllocatorDetach& t)
 //
 std::ostream& operator<<(std::ostream& out, const PackedPageRefCountRefresh& t)
 {
-  return out << "{" << static_cast<const PackedPageRefCount&>(t) << ", user_index=" << t.user_index
+  return out << "{" << PackedPageRefCount{t.page_id, t.ref_count} << ", user_index=" << t.user_index
              << ",}";
 }
 

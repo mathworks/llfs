@@ -284,7 +284,7 @@ void PageCache::deallocate_page(PageId page_id, u64 callers, u64 job_id)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status PageCache::attach_user(const boost::uuids::uuid& user_id, slot_offset_type slot_offset)
+Status PageCache::attach(const boost::uuids::uuid& user_id, slot_offset_type slot_offset)
 {
   bool success = false;
   std::vector<const PageArena*> attached_arenas;
@@ -315,7 +315,7 @@ Status PageCache::attach_user(const boost::uuids::uuid& user_id, slot_offset_typ
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status PageCache::detach_user(const boost::uuids::uuid& user_id, slot_offset_type slot_offset)
+Status PageCache::detach(const boost::uuids::uuid& user_id, slot_offset_type slot_offset)
 {
   for (const PageArena& arena : this->storage_pool_) {
     auto arena_status = arena.allocator().detach_user(user_id, slot_offset);

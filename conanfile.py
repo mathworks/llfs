@@ -37,8 +37,8 @@ class LlfsConan(ConanFile):
 
         # Version overrides (conflict resolutions)
         #
-        ("openssl/3.1.0", "override")
-        ("zlib/1.2.13", "override")
+        ("openssl/3.1.0", "override"),
+        ("zlib/1.2.13", "override"),
     ] + ([
         "libunwind/1.6.2",
         "liburing/2.2",

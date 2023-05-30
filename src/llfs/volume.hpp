@@ -150,10 +150,6 @@ class Volume
    */
   slot_offset_type get_trim_pos() const noexcept;
 
-  /** \brief Causes trim to be delayed by the specified number of bytes.  The default is 0.
-   */
-  void set_trim_delay(u64 byte_count);
-
   // Returns the PageCache associated with this Volume.
   //
   PageCache& cache() const;

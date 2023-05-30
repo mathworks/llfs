@@ -11,6 +11,7 @@
 #define LLFS_PACKED_INTERVAL_HPP
 
 #include <llfs/buffer.hpp>
+#include <llfs/data_layout.hpp>
 #include <llfs/data_packer.hpp>
 #include <llfs/define_packed_type.hpp>
 #include <llfs/int_types.hpp>
@@ -52,6 +53,8 @@ struct PackedBasicInterval {
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  /** \brief Returns a PackedInterval representation of `interval`.
+   */
   static Self from(const batt::BasicInterval<Traits>& interval) noexcept
   {
     return Self{

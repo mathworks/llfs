@@ -9,6 +9,8 @@
 #include <llfs/ioring_log_driver.hpp>
 //
 
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <llfs/ioring_log_driver.ipp>
 
 namespace llfs {
@@ -16,3 +18,5 @@ namespace llfs {
 template class BasicIoRingLogDriver<BasicIoRingLogFlushOp>;
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING

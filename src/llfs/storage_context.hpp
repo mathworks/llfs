@@ -10,6 +10,11 @@
 #ifndef LLFS_STORAGE_CONTEXT_HPP
 #define LLFS_STORAGE_CONTEXT_HPP
 
+#include <llfs/config.hpp>
+//
+
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <llfs/ioring.hpp>
 #include <llfs/packed_config.hpp>
 #include <llfs/page_cache.hpp>
@@ -156,5 +161,7 @@ class StorageContext : public batt::RefCounted<StorageContext>
 };
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING
 
 #endif  // LLFS_STORAGE_CONTEXT_HPP

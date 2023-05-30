@@ -9,6 +9,8 @@
 #include <llfs/ioring_log_config.hpp>
 //
 
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <llfs/log_device_config.hpp>
 
 namespace llfs {
@@ -27,3 +29,5 @@ namespace llfs {
 }
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING

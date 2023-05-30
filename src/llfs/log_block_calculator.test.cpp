@@ -30,7 +30,8 @@ TEST(LogBlockCalculator, Test)
   const usize log_size = 1 * kMiB;
 
   for (const usize queue_depth : {1, 2, 4, 4096}) {
-    for (const usize block_size : {usize{512}, 1 * kKiB, 16 * kKiB, 64 * kKiB}) {
+    for (const usize block_size :
+         {usize{512}, usize{1 * kKiB}, usize{16 * kKiB}, usize{64 * kKiB}}) {
       ASSERT_EQ(block_size % llfs::kLogPageSize, 0u);
 
       for (const i64 begin_file_offset : {i64(0), i64(llfs::kLogPageSize * 3)}) {

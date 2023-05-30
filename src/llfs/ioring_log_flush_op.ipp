@@ -10,6 +10,10 @@
 #ifndef LLFS_IORING_LOG_FLUSH_OP_IPP
 #define LLFS_IORING_LOG_FLUSH_OP_IPP
 
+#include <llfs/config.hpp>
+//
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <llfs/ioring_log_flush_op.hpp>
 
 #include <llfs/metrics.hpp>
@@ -655,5 +659,7 @@ inline bool BasicIoRingLogFlushOp<DriverImpl>::fill_buffer(slot_offset_type know
 #undef THIS_VLOG
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING
 
 #endif  // LLFS_IORING_LOG_FLUSH_OP_IPP

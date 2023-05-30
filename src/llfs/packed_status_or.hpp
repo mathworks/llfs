@@ -145,7 +145,7 @@ batt::Status validate_packed_value(const llfs::PackedStatusOr<T>& packed, const 
 namespace batt {
 
 template <typename T, typename PackedT = ::llfs::PackedTypeFor<T>>
-inline [[maybe_unused]] ::batt::StaticType<::llfs::PackedStatusOr<PackedT>> llfs_packed_type_for(
+[[maybe_unused]] inline ::batt::StaticType<::llfs::PackedStatusOr<PackedT>> llfs_packed_type_for(
     ::batt::StaticType<StatusOr<T>>)
 {
   return {};

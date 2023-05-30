@@ -10,6 +10,11 @@
 #ifndef LLFS_IORING_LOG_DRIVER_IPP
 #define LLFS_IORING_LOG_DRIVER_IPP
 
+#include <llfs/config.hpp>
+//
+
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <llfs/data_reader.hpp>
 #include <llfs/ioring_log_driver.hpp>
 #include <llfs/ioring_log_initializer.hpp>
@@ -486,5 +491,7 @@ inline slot_offset_type BasicIoRingLogDriver<FlushOpImpl>::FlushState::get_flush
 }
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING
 
 #endif  // LLFS_IORING_LOG_DRIVER_IPP

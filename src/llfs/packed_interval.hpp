@@ -135,7 +135,7 @@ namespace batt {
 /** \brief Defines llfs::PackedBasicInterval to be the packed representation of batt::BasicInterval.
  */
 template <typename Traits>
-inline [[maybe_unused]] ::batt::StaticType<::llfs::PackedBasicInterval<Traits>>
+[[maybe_unused]] inline ::batt::StaticType<::llfs::PackedBasicInterval<Traits>>
     llfs_packed_type_for(::batt::StaticType<::batt::BasicInterval<Traits>>)
 {
   return {};

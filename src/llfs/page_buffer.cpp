@@ -13,6 +13,7 @@
 #include <llfs/page_layout.hpp>
 
 #include <batteries/math.hpp>
+#include <batteries/suppress.hpp>
 
 #include <boost/lockfree/policies.hpp>
 #include <boost/lockfree/queue.hpp>
@@ -122,7 +123,9 @@ void PageBuffer::operator delete(void* ptr)
       return;
     }
   }
+  BATT_SUPPRESS_IF_CLANG("-Wunevaluated-expression")
   delete[] reinterpret_cast<decltype(new Block[1])>(ptr);
+  BATT_UNSUPPRESS_IF_CLANG()
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

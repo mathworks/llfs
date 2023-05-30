@@ -17,6 +17,7 @@
 
 #include <batteries/static_assert.hpp>
 
+#include <cstring>
 #include <string>
 #include <string_view>
 
@@ -48,6 +49,14 @@ struct PackedBytes {
   //
   PackedBytes(const PackedBytes&) = delete;
   PackedBytes& operator=(const PackedBytes&) = delete;
+
+  void clear() noexcept
+  {
+    this->data_offset = sizeof(PackedBytes);
+    this->unused_[0] = 0;
+    this->data_size = 0;
+    this->reserved_[0] = 0;
+  }
 
   const void* data() const
   {

@@ -36,7 +36,7 @@ TEST(SlotIntervalMapTest, RandomUpdates)
     std::array<llfs::slot_offset_type, kTestLogSize> expected_values;
     expected_values.fill(0);
 
-    std::default_random_engine rng{seed};
+    std::default_random_engine rng{(u32)seed};
 
     for (usize i = 0; i < kUpdateCount; ++i) {
       std::uniform_int_distribution<usize> pick_lower_bound{usize{0}, expected_values.size() - 1};

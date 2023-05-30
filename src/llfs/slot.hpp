@@ -29,10 +29,7 @@ using slot_size_type = u32;
 constexpr u64 kSlotDistanceUpperBound = (u64{1} << 63);
 constexpr u64 kMaxSlotDistance = kSlotDistanceUpperBound - 1;
 
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
+BATT_SUPPRESS_IF_GCC("-Wmaybe-uninitialized")
 
 // Returns true iff `first` is strictly less than `second`.
 //
@@ -95,9 +92,7 @@ struct SlotGreater {
   }
 };
 
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
+BATT_UNSUPPRESS_IF_GCC()
 
 inline slot_offset_type slot_min(slot_offset_type first, slot_offset_type second)
 {

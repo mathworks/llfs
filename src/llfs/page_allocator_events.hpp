@@ -15,6 +15,7 @@
 #include <llfs/array_packer.hpp>
 #include <llfs/data_layout.hpp>
 #include <llfs/packed_page_ref_count.hpp>
+#include <llfs/packed_page_user_slot.hpp>
 #include <llfs/slot.hpp>
 #include <llfs/slot_writer.hpp>
 
@@ -94,7 +95,9 @@ bool pack_object_to(const PackedPageAllocatorDetach& from, PackedPageAllocatorDe
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-struct PackedPageRefCountRefresh : PackedPageRefCount {
+struct PackedPageRefCountRefresh {
+  PackedPageId page_id;
+  little_i32 ref_count;
   little_u32 user_index;
 };
 
@@ -165,16 +168,14 @@ inline usize packed_sizeof(const PackedPageAllocatorTxn& txn)
 inline usize packed_sizeof_checkpoint(const PackedPageAllocatorTxn& txn)
 {
   static const PackedPageRefCountRefresh packed_ref_count{
-      {
-          .page_id = {0},
-          .ref_count = 0,
-      },
+      .page_id = {.id_val = 0},
+      .ref_count = 0,
       .user_index = 0,
   };
   static const PackedPageAllocatorAttach packed_attachment{
       .user_slot =
           {
-              .user_id = {},
+              .user_id = boost::uuids::uuid(),
               .slot_offset = 0,
           },
       .user_index = 0,

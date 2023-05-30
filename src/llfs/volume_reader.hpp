@@ -163,5 +163,3 @@ class TypedVolumeReader<PackedVariant<Ts...>> : public VolumeReader
 }  // namespace llfs
 
 #endif  // LLFS_VOLUME_READER_HPP
-
-#include <llfs/volume_reader.ipp>

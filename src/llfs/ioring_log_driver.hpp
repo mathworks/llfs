@@ -71,7 +71,8 @@ class BasicIoRingLogDriver
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  explicit BasicIoRingLogDriver(LogStorageDriverContext& context, int fd,
+  explicit BasicIoRingLogDriver(LogStorageDriverContext& context,
+                                batt::TaskScheduler& task_scheduler, int fd,
                                 const IoRingLogConfig& config,
                                 const IoRingLogDriverOptions& options) noexcept;
 
@@ -261,6 +262,8 @@ class BasicIoRingLogDriver
   // Used to access the RingBuffer.
   //
   LogStorageDriverContext& context_;
+
+  batt::TaskScheduler& task_scheduler_;
 
   // The physical log configuration plus cached derived values.
   //

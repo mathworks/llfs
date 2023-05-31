@@ -31,6 +31,18 @@ struct SlotParse {
 
 std::ostream& operator<<(std::ostream& out, const SlotParse& t);
 
+inline bool operator==(const SlotParse& l, const SlotParse& r)
+{
+  return l.offset == r.offset &&  //
+         l.body == r.body &&      //
+         l.depends_on_offset == r.depends_on_offset;
+}
+
+inline bool operator!=(const SlotParse& l, const SlotParse& r)
+{
+  return !(l == r);
+}
+
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 template <typename T>

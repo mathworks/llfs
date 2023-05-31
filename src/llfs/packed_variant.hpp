@@ -35,6 +35,8 @@ struct PackedVariant {
 
   using tuple_type = std::tuple<Ts...>;
 
+  static constexpr usize kNumCases = sizeof...(Ts);
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   little_u8 which;
@@ -50,15 +52,11 @@ struct PackedVariant {
   }
 
   template <typename T>
-  void init(batt::StaticType<T> = {})
-  {
-    constexpr unsigned kWhich = batt::TupleIndexOf_v<PackedVariant::tuple_type, T>;
-    this->init(kWhich);
-  }
+  void init(batt::StaticType<T> = {});
 
   void init(unsigned n)
   {
-    BATT_CHECK_LT(n, sizeof...(Ts)) << "PackedVariant case out-of-bounds";
+    BATT_CHECK_LT(n, kNumCases) << "PackedVariant case out-of-bounds";
 
     this->which = n;
   }
@@ -82,6 +80,41 @@ struct PackedVariant {
 };
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedVariant<>), 1);
+
+template <typename T>
+struct IsPackedVariantImpl : std::false_type {
+};
+
+template <typename... Ts>
+struct IsPackedVariantImpl<PackedVariant<Ts...>> : std::true_type {
+};
+
+template <typename T>
+using IsPackedVariant = IsPackedVariantImpl<std::decay_t<T>>;
+
+/** \brief Returns the index of `CaseT` within the list of allowed types in `VariantT`.
+ */
+template <typename VariantT, typename CaseT,
+          typename = std::enable_if_t<IsPackedVariant<VariantT>{}>>
+inline constexpr u8 index_of_type_within_packed_variant(batt::StaticType<VariantT> = {},
+                                                        batt::StaticType<CaseT> = {})
+{
+  constexpr usize value = batt::TupleIndexOf_v<typename VariantT::tuple_type, CaseT>;
+
+  static_assert(VariantT::kNumCases < (1u << (sizeof(u8) * 8 /*bits-per-byte*/)));
+  static_assert(value < VariantT::kNumCases,
+                "The specified CaseT is not one of the members of the PackedVariant type VariantT");
+
+  return (u8)value;
+}
+
+template <typename... Ts>
+template <typename T>
+void PackedVariant<Ts...>::init(batt::StaticType<T>)
+{
+  constexpr unsigned kWhich = index_of_type_within_packed_variant<PackedVariant<Ts...>, T>();
+  this->init(kWhich);
+}
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 

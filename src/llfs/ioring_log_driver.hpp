@@ -10,6 +10,11 @@
 #ifndef LLFS_IORING_LOG_DRIVER_HPP
 #define LLFS_IORING_LOG_DRIVER_HPP
 
+#include <llfs/config.hpp>
+//
+
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <llfs/basic_log_storage_driver.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/ioring_log_config.hpp>
@@ -317,5 +322,7 @@ class BasicIoRingLogDriver
 };
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING
 
 #endif  // LLFS_IORING_LOG_DRIVER_HPP

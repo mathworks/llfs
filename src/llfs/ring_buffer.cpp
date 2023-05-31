@@ -149,8 +149,12 @@ Status RingBuffer::sync()
 //
 Status RingBuffer::datasync()
 {
+#if LLFS_PLATFORM_IS_LINUX
   const int retval = fdatasync(this->fd_);
   return batt::status_from_retval(retval);
+#else
+  return this->sync();
+#endif
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

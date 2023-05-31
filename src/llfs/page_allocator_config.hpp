@@ -10,12 +10,18 @@
 #ifndef LLFS_PAGE_ALLOCATOR_CONFIG_HPP
 #define LLFS_PAGE_ALLOCATOR_CONFIG_HPP
 
+#include <llfs/config.hpp>
+//
+
+#ifndef LLFS_DISABLE_IO_URING
+
+#include <llfs/page_allocator_runtime_options.hpp>
+
 #include <llfs/int_types.hpp>
 #include <llfs/log_device_config.hpp>
 #include <llfs/optional.hpp>
 #include <llfs/packed_config.hpp>
 #include <llfs/packed_pointer.hpp>
-#include <llfs/page_allocator_runtime_options.hpp>
 #include <llfs/page_device_config.hpp>
 #include <llfs/page_size.hpp>
 
@@ -182,5 +188,7 @@ struct PackedConfigTagFor<PackedPageAllocatorConfig> {
 std::ostream& operator<<(std::ostream& out, const PackedPageAllocatorConfig& t);
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING
 
 #endif  // LLFS_PAGE_ALLOCATOR_CONFIG_HPP

@@ -10,6 +10,11 @@
 #ifndef LLFS_PACKED_LOG_DEVICE_CONFIG_HPP
 #define LLFS_PACKED_LOG_DEVICE_CONFIG_HPP
 
+#include <llfs/config.hpp>
+//
+
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <llfs/constants.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/ioring_log_device.hpp>
@@ -218,5 +223,7 @@ struct PackedConfigTagFor<PackedLogDeviceConfig> {
 std::ostream& operator<<(std::ostream& out, const PackedLogDeviceConfig& t);
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING
 
 #endif  // LLFS_PACKED_LOG_DEVICE_CONFIG_HPP

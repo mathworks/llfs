@@ -20,6 +20,28 @@
 
 namespace llfs {
 
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+#ifdef __APPLE__
+#define LLFS_PLATFORM_IS_APPLE 1
+#else
+#undef LLFS_PLATFORM_IS_APPLE
+#endif
+
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+#ifdef __linux__
+#define LLFS_PLATFORM_IS_LINUX 1
+#else
+#undef LLFS_PLATFORM_IS_LINUX
+#endif
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+
+#if !LLFS_PLATFORM_IS_LINUX
+#define LLFS_DISABLE_IO_URING 1
+#endif
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+
 // Set to 1 to disable crc generation for pages.
 //
 #define LLFS_DISABLE_PAGE_CRC 1

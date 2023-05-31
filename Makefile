@@ -31,6 +31,8 @@ endif
 
 BUILD_DIR := build/$(BUILD_TYPE)
 
+export PROJECT_DIR=$(shell pwd)
+
 TCMALLOC_ENV := $(shell find /lib/ -name '*tcmalloc.so*' | sort -Vr | head -1 | xargs -I{} echo LD_PRELOAD={})
 $(info TCMALLOC_ENV=$(TCMALLOC_ENV))
 

@@ -12,6 +12,11 @@
 #ifndef LLFS_RAW_BLOCK_FILE_IMPL_HPP
 #define LLFS_RAW_BLOCK_FILE_IMPL_HPP
 
+#include <llfs/config.hpp>
+//
+
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <llfs/ioring_file.hpp>
 #include <llfs/optional.hpp>
 #include <llfs/raw_block_file.hpp>
@@ -55,5 +60,7 @@ class IoRingRawBlockFile : public RawBlockFile
 };
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING
 
 #endif  // LLFS_RAW_BLOCK_FILE_IMPL_HPP

@@ -95,7 +95,7 @@ struct alignas(512) PackedConfigBlock {
   static constexpr usize kPayloadCapacity =
       kSize - (64 /*offsetof(payload)*/ + 8 /*sizeof(crc64)*/);
 
-  static constexpr i64 kNullFileOffset = 0x7fffffffffffll;
+  static constexpr i64 kNullFileOffset = 0x7fffffffffffffffll;
 
   struct Flag {
     // TODO [tastolfi 2022-02-16]  define some flags...

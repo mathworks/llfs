@@ -72,4 +72,36 @@ TEST(PackedBytesTest, UnpackCast)
   }
 }
 
+TEST(PackedBytesTest, Clear)
+{
+  char buffer[] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+  static_assert(sizeof(buffer) > sizeof(llfs::PackedBytes));
+
+  llfs::PackedBytes* p = reinterpret_cast<llfs::PackedBytes*>(buffer);
+
+  EXPECT_EQ(p->size(), 0x070605u) << BATT_INSPECT(batt::to_string(std::hex, p->size()));
+
+  buffer[2] = 0;
+
+  EXPECT_EQ(p->size(), 0x070605u) << BATT_INSPECT(batt::to_string(std::hex, p->size()));
+
+  buffer[1] = 0;
+
+  EXPECT_EQ(p->size(), 7u) << BATT_INSPECT(batt::to_string(std::hex, p->size()));
+
+  buffer[3] = 0;
+
+  EXPECT_EQ(p->size(), 7u) << BATT_INSPECT(batt::to_string(std::hex, p->size()));
+
+  buffer[0] = 0;
+
+  EXPECT_EQ(p->size(), 8u) << BATT_INSPECT(batt::to_string(std::hex, p->size()));
+
+  p->clear();
+
+  EXPECT_EQ(p->size(), 0u);
+  EXPECT_EQ(p->data(), (const void*)(buffer + sizeof(llfs::PackedBytes)));
+  EXPECT_THAT(p->as_str(), ::testing::StrEq(""));
+}
+
 }  // namespace

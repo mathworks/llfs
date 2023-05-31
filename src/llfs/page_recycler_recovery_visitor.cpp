@@ -69,7 +69,7 @@ std::vector<PageToRecycle> PageRecyclerRecoveryVisitor::recovered_pages() const
   // Remove all the deleted/prepared pages from the list.
   //
   to_recycle.erase(std::remove_if(to_recycle.begin(), to_recycle.end(),
-                                  [this](const PageToRecycle& p) {
+                                  [](const PageToRecycle& p) {
                                     return p.batch_slot;
                                   }),
                    to_recycle.end());

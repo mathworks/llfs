@@ -21,6 +21,7 @@
 #include <batteries/tuples.hpp>
 #include <batteries/utility.hpp>
 
+#include <limits>
 #include <tuple>
 
 namespace llfs {
@@ -101,7 +102,10 @@ inline constexpr u8 index_of_type_within_packed_variant(batt::StaticType<Variant
 {
   constexpr usize value = batt::TupleIndexOf_v<typename VariantT::tuple_type, CaseT>;
 
-  static_assert(VariantT::kNumCases < (1u << (sizeof(u8) * 8 /*bits-per-byte*/)));
+  static_assert(VariantT::kNumCases - 1 <= std::numeric_limits<u8>::max(),
+                "There are too many case types for the PackedVariant type VariantT; coercing to u8 "
+                "will lose information");
+
   static_assert(value < VariantT::kNumCases,
                 "The specified CaseT is not one of the members of the PackedVariant type VariantT");
 

@@ -37,16 +37,19 @@ using IoRingLogDevice = BasicRingBufferLogDevice<IoRingLogDriver>;
 class IoRingLogDeviceFactory : public LogDeviceFactory
 {
  public:
-  explicit IoRingLogDeviceFactory(int fd,
+  explicit IoRingLogDeviceFactory(batt::TaskScheduler& task_scheduler, int fd,
                                   const FileOffsetPtr<const PackedLogDeviceConfig&>& packed_config,
                                   const IoRingLogDriverOptions& options) noexcept
-      : IoRingLogDeviceFactory{fd, IoRingLogConfig::from_packed(packed_config), options}
+      : IoRingLogDeviceFactory{task_scheduler, fd, IoRingLogConfig::from_packed(packed_config),
+                               options}
   {
   }
 
-  explicit IoRingLogDeviceFactory(int fd, const IoRingLogConfig& config,
+  explicit IoRingLogDeviceFactory(batt::TaskScheduler& task_scheduler, int fd,
+                                  const IoRingLogConfig& config,
                                   const IoRingLogDriverOptions& options) noexcept
-      : fd_{fd}
+      : task_scheduler_{task_scheduler}
+      , fd_{fd}
       , config_{config}
       , options_{options}
   {
@@ -62,8 +65,8 @@ class IoRingLogDeviceFactory : public LogDeviceFactory
   StatusOr<std::unique_ptr<IoRingLogDevice>> open_ioring_log_device()
   {
     auto instance = std::make_unique<IoRingLogDevice>(
-        RingBuffer::TempFile{.byte_size = this->config_.logical_size}, this->fd_, this->config_,
-        this->options_);
+        RingBuffer::TempFile{.byte_size = this->config_.logical_size}, this->task_scheduler_,
+        this->fd_, this->config_, this->options_);
 
     this->fd_ = -1;
 
@@ -86,6 +89,7 @@ class IoRingLogDeviceFactory : public LogDeviceFactory
   }
 
  private:
+  batt::TaskScheduler& task_scheduler_;
   int fd_;
   IoRingLogConfig config_;
   IoRingLogDriverOptions options_;

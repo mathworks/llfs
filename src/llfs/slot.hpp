@@ -239,6 +239,12 @@ struct SlotRangeSpec {
   }
 };
 
+inline std::ostream& operator<<(std::ostream& out, const SlotRangeSpec& t)
+{
+  return out << "SlotRangeSpec{.lower_bound=" << t.lower_bound << ", .upper_bound=" << t.upper_bound
+             << ",}";
+}
+
 template <typename T>
 struct SlotWithPayload {
   SlotRange slot_range;

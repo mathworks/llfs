@@ -11,6 +11,7 @@
 #define LLFS_PACKED_INTERVAL_HPP
 
 #include <llfs/buffer.hpp>
+#include <llfs/data_layout.hpp>
 #include <llfs/data_packer.hpp>
 #include <llfs/define_packed_type.hpp>
 #include <llfs/int_types.hpp>
@@ -51,6 +52,28 @@ struct PackedBasicInterval {
   upper_bound_type upper_bound;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief Returns a PackedInterval representation of `interval`.
+   */
+  static Self from(const batt::BasicInterval<Traits>& interval) noexcept
+  {
+    return Self{
+        .lower_bound = interval.lower_bound,
+        .upper_bound = interval.upper_bound,
+    };
+  }
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief Returns this as an Interval.
+   */
+  batt::BasicInterval<Traits> unpack() const noexcept
+  {
+    return batt::BasicInterval<Traits>{
+        .lower_bound = this->lower_bound.value(),
+        .upper_bound = this->upper_bound.value(),
+    };
+  }
 
   /** \brief Returns a function that can be printed via std::ostream to dump detailed information
    * about this object.

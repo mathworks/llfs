@@ -52,6 +52,9 @@ TEST(PackObjectAsRawTest, Test)
   //
   llfs::PackObjectAsRawData<std::string_view&> to_pack_as_raw{to_pack};
 
+  static_assert(std::is_same_v<llfs::PackedRawData,
+                               llfs::PackedTypeFor<llfs::PackObjectAsRawData<std::string_view&>>>);
+
   EXPECT_EQ(llfs::packed_sizeof(to_pack), llfs::packed_sizeof(to_pack_as_raw));
   {
     std::vector<char> storage(llfs::packed_sizeof(to_pack_as_raw));

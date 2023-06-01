@@ -21,7 +21,11 @@
 
 namespace llfs {
 
-/** \brief Used to parse chunks of raw log data.
+/** \brief Used to parse chunks of raw log data in order to extract user/application-visible slot
+ * data.
+ *
+ * This parser does not pass internal Volume events up to visitor functions; it only emits slots
+ * that are the direct result of a call to Volume::append.
  */
 class RawVolumeLogDataParser
 {

@@ -109,7 +109,7 @@ inline constexpr u8 index_of_type_within_packed_variant(batt::StaticType<Variant
   static_assert(value < VariantT::kNumCases,
                 "The specified CaseT is not one of the members of the PackedVariant type VariantT");
 
-  return (u8)value;
+  return static_cast<u8>(value);
 }
 
 template <typename... Ts>

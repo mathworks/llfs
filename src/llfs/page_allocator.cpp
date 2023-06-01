@@ -24,10 +24,8 @@ namespace llfs {
 u64 PageAllocator::calculate_log_size(u64 physical_page_count, u64 max_attachments)
 {
   static const PackedPageRefCountRefresh packed_ref_count{
-      {
-          .page_id = {0},
-          .ref_count = 0,
-      },
+      .page_id = {0},
+      .ref_count = 0,
       .user_index = 0,
   };
   static const PackedPageAllocatorAttach packed_attachment{

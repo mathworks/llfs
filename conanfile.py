@@ -32,7 +32,7 @@ class LlfsConan(ConanFile):
         "gtest/1.13.0",
         "boost/1.81.0",
         "glog/0.6.0",
-        "batteries/0.34.1@batteriescpp+batteries/stable",
+        "batteries/0.34.11@batteriescpp+batteries/stable",
         "cli11/2.3.2",
 
         # Version overrides (conflict resolutions)

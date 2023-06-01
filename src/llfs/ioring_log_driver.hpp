@@ -10,6 +10,11 @@
 #ifndef LLFS_IORING_LOG_DRIVER_HPP
 #define LLFS_IORING_LOG_DRIVER_HPP
 
+#include <llfs/config.hpp>
+//
+
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <llfs/basic_log_storage_driver.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/ioring_log_config.hpp>
@@ -66,7 +71,8 @@ class BasicIoRingLogDriver
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  explicit BasicIoRingLogDriver(LogStorageDriverContext& context, int fd,
+  explicit BasicIoRingLogDriver(LogStorageDriverContext& context,
+                                batt::TaskScheduler& task_scheduler, int fd,
                                 const IoRingLogConfig& config,
                                 const IoRingLogDriverOptions& options) noexcept;
 
@@ -257,6 +263,8 @@ class BasicIoRingLogDriver
   //
   LogStorageDriverContext& context_;
 
+  batt::TaskScheduler& task_scheduler_;
+
   // The physical log configuration plus cached derived values.
   //
   const IoRingLogConfig config_;
@@ -317,5 +325,7 @@ class BasicIoRingLogDriver
 };
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING
 
 #endif  // LLFS_IORING_LOG_DRIVER_HPP

@@ -11,6 +11,7 @@
 #define LLFS_VOLUME_RUNTIME_OPTIONS_HPP
 
 #include <llfs/ioring_log_driver_options.hpp>
+#include <llfs/slot_lock_manager.hpp>
 #include <llfs/volume_reader.hpp>
 
 #include <batteries/async/task_scheduler.hpp>

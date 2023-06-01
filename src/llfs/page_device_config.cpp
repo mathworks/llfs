@@ -9,6 +9,8 @@
 #include <llfs/page_device_config.hpp>
 //
 
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <llfs/config.hpp>
 #include <llfs/ioring_page_file_device.hpp>
 #include <llfs/page_layout.hpp>
@@ -97,3 +99,5 @@ StatusOr<std::unique_ptr<PageDevice>> recover_storage_object(
 }
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING

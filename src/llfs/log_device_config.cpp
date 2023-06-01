@@ -9,6 +9,8 @@
 #include <llfs/log_device_config.hpp>
 //
 
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <llfs/ioring_log_device.hpp>
 #include <llfs/ioring_log_initializer.hpp>
 #include <llfs/raw_block_file.hpp>
@@ -75,7 +77,7 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<std::unique_ptr<IoRingLogDeviceFactory>> recover_storage_object(
-    const batt::SharedPtr<StorageContext>& /*storage_context*/, const std::string& file_name,
+    const batt::SharedPtr<StorageContext>& storage_context, const std::string& file_name,
     const FileOffsetPtr<const PackedLogDeviceConfig&>& p_config,
     const IoRingLogDriverOptions& options)
 {
@@ -86,7 +88,10 @@ StatusOr<std::unique_ptr<IoRingLogDeviceFactory>> recover_storage_object(
   });
   BATT_REQUIRE_OK(batt::status_from_retval(fd));
 
-  return std::make_unique<IoRingLogDeviceFactory>(fd, p_config, options);
+  return std::make_unique<IoRingLogDeviceFactory>(storage_context->get_scheduler(), fd, p_config,
+                                                  options);
 }
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING

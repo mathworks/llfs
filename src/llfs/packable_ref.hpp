@@ -13,6 +13,7 @@
 #include <llfs/data_packer.hpp>
 #include <llfs/data_reader.hpp>
 #include <llfs/int_types.hpp>
+#include <llfs/pack_as_raw.hpp>
 #include <llfs/page_id.hpp>
 #include <llfs/ref.hpp>
 #include <llfs/seq.hpp>
@@ -20,30 +21,6 @@
 #include <llfs/slot_reader.hpp>
 
 namespace llfs {
-
-//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-// Raw (opaque) data must be at the end of a slot.
-//
-struct PackedRawData {
-  PackedRawData(const PackedRawData&) = delete;
-  PackedRawData& operator=(const PackedRawData&) = delete;
-
-  little_u8 bytes[1];
-};
-static_assert(sizeof(PackedRawData) == 1, "");
-
-inline usize packed_sizeof(const PackedRawData&)
-{
-  // TODO [tastolfi 2022-02-15] should this be 0 instead? infinity/int_max?
-  return sizeof(PackedRawData);
-}
-
-inline StatusOr<Ref<const PackedRawData>> unpack_object(const PackedRawData& packed, DataReader*)
-{
-  return as_cref(packed);
-}
-
-std::string_view raw_data_from_slot(const SlotParse& slot, const PackedRawData* packed);
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //

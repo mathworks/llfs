@@ -10,6 +10,10 @@
 #ifndef LLFS_IORING_LOG_INITIALIZER_IPP
 #define LLFS_IORING_LOG_INITIALIZER_IPP
 
+#include <llfs/config.hpp>
+//
+#ifndef LLFS_DISABLE_IO_URING
+
 namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -172,5 +176,7 @@ inline usize BasicIoRingLogInitializer<IoRingImpl>::Subtask::self_index() const
 }
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING
 
 #endif  // LLFS_IORING_LOG_INITIALIZER_IPP

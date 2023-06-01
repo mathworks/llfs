@@ -36,4 +36,19 @@ TEST(SlotWithPayloadTest, ToString)
   EXPECT_THAT(batt::to_string(obj), ::testing::StrEq("{.slot_range=[0,100), .payload=-88,}"));
 }
 
+TEST(SlotRangeSpecTest, ToString)
+{
+  EXPECT_THAT(batt::to_string(llfs::SlotRangeSpec{batt::None, batt::None}),
+              ::testing::StrEq("SlotRangeSpec{.lower_bound=--, .upper_bound=--,}"));
+
+  EXPECT_THAT(batt::to_string(llfs::SlotRangeSpec{batt::None, 200}),
+              ::testing::StrEq("SlotRangeSpec{.lower_bound=--, .upper_bound=200,}"));
+
+  EXPECT_THAT(batt::to_string(llfs::SlotRangeSpec{100, batt::None}),
+              ::testing::StrEq("SlotRangeSpec{.lower_bound=100, .upper_bound=--,}"));
+
+  EXPECT_THAT(batt::to_string(llfs::SlotRangeSpec{100, 200}),
+              ::testing::StrEq("SlotRangeSpec{.lower_bound=100, .upper_bound=200,}"));
+}
+
 }  // namespace

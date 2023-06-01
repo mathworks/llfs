@@ -10,6 +10,11 @@
 #ifndef LLFS_IORING_LOG_DRIVER_IPP
 #define LLFS_IORING_LOG_DRIVER_IPP
 
+#include <llfs/config.hpp>
+//
+
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <llfs/data_reader.hpp>
 #include <llfs/ioring_log_driver.hpp>
 #include <llfs/ioring_log_initializer.hpp>
@@ -28,9 +33,10 @@ namespace llfs {
 //
 template <template <typename> class FlushOpImpl>
 inline BasicIoRingLogDriver<FlushOpImpl>::BasicIoRingLogDriver(
-    LogStorageDriverContext& context, int fd, const IoRingLogConfig& config,
-    const IoRingLogDriverOptions& options) noexcept
+    LogStorageDriverContext& context, batt::TaskScheduler& task_scheduler, int fd,
+    const IoRingLogConfig& config, const IoRingLogDriverOptions& options) noexcept
     : context_{context}
+    , task_scheduler_{task_scheduler}
     , config_{config}
     , options_{options}
     , calculate_{config, options}
@@ -235,7 +241,7 @@ template <template <typename> class FlushOpImpl>
 inline void BasicIoRingLogDriver<FlushOpImpl>::start_flush_task()
 {
   this->flush_task_.emplace(
-      batt::Runtime::instance().schedule_task(),
+      this->task_scheduler_.schedule_task(),
       [this] {
         this->flush_task_main();
       },
@@ -486,5 +492,7 @@ inline slot_offset_type BasicIoRingLogDriver<FlushOpImpl>::FlushState::get_flush
 }
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING
 
 #endif  // LLFS_IORING_LOG_DRIVER_IPP

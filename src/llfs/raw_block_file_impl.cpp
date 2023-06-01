@@ -9,6 +9,8 @@
 #include <llfs/raw_block_file_impl.hpp>
 //
 
+#ifndef LLFS_DISABLE_IO_URING
+
 #include <llfs/filesystem.hpp>
 
 #include <batteries/async/io_result.hpp>
@@ -118,3 +120,5 @@ Status IoRingRawBlockFile::close()
 }
 
 }  // namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING

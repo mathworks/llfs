@@ -46,7 +46,7 @@ inline seq::LoopControl hash_for_bloom(const T& item, u64 count, Fn&& fn)
       0x0c38ccabc94a487full, 0x43e19e80ee4fe6edull, 0x22699c9fc26f20eeull, 0xa559cbafff2cea37ull};
 
   const u64 item_hash = boost::hash<T>{}(item);
-  u64 seed = item_hash;
+  usize seed = item_hash;
   for (u64 i = 0; i < count; ++i) {
     boost::hash_combine(seed, kSeeds[i % 32] + i / 32);
     boost::hash_combine(seed, item_hash);
@@ -221,7 +221,7 @@ void parallel_build_bloom_filter(batt::WorkerPool& worker_pool, Iter first, Iter
                  auto src_begin = std::next(first, task_offset);
                  return
                      [src = boost::make_iterator_range(src_begin, std::next(src_begin, task_size)),
-                      dst = temp_filters[task_index], hash_fn, filter] {
+                      dst = temp_filters[task_index], hash_fn] {
                        dst->clear();
                        for (const auto& item : src) {
                          dst->insert(hash_fn(item));

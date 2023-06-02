@@ -113,6 +113,11 @@ inline usize packed_sizeof(const std::string_view& s)
   return packed_sizeof_str(s.size());
 }
 
+inline usize packed_sizeof(std::string_view& s)
+{
+  return packed_sizeof(static_cast<const std::string_view&>(s));
+}
+
 inline usize packed_sizeof(const std::string& s)
 {
   return packed_sizeof_str(s.size());

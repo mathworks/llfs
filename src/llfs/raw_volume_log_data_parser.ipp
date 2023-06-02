@@ -23,11 +23,12 @@ template <typename SlotVisitorFn /*= Status(SlotParse, std::string_view)*/>
 inline StatusOr<slot_offset_type> RawVolumeLogDataParser::parse_chunk(
     const SlotRange& slot_range, const ConstBuffer& buffer, SlotVisitorFn&& slot_visitor_fn)
 {
-  // Update the user slot upper bound.
+  // Update the user slot upper bound.  This will be updated in our visitor fn wrapper below.
   //
   this->user_slot_upper_bound_ = slot_range.lower_bound;
 
-  // Set the current chunk slot range while we are in this function.
+  // Set the current chunk slot range while we are in this function (clear
+  // `current_chunk_slot_range_` on scope exit).
   //
   this->current_chunk_slot_range_ = slot_range;
   auto on_scope_exit = batt::finally([&] {
@@ -47,15 +48,23 @@ inline StatusOr<slot_offset_type> RawVolumeLogDataParser::parse_chunk(
     return batt::OkStatus();
   };
 
+  // Create a demuxer to filter out all Volume Events from the user events.
+  //
   VolumeSlotDemuxer<NoneType, decltype(wrapped_visitor_fn)> demuxer{wrapped_visitor_fn,
                                                                     this->pending_jobs_};
 
+  // Create a LogDevice::Reader for the current chunk data.
+  //
   BufferedLogDataReader log_data_reader{slot_range.lower_bound, buffer};
 
+  // Read slot data!
+  //
   TypedSlotReader<VolumeEventVariant> slot_reader{log_data_reader};
-
   BATT_REQUIRE_OK(slot_reader.run(batt::WaitForResource::kFalse, demuxer));
 
+  // Ask the demuxer how far we got; this should usually be updated, but just in case it wasn't, we
+  // return the current `user_slot_upper_bound_`.
+  //
   this->visited_upper_bound_ = demuxer.get_visited_upper_bound();
 
   return this->visited_upper_bound_.value_or(*this->user_slot_upper_bound_);

@@ -11,6 +11,7 @@
 #define LLFS_REF_HPP
 
 #include <batteries/ref.hpp>
+#include <batteries/utility.hpp>
 
 namespace llfs {
 
@@ -19,6 +20,7 @@ using ::batt::as_ref;
 using ::batt::into_cref;
 using ::batt::into_ref;
 using ::batt::Ref;
+using ::batt::unwrap_ref;
 
 }  // namespace llfs
 

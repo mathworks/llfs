@@ -11,6 +11,15 @@
 
 namespace llfs {
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-
+Optional<slot_offset_type> RawVolumeLogDataParser::get_visited_upper_bound() const noexcept
+{
+  if (this->visited_upper_bound_) {
+    return this->visited_upper_bound_;
+  } else {
+    return this->user_slot_upper_bound_;
+  }
 }
+
+}  //namespace llfs

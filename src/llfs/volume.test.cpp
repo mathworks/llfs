@@ -352,13 +352,14 @@ TEST_F(VolumeTest, ReadWriteEvents)
     for (i32 key = 0; key < 10; key += 1) {
       UpsertEvent upsert{key, key * 3 + 1};
       auto upsert_event = llfs::pack_as_variant<TestVolumeEvent>(upsert);
+      llfs::PackObjectAsRawData<decltype(upsert_event)> bb{upsert_event};
 
       llfs::StatusOr<batt::Grant> grant = test_volume->reserve(
           test_volume->calculate_grant_size(upsert_event), batt::WaitForResource::kFalse);
 
       ASSERT_TRUE(grant.ok());
 
-      llfs::StatusOr<llfs::SlotRange> appended = test_volume->append(upsert_event, *grant);
+      llfs::StatusOr<llfs::SlotRange> appended = test_volume->append(bb, *grant);
 
       ASSERT_TRUE(appended.ok()) << appended.status();
 

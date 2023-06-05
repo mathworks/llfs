@@ -342,6 +342,7 @@ StatusOr<std::unique_ptr<Volume>> StorageSimulation::get_volume(
       .uuid = None,
       .max_refs_per_page = MaxRefsPerPage{0},
       .trim_lock_update_interval = TrimLockUpdateInterval{512 /*bytes*/},
+      .trim_delay_byte_count = TrimDelayByteCount{0},
   });
 
   //----- --- -- -  -  -   -

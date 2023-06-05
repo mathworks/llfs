@@ -127,6 +127,7 @@ TEST_F(VolumeConfigTest, ConfigRestore)
                         .uuid = llfs::None,
                         .max_refs_per_page = llfs::MaxRefsPerPage{1},
                         .trim_lock_update_interval = llfs::TrimLockUpdateInterval{4 * kKiB},
+                        .trim_delay_byte_count = llfs::TrimDelayByteCount{0},
                     },
                 .root_log =
                     llfs::LogDeviceConfigOptions{

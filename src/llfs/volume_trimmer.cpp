@@ -51,13 +51,16 @@ namespace llfs {
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 /*explicit*/ VolumeTrimmer::VolumeTrimmer(const boost::uuids::uuid& trimmer_uuid,
-                                          SlotLockManager& trim_control,
+                                          std::string&& name, SlotLockManager& trim_control,
+                                          TrimDelayByteCount trim_delay,
                                           std::unique_ptr<LogDevice::Reader>&& log_reader,
                                           TypedSlotWriter<VolumeEventVariant>& slot_writer,
                                           VolumeDropRootsFn&& drop_roots,
                                           const RecoveryVisitor& recovery_visitor) noexcept
     : trimmer_uuid_{trimmer_uuid}
+    , name_{std::move(name)}
     , trim_control_{trim_control}
+    , trim_delay_{trim_delay}
     , log_reader_{std::move(log_reader)}
     , slot_reader_{*this->log_reader_}
     , slot_writer_{slot_writer}
@@ -71,6 +74,13 @@ namespace llfs {
     , refresh_info_{recovery_visitor.get_refresh_info()}
     , latest_trim_event_{recovery_visitor.get_trim_event_info()}
 {
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+VolumeTrimmer::~VolumeTrimmer() noexcept
+{
+  this->halt();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -125,8 +135,7 @@ Status VolumeTrimmer::run()
                     << BATT_INSPECT(this->trim_control_.debug_info()) << BATT_INSPECT(loop_counter)
                     << BATT_INSPECT(this->trim_control_.is_closed()));
 
-    StatusOr<slot_offset_type> trim_upper_bound =
-        this->trim_control_.await_lower_bound(least_upper_bound);
+    StatusOr<slot_offset_type> trim_upper_bound = this->await_trim_target(least_upper_bound);
 
     BATT_REQUIRE_OK(trim_upper_bound);
 
@@ -184,6 +193,8 @@ Status VolumeTrimmer::run()
     //
     const slot_offset_type new_trim_target = this->trimmed_region_info_->slot_range.upper_bound;
 
+    BATT_DEBUG_INFO("VolumeTrimmer -> trim_volume_log;" << BATT_INSPECT(this->name_));
+
     Status trim_result = trim_volume_log(
         this->slot_writer_, this->trimmer_grant_, std::move(this->latest_trim_event_),
         std::move(*this->trimmed_region_info_), this->drop_roots_, this->pending_jobs_);
@@ -201,6 +212,22 @@ Status VolumeTrimmer::run()
     LLFS_VLOG(1) << "Trim(" << new_trim_target << ") is complete; awaiting new target ("
                  << BATT_INSPECT(least_upper_bound) << ")";
   }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<slot_offset_type> VolumeTrimmer::await_trim_target(slot_offset_type min_offset)
+{
+  StatusOr<slot_offset_type> trim_upper_bound =
+      this->trim_control_.await_lower_bound(min_offset + this->trim_delay_);
+
+  BATT_REQUIRE_OK(trim_upper_bound);
+
+  const slot_offset_type new_trim_target = *trim_upper_bound - this->trim_delay_;
+
+  BATT_CHECK(!slot_less_than(new_trim_target, min_offset));
+
+  return new_trim_target;
 }
 
 //#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
@@ -531,6 +558,8 @@ Status trim_volume_log(TypedSlotWriter<VolumeEventVariant>& slot_writer, batt::G
   if (!trimmed_region.obsolete_roots.empty()) {
     std::vector<PageId> roots_to_trim;
     std::swap(roots_to_trim, trimmed_region.obsolete_roots);
+
+    LLFS_VLOG(1) << "trim_volume_log()" << BATT_INSPECT(trimmed_region.slot_range);
 
     BATT_REQUIRE_OK(drop_roots(trim_event->trim_event_slot.lower_bound, as_slice(roots_to_trim)));
   }

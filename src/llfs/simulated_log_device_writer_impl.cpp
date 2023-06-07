@@ -52,7 +52,9 @@ StatusOr<MutableBuffer> SimulatedLogDevice::Impl::WriterImpl::prepare(usize byte
   this->prepared_chunk_ = std::make_shared<Impl::CommitChunk>(
       this->impl_, /*offset=*/this->slot_offset(), /*size=*/byte_count);
 
-  return MutableBuffer{this->prepared_chunk_->data.data(), this->prepared_chunk_->data.size()};
+  BATT_ASSERT_EQ(this->prepared_chunk_->data_view.size(), byte_count);
+
+  return this->prepared_chunk_->data_view;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -83,11 +85,11 @@ StatusOr<slot_offset_type> SimulatedLogDevice::Impl::WriterImpl::commit(
 
   // Sanity check: commit may not be passed a larger size than was passed to prepare.
   //
-  BATT_CHECK_LE(byte_count, committed_chunk->data.size());
+  BATT_CHECK_LE(byte_count, committed_chunk->data_view.size());
 
   // Truncate the data buffer to only include the committed amount.
   //
-  committed_chunk->data.resize(byte_count);
+  committed_chunk->data_view = resize_buffer(committed_chunk->data_view, byte_count);
 
   // Put the chunk in the simulated device's chunk map, but don't update the flushed flag (or
   // flush_pos_) yet.

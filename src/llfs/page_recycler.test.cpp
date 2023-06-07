@@ -442,7 +442,7 @@ void PageRecyclerTest::run_crash_recovery_test()
   const u64 log_size = PageRecycler::calculate_log_size(options);
   LLFS_VLOG(1) << BATT_INSPECT(log_size);
 
-  EXPECT_EQ(PageRecycler::calculate_max_buffered_page_count(options, log_size),
+  EXPECT_GE(PageRecycler::calculate_max_buffered_page_count(options, log_size),
             PageRecycler::default_max_buffered_page_count(options));
 
   for (u64 seed = 0; seed < 10000; ++seed) {

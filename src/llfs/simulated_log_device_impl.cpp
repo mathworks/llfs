@@ -11,6 +11,9 @@
 
 #include <llfs/simulated_log_device_reader_impl.hpp>
 #include <llfs/simulated_log_device_writer_impl.hpp>
+#include <llfs/system_config.hpp>
+
+#include <algorithm>
 
 namespace llfs {
 
@@ -21,8 +24,18 @@ namespace llfs {
     : simulation_{simulation}
     , name_{name}
     , capacity_{log_capacity}
+    , ring_buffer_{RingBuffer::TempFile{
+          .byte_size = this->capacity_,
+      }}
     , writer_impl_{std::make_unique<WriterImpl>(*this)}
 {
+  BATT_CHECK_EQ(round_up_to_page_size_multiple(this->capacity_), this->capacity_)
+      << "Capacity must be a multiple of the memory page size";
+
+  u64* const buffer_begin = static_cast<u64*>(this->ring_buffer_.get_mut(0).data());
+  u64* const buffer_end = buffer_begin + (this->capacity_ / sizeof(u64));
+
+  std::fill(buffer_begin, buffer_end, u64{0x0bad1bad2bad3badull});
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -116,12 +129,12 @@ Status SimulatedLogDevice::Impl::trim(u64 device_create_step,
         // Sanity checks.
         //
         BATT_CHECK_EQ(iter->first, iter->second->slot_offset);
-        BATT_CHECK_LT(iter->second->trim_size, iter->second->data.size())
+        BATT_CHECK_LT(iter->second->trim_size, iter->second->data_view.size())
             << "If all the data in a CommitChunk is trimmed, it should just be removed!";
 
         // Calculate where this chunk ends.
         //
-        const slot_offset_type slot_upper_bound = iter->first + iter->second->data.size();
+        const slot_offset_type slot_upper_bound = iter->first + iter->second->data_view.size();
 
         // If the new trim pos is at least the slot_upper_bound, then drop the chunk entirely and
         // keep going.
@@ -161,19 +174,10 @@ std::unique_ptr<LogDevice::Reader> SimulatedLogDevice::Impl::new_reader(
 //
 SlotRange SimulatedLogDevice::Impl::slot_range(LogReadMode mode) /*override*/
 {
-  auto locked_chunks = this->chunks_.lock();
-
-  const slot_offset_type trim_pos = this->trim_pos_.get_value();
-
-  auto iter = locked_chunks->end();
-  while (iter != locked_chunks->begin()) {
-    --iter;
-    if (mode != LogReadMode::kDurable || iter->second->is_flushed()) {
-      return SlotRange{trim_pos, iter->second->slot_offset + iter->second->data.size()};
-    }
-  }
-
-  return SlotRange{trim_pos, trim_pos};
+  return SlotRange{
+      .lower_bound = this->trim_pos_.get_value(),
+      .upper_bound = this->get_slot_upper_bound(mode),
+  };
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

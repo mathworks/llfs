@@ -19,6 +19,7 @@
 #include <llfs/memory_page_cache.hpp>
 #include <llfs/opaque_page_view.hpp>
 #include <llfs/page_graph_node.hpp>
+#include <llfs/raw_volume_log_data_parser.hpp>
 #include <llfs/storage_simulation.hpp>
 
 #include <batteries/cpu_align.hpp>
@@ -103,9 +104,9 @@ class VolumeTest : public ::testing::Test
 
     const u64 recycler_log_size = llfs::PageRecycler::calculate_log_size(recycler_options);
 
-    EXPECT_EQ(llfs::PageRecycler::default_max_buffered_page_count(recycler_options),
-              ::llfs::PageRecycler::calculate_max_buffered_page_count(recycler_options,
-                                                                      recycler_log_size));
+    EXPECT_GE(::llfs::PageRecycler::calculate_max_buffered_page_count(recycler_options,
+                                                                      recycler_log_size),
+              llfs::PageRecycler::default_max_buffered_page_count(recycler_options));
 
     this->recycler_log.emplace(recycler_log_size);
   }
@@ -781,6 +782,52 @@ class VolumeSimTest : public ::testing::Test
  public:
   using RecoverySimTestSlot = llfs::PackedVariant<llfs::PackedPageId>;
 
+  struct RecoverySimState {
+    u32 seed = 0;
+
+    /** \brief The page to be committed in the first job.
+     */
+    llfs::PageId first_page_id;
+
+    /** \brief Committed in the second job; this is the root page (it refers to third page).
+     */
+    llfs::PageId second_root_page_id;
+
+    /** \brief Committed in the second job; this is not referenced from the root log, only from
+     * second page.
+     */
+    llfs::PageId third_page_id;
+
+    /** \brief The status value returned from commit_second_job_pre_crash.
+     */
+    batt::Status pre_crash_status;
+
+    /** \brief Sets expectations for recovery, post crash.
+     */
+    bool second_job_will_commit = false;
+
+    /** \brief Sets expectations for recovery, post crash.
+     */
+    bool second_job_will_not_commit = true;
+
+    // State variables to track how much we have recovered.
+    //
+    bool recovered_first_page = false;
+    bool recovered_second_page = false;
+    bool no_unknown_pages = true;
+
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+    /** \brief Returns a slot visitor function for use when recovering/verifying the Volume,
+     * post-crash.
+     */
+    auto get_slot_visitor();
+
+    /** \brief Resets all member data that might have been modified by the slot visitor.
+     */
+    void reset_visitor_outputs();
+  };
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   /** \brief Builds and commits a new page in the specified job, with references to the
@@ -806,58 +853,25 @@ class VolumeSimTest : public ::testing::Test
 
   /** \brief Commit one job with a page from the 1kb device.
    */
-  void commit_first_job(llfs::StorageSimulation& sim, llfs::Volume& volume);
+  void commit_first_job(RecoverySimState& state, llfs::StorageSimulation& sim,
+                        llfs::Volume& volume);
 
   /** \brief Commits a second job that references two new pages and one old one (the page from the
    * first job), all pages from a different PageDevice.
    *
    * Unlike the first job, this one is allowed (in fact, expected) to fail.
    */
-  batt::Status commit_second_job_pre_crash(llfs::StorageSimulation& sim, llfs::Volume& volume);
-
-  /** \brief Returns a slot visitor function for use when recovering/verifying the Volume,
-   * post-crash.
-   */
-  auto get_slot_visitor();
+  batt::Status commit_second_job_pre_crash(RecoverySimState& state, llfs::StorageSimulation& sim,
+                                           llfs::Volume& volume);
 
   /** \brief Checks to make sure that recovery was successful.
    */
-  void verify_post_recovery_expectations(llfs::StorageSimulation& sim, llfs::Volume& volume);
+  void verify_post_recovery_expectations(RecoverySimState& state, llfs::StorageSimulation& sim,
+                                         llfs::Volume& volume);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   const llfs::PageCount pages_per_device = llfs::PageCount{4};
-
-  /** \brief The page to be committed in the first job.
-   */
-  llfs::PageId first_page_id;
-
-  /** \brief Committed in the second job; this is the root page (it refers to third page).
-   */
-  llfs::PageId second_root_page_id;
-
-  /** \brief Committed in the second job; this is not referenced from the root log, only from second
-   * page.
-   */
-  llfs::PageId third_page_id;
-
-  /** \brief The status value returned from commit_second_job_pre_crash.
-   */
-  batt::Status pre_crash_status;
-
-  /** \brief Sets expectations for recovery, post crash.
-   */
-  bool second_job_will_commit = false;
-
-  /** \brief Sets expectations for recovery, post crash.
-   */
-  bool second_job_will_not_commit = true;
-
-  // State variables to track how much we have recovered.
-  //
-  bool recovered_first_page = false;
-  bool recovered_second_page = false;
-  bool no_unknown_pages = true;
 };
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -874,8 +888,7 @@ TEST_F(VolumeSimTest, RecoverySimulation)
       batt::getenv_as<u32>("LLFS_VOLUME_SIM_CPU").value_or(0);
 
   static const usize kNumThreads =  //
-      batt::getenv_as<u32>("LLFS_VOLUME_SIM_THREADS")
-          .value_or(std::min<usize>(8, std::thread::hardware_concurrency()));
+      batt::getenv_as<u32>("LLFS_VOLUME_SIM_THREADS").value_or(std::thread::hardware_concurrency());
 
   static const bool kMultiProcess =  //
       batt::getenv_as<bool>("LLFS_VOLUME_SIM_MULTI_PROCESS").value_or(false);
@@ -908,6 +921,8 @@ TEST_F(VolumeSimTest, RecoverySimulation)
             .IgnoreError();
         const u32 first_seed = kInitialSeed + kNumSeedsPerThread * thread_i;
         const u32 last_seed = first_seed + kNumSeedsPerThread;
+        LLFS_VLOG(1) << BATT_INSPECT(thread_i) << BATT_INSPECT(first_seed)
+                     << BATT_INSPECT(last_seed);
         for (u32 seed = first_seed; seed < last_seed; ++seed) {
           ASSERT_NO_FATAL_FAILURE(this->run_recovery_sim(seed));
         }
@@ -1039,7 +1054,7 @@ TEST_F(VolumeSimTest, ConcurrentAppendJobs)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-auto VolumeSimTest::get_slot_visitor()
+auto VolumeSimTest::RecoverySimState::get_slot_visitor()
 {
   return [this](const llfs::SlotParse /*slot*/, const llfs::PageId& page_id) {
     if (page_id == this->first_page_id) {
@@ -1055,9 +1070,22 @@ auto VolumeSimTest::get_slot_visitor()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+void VolumeSimTest::RecoverySimState::reset_visitor_outputs()
+{
+  this->recovered_first_page = false;
+  this->recovered_second_page = false;
+  this->no_unknown_pages = true;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void VolumeSimTest::run_recovery_sim(u32 seed)
 {
-  std::mt19937 rng{seed};
+  RecoverySimState state;
+
+  state.seed = seed;
+
+  std::mt19937 rng{state.seed};
 
   llfs::StorageSimulation sim{batt::StateMachineEntropySource{
       /*entropy_fn=*/[&rng](usize min_value, usize max_value) -> usize {
@@ -1090,7 +1118,7 @@ void VolumeSimTest::run_recovery_sim(u32 seed)
 
       llfs::Volume& volume = **recovered_volume;
 
-      ASSERT_NO_FATAL_FAILURE(this->commit_first_job(sim, volume));
+      ASSERT_NO_FATAL_FAILURE(this->commit_first_job(state, sim, volume));
 
       // Now that the initial job has been committed, allow failures to be injected into the
       // simulation (according to our entropy source).
@@ -1100,7 +1128,7 @@ void VolumeSimTest::run_recovery_sim(u32 seed)
       // Commit another job with two new pages: one that references first_page_id and is
       // referenced by the other one, which is referenced from the root log.
       //
-      this->pre_crash_status = this->commit_second_job_pre_crash(sim, volume);
+      state.pre_crash_status = this->commit_second_job_pre_crash(state, sim, volume);
 
       // Simulate a full crash and recovery.
       //
@@ -1111,7 +1139,7 @@ void VolumeSimTest::run_recovery_sim(u32 seed)
       volume.halt();
       volume.join();
     }
-    EXPECT_TRUE(this->first_page_id.is_valid());
+    EXPECT_TRUE(state.first_page_id.is_valid()) << BATT_INSPECT(state.seed);
 
     // Recover system state, post-crash.
     //
@@ -1121,10 +1149,11 @@ void VolumeSimTest::run_recovery_sim(u32 seed)
       //
       batt::StatusOr<std::unique_ptr<llfs::Volume>> recovered_volume = sim.get_volume(
           "TestVolume",
-          llfs::TypedSlotReader<RecoverySimTestSlot>::make_slot_visitor(this->get_slot_visitor()));
+          llfs::TypedSlotReader<RecoverySimTestSlot>::make_slot_visitor(state.get_slot_visitor()));
 
       ASSERT_TRUE(recovered_volume.ok()) << BATT_INSPECT(recovered_volume.status());
-      ASSERT_NO_FATAL_FAILURE(this->verify_post_recovery_expectations(sim, **recovered_volume));
+      ASSERT_NO_FATAL_FAILURE(
+          this->verify_post_recovery_expectations(state, sim, **recovered_volume));
     }
   };
 
@@ -1133,7 +1162,8 @@ void VolumeSimTest::run_recovery_sim(u32 seed)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void VolumeSimTest::commit_first_job(llfs::StorageSimulation& sim, llfs::Volume& volume)
+void VolumeSimTest::commit_first_job(RecoverySimState& state, llfs::StorageSimulation& sim,
+                                     llfs::Volume& volume)
 {
   std::unique_ptr<llfs::PageCacheJob> job = volume.new_job();
 
@@ -1146,12 +1176,12 @@ void VolumeSimTest::commit_first_job(llfs::StorageSimulation& sim, llfs::Volume&
 
   // Save the page_id so we can use it later.
   //
-  this->first_page_id = *new_page_id;
+  state.first_page_id = *new_page_id;
 
   // Write the page and slot to the Volume.
   //
   batt::StatusOr<llfs::SlotRange> slot_range =
-      this->commit_job_to_root_log(std::move(job), this->first_page_id, volume, sim);
+      this->commit_job_to_root_log(std::move(job), state.first_page_id, volume, sim);
 
   ASSERT_TRUE(slot_range.ok()) << BATT_INSPECT(slot_range.status());
 
@@ -1160,7 +1190,8 @@ void VolumeSimTest::commit_first_job(llfs::StorageSimulation& sim, llfs::Volume&
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-batt::Status VolumeSimTest::commit_second_job_pre_crash(llfs::StorageSimulation& sim,
+batt::Status VolumeSimTest::commit_second_job_pre_crash(RecoverySimState& state,
+                                                        llfs::StorageSimulation& sim,
                                                         llfs::Volume& volume)
 {
   std::unique_ptr<llfs::PageCacheJob> job = volume.new_job();
@@ -1171,119 +1202,160 @@ batt::Status VolumeSimTest::commit_second_job_pre_crash(llfs::StorageSimulation&
   // page.
   //
   BATT_ASSIGN_OK_RESULT(
-      this->third_page_id,
-      this->build_page_with_refs_to({this->first_page_id}, llfs::PageSize{4 * kKiB}, *job, sim));
+      state.third_page_id,
+      this->build_page_with_refs_to({state.first_page_id}, llfs::PageSize{4 * kKiB}, *job, sim));
 
   //----- --- -- -  -  -   -
   // Build the 2k page; this will be referenced from the log.
   //
   BATT_ASSIGN_OK_RESULT(
-      this->second_root_page_id,
-      this->build_page_with_refs_to({this->third_page_id}, llfs::PageSize{2 * kKiB}, *job, sim));
+      state.second_root_page_id,
+      this->build_page_with_refs_to({state.third_page_id}, llfs::PageSize{2 * kKiB}, *job, sim));
 
   //----- --- -- -  -  -   -
 
   // Once we start committing the job, we are no longer sure that it _won't_ commit.
   //
-  this->second_job_will_not_commit = false;
+  state.second_job_will_not_commit = false;
 
   // Commit the job.
   //
   BATT_ASSIGN_OK_RESULT(
       llfs::SlotRange slot_range,
-      this->commit_job_to_root_log(std::move(job), this->second_root_page_id, volume, sim));
+      this->commit_job_to_root_log(std::move(job), state.second_root_page_id, volume, sim));
 
   sim.log_event("second job successfully appended! slot_range=", slot_range);
 
   // Now that the job has successfully been committed, set expectations accordingly.
   //
-  this->second_job_will_commit = true;
+  state.second_job_will_commit = true;
 
   return batt::OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void VolumeSimTest::verify_post_recovery_expectations(llfs::StorageSimulation& sim,
+void VolumeSimTest::verify_post_recovery_expectations(RecoverySimState& state,
+                                                      llfs::StorageSimulation& sim,
                                                       llfs::Volume& volume)
 {
-  // It's possible that the simulated crash happened before the commit slot was flushed;
-  // even if so, the job should still be durable, so the commit slot would have been
-  // written during recovery, so we can create a reader and scan for it now.
-  //
-  if (!this->recovered_first_page || !this->recovered_second_page) {
-    batt::StatusOr<llfs::TypedVolumeReader<RecoverySimTestSlot>> volume_reader =
-        volume.typed_reader(
-            llfs::SlotRangeSpec{
-                .lower_bound = batt::None,
-                .upper_bound = batt::None,
-            },
-            llfs::LogReadMode::kDurable, batt::StaticType<RecoverySimTestSlot>{});
+  for (bool use_captured_log_data : {false, true}) {
+    state.reset_visitor_outputs();
 
-    ASSERT_TRUE(volume_reader.ok()) << BATT_INSPECT(volume_reader.status());
+    llfs::SlotRange slot_range{0, 0};
 
-    volume_reader->consume_typed_slots(batt::WaitForResource::kFalse, this->get_slot_visitor())
-        .IgnoreError();
-  }
-  EXPECT_TRUE(this->recovered_first_page);
-  EXPECT_TRUE(this->no_unknown_pages);
+    // It's possible that the simulated crash happened before the commit slot was flushed;
+    // even if so, the job should still be durable, so the commit slot would have been
+    // written during recovery, so we can create a reader and scan for it now.
+    //
+    if (!state.recovered_first_page || !state.recovered_second_page) {
+      auto slot_range_to_read = llfs::SlotRangeSpec{
+          .lower_bound = batt::None,
+          .upper_bound = batt::None,
+      };
 
-  if (this->second_job_will_not_commit) {
-    EXPECT_FALSE(this->recovered_second_page);
-  }
-  if (this->second_job_will_commit) {
-    EXPECT_TRUE(this->recovered_second_page);
-  }
-  if (this->recovered_second_page) {
-    EXPECT_FALSE(this->second_job_will_not_commit);
+      if (use_captured_log_data) {
+        //TODO [tastolfi 2023-06-05] implement me!
 
-    for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(1 * kKiB)) {
-      EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
-      EXPECT_EQ(arena.allocator().get_ref_count(this->first_page_id).first, 3);
-      ASSERT_TRUE(sim.has_data_for_page_id(this->first_page_id).ok());
-      EXPECT_TRUE(*sim.has_data_for_page_id(this->first_page_id));
-    }
-    for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(2 * kKiB)) {
-      EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
-      EXPECT_EQ(arena.allocator().get_ref_count(this->second_root_page_id).first, 2);
-      ASSERT_TRUE(sim.has_data_for_page_id(this->second_root_page_id).ok());
-      EXPECT_TRUE(*sim.has_data_for_page_id(this->second_root_page_id));
-    }
-    for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(4 * kKiB)) {
-      EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
-      EXPECT_EQ(arena.allocator().get_ref_count(this->third_page_id).first, 2);
-      ASSERT_TRUE(sim.has_data_for_page_id(this->third_page_id).ok());
-      EXPECT_TRUE(*sim.has_data_for_page_id(this->third_page_id));
-    }
-  } else {
-    for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(1 * kKiB)) {
-      EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
-      EXPECT_EQ(arena.allocator().get_ref_count(this->first_page_id).first, 2);
-      ASSERT_TRUE(sim.has_data_for_page_id(this->first_page_id).ok());
-      EXPECT_TRUE(*sim.has_data_for_page_id(this->first_page_id));
-    }
-    for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(2 * kKiB)) {
-      EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device);
-      if (this->second_root_page_id.is_valid()) {
-        EXPECT_EQ(arena.allocator().get_ref_count(this->second_root_page_id).first, 0);
-        ASSERT_TRUE(sim.has_data_for_page_id(this->second_root_page_id).ok());
-        EXPECT_FALSE(*sim.has_data_for_page_id(this->second_root_page_id));
+        batt::StatusOr<llfs::SlotReadLock> read_lock =
+            volume.lock_slots(slot_range_to_read, llfs::LogReadMode::kDurable,
+                              /*lock_holder=*/"VolumeSimTest::verify_post_recovery_expectations");
+
+        ASSERT_TRUE(read_lock.ok()) << read_lock;
+
+        slot_range = read_lock->slot_range();
+        BATT_CHECK(!llfs::slot_less_than(slot_range.upper_bound, slot_range.lower_bound));
+
+        batt::StatusOr<llfs::ConstBuffer> log_bytes = volume.get_root_log_data(*read_lock);
+
+        ASSERT_TRUE(log_bytes.ok())
+            << BATT_INSPECT(log_bytes.status()) << BATT_INSPECT(read_lock->slot_range());
+
+        llfs::RawVolumeLogDataParser parser;
+        batt::StatusOr<llfs::slot_offset_type> parse_result =
+            parser.parse_chunk(read_lock->slot_range(), *log_bytes,
+                               llfs::TypedSlotReader<RecoverySimTestSlot>::make_slot_visitor(
+                                   state.get_slot_visitor()));
+
+        ASSERT_TRUE(parse_result.ok()) << BATT_INSPECT(parse_result.status());
+        EXPECT_EQ(*parse_result, read_lock->slot_range().upper_bound);
+
+      } else {
+        {
+          batt::StatusOr<llfs::TypedVolumeReader<RecoverySimTestSlot>> volume_reader =
+              volume.typed_reader(slot_range_to_read, llfs::LogReadMode::kDurable,
+                                  batt::StaticType<RecoverySimTestSlot>{});
+
+          ASSERT_TRUE(volume_reader.ok()) << BATT_INSPECT(volume_reader.status());
+
+          volume_reader
+              ->consume_typed_slots(batt::WaitForResource::kFalse, state.get_slot_visitor())
+              .IgnoreError();
+        }
+        slot_range = volume.root_log_slot_range(llfs::LogReadMode::kDurable);
       }
     }
-    for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(4 * kKiB)) {
-      EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device);
-      if (this->third_page_id.is_valid()) {
-        EXPECT_EQ(arena.allocator().get_ref_count(this->third_page_id).first, 0);
-        ASSERT_TRUE(sim.has_data_for_page_id(this->third_page_id).ok());
-        EXPECT_FALSE(*sim.has_data_for_page_id(this->third_page_id));
+    EXPECT_TRUE(state.recovered_first_page) << BATT_INSPECT(use_captured_log_data)
+                                            << BATT_INSPECT(slot_range) << BATT_INSPECT(state.seed);
+    EXPECT_TRUE(state.no_unknown_pages);
+
+    if (state.second_job_will_not_commit) {
+      EXPECT_FALSE(state.recovered_second_page);
+    }
+    if (state.second_job_will_commit) {
+      EXPECT_TRUE(state.recovered_second_page);
+    }
+    if (state.recovered_second_page) {
+      EXPECT_FALSE(state.second_job_will_not_commit);
+
+      for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(1 * kKiB)) {
+        EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
+        EXPECT_EQ(arena.allocator().get_ref_count(state.first_page_id).first, 3);
+        ASSERT_TRUE(sim.has_data_for_page_id(state.first_page_id).ok());
+        EXPECT_TRUE(*sim.has_data_for_page_id(state.first_page_id));
+      }
+      for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(2 * kKiB)) {
+        EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
+        EXPECT_EQ(arena.allocator().get_ref_count(state.second_root_page_id).first, 2);
+        ASSERT_TRUE(sim.has_data_for_page_id(state.second_root_page_id).ok());
+        EXPECT_TRUE(*sim.has_data_for_page_id(state.second_root_page_id));
+      }
+      for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(4 * kKiB)) {
+        EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
+        EXPECT_EQ(arena.allocator().get_ref_count(state.third_page_id).first, 2);
+        ASSERT_TRUE(sim.has_data_for_page_id(state.third_page_id).ok());
+        EXPECT_TRUE(*sim.has_data_for_page_id(state.third_page_id));
+      }
+    } else {
+      for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(1 * kKiB)) {
+        EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
+        EXPECT_EQ(arena.allocator().get_ref_count(state.first_page_id).first, 2);
+        ASSERT_TRUE(sim.has_data_for_page_id(state.first_page_id).ok());
+        EXPECT_TRUE(*sim.has_data_for_page_id(state.first_page_id));
+      }
+      for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(2 * kKiB)) {
+        EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device);
+        if (state.second_root_page_id.is_valid()) {
+          EXPECT_EQ(arena.allocator().get_ref_count(state.second_root_page_id).first, 0);
+          ASSERT_TRUE(sim.has_data_for_page_id(state.second_root_page_id).ok());
+          EXPECT_FALSE(*sim.has_data_for_page_id(state.second_root_page_id));
+        }
+      }
+      for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(4 * kKiB)) {
+        EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device);
+        if (state.third_page_id.is_valid()) {
+          EXPECT_EQ(arena.allocator().get_ref_count(state.third_page_id).first, 0);
+          ASSERT_TRUE(sim.has_data_for_page_id(state.third_page_id).ok());
+          EXPECT_FALSE(*sim.has_data_for_page_id(state.third_page_id));
+        }
       }
     }
+    if (!state.second_job_will_not_commit) {
+      EXPECT_TRUE(state.second_root_page_id.is_valid());
+      EXPECT_TRUE(state.third_page_id.is_valid());
+    }
+    EXPECT_EQ(state.second_root_page_id.is_valid(), state.third_page_id.is_valid());
   }
-  if (!this->second_job_will_not_commit) {
-    EXPECT_TRUE(this->second_root_page_id.is_valid());
-    EXPECT_TRUE(this->third_page_id.is_valid());
-  }
-  EXPECT_EQ(this->second_root_page_id.is_valid(), this->third_page_id.is_valid());
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

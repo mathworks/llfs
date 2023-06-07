@@ -33,28 +33,14 @@ bool SimulatedLogDevice::Impl::ReaderImpl::is_closed() /*override*/
 //
 ConstBuffer SimulatedLogDevice::Impl::ReaderImpl::data() /*override*/
 {
-  ConstBuffer buffer;
+  const slot_offset_type slot_upper_bound = this->impl_.get_slot_upper_bound(this->mode_);
 
-  {
-    auto locked_chunks = this->impl_.chunks_.lock();
+  BATT_CHECK(!slot_less_than(slot_upper_bound, this->slot_offset_))
+      << BATT_INSPECT(this->mode_) << BATT_INSPECT(this->slot_offset_)
+      << BATT_INSPECT(slot_upper_bound);
 
-    this->impl_.log_event("reading slot ", this->slot_offset_);
-
-    auto iter = locked_chunks->lower_bound(this->slot_offset_);
-    if (iter != locked_chunks->end()) {
-      std::shared_ptr<Impl::CommitChunk>& chunk = iter->second;
-      if (this->mode_ != LogReadMode::kDurable || chunk->is_flushed()) {
-        if (!slot_less_than(this->slot_offset_, chunk->slot_offset)) {
-          const auto reader_offset_within_chunk = (this->slot_offset_ - chunk->slot_offset);
-          if (reader_offset_within_chunk <= chunk->data.size()) {
-            buffer = ConstBuffer{chunk->data.data() + reader_offset_within_chunk,
-                                 chunk->data.size() - reader_offset_within_chunk};
-            this->chunk_ = batt::make_copy(chunk);
-          }
-        }
-      }
-    }
-  }
+  ConstBuffer buffer{this->impl_.ring_buffer_.get(this->slot_offset_).data(),
+                     slot_upper_bound - this->slot_offset_};
 
   this->data_size_ = buffer.size();
 
@@ -70,6 +56,10 @@ void SimulatedLogDevice::Impl::ReaderImpl::consume(usize byte_count) /*override*
   BATT_CHECK_LE(byte_count, this->data_size_);
 
   this->slot_offset_ += byte_count;
+
+  BATT_CHECK(!slot_less_than(this->impl_.get_slot_upper_bound(this->mode_), this->slot_offset_))
+      << BATT_INSPECT(this->mode_) << BATT_INSPECT(this->slot_offset_)
+      << BATT_INSPECT(this->impl_.get_slot_upper_bound(this->mode_));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

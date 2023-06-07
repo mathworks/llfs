@@ -373,37 +373,40 @@ class VolumeTest : public ::testing::Test
    */
   void verify_events(const llfs::SlotRange& slot_range, const llfs::ConstBuffer& log_data)
   {
-    auto first = std::lower_bound(this->appended_events.begin(), this->appended_events.end(),
-                                  slot_range, llfs::SlotRangeOrder{});
+    const auto first = std::lower_bound(this->appended_events.begin(), this->appended_events.end(),
+                                        slot_range, llfs::SlotRangeOrder{});
 
-    auto last = std::upper_bound(this->appended_events.begin(), this->appended_events.end(),
-                                 slot_range, llfs::SlotRangeOrder{});
+    auto next = first;
+
+    const auto last = std::upper_bound(this->appended_events.begin(), this->appended_events.end(),
+                                       slot_range, llfs::SlotRangeOrder{});
 
     llfs::RawVolumeLogDataParser parser;
 
     batt::StatusOr<llfs::slot_offset_type> parse_result = parser.parse_chunk(
         slot_range, log_data,
         [&](const llfs::SlotParse& slot_parse, const std::string_view& user_data) -> batt::Status {
-          BATT_CHECK_NE(first, last);
+          BATT_CHECK_NE(next, last);
 
-          BATT_CHECK_EQ(first->slot_range, slot_parse.offset);
+          BATT_CHECK_EQ(next->slot_range, slot_parse.offset);
 
           BATT_CHECK_EQ(user_data.size(), sizeof(UpsertEvent));
 
-          BATT_CHECK_EQ(first->payload.key,
+          BATT_CHECK_EQ(next->payload.key,
                         reinterpret_cast<const UpsertEvent*>(user_data.data())->key);
 
-          BATT_CHECK_EQ(first->payload.value,
+          BATT_CHECK_EQ(next->payload.value,
                         reinterpret_cast<const UpsertEvent*>(user_data.data())->value);
 
-          ++first;
+          ++next;
 
           return batt::OkStatus();
         });
 
     ASSERT_TRUE(parse_result.ok()) << BATT_INSPECT(parse_result.status());
-    EXPECT_EQ(first, last);
-    EXPECT_EQ(std::prev(last)->upper_bound, *parse_result);
+    EXPECT_EQ(next, last);
+    ASSERT_NE(first, next);
+    EXPECT_EQ(std::prev(next)->slot_range.upper_bound, *parse_result);
   }
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

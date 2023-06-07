@@ -97,10 +97,6 @@ class Volume
   template <typename T>
   u64 calculate_grant_size(const T& payload) const;
 
-  // Returns the number of bytes needed to append `payload`.
-  //
-  u64 calculate_grant_size(const std::string_view& payload) const;
-
   // Returns the number of bytes needed to append `prepare_job`.
   //
   u64 calculate_grant_size(const AppendableJob& appendable) const;
@@ -109,10 +105,6 @@ class Volume
   //
   template <typename T>
   StatusOr<SlotRange> append(const T& payload, batt::Grant& grant);
-
-  // Atomically append a new slot containing `payload` to the end of the root log.
-  //
-  StatusOr<SlotRange> append(const std::string_view& payload, batt::Grant& grant);
 
   // Create a new PageCacheJob for writing new pages via the WAL of this Volume.
   //

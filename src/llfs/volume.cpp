@@ -705,16 +705,35 @@ const PageRecycler::Metrics& Volume::page_recycler_metrics() const
 StatusOr<ConstBuffer> Volume::get_root_log_data(const SlotReadLock& read_lock,
                                                 Optional<SlotRange> slot_range) const
 {
+  // The lock must be in good standing and sponsored by us.
+  //
   if (!read_lock || read_lock.get_sponsor() != this->trim_control_.get()) {
     return {batt::StatusCode::kInvalidArgument};
   }
 
+  // If slot_range is not specified, use the range of the lock.
+  //
   if (!slot_range) {
     slot_range = read_lock.slot_range();
-  } else {
-    BATT_CHECK(!slot_less_than(slot_range->lower_bound, read_lock.slot_range().lower_bound -
-                                                            this->options_.trim_delay_byte_count))
-        << BATT_INSPECT(slot_range) << BATT_INSPECT(read_lock.slot_range());
+  }
+
+  // Check for negative-size slot range.
+  //
+  if (slot_less_than(slot_range->upper_bound, slot_range->lower_bound)) {
+    return {batt::StatusCode::kInvalidArgument};
+  }
+
+  // The captured range may be below the lock's lower_bound, but not by more than the trim delay.
+  //
+  if (slot_less_than(slot_range->lower_bound,
+                     read_lock.slot_range().lower_bound - this->options_.trim_delay_byte_count)) {
+    return {batt::StatusCode::kOutOfRange};
+  }
+
+  // Edge case: request for empty slot range.
+  //
+  if (slot_range->lower_bound == slot_range->upper_bound) {
+    return batt::ConstBuffer{nullptr, 0};
   }
 
   // Create a log reader to access the data.

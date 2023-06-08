@@ -46,6 +46,17 @@ const boost::uuids::uuid& Volume::get_trimmer_uuid() const
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+u64 Volume::calculate_grant_size(const std::string_view& payload) const
+{
+  // We must use `pack_as_raw` here so that when/if the payload is passed to a
+  // slot visitor, it will not include a PackedBytes header; rather it should be
+  // exactly the same bytes as `payload`.
+  //
+  return packed_sizeof_slot(pack_as_raw(payload));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
 {
   return (packed_sizeof_slot(prepare(appendable)) +
@@ -412,6 +423,18 @@ StatusOr<SlotReadLock> Volume::lock_slots(const SlotRange& slot_range, LogReadMo
 StatusOr<batt::Grant> Volume::reserve(u64 size, batt::WaitForResource wait_for_log_space)
 {
   return this->slot_writer_.reserve(size, wait_for_log_space);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+
+StatusOr<SlotRange> Volume::append(const std::string_view& payload, batt::Grant& grant)
+{
+  // We must use `pack_as_raw` here so that when/if the payload is passed to a
+  // slot visitor, it will not include a PackedBytes header; rather it should be
+  // exactly the same bytes as `payload`.
+  //
+  return this->append(pack_as_raw(payload), grant);  // PackableRef
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

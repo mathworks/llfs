@@ -180,24 +180,24 @@ TEST_F(VolumeConfigTest, ConfigRestore)
 
     llfs::Volume& volume = **maybe_volume;
     llfs::StatusOr<batt::Grant> grant =
-        volume.reserve(volume.calculate_grant_size("alpha") +        //
-                           volume.calculate_grant_size("bravo") +    //
-                           volume.calculate_grant_size("charlie") +  //
-                           volume.calculate_grant_size("delta"),
+        volume.reserve(volume.calculate_grant_size(std::string_view("alpha")) +        //
+                           volume.calculate_grant_size(std::string_view("bravo")) +    //
+                           volume.calculate_grant_size(std::string_view("charlie")) +  //
+                           volume.calculate_grant_size(std::string_view("delta")),
                        batt::WaitForResource::kTrue);
 
     ASSERT_TRUE(grant.ok()) << BATT_INSPECT(grant.status());
 
-    alpha_slot = volume.append("alpha", *grant);
+    alpha_slot = volume.append(std::string_view("alpha"), *grant);
     ASSERT_TRUE(alpha_slot.ok()) << BATT_INSPECT(alpha_slot.status());
 
-    bravo_slot = volume.append("bravo", *grant);
+    bravo_slot = volume.append(std::string_view("bravo"), *grant);
     ASSERT_TRUE(bravo_slot.ok()) << BATT_INSPECT(bravo_slot.status());
 
-    charlie_slot = volume.append("charlie", *grant);
+    charlie_slot = volume.append(std::string_view("charlie"), *grant);
     ASSERT_TRUE(charlie_slot.ok()) << BATT_INSPECT(charlie_slot.status());
 
-    delta_slot = volume.append("delta", *grant);
+    delta_slot = volume.append(std::string_view("delta"), *grant);
     ASSERT_TRUE(delta_slot.ok()) << BATT_INSPECT(delta_slot.status());
 
     llfs::Status sync_status = volume

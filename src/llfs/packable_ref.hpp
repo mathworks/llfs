@@ -150,10 +150,7 @@ class PackableRef
   const void* ptr_;
 };
 
-inline usize packed_sizeof(const PackableRef& p)
-{
-  return p.packed_size();
-}
+usize packed_sizeof(const PackableRef& p);
 
 inline PackedRawData* pack_object(const PackableRef& p, DataPacker* dst)
 {

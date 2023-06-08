@@ -18,6 +18,7 @@
 #include <llfs/memory_log_device.hpp>
 #include <llfs/memory_page_cache.hpp>
 #include <llfs/opaque_page_view.hpp>
+#include <llfs/packable_ref.hpp>
 #include <llfs/page_graph_node.hpp>
 #include <llfs/raw_volume_log_data_parser.hpp>
 #include <llfs/storage_simulation.hpp>

@@ -32,7 +32,7 @@ class LlfsConan(ConanFile):
         "gtest/1.13.0",
         "boost/1.81.0",
         "glog/0.6.0",
-        "batteries/0.36.0@batteriescpp+batteries/stable",
+        "batteries/0.36.4@batteriescpp+batteries/stable",
         "cli11/2.3.2",
 
         # Version overrides (conflict resolutions)
@@ -92,6 +92,6 @@ class LlfsConan(ConanFile):
         cmake.install()
 
     def package_info(self):
-        self.cpp_info.cxxflags = ["-std=c++17", "-D_GNU_SOURCE", "-D_BITS_UIO_EXT_H=1"]
+        self.cpp_info.cxxflags = ["-D_GNU_SOURCE", "-D_BITS_UIO_EXT_H=1"]
         self.cpp_info.system_libs = ["dl"]
         self.cpp_info.libs = ["llfs"]

@@ -82,6 +82,8 @@ class VolumeTrimmerTest : public ::testing::Test
     this->job_grant_size = 0;
     this->leaked_job_grant_size = 0;
     this->verified_client_slot = 0;
+    this->trim_delay_byte_count = 0;
+    this->last_recovered_trim_pos = 0;
     this->initialize_log();
   }
 
@@ -186,6 +188,12 @@ class VolumeTrimmerTest : public ::testing::Test
     }
     this->job_grant = batt::None;
     this->fake_slot_writer.emplace(*this->fake_log);
+
+    // Set `last_recovered_trim_pos` so we don't think that trim delay is failing to arrest log
+    // trimming immediately after (re-)opening the log.
+    //
+    this->last_recovered_trim_pos =
+        this->fake_log->slot_range(llfs::LogReadMode::kDurable).lower_bound;
   }
 
   /** \brief Create a VolumeTrimmer for testing.
@@ -213,11 +221,12 @@ class VolumeTrimmerTest : public ::testing::Test
                  << BATT_INSPECT(this->recovery_visitor->get_refresh_info())
                  << BATT_INSPECT(this->recovery_visitor->get_trim_event_info())
                  << BATT_INSPECT_RANGE(this->recovery_visitor->get_pending_jobs())
-                 << BATT_INSPECT(this->recovery_visitor->get_trimmer_grant_size());
+                 << BATT_INSPECT(this->recovery_visitor->get_trimmer_grant_size())
+                 << BATT_INSPECT(this->trim_delay_byte_count);
 
     this->trimmer = std::make_unique<llfs::VolumeTrimmer>(
         this->volume_ids.trimmer_uuid, "TestTrimmer", *this->trim_control,
-        llfs::TrimDelayByteCount{0},
+        llfs::TrimDelayByteCount{this->trim_delay_byte_count},
         this->fake_log->new_reader(/*slot_lower_bound=*/batt::None,
                                    llfs::LogReadMode::kSpeculative),
         *this->fake_slot_writer,
@@ -550,9 +559,77 @@ class VolumeTrimmerTest : public ::testing::Test
     }
   }
 
+  /** \brief Checks all invariants.
+   */
+  void check_invariants()
+  {
+    // Check to make sure that not too much of the log was trimmed.
+    //
+    {
+      BATT_CHECK(this->trim_control);
+      const llfs::slot_offset_type least_locked_slot = this->trim_control->get_lower_bound();
+
+      BATT_CHECK_NOT_NULLPTR(this->fake_log);
+      const llfs::slot_offset_type trim_pos =
+          this->fake_log->slot_range(llfs::LogReadMode::kDurable).lower_bound;
+
+      if (least_locked_slot >= this->last_recovered_trim_pos + this->trim_delay_byte_count) {
+        ASSERT_GE((i64)least_locked_slot - (i64)trim_pos, (i64)this->trim_delay_byte_count)
+            << BATT_INSPECT(this->trim_delay_byte_count) << BATT_INSPECT(least_locked_slot)
+            << BATT_INSPECT(trim_pos) << BATT_INSPECT(this->last_recovered_trim_pos);
+      } else {
+        ASSERT_EQ(trim_pos, this->last_recovered_trim_pos)
+            << BATT_INSPECT(least_locked_slot) << BATT_INSPECT(this->trim_delay_byte_count);
+      }
+    }
+  }
+
+  /** \brief Forces the trimmer task to shut down; usually because we have failed an ASSERT.
+   */
+  void force_shut_down()
+  {
+    // Only need to do something if the trimmer_task exists.
+    //
+    if (!this->trimmer_task) {
+      return;
+    }
+
+    // Halt everything that might be blocking the trimmer_task.
+    //
+    if (this->trimmer) {
+      this->trimmer->halt();
+    }
+    if (this->trim_control) {
+      this->trim_control->halt();
+    }
+    if (this->fake_log) {
+      this->fake_log->close().IgnoreError();
+    }
+
+    // Run tasks until there are no more.
+    //
+    for (;;) {
+      batt::UniqueHandler<> action = this->task_context.pop_ready_handler([this](usize /*n*/) {
+        return 0;
+      });
+      if (!action) {
+        break;
+      }
+      action();
+    }
+
+    // The trimmer_task should now be joined.
+    //
+    BATT_CHECK_EQ(this->trimmer_task->try_join(), batt::Task::IsDone{true});
+  }
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   std::default_random_engine rng{1234567};
+
+  u64 trim_delay_byte_count = 0;
+
+  llfs::slot_offset_type last_recovered_trim_pos = 0;
 
   std::array<i64, kNumPages> page_ref_count;
 
@@ -601,8 +678,6 @@ class VolumeTrimmerTest : public ::testing::Test
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-// seeds to investigate:
-// - 1:  seed_i == 461660
 //
 TEST_F(VolumeTrimmerTest, RandomizedTest)
 {
@@ -612,6 +687,12 @@ TEST_F(VolumeTrimmerTest, RandomizedTest)
   const usize kInitialSeed = 0;
   usize crash_count = 0;
 
+  // Make sure there are no running tasks when we return.
+  //
+  auto on_scope_exit = batt::finally([&] {
+    this->force_shut_down();
+  });
+
   for (usize seed_i = kInitialSeed; seed_i < kInitialSeed + kNumSeeds; seed_i += 1) {
     LLFS_LOG_INFO_EVERY_N(kLogEveryN) << "Starting new test run with empty log;"
                                       << BATT_INSPECT(seed_i) << BATT_INSPECT(crash_count);
@@ -619,6 +700,11 @@ TEST_F(VolumeTrimmerTest, RandomizedTest)
     this->rng.seed(seed_i * 741461423ull);
 
     this->reset_state();
+
+    // Pick a trim delay setting for this test run.
+    //
+    this->trim_delay_byte_count = this->pick_usize(0, 16) * 64;
+
     this->open_fake_log();
     this->initialize_trimmer();
 
@@ -630,6 +716,8 @@ TEST_F(VolumeTrimmerTest, RandomizedTest)
     for (int step_i = 0; !this->fake_log_has_failed(); ++step_i) {
       LLFS_VLOG(1) << "Step " << step_i;
 
+      ASSERT_NO_FATAL_FAILURE(this->check_invariants());
+
       // Let the VolumeTrimmer task run.
       //
       if (this->pick_branch()) {
@@ -639,6 +727,7 @@ TEST_F(VolumeTrimmerTest, RandomizedTest)
         });
         if (action) {
           ASSERT_NO_FATAL_FAILURE(action());
+          ASSERT_NO_FATAL_FAILURE(this->check_invariants());
         }
       }
 
@@ -646,6 +735,7 @@ TEST_F(VolumeTrimmerTest, RandomizedTest)
       //
       if (this->pick_branch()) {
         ASSERT_NO_FATAL_FAILURE(this->trim_log());
+        ASSERT_NO_FATAL_FAILURE(this->check_invariants());
       }
 
       // Write opaque user data slot, if there is enough log space.
@@ -653,26 +743,37 @@ TEST_F(VolumeTrimmerTest, RandomizedTest)
       if (this->fake_slot_writer->pool_size() > kMaxOpaqueDataSize + kMaxSlotOverhead &&
           this->pick_branch()) {
         ASSERT_NO_FATAL_FAILURE(this->append_opaque_data_slot()) << BATT_INSPECT(seed_i);
+        ASSERT_NO_FATAL_FAILURE(this->check_invariants());
       }
 
       // Write PrepareJob slot.
       //
       if (this->pick_branch()) {
         ASSERT_NO_FATAL_FAILURE(this->prepare_one_job());
+        ASSERT_NO_FATAL_FAILURE(this->check_invariants());
       }
 
       // Write CommitJob slot, if there is a pending job.
       //
       if (!this->pending_jobs.empty() && this->pick_branch()) {
         ASSERT_NO_FATAL_FAILURE(this->commit_one_job()) << BATT_INSPECT(seed_i);
+        ASSERT_NO_FATAL_FAILURE(this->check_invariants());
       }
 
       // Simulate a crash/recovery (rate=1%)
       //
       if (this->pick_usize(1, 100) <= 1) {
-        LLFS_VLOG(1) << "Simulating crash/recovery...";
+        LLFS_VLOG(1) << "Simulating crash/recovery..."
+                     << BATT_INSPECT(this->last_recovered_trim_pos)
+                     << BATT_INSPECT(this->fake_log->slot_range(llfs::LogReadMode::kDurable))
+                     << BATT_INSPECT(this->trim_control->get_lower_bound());
+
         ASSERT_NO_FATAL_FAILURE(this->shutdown_trimmer()) << BATT_INSPECT(seed_i);
+        ASSERT_NO_FATAL_FAILURE(this->check_invariants());
+
         ASSERT_NO_FATAL_FAILURE(this->initialize_trimmer());
+        ASSERT_NO_FATAL_FAILURE(this->check_invariants());
+
         crash_count += 1;
       }
     }
@@ -680,6 +781,7 @@ TEST_F(VolumeTrimmerTest, RandomizedTest)
     LLFS_VLOG(1) << "Exited loop; joining trimmer task";
 
     ASSERT_NO_FATAL_FAILURE(this->shutdown_trimmer()) << BATT_INSPECT(seed_i);
+    ASSERT_NO_FATAL_FAILURE(this->check_invariants());
   }
 }
 

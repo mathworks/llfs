@@ -12,7 +12,9 @@
 
 #include <llfs/config.hpp>
 //
+#include <llfs/buffer.hpp>
 #include <llfs/log_device.hpp>
+#include <llfs/ring_buffer.hpp>
 #include <llfs/simulated_log_device.hpp>
 #include <llfs/simulated_storage_object.hpp>
 #include <llfs/slot.hpp>
@@ -79,7 +81,7 @@ class SimulatedLogDevice::Impl : public SimulatedStorageObject
 
     // The chunk data.
     //
-    std::vector<char> data;
+    MutableBuffer data_view;
 
     // The chunk state (see above).
     //
@@ -90,7 +92,7 @@ class SimulatedLogDevice::Impl : public SimulatedStorageObject
     explicit CommitChunk(Impl& impl, slot_offset_type offset, usize size) noexcept
         : impl{impl}
         , slot_offset{offset}
-        , data(size)
+        , data_view{resize_buffer(impl.ring_buffer_.get_mut(offset), size)}
     {
     }
 
@@ -110,7 +112,7 @@ class SimulatedLogDevice::Impl : public SimulatedStorageObject
      */
     slot_offset_type slot_upper_bound() const noexcept
     {
-      return this->slot_offset + this->data.size();
+      return this->slot_offset + this->data_view.size();
     }
 
     /** \brief Returns the slot range of this chunk.
@@ -222,6 +224,20 @@ class SimulatedLogDevice::Impl : public SimulatedStorageObject
    */
   Status sync(u64 device_create_step, LogReadMode mode, SlotUpperBoundAt event);
 
+  /** \brief Returns the current commit_pos or flush_pos, depending on mode.
+   */
+  slot_offset_type get_slot_upper_bound(LogReadMode mode) const noexcept
+  {
+    if (mode == LogReadMode::kDurable) {
+      return this->flush_pos_.get_value();
+    } else if (mode == LogReadMode::kSpeculative) {
+      return this->commit_pos_.get_value();
+    }
+
+    BATT_PANIC() << "Bad mode value: " << (int)mode;
+    BATT_UNREACHABLE();
+  }
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
   /** \brief Updates `this->flush_pos_` to reflect the current state of `chunks_`.
@@ -241,6 +257,10 @@ class SimulatedLogDevice::Impl : public SimulatedStorageObject
   // The maximum size (bytes) of the simulated log.
   //
   const u64 capacity_;
+
+  // The storage for all committed/prepared chunks.
+  //
+  RingBuffer ring_buffer_;
 
   // The most recent value passed to `crash_and_recover` (initially 0).
   //

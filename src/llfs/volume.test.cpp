@@ -18,7 +18,9 @@
 #include <llfs/memory_log_device.hpp>
 #include <llfs/memory_page_cache.hpp>
 #include <llfs/opaque_page_view.hpp>
+#include <llfs/packable_ref.hpp>
 #include <llfs/page_graph_node.hpp>
+#include <llfs/raw_volume_log_data_parser.hpp>
 #include <llfs/storage_simulation.hpp>
 
 #include <batteries/cpu_align.hpp>
@@ -62,6 +64,8 @@ u8 expected_byte_value(llfs::PageId page_id)
   return (v2 >> 8) ^ v2;
 }
 
+constexpr usize kTestRootLogSize = 1 * kMiB;
+
 class VolumeTest : public ::testing::Test
 {
  public:
@@ -96,16 +100,16 @@ class VolumeTest : public ::testing::Test
 
   void reset_logs()
   {
-    this->root_log.emplace(1 * kMiB);
+    this->root_log.emplace(kTestRootLogSize);
 
     const auto recycler_options =
         llfs::PageRecyclerOptions{}.set_max_refs_per_page(max_refs_per_page);
 
     const u64 recycler_log_size = llfs::PageRecycler::calculate_log_size(recycler_options);
 
-    EXPECT_EQ(llfs::PageRecycler::default_max_buffered_page_count(recycler_options),
-              ::llfs::PageRecycler::calculate_max_buffered_page_count(recycler_options,
-                                                                      recycler_log_size));
+    EXPECT_GE(::llfs::PageRecycler::calculate_max_buffered_page_count(recycler_options,
+                                                                      recycler_log_size),
+              llfs::PageRecycler::default_max_buffered_page_count(recycler_options));
 
     this->recycler_log.emplace(recycler_log_size);
   }
@@ -137,7 +141,7 @@ class VolumeTest : public ::testing::Test
                 .uuid = llfs::None,
                 .max_refs_per_page = max_refs_per_page,
                 .trim_lock_update_interval = llfs::TrimLockUpdateInterval{0u},
-                .trim_delay_byte_count = llfs::TrimDelayByteCount{0},
+                .trim_delay_byte_count = this->trim_delay,
             },
             this->page_cache,
             /*root_log=*/&root_log,
@@ -278,9 +282,139 @@ class VolumeTest : public ::testing::Test
     return test_volume.append(std::move(*appendable_job), *grant);
   }
 
+  /** \brief Initializes this->volume.
+   */
+  void open_volume()
+  {
+    BATT_CHECK(this->root_log);
+    BATT_CHECK(this->recycler_log);
+
+    this->fake_root_log_factory =  //
+        llfs::testing::make_fake_log_device_factory(*this->root_log);
+
+    this->fake_recycler_log_factory =  //
+        llfs::testing::make_fake_log_device_factory(*this->recycler_log);
+
+    this->volume = this->open_volume_or_die(
+        *this->fake_root_log_factory, *this->fake_recycler_log_factory,
+        /*slot_visitor_fn=*/[](const llfs::SlotParse&, const std::string_view& /*user_data*/) {
+          return llfs::OkStatus();
+        });
+  }
+
+  /** \brief Appends a single UpsertEvent with the specified key and value to this->volume.
+   *
+   * On success, pushes a single item onto the back of this->appended_events.
+   */
+  void append_event(i32 key, i32 value)
+  {
+    BATT_CHECK_NOT_NULLPTR(this->volume);
+
+    UpsertEvent event{key, value};
+    llfs::PackableRef packable_event{event};
+
+    const usize required_size = this->volume->calculate_grant_size(packable_event);
+
+    llfs::StatusOr<batt::Grant> grant =
+        this->volume->reserve(required_size, batt::WaitForResource::kFalse);
+
+    BATT_CHECK_OK(grant);
+
+    llfs::StatusOr<llfs::SlotRange> slot = this->volume->append(packable_event, *grant);
+
+    BATT_CHECK_OK(slot);
+
+    this->appended_events.emplace_back(llfs::SlotWithPayload<UpsertEvent>{
+        .slot_range = *slot,
+        .payload = event,
+    });
+  }
+
+  /** \brief Initializes this->volume with a non-zero trim_delay and appends a bunch of events.
+   */
+  void init_events()
+  {
+    constexpr usize kNumEvents = 100;
+
+    this->trim_delay = llfs::TrimDelayByteCount{256};
+
+    BATT_CHECK_LT(this->trim_delay, kTestRootLogSize);
+
+    this->open_volume();
+    for (usize i = 0; i < kNumEvents; ++i) {
+      this->append_event(i, i + 100);
+    }
+
+    EXPECT_EQ(this->appended_events.size(), kNumEvents);
+
+    EXPECT_TRUE(llfs::slot_less_than(this->appended_events[7].slot_range.upper_bound,  //
+                                     this->trim_delay));
+
+    EXPECT_TRUE(llfs::slot_less_than(this->trim_delay,  //
+                                     this->appended_events.back().slot_range.lower_bound));
+  }
+
+  /** \brief Returns the slot offset range of the appended_events [first_event, last_event)
+   * (half-open interval).
+   */
+  llfs::SlotRange slot_event_range(usize first_event, usize last_event) const
+  {
+    BATT_CHECK_LT(first_event, this->appended_events.size());
+    BATT_CHECK_LT(last_event, this->appended_events.size());
+    BATT_CHECK(llfs::slot_less_or_equal(first_event, last_event));
+
+    return llfs::SlotRange{
+        this->appended_events[first_event].slot_range.lower_bound,
+        this->appended_events[last_event].slot_range.lower_bound,
+    };
+  }
+
+  /** \brief Verifies that the passed log data contains the appended_events in the specified
+   * slot_range.
+   */
+  void verify_events(const llfs::SlotRange& slot_range, const llfs::ConstBuffer& log_data)
+  {
+    const auto first = std::lower_bound(this->appended_events.begin(), this->appended_events.end(),
+                                        slot_range, llfs::SlotRangeOrder{});
+
+    auto next = first;
+
+    const auto last = std::upper_bound(this->appended_events.begin(), this->appended_events.end(),
+                                       slot_range, llfs::SlotRangeOrder{});
+
+    llfs::RawVolumeLogDataParser parser;
+
+    batt::StatusOr<llfs::slot_offset_type> parse_result = parser.parse_chunk(
+        slot_range, log_data,
+        [&](const llfs::SlotParse& slot_parse, const std::string_view& user_data) -> batt::Status {
+          BATT_CHECK_NE(next, last);
+
+          BATT_CHECK_EQ(next->slot_range, slot_parse.offset);
+
+          BATT_CHECK_EQ(user_data.size(), sizeof(UpsertEvent));
+
+          BATT_CHECK_EQ(next->payload.key,
+                        reinterpret_cast<const UpsertEvent*>(user_data.data())->key);
+
+          BATT_CHECK_EQ(next->payload.value,
+                        reinterpret_cast<const UpsertEvent*>(user_data.data())->value);
+
+          ++next;
+
+          return batt::OkStatus();
+        });
+
+    ASSERT_TRUE(parse_result.ok()) << BATT_INSPECT(parse_result.status());
+    EXPECT_EQ(next, last);
+    ASSERT_NE(first, next);
+    EXPECT_EQ(std::prev(next)->slot_range.upper_bound, *parse_result);
+  }
+
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
   const llfs::MaxRefsPerPage max_refs_per_page{8};
+
+  llfs::TrimDelayByteCount trim_delay{0};
 
   batt::SharedPtr<llfs::PageCache> page_cache;
 
@@ -293,6 +427,16 @@ class VolumeTest : public ::testing::Test
   boost::uuids::uuid recycler_uuid;
 
   boost::uuids::uuid trimmer_uuid;
+
+  llfs::Optional<llfs::testing::FakeLogDeviceFactory<llfs::MemoryLogStorageDriver>>
+      fake_root_log_factory;
+
+  llfs::Optional<llfs::testing::FakeLogDeviceFactory<llfs::MemoryLogStorageDriver>>
+      fake_recycler_log_factory;
+
+  std::unique_ptr<llfs::Volume> volume;
+
+  std::vector<llfs::SlotWithPayload<UpsertEvent>> appended_events;
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
@@ -453,9 +597,414 @@ TEST_F(VolumeTest, ReadWriteEvents)
 //  1. Reader::clone_lock() - keep trim from happening when there is no other barrier
 //  2. Create multiple Readers, trim the Volume, verify that only the last Reader's trim
 //     allows the log to be trimmed.
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-TEST_F(VolumeTest, TrimControl)
+TEST_F(VolumeTest, TrimControl_VolumeReaderCloneLock)
 {
+  this->init_events();
+
+  const llfs::slot_offset_type explicit_trim_offset =
+      this->appended_events[50].slot_range.upper_bound;
+
+  // Find the greatest-lower-bound slot boundary for (explicit_trim_offset - this->trim_delay)
+  //
+  llfs::slot_offset_type expected_trim_pos = explicit_trim_offset;
+  for (usize i = 50; i > 0; --i) {
+    expected_trim_pos = this->appended_events[i].slot_range.lower_bound;
+    if (expected_trim_pos <= explicit_trim_offset - this->trim_delay) {
+      break;
+    }
+  }
+
+  EXPECT_TRUE(llfs::slot_less_than(expected_trim_pos, explicit_trim_offset));
+  EXPECT_GE(explicit_trim_offset - expected_trim_pos, this->trim_delay);
+
+  llfs::StatusOr<llfs::VolumeReader> reader =
+      this->volume->reader(llfs::SlotRangeSpec{}, llfs::LogReadMode::kSpeculative);
+
+  ASSERT_TRUE(reader.ok()) << BATT_INSPECT(reader.status());
+
+  llfs::Status trim_status = this->volume->trim(explicit_trim_offset);
+
+  ASSERT_TRUE(trim_status.ok());
+
+  for (int i = 0; i < 100; ++i) {
+    EXPECT_EQ(this->volume->trim_control().get_lower_bound(), reader->slot_range().lower_bound);
+    batt::Task::sleep(boost::posix_time::milliseconds(1));
+  }
+
+  llfs::SlotReadLock cloned_lock = reader->clone_lock();
+  reader = batt::Status{batt::StatusCode::kUnknown};
+
+  for (int i = 0; i < 100; ++i) {
+    EXPECT_EQ(this->volume->trim_control().get_lower_bound(), cloned_lock.slot_range().lower_bound);
+    batt::Task::sleep(boost::posix_time::milliseconds(1));
+  }
+
+  cloned_lock.clear();
+
+  EXPECT_EQ(this->volume->trim_control().get_lower_bound(), explicit_trim_offset);
+
+  EXPECT_TRUE(this->volume->await_trim(expected_trim_pos).ok());
+
+  EXPECT_EQ(expected_trim_pos,
+            this->volume->root_log_slot_range(llfs::LogReadMode::kSpeculative).lower_bound);
+
+  EXPECT_EQ(expected_trim_pos,
+            this->volume->root_log_slot_range(llfs::LogReadMode::kDurable).lower_bound);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(VolumeTest, TrimControl_LastVolumeReaderCausesTrim)
+{
+  constexpr usize kNumReaders = 10;
+
+  this->init_events();
+
+  const llfs::slot_offset_type explicit_trim_offset =
+      this->appended_events[50].slot_range.upper_bound;
+
+  // Find the greatest-lower-bound slot boundary for (explicit_trim_offset - this->trim_delay)
+  //
+  llfs::slot_offset_type expected_trim_pos = explicit_trim_offset;
+  for (usize i = 50; i > 0; --i) {
+    expected_trim_pos = this->appended_events[i].slot_range.lower_bound;
+    if (expected_trim_pos <= explicit_trim_offset - this->trim_delay) {
+      break;
+    }
+  }
+
+  EXPECT_TRUE(llfs::slot_less_than(expected_trim_pos, explicit_trim_offset));
+  EXPECT_GE(explicit_trim_offset - expected_trim_pos, this->trim_delay);
+
+  std::vector<llfs::VolumeReader> readers;
+
+  for (usize i = 0; i < kNumReaders; ++i) {
+    readers.emplace_back(BATT_OK_RESULT_OR_PANIC(
+        this->volume->reader(llfs::SlotRangeSpec{}, llfs::LogReadMode::kSpeculative)));
+  }
+
+  llfs::Status trim_status = this->volume->trim(explicit_trim_offset);
+
+  ASSERT_TRUE(trim_status.ok());
+
+  while (!readers.empty()) {
+    for (int i = 0; i < 25; ++i) {
+      EXPECT_EQ(this->volume->trim_control().get_lower_bound(), 0u);
+      batt::Task::sleep(boost::posix_time::milliseconds(1));
+    }
+    readers.pop_back();
+  }
+
+  EXPECT_EQ(this->volume->trim_control().get_lower_bound(), explicit_trim_offset);
+
+  EXPECT_TRUE(this->volume->await_trim(expected_trim_pos).ok());
+
+  EXPECT_EQ(expected_trim_pos,
+            this->volume->root_log_slot_range(llfs::LogReadMode::kSpeculative).lower_bound);
+
+  EXPECT_EQ(expected_trim_pos,
+            this->volume->root_log_slot_range(llfs::LogReadMode::kDurable).lower_bound);
+}
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+// Test Plan:
+//  1. read_lock invalid - should fail
+//  2. slot_range.upper_bound too large
+//  3. slot_range.lower_bound too small
+//  4. slot_range ok, not equal to read_lock.slot_range()
+//  5. slot_range.lower_bound is between (read_lock.slot_range().lower_bound - trim_delay) and
+//  (read_lock.slot_range().lower_bound) - OK
+//  6. slot_range.lower_bound equals (read_lock.slot_range().lower_bound - trim_delay) - OK
+//  7. read_lock is otherwise OK, but it just from the wrong SlotLockManager - fail
+//
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(VolumeTest, GetRootLogData_InvalidReadLock)
+{
+  this->open_volume();
+
+  llfs::SlotReadLock lock;
+
+  EXPECT_FALSE(lock);
+
+  llfs::StatusOr<llfs::ConstBuffer> log_data = this->volume->get_root_log_data(lock);
+
+  EXPECT_FALSE(log_data.ok());
+  EXPECT_EQ(log_data.status(), batt::StatusCode::kInvalidArgument);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(VolumeTest, GetRootLogData_ReadLockWrongSlotManager)
+{
+  this->open_volume();
+
+  llfs::SlotRange slot_range = this->volume->root_log_slot_range(llfs::LogReadMode::kDurable);
+  llfs::SlotLockManager manager;
+  llfs::StatusOr<llfs::SlotReadLock> lock = manager.lock_slots(
+      slot_range, /*holder=*/"VolumeTest.GetRootLogData_ReadLockWrongSlotManager");
+
+  ASSERT_TRUE(lock.ok()) << BATT_INSPECT(lock.status());
+  EXPECT_TRUE(*lock);
+
+  llfs::StatusOr<llfs::ConstBuffer> log_data = this->volume->get_root_log_data(*lock);
+
+  EXPECT_FALSE(log_data.ok());
+  EXPECT_EQ(log_data.status(), batt::StatusCode::kInvalidArgument);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(VolumeTest, GetRootLogData_Ok)
+{
+  this->init_events();
+
+  EXPECT_GT(this->trim_delay, 0u);
+
+  const auto slot_range = this->slot_event_range(4, 80);
+
+  llfs::StatusOr<llfs::SlotReadLock> lock =
+      this->volume->lock_slots(slot_range, llfs::LogReadMode::kSpeculative,
+                               /*holder=*/"VolumeTest.GetRootLogData_Ok");
+
+  ASSERT_TRUE(lock.ok()) << lock.status();
+
+  llfs::StatusOr<llfs::ConstBuffer> log_data = this->volume->get_root_log_data(*lock);
+
+  ASSERT_TRUE(log_data.ok()) << BATT_INSPECT(log_data.status());
+  ASSERT_NO_FATAL_FAILURE(this->verify_events(slot_range, *log_data));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(VolumeTest, GetRootLogData_SlotRangeUpperBoundOverflow)
+{
+  this->init_events();
+
+  const auto slot_range = this->slot_event_range(4, 80);
+
+  llfs::StatusOr<llfs::SlotReadLock> lock = this->volume->lock_slots(
+      llfs::SlotRange{
+          slot_range.lower_bound,
+          slot_range.upper_bound - 1,
+      },
+      llfs::LogReadMode::kSpeculative,
+      /*holder=*/"VolumeTest.GetRootLogData_SlotRangeUpperBoundOverflow");
+
+  ASSERT_TRUE(lock.ok()) << lock.status();
+
+  llfs::StatusOr<llfs::ConstBuffer> log_data = this->volume->get_root_log_data(*lock, slot_range);
+
+  ASSERT_TRUE(log_data.ok()) << BATT_INSPECT(log_data.status());
+  ASSERT_NO_FATAL_FAILURE(this->verify_events(slot_range, *log_data));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(VolumeTest, GetRootLogData_SlotRangeLowerBoundUnderflow)
+{
+  this->init_events();
+
+  const auto slot_range = this->slot_event_range(4, 80);
+
+  llfs::StatusOr<llfs::SlotReadLock> lock = this->volume->lock_slots(
+      llfs::SlotRange{
+          slot_range.lower_bound + this->trim_delay / 2,
+          slot_range.upper_bound,
+      },
+      llfs::LogReadMode::kSpeculative,
+      /*holder=*/"VolumeTest.GetRootLogData_SlotRangeLowerBoundUnderflow");
+
+  ASSERT_TRUE(lock.ok()) << lock.status();
+
+  llfs::StatusOr<llfs::ConstBuffer> log_data = this->volume->get_root_log_data(*lock, slot_range);
+
+  ASSERT_TRUE(log_data.ok()) << BATT_INSPECT(log_data.status());
+  ASSERT_NO_FATAL_FAILURE(this->verify_events(slot_range, *log_data));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(VolumeTest, GetRootLogData_SlotRangeSubsetOfReadLock_Strict)
+{
+  this->init_events();
+
+  const auto slot_range = this->slot_event_range(4, 80);
+
+  llfs::StatusOr<llfs::SlotReadLock> lock = this->volume->lock_slots(
+      llfs::SlotRange{
+          slot_range.lower_bound + this->trim_delay / 2,
+          slot_range.upper_bound - 1,
+      },
+      llfs::LogReadMode::kSpeculative,
+      /*holder=*/"VolumeTest.GetRootLogData_SlotRangeSubsetOfReadLock_Strict");
+
+  ASSERT_TRUE(lock.ok()) << lock.status();
+
+  llfs::StatusOr<llfs::ConstBuffer> log_data = this->volume->get_root_log_data(*lock, slot_range);
+
+  ASSERT_TRUE(log_data.ok()) << BATT_INSPECT(log_data.status());
+  ASSERT_NO_FATAL_FAILURE(this->verify_events(slot_range, *log_data));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(VolumeTest, GetRootLogData_SlotRangeSubsetOfReadLock_UpperAtLimit)
+{
+  this->init_events();
+
+  auto slot_range = this->slot_event_range(4, 80);
+  slot_range.upper_bound =
+      this->volume->root_log_slot_range(llfs::LogReadMode::kSpeculative).upper_bound;
+
+  llfs::StatusOr<llfs::SlotReadLock> lock = this->volume->lock_slots(
+      llfs::SlotRange{
+          slot_range.lower_bound,
+          slot_range.lower_bound + 1,
+      },
+      llfs::LogReadMode::kSpeculative,
+      /*holder=*/"VolumeTest.GetRootLogData_SlotRangeSubsetOfReadLock_UpperAtLimit");
+
+  ASSERT_TRUE(lock.ok()) << lock.status();
+
+  llfs::StatusOr<llfs::ConstBuffer> log_data = this->volume->get_root_log_data(*lock, slot_range);
+
+  ASSERT_TRUE(log_data.ok()) << BATT_INSPECT(log_data.status());
+  ASSERT_NO_FATAL_FAILURE(this->verify_events(slot_range, *log_data));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(VolumeTest, GetRootLogData_SlotRangeSubsetOfReadLock_UpperOverflow)
+{
+  this->init_events();
+
+  auto slot_range = this->slot_event_range(4, 80);
+  slot_range.upper_bound =
+      this->volume->root_log_slot_range(llfs::LogReadMode::kSpeculative).upper_bound + 1;
+
+  llfs::StatusOr<llfs::SlotReadLock> lock = this->volume->lock_slots(
+      llfs::SlotRange{
+          slot_range.lower_bound,
+          slot_range.lower_bound + 1,
+      },
+      llfs::LogReadMode::kSpeculative,
+      /*holder=*/"VolumeTest.GetRootLogData_SlotRangeSubsetOfReadLock_UpperOverflow");
+
+  ASSERT_TRUE(lock.ok()) << lock.status();
+
+  llfs::StatusOr<llfs::ConstBuffer> log_data = this->volume->get_root_log_data(*lock, slot_range);
+
+  EXPECT_FALSE(log_data.ok());
+  EXPECT_EQ(log_data.status(), batt::StatusCode::kOutOfRange);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(VolumeTest, GetRootLogData_SlotRangeSubsetOfReadLock_LowerAtLimit)
+{
+  this->init_events();
+
+  auto slot_range = this->slot_event_range(4, 80);
+
+  llfs::StatusOr<llfs::SlotReadLock> lock = this->volume->lock_slots(
+      llfs::SlotRange{
+          slot_range.lower_bound + this->trim_delay,
+          slot_range.upper_bound,
+      },
+      llfs::LogReadMode::kSpeculative,
+      /*holder=*/"VolumeTest.GetRootLogData_SlotRangeSubsetOfReadLock_LowerAtLimit");
+
+  ASSERT_TRUE(lock.ok()) << lock.status();
+
+  llfs::StatusOr<llfs::ConstBuffer> log_data = this->volume->get_root_log_data(*lock, slot_range);
+
+  ASSERT_TRUE(log_data.ok()) << BATT_INSPECT(log_data.status());
+  ASSERT_NO_FATAL_FAILURE(this->verify_events(slot_range, *log_data));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(VolumeTest, GetRootLogData_SlotRangeSubsetOfReadLock_LowerUnderflow)
+{
+  this->init_events();
+
+  auto slot_range = this->slot_event_range(4, 80);
+
+  llfs::StatusOr<llfs::SlotReadLock> lock = this->volume->lock_slots(
+      llfs::SlotRange{
+          slot_range.lower_bound + this->trim_delay + 1,
+          slot_range.upper_bound,
+      },
+      llfs::LogReadMode::kSpeculative,
+      /*holder=*/"VolumeTest.GetRootLogData_SlotRangeSubsetOfReadLock_LowerUnderflow");
+
+  ASSERT_TRUE(lock.ok()) << lock.status();
+
+  llfs::StatusOr<llfs::ConstBuffer> log_data = this->volume->get_root_log_data(*lock, slot_range);
+
+  EXPECT_FALSE(log_data.ok());
+  EXPECT_EQ(log_data.status(), batt::StatusCode::kOutOfRange);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(VolumeTest, GetRootLogData_SlotRangeSubsetOfReadLock_NegativeSize)
+{
+  this->init_events();
+
+  auto slot_range = this->slot_event_range(4, 80);
+
+  llfs::StatusOr<llfs::SlotReadLock> lock = this->volume->lock_slots(
+      llfs::SlotRange{
+          slot_range.lower_bound,
+          slot_range.upper_bound,
+      },
+      llfs::LogReadMode::kSpeculative,
+      /*holder=*/"VolumeTest.GetRootLogData_SlotRangeSubsetOfReadLock_LowerUnderflow");
+
+  ASSERT_TRUE(lock.ok()) << lock.status();
+
+  //----- --- -- -  -  -   -
+  std::swap(slot_range.lower_bound, slot_range.upper_bound);
+  //----- --- -- -  -  -   -
+
+  llfs::StatusOr<llfs::ConstBuffer> log_data = this->volume->get_root_log_data(*lock, slot_range);
+
+  EXPECT_FALSE(log_data.ok());
+  EXPECT_EQ(log_data.status(), batt::StatusCode::kInvalidArgument);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(VolumeTest, GetRootLogData_SlotRangeSubsetOfReadLock_ZeroSize)
+{
+  this->init_events();
+
+  auto slot_range = this->slot_event_range(4, 80);
+
+  llfs::StatusOr<llfs::SlotReadLock> lock = this->volume->lock_slots(
+      llfs::SlotRange{
+          slot_range.lower_bound,
+          slot_range.upper_bound,
+      },
+      llfs::LogReadMode::kSpeculative,
+      /*holder=*/"VolumeTest.GetRootLogData_SlotRangeSubsetOfReadLock_LowerUnderflow");
+
+  ASSERT_TRUE(lock.ok()) << lock.status();
+
+  //----- --- -- -  -  -   -
+  slot_range.upper_bound = slot_range.lower_bound;
+  //----- --- -- -  -  -   -
+
+  llfs::StatusOr<llfs::ConstBuffer> log_data = this->volume->get_root_log_data(*lock, slot_range);
+
+  ASSERT_TRUE(log_data.ok()) << BATT_INSPECT(log_data.status());
+  EXPECT_EQ(log_data->size(), 0u);
 }
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
@@ -465,7 +1014,8 @@ TEST_F(VolumeTest, TrimControl)
 ///    a. trim the log and verify that the pages are released
 //  3. Write slots with new pages, and reference some random subset of previously written live
 //     pages.
-//     a. trim the log and verify that the expected pages are released (i.e., make sure ref count >
+//     a. trim the log and verify that the expected pages are released (i.e., make sure ref count
+//     >
 //        0 keeps pages alive)
 //
 TEST_F(VolumeTest, PageJobs)
@@ -781,6 +1331,52 @@ class VolumeSimTest : public ::testing::Test
  public:
   using RecoverySimTestSlot = llfs::PackedVariant<llfs::PackedPageId>;
 
+  struct RecoverySimState {
+    u32 seed = 0;
+
+    /** \brief The page to be committed in the first job.
+     */
+    llfs::PageId first_page_id;
+
+    /** \brief Committed in the second job; this is the root page (it refers to third page).
+     */
+    llfs::PageId second_root_page_id;
+
+    /** \brief Committed in the second job; this is not referenced from the root log, only from
+     * second page.
+     */
+    llfs::PageId third_page_id;
+
+    /** \brief The status value returned from commit_second_job_pre_crash.
+     */
+    batt::Status pre_crash_status;
+
+    /** \brief Sets expectations for recovery, post crash.
+     */
+    bool second_job_will_commit = false;
+
+    /** \brief Sets expectations for recovery, post crash.
+     */
+    bool second_job_will_not_commit = true;
+
+    // State variables to track how much we have recovered.
+    //
+    bool recovered_first_page = false;
+    bool recovered_second_page = false;
+    bool no_unknown_pages = true;
+
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+    /** \brief Returns a slot visitor function for use when recovering/verifying the Volume,
+     * post-crash.
+     */
+    auto get_slot_visitor();
+
+    /** \brief Resets all member data that might have been modified by the slot visitor.
+     */
+    void reset_visitor_outputs();
+  };
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   /** \brief Builds and commits a new page in the specified job, with references to the
@@ -806,58 +1402,25 @@ class VolumeSimTest : public ::testing::Test
 
   /** \brief Commit one job with a page from the 1kb device.
    */
-  void commit_first_job(llfs::StorageSimulation& sim, llfs::Volume& volume);
+  void commit_first_job(RecoverySimState& state, llfs::StorageSimulation& sim,
+                        llfs::Volume& volume);
 
   /** \brief Commits a second job that references two new pages and one old one (the page from the
    * first job), all pages from a different PageDevice.
    *
    * Unlike the first job, this one is allowed (in fact, expected) to fail.
    */
-  batt::Status commit_second_job_pre_crash(llfs::StorageSimulation& sim, llfs::Volume& volume);
-
-  /** \brief Returns a slot visitor function for use when recovering/verifying the Volume,
-   * post-crash.
-   */
-  auto get_slot_visitor();
+  batt::Status commit_second_job_pre_crash(RecoverySimState& state, llfs::StorageSimulation& sim,
+                                           llfs::Volume& volume);
 
   /** \brief Checks to make sure that recovery was successful.
    */
-  void verify_post_recovery_expectations(llfs::StorageSimulation& sim, llfs::Volume& volume);
+  void verify_post_recovery_expectations(RecoverySimState& state, llfs::StorageSimulation& sim,
+                                         llfs::Volume& volume);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   const llfs::PageCount pages_per_device = llfs::PageCount{4};
-
-  /** \brief The page to be committed in the first job.
-   */
-  llfs::PageId first_page_id;
-
-  /** \brief Committed in the second job; this is the root page (it refers to third page).
-   */
-  llfs::PageId second_root_page_id;
-
-  /** \brief Committed in the second job; this is not referenced from the root log, only from second
-   * page.
-   */
-  llfs::PageId third_page_id;
-
-  /** \brief The status value returned from commit_second_job_pre_crash.
-   */
-  batt::Status pre_crash_status;
-
-  /** \brief Sets expectations for recovery, post crash.
-   */
-  bool second_job_will_commit = false;
-
-  /** \brief Sets expectations for recovery, post crash.
-   */
-  bool second_job_will_not_commit = true;
-
-  // State variables to track how much we have recovered.
-  //
-  bool recovered_first_page = false;
-  bool recovered_second_page = false;
-  bool no_unknown_pages = true;
 };
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -874,8 +1437,7 @@ TEST_F(VolumeSimTest, RecoverySimulation)
       batt::getenv_as<u32>("LLFS_VOLUME_SIM_CPU").value_or(0);
 
   static const usize kNumThreads =  //
-      batt::getenv_as<u32>("LLFS_VOLUME_SIM_THREADS")
-          .value_or(std::min<usize>(8, std::thread::hardware_concurrency()));
+      batt::getenv_as<u32>("LLFS_VOLUME_SIM_THREADS").value_or(std::thread::hardware_concurrency());
 
   static const bool kMultiProcess =  //
       batt::getenv_as<bool>("LLFS_VOLUME_SIM_MULTI_PROCESS").value_or(false);
@@ -908,6 +1470,8 @@ TEST_F(VolumeSimTest, RecoverySimulation)
             .IgnoreError();
         const u32 first_seed = kInitialSeed + kNumSeedsPerThread * thread_i;
         const u32 last_seed = first_seed + kNumSeedsPerThread;
+        LLFS_VLOG(1) << BATT_INSPECT(thread_i) << BATT_INSPECT(first_seed)
+                     << BATT_INSPECT(last_seed);
         for (u32 seed = first_seed; seed < last_seed; ++seed) {
           ASSERT_NO_FATAL_FAILURE(this->run_recovery_sim(seed));
         }
@@ -1015,9 +1579,9 @@ TEST_F(VolumeSimTest, ConcurrentAppendJobs)
           p_task->join();
         }
 
-        // We expect the ref count for each page in the 1kib device to have the default initial ref
-        // count (2).  If there are ordering problems between the phases of the jobs, then some of
-        // the page ref count (PRC) updates may be dropped (due to user_slot de-duping).
+        // We expect the ref count for each page in the 1kib device to have the default initial
+        // ref count (2).  If there are ordering problems between the phases of the jobs, then
+        // some of the page ref count (PRC) updates may be dropped (due to user_slot de-duping).
         //
         constexpr i32 kExpectedRefCount = 2;
 
@@ -1039,7 +1603,7 @@ TEST_F(VolumeSimTest, ConcurrentAppendJobs)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-auto VolumeSimTest::get_slot_visitor()
+auto VolumeSimTest::RecoverySimState::get_slot_visitor()
 {
   return [this](const llfs::SlotParse /*slot*/, const llfs::PageId& page_id) {
     if (page_id == this->first_page_id) {
@@ -1055,9 +1619,22 @@ auto VolumeSimTest::get_slot_visitor()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+void VolumeSimTest::RecoverySimState::reset_visitor_outputs()
+{
+  this->recovered_first_page = false;
+  this->recovered_second_page = false;
+  this->no_unknown_pages = true;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void VolumeSimTest::run_recovery_sim(u32 seed)
 {
-  std::mt19937 rng{seed};
+  RecoverySimState state;
+
+  state.seed = seed;
+
+  std::mt19937 rng{state.seed};
 
   llfs::StorageSimulation sim{batt::StateMachineEntropySource{
       /*entropy_fn=*/[&rng](usize min_value, usize max_value) -> usize {
@@ -1090,7 +1667,7 @@ void VolumeSimTest::run_recovery_sim(u32 seed)
 
       llfs::Volume& volume = **recovered_volume;
 
-      ASSERT_NO_FATAL_FAILURE(this->commit_first_job(sim, volume));
+      ASSERT_NO_FATAL_FAILURE(this->commit_first_job(state, sim, volume));
 
       // Now that the initial job has been committed, allow failures to be injected into the
       // simulation (according to our entropy source).
@@ -1100,7 +1677,7 @@ void VolumeSimTest::run_recovery_sim(u32 seed)
       // Commit another job with two new pages: one that references first_page_id and is
       // referenced by the other one, which is referenced from the root log.
       //
-      this->pre_crash_status = this->commit_second_job_pre_crash(sim, volume);
+      state.pre_crash_status = this->commit_second_job_pre_crash(state, sim, volume);
 
       // Simulate a full crash and recovery.
       //
@@ -1111,7 +1688,7 @@ void VolumeSimTest::run_recovery_sim(u32 seed)
       volume.halt();
       volume.join();
     }
-    EXPECT_TRUE(this->first_page_id.is_valid());
+    EXPECT_TRUE(state.first_page_id.is_valid()) << BATT_INSPECT(state.seed);
 
     // Recover system state, post-crash.
     //
@@ -1121,10 +1698,11 @@ void VolumeSimTest::run_recovery_sim(u32 seed)
       //
       batt::StatusOr<std::unique_ptr<llfs::Volume>> recovered_volume = sim.get_volume(
           "TestVolume",
-          llfs::TypedSlotReader<RecoverySimTestSlot>::make_slot_visitor(this->get_slot_visitor()));
+          llfs::TypedSlotReader<RecoverySimTestSlot>::make_slot_visitor(state.get_slot_visitor()));
 
       ASSERT_TRUE(recovered_volume.ok()) << BATT_INSPECT(recovered_volume.status());
-      ASSERT_NO_FATAL_FAILURE(this->verify_post_recovery_expectations(sim, **recovered_volume));
+      ASSERT_NO_FATAL_FAILURE(
+          this->verify_post_recovery_expectations(state, sim, **recovered_volume));
     }
   };
 
@@ -1133,7 +1711,8 @@ void VolumeSimTest::run_recovery_sim(u32 seed)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void VolumeSimTest::commit_first_job(llfs::StorageSimulation& sim, llfs::Volume& volume)
+void VolumeSimTest::commit_first_job(RecoverySimState& state, llfs::StorageSimulation& sim,
+                                     llfs::Volume& volume)
 {
   std::unique_ptr<llfs::PageCacheJob> job = volume.new_job();
 
@@ -1146,12 +1725,12 @@ void VolumeSimTest::commit_first_job(llfs::StorageSimulation& sim, llfs::Volume&
 
   // Save the page_id so we can use it later.
   //
-  this->first_page_id = *new_page_id;
+  state.first_page_id = *new_page_id;
 
   // Write the page and slot to the Volume.
   //
   batt::StatusOr<llfs::SlotRange> slot_range =
-      this->commit_job_to_root_log(std::move(job), this->first_page_id, volume, sim);
+      this->commit_job_to_root_log(std::move(job), state.first_page_id, volume, sim);
 
   ASSERT_TRUE(slot_range.ok()) << BATT_INSPECT(slot_range.status());
 
@@ -1160,7 +1739,8 @@ void VolumeSimTest::commit_first_job(llfs::StorageSimulation& sim, llfs::Volume&
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-batt::Status VolumeSimTest::commit_second_job_pre_crash(llfs::StorageSimulation& sim,
+batt::Status VolumeSimTest::commit_second_job_pre_crash(RecoverySimState& state,
+                                                        llfs::StorageSimulation& sim,
                                                         llfs::Volume& volume)
 {
   std::unique_ptr<llfs::PageCacheJob> job = volume.new_job();
@@ -1171,119 +1751,158 @@ batt::Status VolumeSimTest::commit_second_job_pre_crash(llfs::StorageSimulation&
   // page.
   //
   BATT_ASSIGN_OK_RESULT(
-      this->third_page_id,
-      this->build_page_with_refs_to({this->first_page_id}, llfs::PageSize{4 * kKiB}, *job, sim));
+      state.third_page_id,
+      this->build_page_with_refs_to({state.first_page_id}, llfs::PageSize{4 * kKiB}, *job, sim));
 
   //----- --- -- -  -  -   -
   // Build the 2k page; this will be referenced from the log.
   //
   BATT_ASSIGN_OK_RESULT(
-      this->second_root_page_id,
-      this->build_page_with_refs_to({this->third_page_id}, llfs::PageSize{2 * kKiB}, *job, sim));
+      state.second_root_page_id,
+      this->build_page_with_refs_to({state.third_page_id}, llfs::PageSize{2 * kKiB}, *job, sim));
 
   //----- --- -- -  -  -   -
 
   // Once we start committing the job, we are no longer sure that it _won't_ commit.
   //
-  this->second_job_will_not_commit = false;
+  state.second_job_will_not_commit = false;
 
   // Commit the job.
   //
   BATT_ASSIGN_OK_RESULT(
       llfs::SlotRange slot_range,
-      this->commit_job_to_root_log(std::move(job), this->second_root_page_id, volume, sim));
+      this->commit_job_to_root_log(std::move(job), state.second_root_page_id, volume, sim));
 
   sim.log_event("second job successfully appended! slot_range=", slot_range);
 
   // Now that the job has successfully been committed, set expectations accordingly.
   //
-  this->second_job_will_commit = true;
+  state.second_job_will_commit = true;
 
   return batt::OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void VolumeSimTest::verify_post_recovery_expectations(llfs::StorageSimulation& sim,
+void VolumeSimTest::verify_post_recovery_expectations(RecoverySimState& state,
+                                                      llfs::StorageSimulation& sim,
                                                       llfs::Volume& volume)
 {
-  // It's possible that the simulated crash happened before the commit slot was flushed;
-  // even if so, the job should still be durable, so the commit slot would have been
-  // written during recovery, so we can create a reader and scan for it now.
-  //
-  if (!this->recovered_first_page || !this->recovered_second_page) {
-    batt::StatusOr<llfs::TypedVolumeReader<RecoverySimTestSlot>> volume_reader =
-        volume.typed_reader(
-            llfs::SlotRangeSpec{
-                .lower_bound = batt::None,
-                .upper_bound = batt::None,
-            },
-            llfs::LogReadMode::kDurable, batt::StaticType<RecoverySimTestSlot>{});
+  for (bool use_captured_log_data : {false, true}) {
+    state.reset_visitor_outputs();
 
-    ASSERT_TRUE(volume_reader.ok()) << BATT_INSPECT(volume_reader.status());
+    llfs::SlotRange slot_range{0, 0};
 
-    volume_reader->consume_typed_slots(batt::WaitForResource::kFalse, this->get_slot_visitor())
-        .IgnoreError();
-  }
-  EXPECT_TRUE(this->recovered_first_page);
-  EXPECT_TRUE(this->no_unknown_pages);
+    // It's possible that the simulated crash happened before the commit slot was flushed;
+    // even if so, the job should still be durable, so the commit slot would have been
+    // written during recovery, so we can create a reader and scan for it now.
+    //
+    if (!state.recovered_first_page || !state.recovered_second_page) {
+      auto slot_range_to_read = llfs::SlotRangeSpec{
+          .lower_bound = batt::None,
+          .upper_bound = batt::None,
+      };
 
-  if (this->second_job_will_not_commit) {
-    EXPECT_FALSE(this->recovered_second_page);
-  }
-  if (this->second_job_will_commit) {
-    EXPECT_TRUE(this->recovered_second_page);
-  }
-  if (this->recovered_second_page) {
-    EXPECT_FALSE(this->second_job_will_not_commit);
+      if (use_captured_log_data) {
+        batt::StatusOr<llfs::SlotReadLock> read_lock =
+            volume.lock_slots(slot_range_to_read, llfs::LogReadMode::kDurable,
+                              /*lock_holder=*/"VolumeSimTest::verify_post_recovery_expectations");
 
-    for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(1 * kKiB)) {
-      EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
-      EXPECT_EQ(arena.allocator().get_ref_count(this->first_page_id).first, 3);
-      ASSERT_TRUE(sim.has_data_for_page_id(this->first_page_id).ok());
-      EXPECT_TRUE(*sim.has_data_for_page_id(this->first_page_id));
-    }
-    for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(2 * kKiB)) {
-      EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
-      EXPECT_EQ(arena.allocator().get_ref_count(this->second_root_page_id).first, 2);
-      ASSERT_TRUE(sim.has_data_for_page_id(this->second_root_page_id).ok());
-      EXPECT_TRUE(*sim.has_data_for_page_id(this->second_root_page_id));
-    }
-    for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(4 * kKiB)) {
-      EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
-      EXPECT_EQ(arena.allocator().get_ref_count(this->third_page_id).first, 2);
-      ASSERT_TRUE(sim.has_data_for_page_id(this->third_page_id).ok());
-      EXPECT_TRUE(*sim.has_data_for_page_id(this->third_page_id));
-    }
-  } else {
-    for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(1 * kKiB)) {
-      EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
-      EXPECT_EQ(arena.allocator().get_ref_count(this->first_page_id).first, 2);
-      ASSERT_TRUE(sim.has_data_for_page_id(this->first_page_id).ok());
-      EXPECT_TRUE(*sim.has_data_for_page_id(this->first_page_id));
-    }
-    for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(2 * kKiB)) {
-      EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device);
-      if (this->second_root_page_id.is_valid()) {
-        EXPECT_EQ(arena.allocator().get_ref_count(this->second_root_page_id).first, 0);
-        ASSERT_TRUE(sim.has_data_for_page_id(this->second_root_page_id).ok());
-        EXPECT_FALSE(*sim.has_data_for_page_id(this->second_root_page_id));
+        ASSERT_TRUE(read_lock.ok()) << read_lock;
+
+        slot_range = read_lock->slot_range();
+        BATT_CHECK(!llfs::slot_less_than(slot_range.upper_bound, slot_range.lower_bound));
+
+        batt::StatusOr<llfs::ConstBuffer> log_bytes = volume.get_root_log_data(*read_lock);
+
+        ASSERT_TRUE(log_bytes.ok())
+            << BATT_INSPECT(log_bytes.status()) << BATT_INSPECT(read_lock->slot_range());
+
+        llfs::RawVolumeLogDataParser parser;
+        batt::StatusOr<llfs::slot_offset_type> parse_result =
+            parser.parse_chunk(read_lock->slot_range(), *log_bytes,
+                               llfs::TypedSlotReader<RecoverySimTestSlot>::make_slot_visitor(
+                                   state.get_slot_visitor()));
+
+        ASSERT_TRUE(parse_result.ok()) << BATT_INSPECT(parse_result.status());
+        EXPECT_EQ(*parse_result, read_lock->slot_range().upper_bound);
+
+      } else {
+        {
+          batt::StatusOr<llfs::TypedVolumeReader<RecoverySimTestSlot>> volume_reader =
+              volume.typed_reader(slot_range_to_read, llfs::LogReadMode::kDurable,
+                                  batt::StaticType<RecoverySimTestSlot>{});
+
+          ASSERT_TRUE(volume_reader.ok()) << BATT_INSPECT(volume_reader.status());
+
+          volume_reader
+              ->consume_typed_slots(batt::WaitForResource::kFalse, state.get_slot_visitor())
+              .IgnoreError();
+        }
+        slot_range = volume.root_log_slot_range(llfs::LogReadMode::kDurable);
       }
     }
-    for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(4 * kKiB)) {
-      EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device);
-      if (this->third_page_id.is_valid()) {
-        EXPECT_EQ(arena.allocator().get_ref_count(this->third_page_id).first, 0);
-        ASSERT_TRUE(sim.has_data_for_page_id(this->third_page_id).ok());
-        EXPECT_FALSE(*sim.has_data_for_page_id(this->third_page_id));
+    EXPECT_TRUE(state.recovered_first_page) << BATT_INSPECT(use_captured_log_data)
+                                            << BATT_INSPECT(slot_range) << BATT_INSPECT(state.seed);
+    EXPECT_TRUE(state.no_unknown_pages);
+
+    if (state.second_job_will_not_commit) {
+      EXPECT_FALSE(state.recovered_second_page);
+    }
+    if (state.second_job_will_commit) {
+      EXPECT_TRUE(state.recovered_second_page);
+    }
+    if (state.recovered_second_page) {
+      EXPECT_FALSE(state.second_job_will_not_commit);
+
+      for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(1 * kKiB)) {
+        EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
+        EXPECT_EQ(arena.allocator().get_ref_count(state.first_page_id).first, 3);
+        ASSERT_TRUE(sim.has_data_for_page_id(state.first_page_id).ok());
+        EXPECT_TRUE(*sim.has_data_for_page_id(state.first_page_id));
+      }
+      for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(2 * kKiB)) {
+        EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
+        EXPECT_EQ(arena.allocator().get_ref_count(state.second_root_page_id).first, 2);
+        ASSERT_TRUE(sim.has_data_for_page_id(state.second_root_page_id).ok());
+        EXPECT_TRUE(*sim.has_data_for_page_id(state.second_root_page_id));
+      }
+      for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(4 * kKiB)) {
+        EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
+        EXPECT_EQ(arena.allocator().get_ref_count(state.third_page_id).first, 2);
+        ASSERT_TRUE(sim.has_data_for_page_id(state.third_page_id).ok());
+        EXPECT_TRUE(*sim.has_data_for_page_id(state.third_page_id));
+      }
+    } else {
+      for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(1 * kKiB)) {
+        EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
+        EXPECT_EQ(arena.allocator().get_ref_count(state.first_page_id).first, 2);
+        ASSERT_TRUE(sim.has_data_for_page_id(state.first_page_id).ok());
+        EXPECT_TRUE(*sim.has_data_for_page_id(state.first_page_id));
+      }
+      for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(2 * kKiB)) {
+        EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device);
+        if (state.second_root_page_id.is_valid()) {
+          EXPECT_EQ(arena.allocator().get_ref_count(state.second_root_page_id).first, 0);
+          ASSERT_TRUE(sim.has_data_for_page_id(state.second_root_page_id).ok());
+          EXPECT_FALSE(*sim.has_data_for_page_id(state.second_root_page_id));
+        }
+      }
+      for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(4 * kKiB)) {
+        EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device);
+        if (state.third_page_id.is_valid()) {
+          EXPECT_EQ(arena.allocator().get_ref_count(state.third_page_id).first, 0);
+          ASSERT_TRUE(sim.has_data_for_page_id(state.third_page_id).ok());
+          EXPECT_FALSE(*sim.has_data_for_page_id(state.third_page_id));
+        }
       }
     }
+    if (!state.second_job_will_not_commit) {
+      EXPECT_TRUE(state.second_root_page_id.is_valid());
+      EXPECT_TRUE(state.third_page_id.is_valid());
+    }
+    EXPECT_EQ(state.second_root_page_id.is_valid(), state.third_page_id.is_valid());
   }
-  if (!this->second_job_will_not_commit) {
-    EXPECT_TRUE(this->second_root_page_id.is_valid());
-    EXPECT_TRUE(this->third_page_id.is_valid());
-  }
-  EXPECT_EQ(this->second_root_page_id.is_valid(), this->third_page_id.is_valid());
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

@@ -262,6 +262,35 @@ inline std::ostream& operator<<(std::ostream& out, const SlotWithPayload<T>& t)
 
 constexpr usize kMaxSlotHeaderSize = kMaxVarInt32Size;
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+
+/** \brief Returns the input SlotRange by const ref.
+ */
+inline const SlotRange& get_slot_range(const SlotRange& s) noexcept
+{
+  return s;
+}
+
+/** \brief Returns the slot range of the input.
+ */
+template <typename T>
+inline const SlotRange& get_slot_range(const SlotWithPayload<T>& s) noexcept
+{
+  return s.slot_range;
+}
+
+/** \brief Defines the partial order over all SlotRange values such that for any pair of SlotRanges
+ * (a, b), a < b iff a.upper_bound <= b.lower_bound.
+ */
+struct SlotRangeOrder {
+  template <typename First, typename Second>
+  bool operator()(const First& first, const Second& second) const
+  {
+    return slot_less_or_equal(get_slot_range(first).upper_bound,
+                              get_slot_range(second).lower_bound);
+  }
+};
+
 }  // namespace llfs
 
 #endif  // LLFS_SLOT_HPP

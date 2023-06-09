@@ -455,19 +455,13 @@ StatusOr<SlotRange> Volume::append(const std::string_view& payload, batt::Grant&
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& grant,
-                                   Optional<SlotSequencer>&& sequencer, u64* total_spent)
+                                   Optional<SlotSequencer>&& sequencer)
 {
   const auto check_sequencer_is_resolved = batt::finally([&sequencer] {
     BATT_CHECK_IMPLIES(bool{sequencer}, sequencer->is_resolved())
         << "If a SlotSequencer is passed, it must be resolved even on failure "
            "paths.";
   });
-
-  u64 ignored_output_total_spent_;
-  if (!total_spent) {
-    total_spent = &ignored_output_total_spent_;
-  }
-  *total_spent = 0;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
   // Phase 0: Wait for the previous slot in the sequence to be appended to the
@@ -506,10 +500,8 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
 
   auto prepared_job = prepare(appendable);
   {
-    const usize prepare_slot_size = packed_sizeof_slot(prepared_job);
-    *total_spent += prepare_slot_size;
-
-    BATT_ASSIGN_OK_RESULT(batt::Grant trim_refresh_grant, grant.spend(prepare_slot_size));
+    BATT_ASSIGN_OK_RESULT(batt::Grant trim_refresh_grant,
+                          grant.spend(packed_sizeof_slot(prepared_job)));
     this->trimmer_.push_grant(std::move(trim_refresh_grant));
   }
 
@@ -571,15 +563,11 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
   //
   BATT_DEBUG_INFO("writing commit slot");
 
-  auto packed_commit = PackedCommitJob{
-      .reserved_ = {},
-      .prepare_slot = prepare_slot->lower_bound,
-  };
-
-  const usize commit_slot_size = packed_sizeof_slot(packed_commit);
-  *total_spent += commit_slot_size;
-
-  StatusOr<SlotRange> commit_slot = this->slot_writer_.append(grant, std::move(packed_commit));
+  StatusOr<SlotRange> commit_slot =
+      this->slot_writer_.append(grant, PackedCommitJob{
+                                           .reserved_ = {},
+                                           .prepare_slot = prepare_slot->lower_bound,
+                                       });
 
   BATT_REQUIRE_OK(commit_slot);
 
@@ -717,16 +705,35 @@ const PageRecycler::Metrics& Volume::page_recycler_metrics() const
 StatusOr<ConstBuffer> Volume::get_root_log_data(const SlotReadLock& read_lock,
                                                 Optional<SlotRange> slot_range) const
 {
+  // The lock must be in good standing and sponsored by us.
+  //
   if (!read_lock || read_lock.get_sponsor() != this->trim_control_.get()) {
     return {batt::StatusCode::kInvalidArgument};
   }
 
+  // If slot_range is not specified, use the range of the lock.
+  //
   if (!slot_range) {
     slot_range = read_lock.slot_range();
-  } else {
-    BATT_CHECK(!slot_less_than(slot_range->lower_bound, read_lock.slot_range().lower_bound -
-                                                            this->options_.trim_delay_byte_count))
-        << BATT_INSPECT(slot_range) << BATT_INSPECT(read_lock.slot_range());
+  }
+
+  // Check for negative-size slot range.
+  //
+  if (slot_less_than(slot_range->upper_bound, slot_range->lower_bound)) {
+    return {batt::StatusCode::kInvalidArgument};
+  }
+
+  // The captured range may be below the lock's lower_bound, but not by more than the trim delay.
+  //
+  if (slot_less_than(slot_range->lower_bound,
+                     read_lock.slot_range().lower_bound - this->options_.trim_delay_byte_count)) {
+    return {batt::StatusCode::kOutOfRange};
+  }
+
+  // Edge case: request for empty slot range.
+  //
+  if (slot_range->lower_bound == slot_range->upper_bound) {
+    return batt::ConstBuffer{nullptr, 0};
   }
 
   // Create a log reader to access the data.

@@ -152,12 +152,12 @@ class VolumeTrimmer
 
   ~VolumeTrimmer() noexcept;
 
-  const boost::uuids::uuid& uuid() const
+  const boost::uuids::uuid& uuid() const noexcept
   {
     return this->trimmer_uuid_;
   }
 
-  std::string_view name() const
+  std::string_view name() const noexcept
   {
     return this->name_;
   }
@@ -174,6 +174,14 @@ class VolumeTrimmer
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
  private:
+  /** \brief Blocks the caller until it is safe to trim the log up to the specified offset (or some
+   * higher offset).
+   *
+   * This function takes the trim delay into account; the trim control SlotLockManager must indicate
+   * that there are no locks less than `min_offset` + `trim_delay_`.
+   *
+   * \return the new candidate trim pos on success; error status code otherwise
+   */
   StatusOr<slot_offset_type> await_trim_target(slot_offset_type min_offset);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -

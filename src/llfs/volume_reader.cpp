@@ -97,7 +97,6 @@ SlotRange VolumeReader::slot_range() const
 //
 SlotReadLock VolumeReader::clone_lock() const
 {
-  BATT_UNTESTED_LINE();
   return this->impl_->read_lock_.clone();
 }
 

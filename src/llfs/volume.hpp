@@ -147,6 +147,10 @@ class Volume
   //
   Status await_trim(slot_offset_type slot_lower_bound);
 
+  /** \brief Returns the current root log trim position.
+   */
+  slot_offset_type get_trim_pos() const noexcept;
+
   // Returns the PageCache associated with this Volume.
   //
   PageCache& cache() const;
@@ -200,6 +204,19 @@ class Volume
   //
   const PageRecycler::Metrics& page_recycler_metrics() const;
 
+  /** \brief Returns the root log data corresponding to the given slot read lock.
+   *
+   * The returned buffer is valid only as long as the lock is held.  The requested/returned slot
+   * range may be up to "trim_delay_byte_count" bytes before the lower-bound of the passed
+   * read_lock.
+   *
+   * \param slot_range The slot offsets to return; if None, defaults to `read_lock.slot_range()`
+   */
+  StatusOr<ConstBuffer> get_root_log_data(const SlotReadLock& read_lock,
+                                          Optional<SlotRange> slot_range = None) const;
+
+  /** \brief Returns a reference to the root log's LogDevice object.
+   */
   LogDevice& root_log() const noexcept
   {
     return *(this->root_log_);

@@ -66,6 +66,7 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
   p_config->slot_1.slot_i = 1;
   p_config->slot_1.n_slots = 2;
   p_config->trim_lock_update_interval_bytes = options.base.trim_lock_update_interval;
+  p_config->trim_delay_byte_count = options.base.trim_delay_byte_count;
 
   if (!txn.packer().pack_string_to(&p_config->name, options.base.name)) {
     return ::batt::StatusCode::kResourceExhausted;
@@ -104,6 +105,7 @@ StatusOr<std::unique_ptr<Volume>> recover_storage_object(
               .max_refs_per_page = MaxRefsPerPage{p_volume_config->max_refs_per_page},
               .trim_lock_update_interval =
                   TrimLockUpdateInterval{p_volume_config->trim_lock_update_interval_bytes},
+              .trim_delay_byte_count = TrimDelayByteCount{p_volume_config->trim_delay_byte_count},
           },
       .cache = *page_cache,
       .root_log_factory = root_log_factory->get(),

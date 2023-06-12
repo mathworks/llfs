@@ -140,7 +140,8 @@ class VolumeTrimmer
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  explicit VolumeTrimmer(const boost::uuids::uuid& trimmer_uuid, SlotLockManager& trim_control,
+  explicit VolumeTrimmer(const boost::uuids::uuid& trimmer_uuid, std::string&& name,
+                         SlotLockManager& trim_control, TrimDelayByteCount trim_delay,
                          std::unique_ptr<LogDevice::Reader>&& log_reader,
                          TypedSlotWriter<VolumeEventVariant>& slot_writer,
                          VolumeDropRootsFn&& drop_roots,
@@ -149,9 +150,16 @@ class VolumeTrimmer
   VolumeTrimmer(const VolumeTrimmer&) = delete;
   VolumeTrimmer& operator=(const VolumeTrimmer&) = delete;
 
-  const boost::uuids::uuid& uuid() const
+  ~VolumeTrimmer() noexcept;
+
+  const boost::uuids::uuid& uuid() const noexcept
   {
     return this->trimmer_uuid_;
+  }
+
+  std::string_view name() const noexcept
+  {
+    return this->name_;
   }
 
   /** \brief Adds the given grant to the trim event grant held by this object, which is used to
@@ -163,16 +171,37 @@ class VolumeTrimmer
 
   Status run();
 
- private:
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  /** \brief The unique identifier for this trimmer; used to prevent page refcount double-updates.
+ private:
+  /** \brief Blocks the caller until it is safe to trim the log up to the specified offset (or some
+   * higher offset).
+   *
+   * This function takes the trim delay into account; the trim control SlotLockManager must indicate
+   * that there are no locks less than `min_offset` + `trim_delay_`.
+   *
+   * \return the new candidate trim pos on success; error status code otherwise
+   */
+  StatusOr<slot_offset_type> await_trim_target(slot_offset_type min_offset);
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief The unique identifier for this trimmer; used to prevent page refcount
+   * double-updates.
    */
   const boost::uuids::uuid trimmer_uuid_;
+
+  /** \brief Human-readable name for this object, for diagnostics.
+   */
+  std::string name_;
 
   /** \brief The lock manager that determines when it is safe to trim part of the log.
    */
   SlotLockManager& trim_control_;
+
+  /** \brief The number of bytes by which to delay trimming.
+   */
+  const TrimDelayByteCount trim_delay_;
 
   /** \brief Used to scan the log as it is trimmed.
    */

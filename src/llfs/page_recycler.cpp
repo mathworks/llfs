@@ -16,6 +16,7 @@ BATT_SUPPRESS_IF_GCC("-Wmaybe-uninitialized")
 #include <llfs/metrics.hpp>
 #include <llfs/page_cache_job.hpp>
 #include <llfs/page_recycler_recovery_visitor.hpp>
+#include <llfs/system_config.hpp>
 
 #include <batteries/async/backoff.hpp>
 #include <batteries/finally.hpp>
@@ -74,11 +75,12 @@ StatusOr<SlotRange> refresh_recycler_info_slot(TypedSlotWriter<PageRecycleEvent>
 {
   static const PackedPageRecyclerInfo info = {};
 
-  return options.total_page_grant_size() *
-             (1 + max_buffered_page_count.value_or(
-                      PageRecycler::default_max_buffered_page_count(options))) +
-         options.recycle_task_target() +
-         packed_sizeof_slot(info) * (options.info_refresh_rate() + 1) + 1 * kKiB;
+  return round_up_to_page_size_multiple(
+      options.total_page_grant_size() *
+          (1 + max_buffered_page_count.value_or(
+                   PageRecycler::default_max_buffered_page_count(options))) +
+      options.recycle_task_target() + packed_sizeof_slot(info) * (options.info_refresh_rate() + 1) +
+      1 * kKiB);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

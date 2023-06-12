@@ -91,7 +91,7 @@ inline PackObjectAsRawData<T> pack_object_as_raw(T&& object)
 template <typename T>
 inline usize packed_sizeof(const PackObjectAsRawData<T>& to_pack)
 {
-  return ::llfs::packed_sizeof(unwrap_ref(to_pack.object));
+  return packed_sizeof(unwrap_ref(to_pack.object));
 }
 
 template <typename T>

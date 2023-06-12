@@ -305,7 +305,9 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
     , slot_writer_{*this->root_log_}
     , trimmer_{
           trimmer_uuid,
+          batt::to_string(this->options_.name, "_Trimmer"),
           *this->trim_control_,
+          this->options_.trim_delay_byte_count,
           this->root_log_->new_reader(/*slot_lower_bound=*/None, LogReadMode::kDurable),
           this->slot_writer_,
           VolumeTrimmer::make_default_drop_roots_fn(this->cache(), *this->recycler_, trimmer_uuid),
@@ -620,6 +622,13 @@ Status Volume::await_trim(slot_offset_type slot_lower_bound)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+slot_offset_type Volume::get_trim_pos() const noexcept
+{
+  return this->slot_writer_.get_trim_pos();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 PageCache& Volume::cache() const
 {
   return *this->cache_;
@@ -676,6 +685,61 @@ SlotRange Volume::root_log_slot_range(LogReadMode mode) const
 const PageRecycler::Metrics& Volume::page_recycler_metrics() const
 {
   return this->recycler_->metrics();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<ConstBuffer> Volume::get_root_log_data(const SlotReadLock& read_lock,
+                                                Optional<SlotRange> slot_range) const
+{
+  // The lock must be in good standing and sponsored by us.
+  //
+  if (!read_lock || read_lock.get_sponsor() != this->trim_control_.get()) {
+    return {batt::StatusCode::kInvalidArgument};
+  }
+
+  // If slot_range is not specified, use the range of the lock.
+  //
+  if (!slot_range) {
+    slot_range = read_lock.slot_range();
+  }
+
+  // Check for negative-size slot range.
+  //
+  if (slot_less_than(slot_range->upper_bound, slot_range->lower_bound)) {
+    return {batt::StatusCode::kInvalidArgument};
+  }
+
+  // The captured range may be below the lock's lower_bound, but not by more than the trim delay.
+  //
+  if (slot_less_than(slot_range->lower_bound,
+                     read_lock.slot_range().lower_bound - this->options_.trim_delay_byte_count)) {
+    return {batt::StatusCode::kOutOfRange};
+  }
+
+  // Edge case: request for empty slot range.
+  //
+  if (slot_range->lower_bound == slot_range->upper_bound) {
+    return batt::ConstBuffer{nullptr, 0};
+  }
+
+  // Create a log reader to access the data.
+  //
+  std::unique_ptr<llfs::LogDevice::Reader> log_reader =
+      this->root_log_->new_reader(slot_range->lower_bound, llfs::LogReadMode::kSpeculative);
+
+  BATT_CHECK_NOT_NULLPTR(log_reader);
+  BATT_CHECK_EQ(log_reader->slot_offset(), slot_range->lower_bound);
+
+  // Verify that we can capture the requested range.
+  //
+  const usize slot_range_size = BATT_CHECKED_CAST(usize, slot_range->size());
+  batt::ConstBuffer available = log_reader->data();
+  if (available.size() < slot_range_size) {
+    return {batt::StatusCode::kOutOfRange};
+  }
+
+  return batt::ConstBuffer{available.data(), slot_range_size};
 }
 
 }  // namespace llfs

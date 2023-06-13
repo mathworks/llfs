@@ -104,6 +104,14 @@ class PageRecycler::State : public PageRecycler::NoLockState
   //+++++++++++-+-+--+----- --- -- -  -  -   --
 
  private:
+  static constexpr usize kWorkItemsPerUnit = 256;
+
+  struct ArenaExtent {
+    std::array<WorkItem, kWorkItemsPerUnit> items;
+  };
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   /** \brief Allocates and initializes a WorkItem.  This is like calling new.
    */
   WorkItem& new_work_item(const PageToRecycle& p);
@@ -145,7 +153,7 @@ class PageRecycler::State : public PageRecycler::NoLockState
    */
   usize arena_used_;
   const usize arena_size_;
-  std::unique_ptr<WorkItem[]> arena_;
+  std::vector<std::unique_ptr<ArenaExtent>> arena_;
   std::unordered_set<PageId, PageId::Hash> pending_;
   std::array<PageList, kMaxPageRefDepth + 1> stack_;
   PageList free_pool_;

@@ -36,6 +36,8 @@ struct PoolContext {
 static PoolContext& pool_for_size(usize size)
 {
   static std::array<PoolContext*, kPageBufferPoolLevels>& context_ = []() -> decltype(auto) {
+    BATT_CHECK(kEnablePageBufferPool);
+
     static std::array<PoolContext*, kPageBufferPoolLevels> context_;
     context_.fill(nullptr);
     for (auto& c : context_) {
@@ -84,18 +86,21 @@ void PageBuffer::set_page_id(PageId id)
 /*static*/ std::shared_ptr<PageBuffer> PageBuffer::allocate(PageSize page_size, PageId page_id)
 {
   PageBuffer* obj = nullptr;
+  [&obj, page_size] {
+    if (kEnablePageBufferPool) {
+      PoolContext& pool = pool_for_size(page_size);
+      if (pool.arena.pop(obj)) {
+        pool.size.fetch_sub(1);
+        BATT_CHECK_NOT_NULLPTR(obj);
+        BATT_CHECK_EQ(page_size, get_page_header(*obj).size);
+        return;
+      }
+    }
 
-  PoolContext& pool = pool_for_size(page_size);
-  if (pool.arena.pop(obj)) {
-    pool.size.fetch_sub(1);
-    BATT_CHECK_NOT_NULLPTR(obj);
-    BATT_CHECK_EQ(page_size, get_page_header(*obj).size);
-  } else {
     const usize n_blocks = (page_size + sizeof(Block) - 1) / sizeof(Block);
     Block* blocks = new Block[n_blocks];
     obj = reinterpret_cast<PageBuffer*>(blocks);
-  }
-
+  }();
   {
     PackedPageHeader* header = mutable_page_header(obj);
     header->size = page_size;
@@ -114,13 +119,15 @@ void PageBuffer::set_page_id(PageId id)
 //
 void PageBuffer::operator delete(void* ptr)
 {
-  PageBuffer* obj = reinterpret_cast<PageBuffer*>(ptr);
-  if (obj) {
-    const usize page_size = obj->size();
-    auto& pool = pool_for_size(page_size);
-    if (pool.arena.push(obj)) {
-      pool.size.fetch_add(1);
-      return;
+  if (kEnablePageBufferPool) {
+    PageBuffer* obj = reinterpret_cast<PageBuffer*>(ptr);
+    if (obj) {
+      const usize page_size = obj->size();
+      auto& pool = pool_for_size(page_size);
+      if (pool.arena.push(obj)) {
+        pool.size.fetch_add(1);
+        return;
+      }
     }
   }
   BATT_SUPPRESS_IF_CLANG("-Wunevaluated-expression")

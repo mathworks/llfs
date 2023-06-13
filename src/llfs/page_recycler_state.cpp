@@ -30,7 +30,7 @@ PageRecycler::State::State(const boost::uuids::uuid& uuid,
     : NoLockState{uuid, latest_info_refresh_slot, options}
     , arena_used_{0}
     , arena_size_{max_pages_for_wal_capacity(options, wal_capacity)}
-    , arena_{new WorkItem[this->arena_size_]}
+    , arena_{}
     , pending_{}
     , stack_{}
     , free_pool_{}
@@ -235,8 +235,13 @@ PageRecycler::WorkItem& PageRecycler::State::alloc_work_item()
   //
   if (this->free_pool_.empty()) {
     BATT_CHECK_LT(this->arena_used_, this->arena_size_);
-    this->free_pool_.push_back(this->arena_[this->arena_used_]);
-    this->arena_used_ += 1;
+
+    this->arena_.emplace_back(std::make_unique<ArenaExtent>());
+    auto& extent_items = this->arena_.back()->items;
+    for (WorkItem& item : extent_items) {
+      this->free_pool_.push_back(item);
+    }
+    this->arena_used_ += extent_items.size();
   }
 
   // Allocate from the free pool here.

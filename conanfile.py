@@ -6,7 +6,9 @@
 #
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 
-from conans import ConanFile, CMake
+from conan import ConanFile
+from conan.tools.cmake import CMakeToolchain, CMake, cmake_layout, CMakeDeps
+from conan.tools.files import copy
 
 import os, sys, platform
 
@@ -23,7 +25,6 @@ class LlfsConan(ConanFile):
     settings = "os", "compiler", "build_type", "arch"
     options = {"shared": [True, False]}
     default_options = {"shared": False}
-    generators = "cmake"
     build_policy = "missing"
 
     requires = [
@@ -57,39 +58,58 @@ class LlfsConan(ConanFile):
         #
         script_dir = os.path.join(os.path.dirname(__file__), 'script')
         sys.path.append(script_dir)
-        
+
         import batt
-        
+
         batt.VERBOSE = VERBOSE
         self.version = batt.get_version(no_check_conan=True)
         batt.verbose(f'VERSION={self.version}')
         #
         #+++++++++++-+-+--+----- --- -- -  -  -   -
-    
+
+
+    def layout(self):
+        cmake_layout(self, src_folder="src")
+
+
+    def generate(self):
+        tc = CMakeToolchain(self)
+        tc.generate()
+
+        deps = CMakeDeps(self)
+        deps.generate()
+
+
     def configure(self):
         self.options["gtest"].shared = False
         self.options["boost"].shared = False
         self.options["batteries"].with_glog = True
         self.options["batteries"].header_only = False
 
+
     def build(self):
         cmake = CMake(self)
         cmake.verbose = VERBOSE
-        cmake.configure(source_folder="src")
+        cmake.configure()
         cmake.build()
+
 
     def export(self):
         self.copy("*.sh", src="script", dst="script")
         self.copy("*.py", src="script", dst="script")
 
+
     def package(self):
-        self.copy("*.hpp", dst="include", src="src")
-        self.copy("*.ipp", dst="include", src="src")
-        self.copy("*.sh", src="script", dst="script")
-        self.copy("*.py", src="script", dst="script")
+        src_include = os.path.join(self.source_folder, ".")
+        dst_include = os.path.join(self.package_folder, "include")
+
+        copy(self, "*.hpp", dst=dst_include, src=src_include)
+        copy(self, "*.ipp", dst=dst_include, src=src_include)
+
         cmake = CMake(self)
         cmake.configure()
         cmake.install()
+
 
     def package_info(self):
         self.cpp_info.cxxflags = ["-D_GNU_SOURCE", "-D_BITS_UIO_EXT_H=1"]

@@ -91,10 +91,14 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
 
   auto page_deleter = std::make_unique<PageCache::PageDeleterImpl>(*cache);
 
+  LLFS_VLOG(1) << "Recovering PageRecycler";
+
   BATT_ASSIGN_OK_RESULT(
       std::unique_ptr<PageRecycler> recycler,
       PageRecycler::recover(scheduler, volume_options.name + "_PageRecycler", recycler_options,
                             *page_deleter, recycler_log_factory));
+
+  LLFS_VLOG(1) << "PageRecycler recovered";
 
   VolumePendingJobsMap pending_jobs;
   VolumeRecoveryVisitor visitor{batt::make_copy(slot_visitor_fn), pending_jobs};

@@ -47,8 +47,12 @@ set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-point
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -march=native -mtune=native ") # -pg
 set (CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -fno-omit-frame-pointer -march=native -mtune=native") # -pg
 
-include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
-conan_basic_setup()
+find_package(GTest CONFIG REQUIRED)
+find_package(Boost CONFIG REQUIRED)
+find_package(glog CONFIG REQUIRED)
+find_package(batteries CONFIG REQUIRED)
+find_package(CLI11 CONFIG REQUIRED)
+find_package(liburing CONFIG REQUIRED)
 
 include_directories(.)
 
@@ -99,11 +103,9 @@ macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
   add_executable(${TARGET_NAME}_Test ${${TARGET_NAME}_TestSources} ./common/test_environment.cpp)
   target_link_libraries(${TARGET_NAME}_Test ${TARGET_NAME}
                         ${TARGET_DEPS}    
-                        ${CONAN_LIBS_GTEST}
-                        ${CONAN_LIBS}
-                        backtrace
-                        boost_context
-                        boost_stacktrace_backtrace
+                        Boost::context
+                        Boost::stacktrace_backtrace
+                        libbacktrace::libbacktrace
                         dl
                         stdc++fs)
 
@@ -135,7 +137,10 @@ endmacro()
 # Submodule definitions.
 #
 
-LLFS_DefineLibrary(llfs ./llfs)
+LLFS_DefineLibrary(llfs ./llfs
+  batteries::batteries
+  liburing::liburing
+  )
 
 #=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
                    
@@ -149,10 +154,11 @@ add_executable(llfs_cli ${llfs_cli_Sources})
 
 target_link_libraries(llfs_cli
                       llfs
-                      ${CONAN_LIBS}
-                      backtrace
-                      boost_context
-                      boost_stacktrace_backtrace
+                      batteries::batteries
+                      Boost::context
+                      Boost::stacktrace_backtrace
+                      libbacktrace::libbacktrace
+                      CLI11::CLI11
                       dl
                       stdc++fs)
 

@@ -60,6 +60,8 @@ TEST(FindCommonPrefixTest, BothEmptySkipLen0)
 //
 TEST(FindCommonPrefixTest, BothEmptySkipLenGt0)
 {
+  EXPECT_THAT(llfs::find_common_prefix(/*skip_len=*/4, "", ""), ::testing::StrEq(""));
+  EXPECT_THAT(llfs::find_common_prefix(/*skip_len=*/2, "ab", "xy"), ::testing::StrEq(""));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -68,6 +70,7 @@ TEST(FindCommonPrefixTest, BothEmptySkipLenGt0)
 //
 TEST(FindCommonPrefixTest, NoCommonPrefixSkipLen0)
 {
+  EXPECT_THAT(llfs::find_common_prefix(/*skip_len=*/0, "ab", "xy"), ::testing::StrEq(""));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -76,6 +79,7 @@ TEST(FindCommonPrefixTest, NoCommonPrefixSkipLen0)
 //
 TEST(FindCommonPrefixTest, NoCommonPrefixSkipLenGt0)
 {
+  EXPECT_THAT(llfs::find_common_prefix(/*skip_len=*/2, "iiab", "iixy"), ::testing::StrEq(""));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -85,6 +89,7 @@ TEST(FindCommonPrefixTest, NoCommonPrefixSkipLenGt0)
 //
 TEST(FindCommonPrefixTest, CommonPrefixAShorterSkipLen0)
 {
+  EXPECT_THAT(llfs::find_common_prefix(/*skip_len=*/0, "abc", "abcdef"), ::testing::StrEq("abc"));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -94,6 +99,8 @@ TEST(FindCommonPrefixTest, CommonPrefixAShorterSkipLen0)
 //
 TEST(FindCommonPrefixTest, CommonPrefixAShorterSkipLenGt0)
 {
+  EXPECT_THAT(llfs::find_common_prefix(/*skip_len=*/2, "iiabc", "iiabcdef"),
+              ::testing::StrEq("abc"));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -103,6 +110,7 @@ TEST(FindCommonPrefixTest, CommonPrefixAShorterSkipLenGt0)
 //
 TEST(FindCommonPrefixTest, CommonPrefixAEqualLenSkipLen0)
 {
+  EXPECT_THAT(llfs::find_common_prefix(/*skip_len=*/0, "abc", "abc"), ::testing::StrEq("abc"));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -112,6 +120,7 @@ TEST(FindCommonPrefixTest, CommonPrefixAEqualLenSkipLen0)
 //
 TEST(FindCommonPrefixTest, CommonPrefixAEqualLenSkipLenGt0)
 {
+  EXPECT_THAT(llfs::find_common_prefix(/*skip_len=*/2, "xyabc", "wzabc"), ::testing::StrEq("abc"));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -120,6 +129,7 @@ TEST(FindCommonPrefixTest, CommonPrefixAEqualLenSkipLenGt0)
 //
 TEST(FindCommonPrefixTest, CommonPrefixBNonEqualLenSkipLen0)
 {
+  EXPECT_THAT(llfs::find_common_prefix(/*skip_len=*/0, "abcxyz", "abc"), ::testing::StrEq("abc"));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -129,6 +139,8 @@ TEST(FindCommonPrefixTest, CommonPrefixBNonEqualLenSkipLen0)
 //
 TEST(FindCommonPrefixTest, CommonPrefixBNonEqualLenSkipLenGt0a)
 {
+  EXPECT_THAT(llfs::find_common_prefix(/*skip_len=*/2, "iiabcxyz", "iiabc"),
+              ::testing::StrEq("abc"));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -138,6 +150,8 @@ TEST(FindCommonPrefixTest, CommonPrefixBNonEqualLenSkipLenGt0a)
 //
 TEST(FindCommonPrefixTest, CommonPrefixBNonEqualLenSkipLenGt0b)
 {
+  EXPECT_THAT(llfs::find_common_prefix(/*skip_len=*/2, "iiabcxyz", "jjabc"),
+              ::testing::StrEq("abc"));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -147,6 +161,8 @@ TEST(FindCommonPrefixTest, CommonPrefixBNonEqualLenSkipLenGt0b)
 //
 TEST(FindCommonPrefixTest, CommonPrefixBNonEqualLenSkipLenGt0c)
 {
+  EXPECT_THAT(llfs::find_common_prefix(/*skip_len=*/2, "iiabcxyz", "ijabc"),
+              ::testing::StrEq("abc"));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -155,6 +171,7 @@ TEST(FindCommonPrefixTest, CommonPrefixBNonEqualLenSkipLenGt0c)
 //
 TEST(FindCommonPrefixTest, AEmptyBNonEmptySkipLen0)
 {
+  EXPECT_THAT(llfs::find_common_prefix(/*skip_len=*/0, "", "abc"), ::testing::StrEq(""));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -163,6 +180,8 @@ TEST(FindCommonPrefixTest, AEmptyBNonEmptySkipLen0)
 //
 TEST(FindCommonPrefixTest, AEmptyBNonEmptySkipLenGt0)
 {
+  EXPECT_THAT(llfs::find_common_prefix(/*skip_len=*/5, "", "abc"), ::testing::StrEq(""));
+  EXPECT_THAT(llfs::find_common_prefix(/*skip_len=*/2, "ii", "jjabc"), ::testing::StrEq(""));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -171,6 +190,7 @@ TEST(FindCommonPrefixTest, AEmptyBNonEmptySkipLenGt0)
 //
 TEST(FindCommonPrefixTest, ANonEmptyBEmptySkipLen0)
 {
+  EXPECT_THAT(llfs::find_common_prefix(/*skip_len=*/0, "abc", ""), ::testing::StrEq(""));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -179,6 +199,35 @@ TEST(FindCommonPrefixTest, ANonEmptyBEmptySkipLen0)
 //
 TEST(FindCommonPrefixTest, ANonEmptyBEmptySkipLenGt0)
 {
+  EXPECT_THAT(llfs::find_common_prefix(/*skip_len=*/5, "abc", ""), ::testing::StrEq(""));
+  EXPECT_THAT(llfs::find_common_prefix(/*skip_len=*/2, "jjabc", "ii"), ::testing::StrEq(""));
 }
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+// Test Plan: CompareKthByte
+//
+// 1. (char, string)
+//   1. k > str.size
+//   2. k == str.size
+//   3. k == 0
+//     1. str[k] == ch
+//     2. str[k] > ch
+//     3. str[k] < ch
+//   4. 0 < k < str.size
+//     1. str[k] == ch
+//     2. str[k] > ch
+//     3. str[k] < ch
+// 2. (string, char)
+//   1. k > str.size
+//   2. k == str.size
+//   3. k == 0
+//     1. str[k] == ch
+//     2. str[k] > ch
+//     3. str[k] < ch
+//   4. 0 < k < str.size
+//     1. str[k] == ch
+//     2. str[k] > ch
+//     3. str[k] < ch
+//
 
 }  // namespace

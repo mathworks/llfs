@@ -230,4 +230,162 @@ TEST(FindCommonPrefixTest, ANonEmptyBEmptySkipLenGt0)
 //     3. str[k] < ch
 //
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// 1. (char, string)
+//   1. k > str.size
+//
+TEST(CompareKthByteTest, Case1_1)
+{
+  EXPECT_FALSE((llfs::CompareKthByte{/*k=*/4}('\0', std::string_view{"abc"})));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// 1. (char, string)
+//   2. k == str.size
+//
+TEST(CompareKthByteTest, Case1_2)
+{
+  EXPECT_FALSE((llfs::CompareKthByte{/*k=*/3}('\0', std::string_view{"abc"})));
+  EXPECT_TRUE((llfs::CompareKthByte{/*k=*/2}('\0', std::string_view{"abc"})));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// 1. (char, string)
+//   3. k == 0
+//     1. str[k] == ch
+//
+TEST(CompareKthByteTest, Case1_3_1)
+{
+  EXPECT_FALSE((llfs::CompareKthByte{/*k=*/0}('a', std::string_view{"abc"})));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// 1. (char, string)
+//   3. k == 0
+//     2. str[k] > ch
+//
+TEST(CompareKthByteTest, Case1_3_2)
+{
+  EXPECT_TRUE((llfs::CompareKthByte{/*k=*/0}(' ', std::string_view{"abc"})));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// 1. (char, string)
+//   3. k == 0
+//     3. str[k] < ch
+//
+TEST(CompareKthByteTest, Case1_3_3)
+{
+  EXPECT_FALSE((llfs::CompareKthByte{/*k=*/0}('d', std::string_view{"abc"})));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// 1. (char, string)
+//   4. 0 < k < str.size
+//     1. str[k] == ch
+//
+TEST(CompareKthByteTest, Case1_4_1)
+{
+  EXPECT_FALSE((llfs::CompareKthByte{/*k=*/2}('c', std::string_view{"abcd"})));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// 1. (char, string)
+//   4. 0 < k < str.size
+//     2. str[k] > ch
+//
+TEST(CompareKthByteTest, Case1_4_2)
+{
+  EXPECT_TRUE((llfs::CompareKthByte{/*k=*/2}('b', std::string_view{"abcd"})));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// 1. (char, string)
+//   4. 0 < k < str.size
+//     3. str[k] < ch
+//
+TEST(CompareKthByteTest, Case1_4_3)
+{
+  EXPECT_FALSE((llfs::CompareKthByte{/*k=*/2}('d', std::string_view{"abcd"})));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// 2. (string, char)
+//   1. k > str.size
+//
+TEST(CompareKthByteTest, Case2_1)
+{
+  EXPECT_TRUE((llfs::CompareKthByte{/*k=*/4}(std::string_view{"abc"}, '~')));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// 2. (string, char)
+//   2. k == str.size
+//
+TEST(CompareKthByteTest, Case2_2)
+{
+  EXPECT_TRUE((llfs::CompareKthByte{/*k=*/3}(std::string_view{"abc"}, '\0')));
+  EXPECT_FALSE((llfs::CompareKthByte{/*k=*/2}(std::string_view{"abc"}, '\0')));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// 2. (string, char)
+//   3. k == 0
+//     1. str[k] == ch
+//
+TEST(CompareKthByteTest, Case2_3_1)
+{
+  EXPECT_FALSE((llfs::CompareKthByte{/*k=*/0}(std::string_view{"abc"}, 'a')));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// 2. (string, char)
+//   3. k == 0
+//     2. str[k] > ch
+//
+TEST(CompareKthByteTest, Case2_3_2)
+{
+  EXPECT_FALSE((llfs::CompareKthByte{/*k=*/0}(std::string_view{"abc"}, ' ')));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// 2. (string, char)
+//   3. k == 0
+//     3. str[k] < ch
+//
+TEST(CompareKthByteTest, Case2_3_3)
+{
+  EXPECT_TRUE((llfs::CompareKthByte{/*k=*/0}(std::string_view{"abc"}, 'b')));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// 2. (string, char)
+//   4. 0 < k < str.size
+//     1. str[k] == ch
+//
+TEST(CompareKthByteTest, Case2_4_1)
+{
+  EXPECT_FALSE((llfs::CompareKthByte{/*k=*/2}(std::string_view{"abcd"}, 'c')));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// 2. (string, char)
+//   4. 0 < k < str.size
+//     2. str[k] > ch
+//
+TEST(CompareKthByteTest, Case2_4_2)
+{
+  EXPECT_FALSE((llfs::CompareKthByte{/*k=*/2}(std::string_view{"abcd"}, 'b')));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// 2. (string, char)
+//   4. 0 < k < str.size
+//     3. str[k] < ch
+//
+TEST(CompareKthByteTest, Case2_4_3)
+{
+  EXPECT_TRUE((llfs::CompareKthByte{/*k=*/2}(std::string_view{"abcd"}, 'd')));
+}
+
 }  // namespace

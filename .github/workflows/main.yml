@@ -33,5 +33,6 @@ jobs:
         run: script/run-with-docker.sh pwd # script/publish-release.sh
   test:
     runs-on: self-hosted
+    steps:
       - name: Test
         run: script/run-with-docker.sh make BUILD_TYPE=Release test

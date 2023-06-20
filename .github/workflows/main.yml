@@ -13,19 +13,25 @@ jobs:
   build:
     runs-on: self-hosted
     steps:
-      - name: Secret test
-        env:
-          RELEASE_CONAN_REMOTE: ${{ vars.RELEASE_CONAN_REMOTE }}
-          RELEASE_CONAN_LOGIN_USERNAME: ${{ vars.RELEASE_CONAN_LOGIN_USERNAME }}
-          RELEASE_CONAN_PASSWORD: ${{ secrets.RELEASE_CONAN_PASSWORD }}
-        run: env | grep -i conan > ~/the_conan_output.txt
       - name: Checkout repository
         uses: actions/checkout@master
         with:
           submodules: recursive
-      - name: Conan Install
+      - name: Install
         run: script/run-with-docker.sh make BUILD_TYPE=Release install
-      - name: Conan Build
+      - name: Build
         run: script/run-with-docker.sh make BUILD_TYPE=Release build
-      - name: Conan Test
+      - name: Test
+        run: script/run-with-docker.sh make BUILD_TYPE=Release test
+      - name: ExportPkg
+        run: script/run-with-docker.sh pwd # make BUILD_TYPE=Release export-pkg
+      - name: PublishRelease
+        env:
+          RELEASE_CONAN_REMOTE: ${{ vars.RELEASE_CONAN_REMOTE }}
+          RELEASE_CONAN_LOGIN_USERNAME: ${{ vars.RELEASE_CONAN_LOGIN_USERNAME }}
+          RELEASE_CONAN_PASSWORD: ${{ secrets.RELEASE_CONAN_PASSWORD }}
+        run: script/run-with-docker.sh pwd # script/publish-release.sh
+  test:
+    runs-on: self-hosted
+      - name: Test
         run: script/run-with-docker.sh make BUILD_TYPE=Release test

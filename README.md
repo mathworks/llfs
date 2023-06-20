@@ -111,7 +111,7 @@ While it is possible for applications do to this directly using the `PageDevice`
 - gnu make
 - cmake (3.16 or later)
 - ninja (1.11 or later)
-- conan >=1.60, <2.0 (sorry, conan 2 support is coming!)
+- conan >=2.0 
 - Linux kernel 5.11 or later (for io_uring support)
 
 ## Configure Conan
@@ -121,22 +121,8 @@ While it is possible for applications do to this directly using the `PageDevice`
 The following Conan remote must be added to resolve the Batteries package dependency:
 
 ```
-conan remote add gitlab https://gitlab.com/api/v4/packages/conan
+conan remote add batteriesincluded https://batteriesincluded.cc/artifactory/api/conan/conan-local
 ```
-
-### Recommended Conan Profile Settings
-
-These are the commands to set up the Conan profile LLFS uses in its CI pipelines:
-
-```shell
-conan profile update 'settings.compiler.libcxx=libstdc++11' default
-conan profile update 'settings.compiler.cppstd=20' default
-conan profile update 'env.CXXFLAGS=-fno-omit-frame-pointer' default
-conan profile update 'env.CFLAGS=-fno-omit-frame-pointer' default
-conan profile update 'env.LDFLAGS=-fno-omit-frame-pointer' default
-```
-
-Not all of these may be strictly necessary, YMMV.
 
 ## Run Makefile
 

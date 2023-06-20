@@ -64,6 +64,8 @@ endif()
 
 enable_testing()
 
+include_directories(${GTest_INCLUDE_DIRS})
+
 add_custom_target(RunAllLibTests)
 
 #==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -               
@@ -101,14 +103,19 @@ macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
   # Define unit test target
   #
   add_executable(${TARGET_NAME}_Test ${${TARGET_NAME}_TestSources} ./common/test_environment.cpp)
-  target_link_libraries(${TARGET_NAME}_Test ${TARGET_NAME}
-                        ${TARGET_DEPS}    
-                        Boost::context
-                        Boost::stacktrace_backtrace
-                        libbacktrace::libbacktrace
-                        dl
-                        stdc++fs)
-
+  target_link_libraries(
+    ${TARGET_NAME}_Test
+    GTest::gtest
+    GTest::gtest_main
+    GTest::gmock
+    GTest::gmock_main
+    ${TARGET_NAME}
+    ${TARGET_DEPS}
+    Boost::context
+    Boost::stacktrace_backtrace
+    libbacktrace::libbacktrace
+    dl
+    stdc++fs)
 
   add_test(NAME ${TARGET_NAME}_Test
            WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/bin
@@ -134,7 +141,7 @@ endmacro()
 
 
 #=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-# Submodule definitions.
+# Library definitions.
 #
 
 LLFS_DefineLibrary(llfs ./llfs

@@ -11,6 +11,10 @@ PROJECT_NAME := llfs
 SCRIPT_DIR := $(PROJECT_DIR)/script
 CONAN_2 := 0
 
+#----- --- -- -  -  -   -
+.PHONY: all
+all: install build test
+
 include $(SCRIPT_DIR)/conan-targets.mk
 
 TCMALLOC_ENV := $(shell find /lib/ -name '*tcmalloc.so*' | sort -Vr | head -1 | xargs -I{} echo LD_PRELOAD={})

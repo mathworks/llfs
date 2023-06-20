@@ -103,6 +103,68 @@ While it is possible for applications do to this directly using the `PageDevice`
 
 `PageRecycler` also imposes a creation-time-configurable limit on the maximum "branching factor" of page refs (i.e., the maximum number of out-refs per page), and the depth of a reference chain.  Because these limits are highly dependent on the sorts of data structures and page sizes that must be accomodated by the `PageRecycler`, each `llfs::Volume` is given its own `PageRecycler`.  This allows different `Volume` instances to configure these parameters optimally for the type of data stored by that volume.
 
+# How To Build
+
+Requirements:
+
+- gcc (11.2 or later)
+- gnu make
+- cmake (3.16 or later)
+- ninja (1.11 or later)
+- conan >=1.60, <2.0 (sorry, conan 2 support is coming!)
+- Linux kernel 5.11 or later (for io_uring support)
+
+## Configure Conan
+
+```shell
+conan profile update 'settings.compiler.libcxx=libstdc++11' default
+conan profile update 'settings.compiler.cppstd=20' default
+conan profile update 'env.CXXFLAGS=-fno-omit-frame-pointer' default
+conan profile update 'env.CFLAGS=-fno-omit-frame-pointer' default
+conan profile update 'env.LDFLAGS=-fno-omit-frame-pointer' default
+
+conan remote add gitlab https://gitlab.com/api/v4/packages/conan
+```
+
+## Run Makefile
+
+```shell
+make
+```
+
+This is a shortcut for the more verbose command:
+
+```shell
+make install build test
+```
+
+Summary of Makefile targets:
+
+- `install`
+    - Like `conan install`; installs Conan package dependencies on the local system
+- `build`
+    - Like `conan build`; builds `libllfs.a`, `llfs_Test` (the unit test), and `llfs` (minimal CLI utility; WIP)
+    - Requires:
+        - `install`
+- `test`
+    - Runs unit tests
+    - Requires:
+        - `install`
+        - `build`
+- `export-pkg`
+    - Exports LLFS Conan package (from existing build) to the local cache, for consumption by downstream projects
+    - Requires:
+        - `install`
+        - `build`
+    - Recommended:
+        - `test`
+- `create`
+    - Creates LLFS Conan package using a clean build; _does not run tests_
+- `clean`
+    - Removes the build directory
+- `clean-pkg`
+    - Removes the current Conan package version from the local cache
+
 # Test Configuration
 
 ## Docker and IO_URING

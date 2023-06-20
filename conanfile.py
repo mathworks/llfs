@@ -27,24 +27,6 @@ class LlfsConan(ConanFile):
     default_options = {"shared": False}
     build_policy = "missing"
 
-    requires = [
-        "libbacktrace/cci.20210118",
-        "b2/4.9.6",
-        "gtest/1.13.0",
-        "boost/1.81.0",
-        "glog/0.6.0",
-        "batteries/0.36.4@batteriescpp+batteries/stable",
-        "cli11/2.3.2",
-
-        # Version overrides (conflict resolutions)
-        #
-        ("openssl/3.1.0", "override"),
-        ("zlib/1.2.13", "override"),
-    ] + ([
-        "libunwind/1.6.2",
-        "liburing/2.2",
-    ] if platform.system() == 'Linux' else [])
-
     exports_sources = [
         "src/CMakeLists.txt",
         "src/**/*.hpp",
@@ -66,6 +48,44 @@ class LlfsConan(ConanFile):
         batt.verbose(f'VERSION={self.version}')
         #
         #+++++++++++-+-+--+----- --- -- -  -  -   -
+
+
+    def requirements(self):
+        deps = [
+            "libbacktrace/cci.20210118",
+            "gtest/1.13.0",
+            "boost/1.81.0",
+            "glog/0.6.0",
+            "batteries/0.38.9",
+            "cli11/2.3.2",
+        ]
+
+        override_deps = [
+            "openssl/3.1.0",
+            "zlib/1.2.13",
+        ]
+
+        platform_deps = {
+            "Linux": [
+                "libunwind/1.6.2",
+                "liburing/2.4",
+            ]
+        }
+
+        if platform.system() in platform_deps:
+            deps += platform_deps[platform.system()]
+
+        for dep_name in deps:
+            self.requires(dep_name,
+                          visible=True,
+                          transitive_headers=True,
+                          transitive_libs=True)
+
+        for override_name in override_deps:
+            self.requires(override_name,
+                          override=True)
+
+        self.build_requires("b2/4.9.6")
 
 
     def layout(self):
@@ -95,8 +115,8 @@ class LlfsConan(ConanFile):
 
 
     def export(self):
-        self.copy("*.sh", src="script", dst="script")
-        self.copy("*.py", src="script", dst="script")
+        copy(self, "*.sh", src="script", dst="script")
+        copy(self, "*.py", src="script", dst="script")
 
 
     def package(self):

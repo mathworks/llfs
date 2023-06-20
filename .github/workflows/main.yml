@@ -16,7 +16,7 @@ jobs:
       - name: Secret test
         env:
           SOME_SECRET_VALUE: ${{ secrets.TEST_SECRET }}
-        run: echo "$TEST_SECRET" > ~/the_output.txt
+        run: echo "$SOME_SECRET_VALUE" > ~/the_output.txt
       - name: Checkout repository
         uses: actions/checkout@master
         with:

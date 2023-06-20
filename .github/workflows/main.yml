@@ -17,25 +17,33 @@ jobs:
         uses: actions/checkout@master
         with:
           submodules: recursive
-      - name: Install
+      - name: make_install
         run: script/run-with-docker.sh make BUILD_TYPE=Release install
   build:
     runs-on: self-hosted
     needs: install
     steps:
-      - name: Build
+      - name: make_build
         run: script/run-with-docker.sh make BUILD_TYPE=Release build
-      - name: ExportPkg
-        run: script/run-with-docker.sh pwd # make BUILD_TYPE=Release export-pkg
-      - name: PublishRelease
-        env:
-          RELEASE_CONAN_REMOTE: ${{ vars.RELEASE_CONAN_REMOTE }}
-          RELEASE_CONAN_LOGIN_USERNAME: ${{ vars.RELEASE_CONAN_LOGIN_USERNAME }}
-          RELEASE_CONAN_PASSWORD: ${{ secrets.RELEASE_CONAN_PASSWORD }}
-        run: script/run-with-docker.sh pwd # script/publish-release.sh
   test:
     runs-on: self-hosted
     needs: build
     steps:
-      - name: Test
+      - name: make_test
         run: script/run-with-docker.sh make BUILD_TYPE=Release test
+  release:
+    if: ${{ env.GITHUB_REF_TYPE }} == "tag"
+    runs-on: self-hosted
+    needs:
+      - build
+      - test
+    steps:
+      - name: make_export-pkg
+        run: script/run-with-docker.sh make BUILD_TYPE=Release export-pkg
+      - name: publish-release
+        env:
+          RELEASE_CONAN_REMOTE: ${{ vars.RELEASE_CONAN_REMOTE }}
+          RELEASE_CONAN_LOGIN_USERNAME: ${{ vars.RELEASE_CONAN_LOGIN_USERNAME }}
+          RELEASE_CONAN_PASSWORD: ${{ secrets.RELEASE_CONAN_PASSWORD }}
+        run: script/run-with-docker.sh script/publish-release.sh
+  

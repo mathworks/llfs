@@ -10,7 +10,7 @@ on:
       - 'release-*'
     
 jobs:
-  build:
+  install:
     runs-on: self-hosted
     steps:
       - name: Checkout repository
@@ -19,10 +19,12 @@ jobs:
           submodules: recursive
       - name: Install
         run: script/run-with-docker.sh make BUILD_TYPE=Release install
+  build:
+    runs-on: self-hosted
+    needs: install
+    steps:
       - name: Build
         run: script/run-with-docker.sh make BUILD_TYPE=Release build
-      - name: Test
-        run: script/run-with-docker.sh make BUILD_TYPE=Release test
       - name: ExportPkg
         run: script/run-with-docker.sh pwd # make BUILD_TYPE=Release export-pkg
       - name: PublishRelease
@@ -33,6 +35,7 @@ jobs:
         run: script/run-with-docker.sh pwd # script/publish-release.sh
   test:
     runs-on: self-hosted
+    needs: build
     steps:
       - name: Test
         run: script/run-with-docker.sh make BUILD_TYPE=Release test

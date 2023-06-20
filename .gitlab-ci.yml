@@ -1,7 +1,7 @@
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 # See batteries/docker/Dockerfile (https://gitlab.com/batteriescpp/batteries/)
 #
-image: registry.gitlab.com/batteriescpp/batteries:v0.35.1.linux_gcc11_amd64
+image: registry.gitlab.com/batteriescpp/batteries:v0.37.2-devel.linux_gcc11_amd64
 
 variables:
   GIT_STRATEGY: clone

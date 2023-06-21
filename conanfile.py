@@ -32,6 +32,8 @@ class LlfsConan(ConanFile):
         "src/**/*.hpp",
         "src/**/*.ipp",
         "src/**/*.cpp",
+        "script/*.py",
+        "script/*.sh",
     ]
 
     def set_version(self):
@@ -112,11 +114,6 @@ class LlfsConan(ConanFile):
         cmake.verbose = VERBOSE
         cmake.configure()
         cmake.build()
-
-
-    def export(self):
-        copy(self, "*.sh", src="script", dst="script")
-        copy(self, "*.py", src="script", dst="script")
 
 
     def package(self):

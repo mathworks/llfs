@@ -105,28 +105,28 @@ While it is possible for applications do to this directly using the `PageDevice`
 
 # How To Build
 
-Requirements:
+## Requirements:
 
 - gcc (11.2 or later)
 - gnu make
 - cmake (3.16 or later)
 - ninja (1.11 or later)
-- conan >=1.60, <2.0 (sorry, conan 2 support is coming!)
+- conan >=2.0 
 - Linux kernel 5.11 or later (for io_uring support)
 
 ## Configure Conan
 
-```shell
-conan profile update 'settings.compiler.libcxx=libstdc++11' default
-conan profile update 'settings.compiler.cppstd=20' default
-conan profile update 'env.CXXFLAGS=-fno-omit-frame-pointer' default
-conan profile update 'env.CFLAGS=-fno-omit-frame-pointer' default
-conan profile update 'env.LDFLAGS=-fno-omit-frame-pointer' default
+### Conan Remotes (Required)
 
-conan remote add gitlab https://gitlab.com/api/v4/packages/conan
+The following Conan remote must be added to resolve the Batteries package dependency:
+
+```
+conan remote add batteriesincluded https://batteriesincluded.cc/artifactory/api/conan/conan-local
 ```
 
 ## Run Makefile
+
+To install Conan dependencies, generate makefiles, build LLFS, and run tests, simply run (from project root dir):
 
 ```shell
 make
@@ -138,7 +138,17 @@ This is a shortcut for the more verbose command:
 make install build test
 ```
 
-Summary of Makefile targets:
+### Build Types
+
+The default build type is `RelWithDebInfo`; this is the standard CMake hybrid build type (some optimization, with debug symbols).  We also support build types `Release` and `Debug`.  To make the project with a non-default build type, you can run:
+
+```
+make BUILD_TYPE=Debug install build test
+```
+
+All output files live in the directory `build/${BUILD_TYPE}/` (e.g. `build/RelWithDebInfo/`), so you can have multiple build types co-existing simulataneously (e.g., Debug and Release).
+
+### Summary of Makefile Targets
 
 - `install`
     - Like `conan install`; installs Conan package dependencies on the local system

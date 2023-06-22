@@ -14,6 +14,9 @@ import os, sys, platform
 
 VERBOSE = os.getenv('VERBOSE') and True or False
 
+script_dir = os.path.join(os.path.dirname(__file__), 'script')
+sys.path.append(script_dir)
+
 
 class LlfsConan(ConanFile):
     name = "llfs"
@@ -37,19 +40,10 @@ class LlfsConan(ConanFile):
     ]
 
     def set_version(self):
-        #==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-        # Import the Batteries utility module.
-        #
-        script_dir = os.path.join(os.path.dirname(__file__), 'script')
-        sys.path.append(script_dir)
-
         import batt
-
         batt.VERBOSE = VERBOSE
         self.version = batt.get_version(no_check_conan=True)
         batt.verbose(f'VERSION={self.version}')
-        #
-        #+++++++++++-+-+--+----- --- -- -  -  -   -
 
 
     def requirements(self):
@@ -81,7 +75,8 @@ class LlfsConan(ConanFile):
             self.requires(dep_name,
                           visible=True,
                           transitive_headers=True,
-                          transitive_libs=True)
+                          transitive_libs=True,
+                          force=True)
 
         for override_name in override_deps:
             self.requires(override_name,
@@ -100,6 +95,10 @@ class LlfsConan(ConanFile):
 
         deps = CMakeDeps(self)
         deps.generate()
+
+        import batt
+        batt.VERBOSE = VERBOSE
+        batt.generate_conan_find_requirements(self)
 
 
     def configure(self):

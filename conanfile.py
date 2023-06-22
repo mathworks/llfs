@@ -56,9 +56,9 @@ class LlfsConan(ConanFile):
         deps = [
             "libbacktrace/cci.20210118",
             "gtest/1.13.0",
-            "boost/1.81.0",
+            "boost/1.82.0",
             "glog/0.6.0",
-            "batteries/0.38.9",
+            "batteries/0.38.10",
             "cli11/2.3.2",
         ]
 
@@ -87,7 +87,7 @@ class LlfsConan(ConanFile):
             self.requires(override_name,
                           override=True)
 
-        self.build_requires("b2/4.9.6")
+        self.build_requires("b2/4.10.0")
 
 
     def layout(self):

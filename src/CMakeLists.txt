@@ -11,6 +11,8 @@ project(LLFS CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+include(${CMAKE_BINARY_DIR}/conan_find_requirements.cmake)
+
 add_definitions("-fno-diagnostics-color")
 
 #==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -               
@@ -46,13 +48,6 @@ set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-point
 
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -march=native -mtune=native ") # -pg
 set (CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -fno-omit-frame-pointer -march=native -mtune=native") # -pg
-
-find_package(GTest CONFIG REQUIRED)
-find_package(Boost CONFIG REQUIRED)
-find_package(glog CONFIG REQUIRED)
-find_package(batteries CONFIG REQUIRED)
-find_package(CLI11 CONFIG REQUIRED)
-find_package(liburing CONFIG REQUIRED)
 
 include_directories(.)
 

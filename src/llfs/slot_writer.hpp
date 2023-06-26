@@ -242,7 +242,7 @@ class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
     const usize slot_body_size = sizeof(PackedVariant<Ts...>) + packed_sizeof(payload);
     BATT_CHECK_NE(slot_body_size, 0u);
 
-    StatusOr<Append> op = this->prepare(caller_grant, slot_body_size);
+    StatusOr<Append> op = this->SlotWriter::prepare(caller_grant, slot_body_size);
     BATT_REQUIRE_OK(op);
 
     PackedVariant<Ts...>* variant_head =

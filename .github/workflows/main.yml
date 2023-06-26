@@ -8,7 +8,9 @@ on:
       - main
     tags:
       - 'release-*'
-    
+
+concurrency: custom_runner
+
 jobs:
   install:
     runs-on: self-hosted

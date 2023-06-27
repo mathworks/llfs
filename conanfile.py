@@ -52,7 +52,7 @@ class LlfsConan(ConanFile):
             "gtest/1.13.0",
             "boost/1.82.0",
             "glog/0.6.0",
-            "batteries/0.39.4",
+            "batteries/0.40.0",
             "cli11/2.3.2",
         ]
 
@@ -65,6 +65,7 @@ class LlfsConan(ConanFile):
             "Linux": [
                 "libunwind/1.6.2",
                 "liburing/2.4",
+                "libfuse/3.10.5",
             ]
         }
 

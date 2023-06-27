@@ -50,7 +50,7 @@ class LlfsConan(ConanFile):
         deps = [
             "libbacktrace/cci.20210118",
             "gtest/1.13.0",
-            "boost/1.81.0",
+            "boost/1.82.0",
             "glog/0.6.0",
             "batteries/0.39.4",
             "cli11/2.3.2",

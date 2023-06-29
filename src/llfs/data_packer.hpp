@@ -137,10 +137,21 @@ class DataPacker
            (rec_end <= this->buffer_end());
   }
 
+  /*
+    template <typename T>
+    [[nodiscard]] T* pack_record(const batt::StaticType<T>& = {})
+    {
+      Optional<MutableBuffer> buf = this->arena_.allocate_front(sizeof(T));
+      if (!buf) {
+        return nullptr;
+      }
+      return reinterpret_cast<T*>(buf->data());
+    }
+  */
   template <typename T>
-  [[nodiscard]] T* pack_record(const batt::StaticType<T>& = {})
+  [[nodiscard]] T* pack_record(const batt::StaticType<T>& = {}, const usize count = 1)
   {
-    Optional<MutableBuffer> buf = this->arena_.allocate_front(sizeof(T));
+    Optional<MutableBuffer> buf = this->arena_.allocate_front(sizeof(T) * count);
     if (!buf) {
       return nullptr;
     }

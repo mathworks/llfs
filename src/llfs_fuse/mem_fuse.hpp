@@ -20,12 +20,10 @@ namespace llfs {
 
 /** \brief A minimal example of a FuseImpl class.
  */
-class MemoryFuseImpl : public FuseImpl<MemoryFuseImpl>
+class MemoryFuseImpl : public WorkerTaskFuseImpl<MemoryFuseImpl>
 {
  public:
-  using FuseImpl<MemoryFuseImpl>::FuseImpl;
-
-  enum struct InodeType : mode_t {
+  enum struct InodeKind : mode_t {
     kBlockSpecial = S_IFBLK,
     kCharSpecial = S_IFCHR,
     kFifoSpecial = S_IFIFO,
@@ -35,29 +33,106 @@ class MemoryFuseImpl : public FuseImpl<MemoryFuseImpl>
   };
 
   struct MemInode {
-    fuse_entry_param entry;
-    std::unordered_map<std::string, fuse_ino_t> children;
+    using Children = std::unordered_map<std::string, fuse_ino_t>;
 
-    explicit MemInode(fuse_ino_t ino, InodeType ino_type) noexcept
+    fuse_entry_param entry;
+    Children children;
+
+    explicit MemInode(fuse_ino_t ino, InodeKind ino_kind) noexcept
     {
       std::memset(&this->entry, 0, sizeof(this->entry));
       this->entry.ino = ino;
       this->entry.attr.st_ino = ino;
-      this->entry.attr.st_mode = (mode_t)ino_type | 0755;
+      this->entry.attr.st_mode = (mode_t)ino_kind | 0755;
       this->entry.attr.st_uid = 1001;
       this->entry.attr.st_gid = 1001;
       this->entry.attr.st_blksize = 4096;
       this->entry.attr.st_blocks = 8;
     }
+
+    batt::StatusOr<fuse_ino_t> find_child(const char* child_name)
+    {
+      auto child_iter = this->children.find(child_name);
+      if (child_iter == this->children.end()) {
+        return {batt::status_from_errno(ENOENT)};
+      }
+      return child_iter->second;
+    }
+
+    batt::StatusOr<std::shared_ptr<MemInode>> find_child_inode(const char* child_name,
+                                                               MemoryFuseImpl* impl)
+    {
+      BATT_ASSIGN_OK_RESULT(fuse_ino_t ino, this->find_child(child_name));
+      return impl->find_inode(ino);
+    }
   };
 
-  std::unordered_map<fuse_ino_t, std::unique_ptr<MemInode>> inodes_;
+  struct OpenDirState {
+  };
 
-  MemoryFuseImpl() noexcept
+  struct OpenFileState {
+  };
+
+  using OpenState = std::variant<OpenFileState, OpenDirState>;
+
+  struct MemFileHandle {
+    std::shared_ptr<MemInode> inode;
+    fuse_file_info& info;
+    OpenState state;
+
+    template <typename... StateInitArgs>
+    explicit MemFileHandle(std::shared_ptr<MemInode>&& inode, fuse_file_info& info,
+                           StateInitArgs&&... state_init_args) noexcept
+        : inode{std::move(inode)}
+        , info{info}
+        , state{BATT_FORWARD(state_init_args)...}
+    {
+    }
+  };
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  std::vector<u64> available_fhs_;
+
+  std::atomic<u64> next_unused_fh_int_{0};
+
+  std::unordered_map<fuse_ino_t, std::shared_ptr<MemInode>> inodes_;
+
+  std::unordered_map<u64, std::shared_ptr<MemFileHandle>> file_handles_;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  explicit MemoryFuseImpl(std::shared_ptr<WorkQueue>&& work_queue) noexcept
+      : WorkerTaskFuseImpl<MemoryFuseImpl>{std::move(work_queue)}
   {
     this->inodes_.emplace(FUSE_ROOT_ID,
-                          std::make_unique<MemInode>(FUSE_ROOT_ID, InodeType::kDirectory));
+                          std::make_shared<MemInode>(FUSE_ROOT_ID, InodeKind::kDirectory));
   }
+
+  /** \brief Returns an unused file handle integer.
+   */
+  u64 allocate_fh_int()
+  {
+    if (!this->available_fhs_.empty()) {
+      const u64 fh = this->available_fhs_.back();
+      this->available_fhs_.pop_back();
+      return fh;
+    }
+    return this->next_unused_fh_int_.fetch_add(1);
+  }
+
+  /** \brief
+   */
+  batt::StatusOr<std::shared_ptr<MemInode>> find_inode(fuse_ino_t ino)
+  {
+    auto iter = this->inodes_.find(ino);
+    if (iter == this->inodes_.end()) {
+      return {batt::status_from_errno(ENOENT)};
+    }
+    return {iter->second};
+  }
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   /** \brief
    */
@@ -75,31 +150,22 @@ class MemoryFuseImpl : public FuseImpl<MemoryFuseImpl>
 
   /** \brief
    */
-  template <typename Handler>
-  void async_lookup(fuse_req_t req, fuse_ino_t parent, const char* name, Handler&& handler)
+  batt::StatusOr<const fuse_entry_param*> lookup(fuse_req_t req, fuse_ino_t parent,
+                                                 const char* name)
   {
-    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(parent)
-                 << BATT_INSPECT(name);
+    LLFS_VLOG(1) << "MemoryFuseImpl::" << __FUNCTION__  //
+                 << "(" << BATT_INSPECT(req)            //
+                 << "," << BATT_INSPECT(parent)         //
+                 << "," << BATT_INSPECT(name)           //
+                 << " )";
 
-    auto iter = this->inodes_.find(parent);
-    if (iter == this->inodes_.end()) {
-      BATT_FORWARD(handler)({batt::status_from_errno(ENOENT)});
-      return;
-    }
+    BATT_ASSIGN_OK_RESULT(std::shared_ptr<MemInode> parent_inode,  //
+                          this->find_inode(parent));
 
-    auto child_iter = iter->second->children.find(name);
-    if (child_iter == iter->second->children.end()) {
-      BATT_FORWARD(handler)({batt::status_from_errno(ENOENT)});
-      return;
-    }
+    BATT_ASSIGN_OK_RESULT(std::shared_ptr<MemInode> child_inode,  //
+                          parent_inode->find_child_inode(name, this));
 
-    iter = this->inodes_.find(child_iter->second);
-    if (iter == this->inodes_.end()) {
-      BATT_FORWARD(handler)({batt::status_from_errno(ENOENT)});
-      return;
-    }
-
-    BATT_FORWARD(handler)({&iter->second->entry});
+    return {&child_inode->entry};
   }
 
   /** \brief
@@ -118,29 +184,28 @@ class MemoryFuseImpl : public FuseImpl<MemoryFuseImpl>
 
   /** \brief
    */
-  template <typename Handler>
-  void async_get_attributes(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info* fi,
-                            Handler&& handler)
+  batt::StatusOr<FuseImplBase::Attributes> get_attributes(fuse_req_t req, fuse_ino_t ino,
+                                                          fuse_file_info* fi)
   {
-    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
-                 << BATT_INSPECT(fi);
+    LLFS_VLOG(1) << "MemoryFuseImpl::" << __FUNCTION__  //
+                 << "(" << BATT_INSPECT(req)            //
+                 << "," << BATT_INSPECT(ino)            //
+                 << "," << BATT_INSPECT(fi)             //
+                 << " )";
 
-    auto iter = this->inodes_.find(ino);
-    if (iter == this->inodes_.end()) {
-      BATT_FORWARD(handler)({batt::status_from_errno(ENOENT)}, 0.0);
-      return;
-    }
+    BATT_ASSIGN_OK_RESULT(std::shared_ptr<MemInode> inode, this->find_inode(ino));
 
-    BATT_FORWARD(handler)
-    ({&iter->second->entry.attr},
-     /*timeout_sec=*/0.0);
+    return {FuseImplBase::Attributes{
+        .attr = &inode->entry.attr,
+        .timeout_sec = 0.0,
+    }};
   }
 
   /** \brief
    */
   template <typename Handler>
   void async_set_attributes(fuse_req_t req, fuse_ino_t ino, struct stat* attr, int to_set,
-                            struct fuse_file_info* fi, Handler&& handler)
+                            fuse_file_info* fi, Handler&& handler)
   {
     LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
 
@@ -151,8 +216,7 @@ class MemoryFuseImpl : public FuseImpl<MemoryFuseImpl>
     (void)fi;
 
     BATT_FORWARD(handler)
-    (batt::StatusOr<const struct stat*>{batt::Status{batt::StatusCode::kUnimplemented}},
-     /*timeout_sec=*/0.0);
+    (batt::StatusOr<FuseImplBase::Attributes>{batt::Status{batt::StatusCode::kUnimplemented}});
   }
 
   /** \brief
@@ -383,14 +447,26 @@ class MemoryFuseImpl : public FuseImpl<MemoryFuseImpl>
   template <typename Handler>
   void async_opendir(fuse_req_t req, fuse_ino_t ino, fuse_file_info* fi, Handler&& handler)
   {
-    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
+                 << BATT_INSPECT(fi);
 
-    (void)req;
-    (void)ino;
-    (void)fi;
+    BATT_CHECK_NOT_NULLPTR(fi);
+
+    auto inode_iter = this->inodes_.find(ino);
+    if (inode_iter == this->inodes_.end()) {
+      BATT_FORWARD(handler)({batt::status_from_errno(ENOENT)});
+      return;
+    }
+
+    fi->fh = this->allocate_fh_int();
+
+    auto [fh_iter, inserted] = this->file_handles_.emplace(
+        fi->fh, std::make_shared<MemFileHandle>(batt::make_copy(inode_iter->second), *fi));
+
+    BATT_CHECK(inserted);
 
     BATT_FORWARD(handler)
-    (batt::StatusOr<const fuse_file_info*>{batt::Status{batt::StatusCode::kUnimplemented}});
+    (batt::StatusOr<const fuse_file_info*>{&fh_iter->second->info});
   }
 
   /** \brief
@@ -562,6 +638,27 @@ class MemoryFuseImpl : public FuseImpl<MemoryFuseImpl>
     (void)fi;
 
     BATT_FORWARD(handler)(batt::Status{batt::StatusCode::kUnimplemented});
+  }
+
+  /** \brief
+   */
+  template <typename Handler>
+  void async_readdirplus(fuse_req_t req, fuse_ino_t ino, size_t size, FileOffset offset,
+                         fuse_file_info* fi, Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
+                 << BATT_INSPECT(size) << BATT_INSPECT(offset) << BATT_INSPECT(fi);
+
+    BATT_FORWARD(handler)
+    (batt::StatusOr<FuseReadDirData>{batt::Status{batt::StatusCode::kUnimplemented}});
+  }
+
+ private:
+  template <typename Handler>
+  void async_readdir_impl(fuse_req_t req, fuse_ino_t ino, size_t size, FileOffset offset,
+                          fuse_file_info* fi, const bool plus, Handler&& handler)
+  {
+    auto iter = this->inodes_.find(ino);
   }
 
 };  // class MemoryFuseImpl

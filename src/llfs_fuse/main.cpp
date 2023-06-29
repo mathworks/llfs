@@ -7,10 +7,14 @@
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
 #include <llfs/fuse.hpp>
+#include <llfs/worker_task.hpp>
 
 #include "mem_fuse.hpp"
 
+#include <boost/asio/io_context.hpp>
+
 #include <iostream>
+#include <thread>
 
 int main(int argc, char* argv[])
 {
@@ -21,8 +25,20 @@ int main(int argc, char* argv[])
 
   std::cout << std::endl << llfs::DumpStat{st} << BATT_INSPECT(rt) << std::endl << std::endl;
 
-  batt::StatusOr<llfs::FuseSession> session =
-      llfs::FuseSession::from_args(argc, argv, batt::StaticType<llfs::MemoryFuseImpl>{});
+  auto work_queue = std::make_shared<llfs::WorkQueue>();
+
+  std::thread t{[&work_queue] {
+    boost::asio::io_context io;
+
+    llfs::WorkerTask task{batt::make_copy(work_queue), io.get_executor()};
+
+    io.run();
+  }};
+
+  t.detach();
+
+  batt::StatusOr<llfs::FuseSession> session = llfs::FuseSession::from_args(
+      argc, argv, batt::StaticType<llfs::MemoryFuseImpl>{}, batt::make_copy(work_queue));
 
   BATT_CHECK_OK(session);
 

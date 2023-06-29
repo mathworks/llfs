@@ -18,11 +18,11 @@ namespace llfs {
     return 0;
   }
 
-  static const batt::Status prototype = batt::status_from_errno(EIO);
+  static const batt::Status::CodeGroup* errno_group = &(batt::status_from_errno(EIO).group());
 
-  if (&(status.group()) == &(prototype.group())) {
+  if (&(status.group()) == errno_group) {
     int e = status.code_index_within_group();
-    LLFS_VLOG(1) << "(status => errno) " << e << " " << std::strerror(e);
+    LLFS_VLOG(2) << "(status => errno) " << e << " " << std::strerror(e);
     return e;
   }
 

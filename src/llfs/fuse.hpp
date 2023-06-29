@@ -14,6 +14,7 @@
 //
 #include <llfs/api_types.hpp>
 #include <llfs/logging.hpp>
+#include <llfs/worker_task.hpp>
 
 #include <batteries/buffer.hpp>
 #include <batteries/optional.hpp>
@@ -111,6 +112,11 @@ class FuseImplBase
       FuseConstBufferVec                 //
       >;
 
+  struct Attributes {
+    const struct stat* attr;
+    double timeout_sec;
+  };
+
   struct ExtendedAttribute {
     std::string_view name;
     batt::ConstBuffer value;
@@ -173,14 +179,14 @@ class FuseImplBase
    */
   auto make_attributes_handler(fuse_req_t req)
   {
-    return [req](batt::StatusOr<const struct stat*> result, double timeout_sec) {
+    return [req](batt::StatusOr<Attributes> result) {
       if (!result.ok()) {
         LLFS_VLOG(1) << BATT_INSPECT(req) << BATT_INSPECT(result.status());
         fuse_reply_err(req, FuseImplBase::errno_from_status(result.status()));
       } else {
-        BATT_CHECK_NOT_NULLPTR(*result);
-        LLFS_VLOG(1) << BATT_INSPECT(req) << " OK" << BATT_INSPECT(DumpStat{**result});
-        fuse_reply_attr(req, *result, timeout_sec);
+        BATT_CHECK_NOT_NULLPTR(result->attr);
+        LLFS_VLOG(1) << BATT_INSPECT(req) << " OK" << BATT_INSPECT(DumpStat{*result->attr});
+        fuse_reply_attr(req, result->attr, result->timeout_sec);
       }
     };
   }
@@ -211,7 +217,7 @@ class FuseImplBase
    */
   auto make_read_handler(fuse_req_t req)
   {
-    return [req, this](const batt::StatusOr<FuseReadData>& result) {
+    return [req, this](const batt::StatusOr<FuseImplBase::FuseReadData>& result) {
       if (!result.ok()) {
         fuse_reply_err(req, FuseImplBase::errno_from_status(result.status()));
       } else {
@@ -240,7 +246,7 @@ class FuseImplBase
    */
   auto make_readdir_handler(fuse_req_t req)
   {
-    return [req, this](const batt::StatusOr<FuseReadDirData>& result) {
+    return [req, this](const batt::StatusOr<FuseImplBase::FuseReadDirData>& result) {
       if (!result.ok()) {
         fuse_reply_err(req, FuseImplBase::errno_from_status(result.status()));
       } else {
@@ -555,8 +561,7 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
     (void)fi;
 
     BATT_FORWARD(handler)
-    (batt::StatusOr<const struct stat*>{batt::Status{batt::StatusCode::kUnimplemented}},
-     /*timeout_sec=*/0.0);
+    (batt::StatusOr<FuseImplBase::Attributes>{batt::Status{batt::StatusCode::kUnimplemented}});
   }
 
   /** \brief
@@ -574,8 +579,7 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
     (void)fi;
 
     BATT_FORWARD(handler)
-    (batt::StatusOr<const struct stat*>{batt::Status{batt::StatusCode::kUnimplemented}},
-     /*timeout_sec=*/0.0);
+    (batt::StatusOr<FuseImplBase::Attributes>{batt::Status{batt::StatusCode::kUnimplemented}});
   }
 
   /** \brief
@@ -990,7 +994,604 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
     BATT_FORWARD(handler)(batt::Status{batt::StatusCode::kUnimplemented});
   }
 
+  /** \brief
+   */
+  template <typename Handler>
+  void async_readdirplus(fuse_req_t req, fuse_ino_t ino, size_t size, FileOffset offset,
+                         fuse_file_info* fi, Handler&& handler)
+  {
+    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+
+    (void)req;
+    (void)ino;
+    (void)size;
+    (void)offset;
+    (void)fi;
+
+    BATT_FORWARD(handler)
+    (batt::StatusOr<FuseReadDirData>{batt::Status{batt::StatusCode::kUnimplemented}});
+  }
+
 };  // class NullFuseImpl
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+
+template <typename Derived>
+class WorkerTaskFuseImpl : public FuseImpl<Derived>
+{
+ public:
+  explicit WorkerTaskFuseImpl(std::shared_ptr<WorkQueue>&& work_queue) noexcept
+      : work_queue_{std::move(work_queue)}
+  {
+  }
+
+  /** \brief
+   */ // 1/44
+  void init()
+  {
+    BATT_CHECK_NOT_NULLPTR(this->conn_);
+  }
+
+  /** \brief
+   */ // 2/44
+  void destroy()
+  {
+    BATT_CHECK_NOT_NULLPTR(this->conn_);
+  }
+
+  /** \brief
+   */ // 3/44
+  template <typename Handler>
+  void async_lookup(fuse_req_t req, fuse_ino_t parent, const char* name, Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(parent)
+                 << BATT_INSPECT(name);
+
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, parent, name, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->lookup(req, parent, name));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(batt::StatusOr<const fuse_entry_param*>{push_status});
+    }
+  }
+
+  /** \brief
+   */ // 4/44
+  template <typename Handler>
+  void async_forget_inode(fuse_req_t req, fuse_ino_t ino, uint64_t nlookup, Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
+                 << BATT_INSPECT(nlookup);
+
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, ino, nlookup, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->forget_inode(req, parent, name));
+        });
+
+    BATT_FORWARD(handler)();
+  }
+
+  /** \brief
+   */ // 5/44
+  template <typename Handler>
+  void async_get_attributes(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info* fi,
+                            Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
+                 << BATT_INSPECT(fi);
+
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, ino, fi, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->get_attributes(req, ino, fi));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(batt::StatusOr<FuseImplBase::Attributes>{push_status});
+    }
+  }
+
+  /** \brief
+   */ // 6/44
+  template <typename Handler>
+  void async_set_attributes(fuse_req_t req, fuse_ino_t ino, struct stat* attr, int to_set,
+                            fuse_file_info* fi, Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
+                 << BATT_INSPECT(attr) << BATT_INSPECT(to_set) << BATT_INSPECT(fi);
+
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, attr, to_set, fi, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->set_attributes(req, ino, addr, to_set, fi));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(batt::StatusOr<FuseImplBase::Attributes>{push_status});
+    }
+  }
+
+  /** \brief
+   */ // 7/44
+  template <typename Handler>
+  void async_readlink(fuse_req_t req, fuse_ino_t ino, Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino);
+
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, ino, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->readlink(req, ino));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(/*link=*/"");
+    }
+  }
+
+  /** \brief
+   */ // 8/44
+  template <typename Handler>
+  void async_make_node(fuse_req_t req, fuse_ino_t parent, const char* name, mode_t mode, dev_t rdev,
+                       Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(parent)
+                 << BATT_INSPECT(name) << BATT_INSPECT(mode) << BATT_INSPECT(rdev);
+
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, parent, name, mode, rdev, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->make_node(req, parent, name, mode, rdev));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(batt::StatusOr<const fuse_entry_param*>{push_status});
+    }
+  }
+
+  /** \brief
+   */ // 9/44
+  template <typename Handler>
+  void async_make_directory(fuse_req_t req, fuse_ino_t parent, const char* name, mode_t mode,
+                            Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(parent)
+                 << BATT_INSPECT(name) << BATT_INSPECT(mode);
+
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, parent, name, mode, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->make_directory(req, parent, name, mode));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(batt::StatusOr<const fuse_entry_param*>{push_status});
+    }
+  }
+
+  /** \brief
+   */ // 10/44
+  template <typename Handler>
+  void async_unlink(fuse_req_t req, fuse_ino_t parent, const char* name, Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(parent)
+                 << BATT_INSPECT(name);
+
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, parent, name, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->unlink(req, parent, name));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(push_status);
+    }
+  }
+
+  /** \brief
+   */ // 11/44
+  template <typename Handler>
+  void async_remove_directory(fuse_req_t req, fuse_ino_t parent, const char* name,
+                              Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(parent)
+                 << BATT_INSPECT(name);
+
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, parent, name, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->remove_directory(req, parent, name));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(push_status);
+    }
+  }
+
+  /** \brief
+   */ // 12/44
+  template <typename Handler>
+  void async_symbolic_link(fuse_req_t req, const char* link, fuse_ino_t parent, const char* name,
+                           Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(link)
+                 << BATT_INSPECT(parent) << BATT_INSPECT(name);
+
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, link, parent, name, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->symbolic_link(req, link, parent, name));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(batt::StatusOr<const fuse_entry_param*>{push_status});
+    }
+  }
+
+  /** \brief
+   */ // 13/44
+  template <typename Handler>
+  void async_rename(fuse_req_t req, fuse_ino_t parent, const char* name, fuse_ino_t newparent,
+                    const char* newname, unsigned int flags, Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(parent)
+                 << BATT_INSPECT(name) << BATT_INSPECT(newparent) << BATT_INSPECT(newname)
+                 << BATT_INSPECT(flags);
+
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, parent, name, newparent, newname, flags, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)
+          (this->derived_this()->rename(req, parent, name, newparent, newname, flags));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(push_status);
+    }
+  }
+
+  /** \brief
+   */ // 14/44
+  template <typename Handler>
+  void async_hard_link(fuse_req_t req, fuse_ino_t ino, fuse_ino_t newparent, const char* newname,
+                       Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
+                 << BATT_INSPECT(newparent) << BATT_INSPECT(newname);
+
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, newparent, newname, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->hard_link(req, ino, newparent, newname));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(batt::StatusOr<const fuse_entry_param*>{push_status});
+    }
+  }
+
+  /** \brief
+   */ // 15/44
+  template <typename Handler>
+  void async_open(fuse_req_t req, fuse_ino_t ino, fuse_file_info* fi, Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
+                 << BATT_INSPECT(fi);
+
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, ino, fi, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->open(req, ino, fi));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(batt::StatusOr<const fuse_file_info*>{push_status});
+    }
+  }
+
+  /** \brief
+   */ // 16/44
+  template <typename Handler>
+  void async_read(fuse_req_t req, fuse_ino_t ino, size_t size, FileOffset offset,
+                  fuse_file_info* fi, Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
+                 << BATT_INSPECT(size) << BATT_INSPECT(offset) << BATT_INSPECT(fi);
+
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, size, offset, fi, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->read(req, ino, size, offset, fi));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(batt::StatusOr<FuseImplBase::FuseReadData>{push_status});
+    }
+  }
+
+  /** \brief
+   */ // 17/44
+  template <typename Handler>
+  void async_write(fuse_req_t req, fuse_ino_t ino, const batt::ConstBuffer& buffer,
+                   FileOffset offset, fuse_file_info* fi, Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
+                 << BATT_INSPECT(buffer) << BATT_INSPECT(offset) << BATT_INSPECT(fi);
+
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, buffer, offset, fi, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->write(req, ino, buffer, offset, fi));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(batt::StatusOr<usize>{push_status});
+    }
+  }
+
+  /** \brief
+   */ // 18/44
+  template <typename Handler>
+  void async_flush(fuse_req_t req, fuse_ino_t ino, fuse_file_info* fi, Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
+                 << BATT_INSPECT(fi);
+
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, ino, fi, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->flush(req, ino, fi));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(push_status);
+    }
+  }
+
+  /** \brief
+   */ // 19/44
+  template <typename Handler>
+  void async_release(fuse_req_t req, fuse_ino_t ino, fuse_file_info* fi, Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
+                 << BATT_INSPECT(fi);
+
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, ino, fi, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->release(req, ino, fi));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(push_status);
+    }
+  }
+
+  /** \brief
+   */ // 20/44
+  template <typename Handler>
+  void async_fsync(fuse_req_t req, fuse_ino_t ino, int datasync, fuse_file_info* fi,
+                   Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
+                 << BATT_INSPECT(datasync) << BATT_INSPECT(fi);
+
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, datasync, fi, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->fsync(req, ino, datasync, fi));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(push_status);
+    }
+  }
+
+  /** \brief
+   */ // 21/44
+  template <typename Handler>
+  void async_opendir(fuse_req_t req, fuse_ino_t ino, fuse_file_info* fi, Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
+                 << BATT_INSPECT(fi);
+
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, ino, fi, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->opendir(req, ino, fi));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(batt::StatusOr<const fuse_file_info*>{push_status});
+    }
+  }
+
+  /** \brief
+   */ // 22/44
+  template <typename Handler>
+  void async_readdir(fuse_req_t req, fuse_ino_t ino, size_t size, FileOffset off,
+                     fuse_file_info* fi, Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
+                 << BATT_INSPECT(size) << BATT_INSPECT(off) << BATT_INSPECT(fi);
+
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, size, off, fi, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->readdir(req, ino, size, off, fi));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(batt::StatusOr<FuseImplBase::FuseReadDirData>{push_status});
+    }
+  }
+
+  /** \brief
+   */ // 23/44
+  template <typename Handler>
+  void async_releasedir(fuse_req_t req, fuse_ino_t ino, fuse_file_info* fi, Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
+                 << BATT_INSPECT(fi);
+
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, ino, fi, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->releasedir(req, ino, fio));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(push_status);
+    }
+  }
+
+  /** \brief
+   */ // 24/44
+  template <typename Handler>
+  void async_fsyncdir(fuse_req_t req, fuse_ino_t ino, int datasync, fuse_file_info* fi,
+                      Handler&& handler)
+  {
+    LLFS_VLOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+
+    (void)req;
+    (void)ino;
+    (void)datasync;
+    (void)fi;
+
+    BATT_FORWARD(handler)(batt::Status{batt::StatusCode::kUnimplemented});
+  }
+
+  /** \brief
+   */ // 25/44
+  template <typename Handler>
+  void async_statfs(fuse_req_t req, fuse_ino_t ino, Handler&& handler)
+  {
+    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+
+    (void)req;
+    (void)ino;
+
+    BATT_FORWARD(handler)
+    (batt::StatusOr<const struct statvfs*>{batt::Status{batt::StatusCode::kUnimplemented}});
+  }
+
+  /** \brief
+   */ // 26/44
+  template <typename Handler>
+  void async_set_extended_attribute(fuse_req_t req, fuse_ino_t ino,
+                                    const FuseImplBase::ExtendedAttribute& attr, int flags,
+                                    Handler&& handler)
+  {
+    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+
+    (void)req;
+    (void)ino;
+    (void)attr;
+    (void)flags;
+
+    BATT_FORWARD(handler)(batt::Status{batt::StatusCode::kUnimplemented});
+  }
+
+  /** \brief
+   */ // 27/44
+  template <typename Handler>
+  void async_get_extended_attribute(fuse_req_t req, fuse_ino_t ino, const char* name, size_t size,
+                                    Handler&& handler)
+  {
+    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+
+    (void)req;
+    (void)ino;
+    (void)name;
+    (void)size;
+
+    BATT_FORWARD(handler)
+    (batt::StatusOr<FuseImplBase::FuseGetExtendedAttributeReply>{
+        batt::Status{batt::StatusCode::kUnimplemented}});
+  }
+
+  /** \brief
+   */ // 29/44
+  template <typename Handler>
+  void async_remove_extended_attribute(fuse_req_t req, fuse_ino_t ino, const char* name,
+                                       Handler&& handler)
+  {
+    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+
+    (void)req;
+    (void)ino;
+    (void)name;
+
+    BATT_FORWARD(handler)(batt::Status{batt::StatusCode::kUnimplemented});
+  }
+
+  /** \brief
+   */ // 30/44
+  template <typename Handler>
+  void async_check_access(fuse_req_t req, fuse_ino_t ino, int mask, Handler&& handler)
+  {
+    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+
+    (void)req;
+    (void)ino;
+    (void)mask;
+
+    BATT_FORWARD(handler)(batt::Status{batt::StatusCode::kUnimplemented});
+  }
+
+  /** \brief
+   */ // 38/44
+  template <typename Handler>
+  void async_retrieve_reply(fuse_req_t req, void* cookie, fuse_ino_t ino, off_t offset,
+                            struct fuse_bufvec* bufv, Handler&& handler)
+  {
+    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+
+    (void)req;
+    (void)cookie;
+    (void)ino;
+    (void)offset;
+    (void)bufv;
+
+    BATT_FORWARD(handler)();
+  }
+
+  /** \brief
+   */ // 39/44
+  template <typename Handler>
+  void async_forget_multiple_inodes(fuse_req_t req, batt::Slice<fuse_forget_data> forgets,
+                                    Handler&& handler)
+  {
+    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+
+    (void)req;
+    (void)forgets;
+
+    BATT_FORWARD(handler)();
+  }
+
+  /** \brief
+   */ // 41/44
+  template <typename Handler>
+  void async_file_allocate(fuse_req_t req, fuse_ino_t ino, int mode, FileOffset offset,
+                           FileLength length, fuse_file_info* fi, Handler&& handler)
+  {
+    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+
+    (void)req;
+    (void)ino;
+    (void)mode;
+    (void)offset;
+    (void)length;
+    (void)fi;
+
+    BATT_FORWARD(handler)(batt::Status{batt::StatusCode::kUnimplemented});
+  }
+
+  /** \brief
+   */ // 42/44
+  template <typename Handler>
+  void async_readdirplus(fuse_req_t req, fuse_ino_t ino, size_t size, FileOffset offset,
+                         fuse_file_info* fi, Handler&& handler)
+  {
+    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+
+    (void)req;
+    (void)ino;
+    (void)size;
+    (void)offset;
+    (void)fi;
+
+    BATT_FORWARD(handler)
+    (batt::StatusOr<FuseImplBase::FuseReadDirData>{batt::Status{batt::StatusCode::kUnimplemented}});
+  }
+
+ private:
+  std::shared_ptr<WorkQueue> work_queue_;
+};
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 

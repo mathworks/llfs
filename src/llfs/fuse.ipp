@@ -1425,13 +1425,8 @@ template <typename Derived>
   void* userdata = fuse_req_userdata(req);
   [[maybe_unused]] auto* impl = static_cast<FuseImpl<Derived>*>(userdata);
 
-  (void)ino;
-  (void)size;
-  (void)off;
-  (void)fi;
-
-  LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
-  // TODO [tastolfi 2023-06-28]
+  impl->derived_this()->async_readdirplus(req, ino, size, FileOffset{off}, fi,
+                                          impl->make_readdir_handler(req));
 }
 
 /**

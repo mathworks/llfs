@@ -95,13 +95,17 @@ struct PackedVolumeConfig : PackedConfigSlotHeader {
   //
   little_u64 trim_lock_update_interval_bytes;
 
+  // The number of bytes by which to delay log trimming.
+  //
+  little_u64 trim_delay_byte_count;
+
   // Human-readable volume name - UTF-8 encoding
   //
   PackedBytes name;
 
   // Reserved for future use.
   //
-  u8 pad1_[44];
+  u8 pad1_[36];
 };
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedVolumeConfig), PackedVolumeConfig::kSize);

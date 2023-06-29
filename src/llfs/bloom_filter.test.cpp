@@ -74,6 +74,9 @@ TEST(BloomFilterTest, RandomItems)
   LatencyMetric build_latency;
   LatencyMetric query_latency;
 
+  double false_positive_rate_total = 0.0;
+  double false_positive_rate_count = 0.0;
+
   for (usize r = 0; r < 10; ++r) {
     std::vector<std::string> items;
     const usize n_items = 10 * 1000;
@@ -139,13 +142,22 @@ TEST(BloomFilterTest, RandomItems)
           c_stats.false_positive += 1;
         }
       }
+
+      false_positive_rate_count += 1.0;
+      false_positive_rate_total += (c_stats.actual_rate() / c_stats.expected_rate);
     }
   }
 
   for (const auto& s : stats) {
-    EXPECT_LT(s.second.actual_rate() / s.second.expected_rate, 1.02)
+    EXPECT_LT(s.second.actual_rate() / s.second.expected_rate, 1.01)
         << BATT_INSPECT(s.second.actual_rate()) << BATT_INSPECT(s.second.expected_rate);
+
+    LLFS_LOG_INFO() << BATT_INSPECT(s.second.actual_rate() / s.second.expected_rate);
   }
+
+  EXPECT_LT(false_positive_rate_total / false_positive_rate_count, 1.01);
+
+  LLFS_LOG_INFO() << BATT_INSPECT(false_positive_rate_total / false_positive_rate_count);
 
   LLFS_LOG_INFO() << "build latency (per key) == " << build_latency
                   << " build rate (keys/sec) == " << build_latency.rate_per_second();

@@ -247,7 +247,7 @@ class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
     BATT_CHECK_NE(slot_body_size, 0u);
 
     // lock the writer in SlotWriter::prepare
-    StatusOr<Append> op = this->prepare(caller_grant, slot_body_size);
+    StatusOr<Append> op = this->SlotWriter::prepare(caller_grant, slot_body_size);
     BATT_REQUIRE_OK(op);
 
     // this is where the allocation happens from the buffer to write the variant ID

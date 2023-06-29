@@ -69,11 +69,6 @@ class SimulatedLogDevice::Impl::ReaderImpl : public LogDevice::Reader
   // the slot has been partially trimmed.
   //
   usize data_size_ = 0;
-
-  // Only valid between calls to data() and consume(); the chunk currently being read by the user of
-  // this reader.
-  //
-  std::shared_ptr<Impl::CommitChunk> chunk_;
 };
 
 }  //namespace llfs

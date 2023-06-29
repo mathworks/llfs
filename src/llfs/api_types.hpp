@@ -31,6 +31,10 @@ BATT_STRONG_TYPEDEF(bool, OkIfNotFound);
  */
 BATT_STRONG_TYPEDEF(bool, UseParallelCopy);
 
+/** \brief The number of bytes by which to delay trimming a Volume root log.
+ */
+BATT_STRONG_TYPEDEF(u64, TrimDelayByteCount);
+
 }  // namespace llfs
 
 #endif  // LLFS_API_TYPES_HPP

@@ -11,6 +11,8 @@ project(LLFS CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+include(${CMAKE_BINARY_DIR}/conan_find_requirements.cmake)
+
 add_definitions("-fno-diagnostics-color")
 
 #==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -               
@@ -47,9 +49,6 @@ set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-point
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -march=native -mtune=native ") # -pg
 set (CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -fno-omit-frame-pointer -march=native -mtune=native") # -pg
 
-include(${CMAKE_BINARY_DIR}/conanbuildinfo.cmake)
-conan_basic_setup()
-
 include_directories(.)
 
 if(APPLE)
@@ -59,6 +58,8 @@ else()
 endif()
 
 enable_testing()
+
+include_directories(${GTest_INCLUDE_DIRS})
 
 add_custom_target(RunAllLibTests)
 
@@ -97,16 +98,19 @@ macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
   # Define unit test target
   #
   add_executable(${TARGET_NAME}_Test ${${TARGET_NAME}_TestSources} ./common/test_environment.cpp)
-  target_link_libraries(${TARGET_NAME}_Test ${TARGET_NAME}
-                        ${TARGET_DEPS}    
-                        ${CONAN_LIBS_GTEST}
-                        ${CONAN_LIBS}
-                        backtrace
-                        boost_context
-                        boost_stacktrace_backtrace
-                        dl
-                        stdc++fs)
-
+  target_link_libraries(
+    ${TARGET_NAME}_Test
+    GTest::gtest
+    GTest::gtest_main
+    GTest::gmock
+    GTest::gmock_main
+    ${TARGET_NAME}
+    ${TARGET_DEPS}
+    Boost::context
+    Boost::stacktrace_backtrace
+    libbacktrace::libbacktrace
+    dl
+    stdc++fs)
 
   add_test(NAME ${TARGET_NAME}_Test
            WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/bin
@@ -132,10 +136,13 @@ endmacro()
 
 
 #=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-# Submodule definitions.
+# Library definitions.
 #
 
-LLFS_DefineLibrary(llfs ./llfs)
+LLFS_DefineLibrary(llfs ./llfs
+  batteries::batteries
+  liburing::liburing
+  )
 
 #=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
                    
@@ -149,10 +156,11 @@ add_executable(llfs_cli ${llfs_cli_Sources})
 
 target_link_libraries(llfs_cli
                       llfs
-                      ${CONAN_LIBS}
-                      backtrace
-                      boost_context
-                      boost_stacktrace_backtrace
+                      batteries::batteries
+                      Boost::context
+                      Boost::stacktrace_backtrace
+                      libbacktrace::libbacktrace
+                      CLI11::CLI11
                       dl
                       stdc++fs)
 

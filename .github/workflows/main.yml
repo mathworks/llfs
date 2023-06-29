@@ -8,18 +8,44 @@ on:
       - main
     tags:
       - 'release-*'
-    
+
+concurrency: custom_runner
+
 jobs:
-  build:
+  install:
     runs-on: self-hosted
     steps:
       - name: Checkout repository
         uses: actions/checkout@master
         with:
           submodules: recursive
-      - name: Conan Install
+      - name: make_install
         run: script/run-with-docker.sh make BUILD_TYPE=Release install
-      - name: Conan Build
+  build:
+    runs-on: self-hosted
+    needs: install
+    steps:
+      - name: make_build
         run: script/run-with-docker.sh make BUILD_TYPE=Release build
-      - name: Conan Test
+  test:
+    runs-on: self-hosted
+    needs: build
+    steps:
+      - name: make_test
         run: script/run-with-docker.sh make BUILD_TYPE=Release test
+  release:
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+    runs-on: self-hosted
+    needs:
+      - build
+      - test
+    steps:
+      - name: make_export-pkg
+        run: script/run-with-docker.sh make BUILD_TYPE=Release export-pkg
+      - name: publish-release
+        env:
+          RELEASE_CONAN_REMOTE: ${{ vars.RELEASE_CONAN_REMOTE }}
+          RELEASE_CONAN_LOGIN_USERNAME: ${{ vars.RELEASE_CONAN_LOGIN_USERNAME }}
+          RELEASE_CONAN_PASSWORD: ${{ secrets.RELEASE_CONAN_PASSWORD }}
+        run: script/run-with-docker.sh script/publish-release.sh
+  

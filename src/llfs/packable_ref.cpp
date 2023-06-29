@@ -11,4 +11,11 @@
 
 namespace llfs {
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+usize packed_sizeof(const PackableRef& p)
+{
+  return p.packed_size();
+}
+
 }  // namespace llfs

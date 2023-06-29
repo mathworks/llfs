@@ -6,71 +6,44 @@
 #
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 
-.PHONY: clean build build-nodoc install create test publish docker-build docker-push docker unlink
-
-CONAN_PROFILE := $(shell test -f /etc/conan_profile.default && echo '/etc/conan_profile.default' || echo 'default')
-$(info CONAN_PROFILE is $(CONAN_PROFILE))
+export PROJECT_DIR := $(shell pwd)
+PROJECT_NAME := llfs
+SCRIPT_DIR := $(PROJECT_DIR)/script
+CONAN_2 := 0
 
 #----- --- -- -  -  -   -
-# Force some requirements to build from source to workaround
-# OS-specific bugs.
-#
-BUILD_FROM_SRC :=
-ifeq ($(OS),Windows_NT)
-else
-  UNAME_S := $(shell uname -s)
-  ifeq ($(UNAME_S),Darwin)
-    #BUILD_FROM_SRC += --build=b2
-  endif
-endif
-#----- --- -- -  -  -   -
+.PHONY: all
+all: install build test
 
-ifeq ($(BUILD_TYPE),)
-BUILD_TYPE := RelWithDebInfo
-endif
-
-BUILD_DIR := build/$(BUILD_TYPE)
-
-export PROJECT_DIR=$(shell pwd)
+include $(SCRIPT_DIR)/conan-targets.mk
 
 TCMALLOC_ENV := $(shell find /lib/ -name '*tcmalloc.so*' | sort -Vr | head -1 | xargs -I{} echo LD_PRELOAD={})
 $(info TCMALLOC_ENV=$(TCMALLOC_ENV))
 
-
-"$(BUILD_DIR)":
-	mkdir -p "$(BUILD_DIR)"
-
-build: "$(BUILD_DIR)"
-	(cd $(BUILD_DIR) && conan build ../..)
-
-test: "$(BUILD_DIR)"
+#----- --- -- -  -  -   -
+.PHONY: test
+test:
 ifeq ("$(GTEST_FILTER)","")
 	@echo -e "\n\nRunning DEATH tests ==============================================\n"
-	(cd $(BUILD_DIR) && GTEST_OUTPUT='xml:../death-test-results.xml' GTEST_FILTER='*Death*' $(TCMALLOC_ENV) bin/llfs_Test)
+	(cd "$(BUILD_DIR)" && GTEST_OUTPUT='xml:../death-test-results.xml' GTEST_FILTER='*Death*' $(TCMALLOC_ENV) ./llfs_Test)
 	@echo -e "\n\nRunning non-DEATH tests ==========================================\n"
-	(cd $(BUILD_DIR) && GTEST_OUTPUT='xml:../test-results.xml' GTEST_FILTER='*-*Death*' $(TCMALLOC_ENV) bin/llfs_Test)
+	(cd "$(BUILD_DIR)" && GTEST_OUTPUT='xml:../test-results.xml' GTEST_FILTER='*-*Death*' $(TCMALLOC_ENV) ./llfs_Test)
 else
-	(cd $(BUILD_DIR) && GTEST_OUTPUT='xml:../test-results.xml' $(TCMALLOC_ENV) bin/llfs_Test)
+	(cd "$(BUILD_DIR)" && GTEST_OUTPUT='xml:../test-results.xml' $(TCMALLOC_ENV) ./llfs_Test)
 endif
 
-install: "$(BUILD_DIR)"
-	(cd "$(BUILD_DIR)" && conan install --profile "$(CONAN_PROFILE)" -s build_type=$(BUILD_TYPE) --build=missing $(BUILD_FROM_SRC) ../..)
-
-create:
-	(conan remove -f "llfs/$(shell script/get-version.sh)" && cd "$(BUILD_DIR)" && conan create  --profile "$(CONAN_PROFILE)" -s build_type=$(BUILD_TYPE) ../..)
-
-
+#----- --- -- -  -  -   -
+.PHONY: publish
 publish:
 	script/publish-release.sh
 
-
-clean:
-	rm -rf "$(BUILD_DIR)"
-
-
+#----- --- -- -  -  -   -
+.PHONY: unlink
 unlink:
-	true
+	rm -f "$(BUILD_DIR)/llfs"
+	rm -f "$(BUILD_DIR)/llfs_Test"
 
+#----- --- -- -  -  -   -
 .PHONY: rtags
 rtags:
 	rc -J  "$(BUILD_DIR)"

@@ -13,6 +13,7 @@
 #include <llfs/data_reader.hpp>
 #include <llfs/metrics.hpp>
 #include <llfs/slot_reader.hpp>
+#include <llfs/system_config.hpp>
 
 #include <llfs/logging.hpp>
 
@@ -50,7 +51,7 @@ u64 PageAllocator::calculate_log_size(u64 physical_page_count, u64 max_attachmen
   const u64 rough_size = (max_checkpoint_size + max_transaction_size + kCheckpointGrantSize) * 4 +
                          kCheckpointGrantSize - 1;
 
-  return rough_size - rough_size % kCheckpointGrantSize;
+  return round_up_to_page_size_multiple(rough_size - rough_size % kCheckpointGrantSize);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

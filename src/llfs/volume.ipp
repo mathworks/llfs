@@ -10,8 +10,13 @@
 #ifndef LLFS_VOLUME_IPP
 #define LLFS_VOLUME_IPP
 
+#include <llfs/buffered_log_data_reader.hpp>
+#include <llfs/volume_slot_demuxer.hpp>
+
 namespace llfs {
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 template <typename T>
 inline StatusOr<TypedVolumeReader<T>> Volume::typed_reader(const SlotRangeSpec& slot_range,
                                                            LogReadMode mode, batt::StaticType<T>)
@@ -31,8 +36,7 @@ u64 Volume::calculate_grant_size(const T& payload) const
 template <typename T>
 StatusOr<SlotRange> Volume::append(const T& payload, batt::Grant& grant)
 {
-  llfs::PackObjectAsRawData<T> packed_obj_as_raw{payload};
-
+  llfs::PackObjectAsRawData<const T&> packed_obj_as_raw{payload};
   return this->slot_writer_.append(grant, packed_obj_as_raw);
 }
 

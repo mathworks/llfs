@@ -87,6 +87,12 @@ int FuseImplBase::invoke_fuse_reply_data(fuse_req_t req, const FuseConstBufferVe
           },
 
           //----- --- -- -  -  -   -
+          [&fb](const OwnedConstBuffer& ocb) {
+            fb.size = ocb.buffer.size();
+            fb.mem = const_cast<void*>(ocb.buffer.data());
+          },
+
+          //----- --- -- -  -  -   -
           [&fb](const FileDataRef& fdr) {
             fb.size = fdr.size;
             fb.flags = (fuse_buf_flags)((int)fb.flags | (int)FUSE_BUF_IS_FD);
@@ -107,6 +113,117 @@ int FuseImplBase::invoke_fuse_reply_data(fuse_req_t req, const FuseConstBufferVe
   return fuse_reply_data(req, fbv, /*flags=*/(fuse_buf_copy_flags)0);
   //                                                      ^
   // TODO [tastolfi 2023-06-28] support fuse_buf_copy_flags
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+std::ostream& operator<<(std::ostream& out, const fuse_file_info& t)
+{
+  return out << "fuse_file_info{"                       //
+             << ".flags=" << t.flags                    //
+             << ", .write_page=" << t.writepage         //
+             << ", .direct_io=" << t.direct_io          //
+             << ", .keep_cache=" << t.keep_cache        //
+             << ", .flush=" << t.flush                  //
+             << ", .nonseekable=" << t.nonseekable      //
+             << ", .flock_release=" << t.flock_release  //
+             << ", .cache_readdir=" << t.cache_readdir  //
+             << ", .fh=" << t.fh                        //
+             << ", .lock_owner=" << t.lock_owner        //
+             << ", .poll_events=" << t.poll_events      //
+             << ",}";
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+std::ostream& operator<<(std::ostream& out, const fuse_file_info* t)
+{
+  if (!t) {
+    return out << (void*)t;
+  }
+  return out << (void*)t << ":" << *t;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+std::ostream& operator<<(std::ostream& out, const DumpStat& t)
+{
+  return out << "stat{"                                       //
+             << ".st_dev=" << t.s.st_dev                      //
+             << ", .st_ino=" << t.s.st_ino                    //
+             << ", .st_mode=" << std::bitset<9>{t.s.st_mode}  //
+             << ", .st_nlink=" << t.s.st_nlink                //
+             << ", .st_uid=" << t.s.st_uid                    //
+             << ", .st_gid=" << t.s.st_gid                    //
+             << ", .st_rdev=" << t.s.st_rdev                  //
+             << ", .st_blksize=" << t.s.st_blksize            //
+             << ", .st_blocks=" << t.s.st_blocks              //
+             << ", ,}";
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+std::ostream& operator<<(std::ostream& out, const DumpFileMode t)
+{
+  if (S_ISBLK(t.mode)) {
+    out << 'b';
+  } else if (S_ISCHR(t.mode)) {
+    out << 'c';
+  } else if (S_ISDIR(t.mode)) {
+    out << 'd';
+  } else if (S_ISFIFO(t.mode)) {
+    out << 'p';
+  } else if (S_ISLNK(t.mode)) {
+    out << 'l';
+  } else {
+    out << '-';
+  }
+  if ((t.mode & S_IRUSR) != 0) {
+    out << 'r';
+  } else {
+    out << '-';
+  }
+  if ((t.mode & S_IWUSR) != 0) {
+    out << 'w';
+  } else {
+    out << '-';
+  }
+  if ((t.mode & S_IXUSR) != 0) {
+    out << 'x';
+  } else {
+    out << '-';
+  }
+  if ((t.mode & S_IRGRP) != 0) {
+    out << 'r';
+  } else {
+    out << '-';
+  }
+  if ((t.mode & S_IWGRP) != 0) {
+    out << 'w';
+  } else {
+    out << '-';
+  }
+  if ((t.mode & S_IXGRP) != 0) {
+    out << 'x';
+  } else {
+    out << '-';
+  }
+  if ((t.mode & S_IROTH) != 0) {
+    out << 'r';
+  } else {
+    out << '-';
+  }
+  if ((t.mode & S_IWOTH) != 0) {
+    out << 'w';
+  } else {
+    out << '-';
+  }
+  if ((t.mode & S_IXOTH) != 0) {
+    out << 'x';
+  } else {
+    out << '-';
+  }
+  return out;
 }
 
 }  //namespace llfs

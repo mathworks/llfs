@@ -41,6 +41,10 @@ BATT_STRONG_TYPEDEF(u64, TrimDelayByteCount);
  */
 BATT_STRONG_TYPEDEF(off_t, FileOffset);
 
+/** \brief Wrapper for off_t used as a dirent offset.
+ */
+BATT_STRONG_TYPEDEF(off_t, DirentOffset);
+
 /** \brief Wrapper for off_t used as a length.
  */
 BATT_STRONG_TYPEDEF(off_t, FileLength);
@@ -52,6 +56,10 @@ BATT_STRONG_TYPEDEF(int, FileDescriptorInt);
 /** \brief A buffer size requirement.
  */
 BATT_STRONG_TYPEDEF(usize, BufferSizeNeeded);
+
+/** \brief Whether we are using the *_plus variant of an API.
+ */
+BATT_STRONG_TYPEDEF(bool, PlusApi);
 
 }  // namespace llfs
 

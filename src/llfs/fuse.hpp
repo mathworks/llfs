@@ -32,50 +32,36 @@
 
 namespace llfs {
 
-inline std::ostream& operator<<(std::ostream& out, const fuse_file_info& t)
-{
-  return out << "fuse_file_info{"                       //
-             << ".flags=" << t.flags                    //
-             << ", .write_page=" << t.writepage         //
-             << ", .direct_io=" << t.direct_io          //
-             << ", .keep_cache=" << t.keep_cache        //
-             << ", .flush=" << t.flush                  //
-             << ", .nonseekable=" << t.nonseekable      //
-             << ", .flock_release=" << t.flock_release  //
-             << ", .cache_readdir=" << t.cache_readdir  //
-             << ", .fh=" << t.fh                        //
-             << ", .lock_owner=" << t.lock_owner        //
-             << ", .poll_events=" << t.poll_events      //
-             << ",}";
-}
+std::ostream& operator<<(std::ostream& out, const fuse_file_info& t);
 
-inline std::ostream& operator<<(std::ostream& out, const fuse_file_info* t)
-{
-  if (!t) {
-    return out << (void*)t;
-  }
-  return out << (void*)t << ":" << *t;
-}
+std::ostream& operator<<(std::ostream& out, const fuse_file_info* t);
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 struct DumpStat {
   const struct stat& s;
 };
 
-inline std::ostream& operator<<(std::ostream& out, const DumpStat& t)
-{
-  return out << "stat{"                                       //
-             << ".st_dev=" << t.s.st_dev                      //
-             << ", .st_ino=" << t.s.st_ino                    //
-             << ", .st_mode=" << std::bitset<9>{t.s.st_mode}  //
-             << ", .st_nlink=" << t.s.st_nlink                //
-             << ", .st_uid=" << t.s.st_uid                    //
-             << ", .st_gid=" << t.s.st_gid                    //
-             << ", .st_rdev=" << t.s.st_rdev                  //
-             << ", .st_blksize=" << t.s.st_blksize            //
-             << ", .st_blocks=" << t.s.st_blocks              //
-             << ", ,}";
-}
+std::ostream& operator<<(std::ostream& out, const DumpStat& t);
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+struct DumpFileMode {
+  explicit DumpFileMode(mode_t mode) noexcept : mode{mode}
+  {
+  }
+
+  explicit DumpFileMode(int mode) noexcept : mode{(mode_t)mode}
+  {
+  }
+
+  mode_t mode;
+};
+
+std::ostream& operator<<(std::ostream& out, const DumpFileMode t);
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
 class FuseImplBase
 {
  public:
@@ -86,8 +72,18 @@ class FuseImplBase
     bool should_retry;
   };
 
-  using FuseConstBuffer = std::variant<batt::ConstBuffer, FileDataRef>;
-  using FuseMutableBuffer = std::variant<batt::MutableBuffer, FileDataRef>;
+  struct OwnedConstBuffer {
+    std::unique_ptr<char[]> storage;
+    batt::ConstBuffer buffer;
+  };
+
+  struct OwnedMutableBuffer {
+    std::unique_ptr<char[]> storage;
+    batt::ConstBuffer buffer;
+  };
+
+  using FuseConstBuffer = std::variant<batt::ConstBuffer, OwnedConstBuffer, FileDataRef>;
+  using FuseMutableBuffer = std::variant<batt::MutableBuffer, OwnedMutableBuffer, FileDataRef>;
 
   struct FuseConstBufferVec {
     usize current_buffer_index;
@@ -103,12 +99,14 @@ class FuseImplBase
 
   using FuseReadData = std::variant<   //
       batt::ConstBuffer,               //
+      OwnedConstBuffer,                //
       batt::Slice<batt::ConstBuffer>,  //
       FuseConstBufferVec               //
       >;
 
   using FuseReadDirData = std::variant<  //
       batt::ConstBuffer,                 //
+      OwnedConstBuffer,                  //
       FuseConstBufferVec                 //
       >;
 
@@ -124,9 +122,15 @@ class FuseImplBase
 
   using FuseGetExtendedAttributeReply = std::variant<  //
       batt::ConstBuffer,                               //
+      OwnedConstBuffer,                                //
       FuseConstBufferVec,                              //
       BufferSizeNeeded                                 //
       >;
+
+  struct FuseCreateReply {
+    const fuse_entry_param* entry;
+    const fuse_file_info* fi;
+  };
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -215,6 +219,19 @@ class FuseImplBase
 
   /** \brief
    */
+  auto make_create_handler(fuse_req_t req)
+  {
+    return [req](const batt::StatusOr<FuseCreateReply>& result) {
+      if (!result.ok()) {
+        fuse_reply_err(req, FuseImplBase::errno_from_status(result.status()));
+      } else {
+        fuse_reply_create(req, result->entry, result->fi);
+      }
+    };
+  }
+
+  /** \brief
+   */
   auto make_read_handler(fuse_req_t req)
   {
     return [req, this](const batt::StatusOr<FuseImplBase::FuseReadData>& result) {
@@ -227,6 +244,11 @@ class FuseImplBase
             //----- --- -- -  -  -   -
             [&req, this](const batt::ConstBuffer& cb) {
               this->invoke_fuse_reply_buf(req, cb);
+            },
+
+            //----- --- -- -  -  -   -
+            [&req, this](const OwnedConstBuffer& ocb) {
+              this->invoke_fuse_reply_buf(req, ocb.buffer);
             },
 
             //----- --- -- -  -  -   -
@@ -256,6 +278,11 @@ class FuseImplBase
             //----- --- -- -  -  -   -
             [&req, this](const batt::ConstBuffer& cb) {
               this->invoke_fuse_reply_buf(req, cb);
+            },
+
+            //----- --- -- -  -  -   -
+            [&req, this](const OwnedConstBuffer& ocb) {
+              this->invoke_fuse_reply_buf(req, ocb.buffer);
             },
 
             //----- --- -- -  -  -   -
@@ -306,6 +333,11 @@ class FuseImplBase
             //----- --- -- -  -  -   -
             [&req, this](const batt::ConstBuffer& cb) {
               this->invoke_fuse_reply_buf(req, cb);
+            },
+
+            //----- --- -- -  -  -   -
+            [&req, this](const OwnedConstBuffer& ocb) {
+              this->invoke_fuse_reply_buf(req, ocb.buffer);
             },
 
             //----- --- -- -  -  -   -
@@ -823,7 +855,7 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
   /** \brief
    */
   template <typename Handler>
-  void async_readdir(fuse_req_t req, fuse_ino_t ino, size_t size, FileOffset off,
+  void async_readdir(fuse_req_t req, fuse_ino_t ino, size_t size, DirentOffset off,
                      fuse_file_info* fi, Handler&& handler)
   {
     LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
@@ -932,6 +964,24 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
   }
 
   /** \brief
+   */ // 31/44
+  template <typename Handler>
+  void async_create(fuse_req_t req, fuse_ino_t parent, const char* name, mode_t mode,
+                    fuse_file_info* fi, Handler&& handler)
+  {
+    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+
+    (void)req;
+    (void)parent;
+    (void)name;
+    (void)mode;
+    (void)fi;
+
+    BATT_FORWARD(handler)
+    (batt::StatusOr<FuseImplBase::FuseCreateReply>{batt::Status{batt::StatusCode::kUnimplemented}});
+  }
+
+  /** \brief
    */
   template <typename Handler>
   void async_retrieve_reply(fuse_req_t req, void* cookie, fuse_ino_t ino, off_t offset,
@@ -997,7 +1047,7 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
   /** \brief
    */
   template <typename Handler>
-  void async_readdirplus(fuse_req_t req, fuse_ino_t ino, size_t size, FileOffset offset,
+  void async_readdirplus(fuse_req_t req, fuse_ino_t ino, size_t size, DirentOffset offset,
                          fuse_file_info* fi, Handler&& handler)
   {
     LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
@@ -1023,20 +1073,6 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
   explicit WorkerTaskFuseImpl(std::shared_ptr<WorkQueue>&& work_queue) noexcept
       : work_queue_{std::move(work_queue)}
   {
-  }
-
-  /** \brief
-   */ // 1/44
-  void init()
-  {
-    BATT_CHECK_NOT_NULLPTR(this->conn_);
-  }
-
-  /** \brief
-   */ // 2/44
-  void destroy()
-  {
-    BATT_CHECK_NOT_NULLPTR(this->conn_);
   }
 
   /** \brief
@@ -1067,10 +1103,16 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
 
     batt::Status push_status =
         this->work_queue_->push_job([this, req, ino, nlookup, handler = BATT_FORWARD(handler)] {
-          BATT_FORWARD(handler)(this->derived_this()->forget_inode(req, parent, name));
+          auto on_scope_exit = batt::finally([&] {
+            BATT_FORWARD(handler)();
+          });
+          this->derived_this()->forget_inode(req, ino, nlookup);
         });
 
-    BATT_FORWARD(handler)();
+    if (!push_status.ok()) {
+      LLFS_LOG_WARNING() << "Could not push request to work queue;" << BATT_INSPECT(push_status);
+      BATT_FORWARD(handler)();
+    }
   }
 
   /** \brief
@@ -1098,12 +1140,16 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
   void async_set_attributes(fuse_req_t req, fuse_ino_t ino, struct stat* attr, int to_set,
                             fuse_file_info* fi, Handler&& handler)
   {
-    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
-                 << BATT_INSPECT(attr) << BATT_INSPECT(to_set) << BATT_INSPECT(fi);
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION    //
+                 << BATT_INSPECT(req)     //
+                 << BATT_INSPECT(ino)     //
+                 << BATT_INSPECT(attr)    //
+                 << BATT_INSPECT(to_set)  //
+                 << BATT_INSPECT(fi);
 
     batt::Status push_status = this->work_queue_->push_job(
         [this, req, ino, attr, to_set, fi, handler = BATT_FORWARD(handler)] {
-          BATT_FORWARD(handler)(this->derived_this()->set_attributes(req, ino, addr, to_set, fi));
+          BATT_FORWARD(handler)(this->derived_this()->set_attributes(req, ino, attr, to_set, fi));
         });
 
     if (!push_status.ok()) {
@@ -1134,8 +1180,12 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
   void async_make_node(fuse_req_t req, fuse_ino_t parent, const char* name, mode_t mode, dev_t rdev,
                        Handler&& handler)
   {
-    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(parent)
-                 << BATT_INSPECT(name) << BATT_INSPECT(mode) << BATT_INSPECT(rdev);
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION                //
+                 << BATT_INSPECT(req)                 //
+                 << BATT_INSPECT(parent)              //
+                 << BATT_INSPECT(name)                //
+                 << BATT_INSPECT(DumpFileMode{mode})  //
+                 << BATT_INSPECT(rdev);
 
     batt::Status push_status = this->work_queue_->push_job(
         [this, req, parent, name, mode, rdev, handler = BATT_FORWARD(handler)] {
@@ -1154,7 +1204,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                             Handler&& handler)
   {
     LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(parent)
-                 << BATT_INSPECT(name) << BATT_INSPECT(mode);
+                 << BATT_INSPECT(name) << BATT_INSPECT(DumpFileMode{mode});
 
     batt::Status push_status = this->work_queue_->push_job(
         [this, req, parent, name, mode, handler = BATT_FORWARD(handler)] {
@@ -1306,7 +1356,8 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                    FileOffset offset, fuse_file_info* fi, Handler&& handler)
   {
     LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
-                 << BATT_INSPECT(buffer) << BATT_INSPECT(offset) << BATT_INSPECT(fi);
+                 << BATT_INSPECT(batt::make_printable(buffer)) << BATT_INSPECT(offset)
+                 << BATT_INSPECT(fi);
 
     batt::Status push_status = this->work_queue_->push_job(
         [this, req, ino, buffer, offset, fi, handler = BATT_FORWARD(handler)] {
@@ -1394,11 +1445,14 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
   /** \brief
    */ // 22/44
   template <typename Handler>
-  void async_readdir(fuse_req_t req, fuse_ino_t ino, size_t size, FileOffset off,
+  void async_readdir(fuse_req_t req, fuse_ino_t ino, size_t size, DirentOffset off,
                      fuse_file_info* fi, Handler&& handler)
   {
-    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
-                 << BATT_INSPECT(size) << BATT_INSPECT(off) << BATT_INSPECT(fi);
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION                       //
+                 << BATT_INSPECT(req)                        //
+                 << BATT_INSPECT(ino) << BATT_INSPECT(size)  //
+                 << BATT_INSPECT(off)                        //
+                 << BATT_INSPECT(fi);
 
     batt::Status push_status = this->work_queue_->push_job(
         [this, req, ino, size, off, fi, handler = BATT_FORWARD(handler)] {
@@ -1415,12 +1469,14 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
   template <typename Handler>
   void async_releasedir(fuse_req_t req, fuse_ino_t ino, fuse_file_info* fi, Handler&& handler)
   {
-    LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION  //
+                 << BATT_INSPECT(req)   //
+                 << BATT_INSPECT(ino)   //
                  << BATT_INSPECT(fi);
 
     batt::Status push_status =
         this->work_queue_->push_job([this, req, ino, fi, handler = BATT_FORWARD(handler)] {
-          BATT_FORWARD(handler)(this->derived_this()->releasedir(req, ino, fio));
+          BATT_FORWARD(handler)(this->derived_this()->releasedir(req, ino, fi));
         });
 
     if (!push_status.ok()) {
@@ -1434,14 +1490,20 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
   void async_fsyncdir(fuse_req_t req, fuse_ino_t ino, int datasync, fuse_file_info* fi,
                       Handler&& handler)
   {
-    LLFS_VLOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION      //
+                 << BATT_INSPECT(req)       //
+                 << BATT_INSPECT(ino)       //
+                 << BATT_INSPECT(datasync)  //
+                 << BATT_INSPECT(fi);
 
-    (void)req;
-    (void)ino;
-    (void)datasync;
-    (void)fi;
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, datasync, fi, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->fsyncdir(req, ino, datasync, fi));
+        });
 
-    BATT_FORWARD(handler)(batt::Status{batt::StatusCode::kUnimplemented});
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(push_status);
+    }
   }
 
   /** \brief
@@ -1449,13 +1511,18 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
   template <typename Handler>
   void async_statfs(fuse_req_t req, fuse_ino_t ino, Handler&& handler)
   {
-    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION  //
+                 << BATT_INSPECT(req)   //
+                 << BATT_INSPECT(ino);
 
-    (void)req;
-    (void)ino;
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, ino, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->statfs(req, ino));
+        });
 
-    BATT_FORWARD(handler)
-    (batt::StatusOr<const struct statvfs*>{batt::Status{batt::StatusCode::kUnimplemented}});
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(batt::StatusOr<const struct statvfs*>{push_status});
+    }
   }
 
   /** \brief
@@ -1465,14 +1532,21 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                                     const FuseImplBase::ExtendedAttribute& attr, int flags,
                                     Handler&& handler)
   {
-    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION                        //
+                 << BATT_INSPECT(req)                         //
+                 << BATT_INSPECT(ino)                         //
+                 << BATT_INSPECT(batt::make_printable(attr))  //
+                 << BATT_INSPECT(flags);
 
-    (void)req;
-    (void)ino;
-    (void)attr;
-    (void)flags;
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, ino, attr, flags, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)
+          (this->derived_this()->set_extended_attribute(req, ino, attr, flags));
+        });
 
-    BATT_FORWARD(handler)(batt::Status{batt::StatusCode::kUnimplemented});
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(push_status);
+    }
   }
 
   /** \brief
@@ -1481,16 +1555,21 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
   void async_get_extended_attribute(fuse_req_t req, fuse_ino_t ino, const char* name, size_t size,
                                     Handler&& handler)
   {
-    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION  //
+                 << BATT_INSPECT(req)   //
+                 << BATT_INSPECT(ino)   //
+                 << BATT_INSPECT(name)  //
+                 << BATT_INSPECT(size);
 
-    (void)req;
-    (void)ino;
-    (void)name;
-    (void)size;
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, ino, name, size, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->get_extended_attribute(req, ino, name, size));
+        });
 
-    BATT_FORWARD(handler)
-    (batt::StatusOr<FuseImplBase::FuseGetExtendedAttributeReply>{
-        batt::Status{batt::StatusCode::kUnimplemented}});
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)
+      (batt::StatusOr<FuseImplBase::FuseGetExtendedAttributeReply>{push_status});
+    }
   }
 
   /** \brief
@@ -1499,13 +1578,19 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
   void async_remove_extended_attribute(fuse_req_t req, fuse_ino_t ino, const char* name,
                                        Handler&& handler)
   {
-    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION  //
+                 << BATT_INSPECT(req)   //
+                 << BATT_INSPECT(ino)   //
+                 << BATT_INSPECT(name);
 
-    (void)req;
-    (void)ino;
-    (void)name;
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, ino, name, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->remove_extended_attribute(req, ino, name));
+        });
 
-    BATT_FORWARD(handler)(batt::Status{batt::StatusCode::kUnimplemented});
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(push_status);
+    }
   }
 
   /** \brief
@@ -1513,13 +1598,43 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
   template <typename Handler>
   void async_check_access(fuse_req_t req, fuse_ino_t ino, int mask, Handler&& handler)
   {
-    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION  //
+                 << BATT_INSPECT(req)   //
+                 << BATT_INSPECT(ino)   //
+                 << BATT_INSPECT(mask);
 
-    (void)req;
-    (void)ino;
-    (void)mask;
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, ino, mask, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->check_access(req, ino, mask));
+        });
 
-    BATT_FORWARD(handler)(batt::Status{batt::StatusCode::kUnimplemented});
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(push_status);
+    }
+  }
+
+  /** \brief
+   */ // 31/44
+  template <typename Handler>
+  void async_create(fuse_req_t req, fuse_ino_t parent, const char* name, mode_t mode,
+                    fuse_file_info* fi, Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION                //
+                 << BATT_INSPECT(req)                 //
+                 << BATT_INSPECT(parent)              //
+                 << BATT_INSPECT(name)                //
+                 << BATT_INSPECT(DumpFileMode{mode})  //
+                 << BATT_INSPECT(fi);
+
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, parent, name, mode, fi, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->create(req, parent, name, mode, fi));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)
+      (batt::StatusOr<FuseImplBase::FuseCreateReply>{push_status});
+    }
   }
 
   /** \brief
@@ -1528,15 +1643,25 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
   void async_retrieve_reply(fuse_req_t req, void* cookie, fuse_ino_t ino, off_t offset,
                             struct fuse_bufvec* bufv, Handler&& handler)
   {
-    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION    //
+                 << BATT_INSPECT(req)     //
+                 << BATT_INSPECT(cookie)  //
+                 << BATT_INSPECT(ino)     //
+                 << BATT_INSPECT(offset)  //
+                 << BATT_INSPECT(bufv);
 
-    (void)req;
-    (void)cookie;
-    (void)ino;
-    (void)offset;
-    (void)bufv;
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, cookie, ino, offset, bufv, handler = BATT_FORWARD(handler)] {
+          auto on_scope_exit = batt::finally([&] {
+            BATT_FORWARD(handler)();
+          });
+          this->derived_this()->retrieve_reply(req, cookie, ino, offset, bufv);
+        });
 
-    BATT_FORWARD(handler)();
+    if (!push_status.ok()) {
+      LLFS_LOG_WARNING() << "Could not push request to work queue;" << BATT_INSPECT(push_status);
+      BATT_FORWARD(handler)();
+    }
   }
 
   /** \brief
@@ -1545,12 +1670,22 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
   void async_forget_multiple_inodes(fuse_req_t req, batt::Slice<fuse_forget_data> forgets,
                                     Handler&& handler)
   {
-    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION  //
+                 << BATT_INSPECT(req)   //
+        /*<< BATT_INSPECT(batt::make_printable(forgets)) TODO [tastolfi 2023-06-30] */;
 
-    (void)req;
-    (void)forgets;
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, forgets, handler = BATT_FORWARD(handler)] {
+          auto on_scope_exit = batt::finally([&] {
+            BATT_FORWARD(handler)();
+          });
+          this->derived_this()->forget_multiple_inodes(req, forgets);
+        });
 
-    BATT_FORWARD(handler)();
+    if (!push_status.ok()) {
+      LLFS_LOG_WARNING() << "Could not push request to work queue;" << BATT_INSPECT(push_status);
+      BATT_FORWARD(handler)();
+    }
   }
 
   /** \brief
@@ -1559,34 +1694,46 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
   void async_file_allocate(fuse_req_t req, fuse_ino_t ino, int mode, FileOffset offset,
                            FileLength length, fuse_file_info* fi, Handler&& handler)
   {
-    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION                //
+                 << BATT_INSPECT(req)                 //
+                 << BATT_INSPECT(ino)                 //
+                 << BATT_INSPECT(DumpFileMode{mode})  //
+                 << BATT_INSPECT(offset)              //
+                 << BATT_INSPECT(length)              //
+                 << BATT_INSPECT(fi);
 
-    (void)req;
-    (void)ino;
-    (void)mode;
-    (void)offset;
-    (void)length;
-    (void)fi;
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, mode, offset, length, fi, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)
+          (this->derived_this()->file_allocate(req, ino, mode, offset, length, fi));
+        });
 
-    BATT_FORWARD(handler)(batt::Status{batt::StatusCode::kUnimplemented});
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(push_status);
+    }
   }
 
   /** \brief
    */ // 42/44
   template <typename Handler>
-  void async_readdirplus(fuse_req_t req, fuse_ino_t ino, size_t size, FileOffset offset,
+  void async_readdirplus(fuse_req_t req, fuse_ino_t ino, size_t size, DirentOffset offset,
                          fuse_file_info* fi, Handler&& handler)
   {
-    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION    //
+                 << BATT_INSPECT(req)     //
+                 << BATT_INSPECT(ino)     //
+                 << BATT_INSPECT(size)    //
+                 << BATT_INSPECT(offset)  //
+                 << BATT_INSPECT(fi);
 
-    (void)req;
-    (void)ino;
-    (void)size;
-    (void)offset;
-    (void)fi;
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, size, offset, fi, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)(this->derived_this()->readdirplus(req, ino, size, offset, fi));
+        });
 
-    BATT_FORWARD(handler)
-    (batt::StatusOr<FuseImplBase::FuseReadDirData>{batt::Status{batt::StatusCode::kUnimplemented}});
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(batt::StatusOr<FuseImplBase::FuseReadDirData>{push_status});
+    }
   }
 
  private:

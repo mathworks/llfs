@@ -751,7 +751,7 @@ template <typename Derived>
   void* userdata = fuse_req_userdata(req);
   [[maybe_unused]] auto* impl = static_cast<FuseImpl<Derived>*>(userdata);
 
-  impl->derived_this()->async_readdir(req, ino, size, FileOffset{off}, fi,
+  impl->derived_this()->async_readdir(req, ino, size, DirentOffset{off}, fi,
                                       impl->make_readdir_handler(req));
 }
 
@@ -1030,14 +1030,7 @@ template <typename Derived>
   void* userdata = fuse_req_userdata(req);
   [[maybe_unused]] auto* impl = static_cast<FuseImpl<Derived>*>(userdata);
 
-  (void)req;
-  (void)parent;
-  (void)name;
-  (void)mode;
-  (void)fi;
-
-  LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
-  // TODO [tastolfi 2023-06-28]
+  impl->derived_this()->async_create(req, parent, name, mode, fi, impl->make_create_handler(req));
 }
 
 /**
@@ -1425,7 +1418,7 @@ template <typename Derived>
   void* userdata = fuse_req_userdata(req);
   [[maybe_unused]] auto* impl = static_cast<FuseImpl<Derived>*>(userdata);
 
-  impl->derived_this()->async_readdirplus(req, ino, size, FileOffset{off}, fi,
+  impl->derived_this()->async_readdirplus(req, ino, size, DirentOffset{off}, fi,
                                           impl->make_readdir_handler(req));
 }
 

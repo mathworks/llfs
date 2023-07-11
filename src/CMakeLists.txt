@@ -66,6 +66,10 @@ include_directories(${GTest_INCLUDE_DIRS})
 include_directories(${libfuse_INCLUDE_DIRS})
 add_compile_definitions(FUSE_USE_VERSION=35)
 
+# Configure Google Logging.
+#
+add_compile_definitions(GLOG_CUSTOM_PREFIX_SUPPORT=1)
+
 add_custom_target(RunAllLibTests)
 
 #==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -               

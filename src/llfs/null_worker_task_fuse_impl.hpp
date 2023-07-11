@@ -51,7 +51,7 @@ class NullWorkerTaskFuseImpl : public WorkerTaskFuseImpl<NullWorkerTaskFuseImpl>
   /** \brief
    */ // 3/44
   batt::StatusOr<const fuse_entry_param*> lookup(fuse_req_t req, fuse_ino_t parent,
-                                                 const char* name)
+                                                 const std::string& name)
   {
     return {batt::StatusCode::kUnimplemented};
   }
@@ -89,7 +89,8 @@ class NullWorkerTaskFuseImpl : public WorkerTaskFuseImpl<NullWorkerTaskFuseImpl>
   /** \brief
    */ // 8/44
   batt::StatusOr<const fuse_entry_param*> make_node(fuse_req_t req, fuse_ino_t parent,
-                                                    const char* name, mode_t mode, dev_t rdev)
+                                                    const std::string& name, mode_t mode,
+                                                    dev_t rdev)
   {
     return {batt::StatusCode::kUnimplemented};
   }
@@ -97,37 +98,37 @@ class NullWorkerTaskFuseImpl : public WorkerTaskFuseImpl<NullWorkerTaskFuseImpl>
   /** \brief
    */ // 9/44
   batt::StatusOr<const fuse_entry_param*> make_directory(fuse_req_t req, fuse_ino_t parent,
-                                                         const char* name, mode_t mode)
+                                                         const std::string& name, mode_t mode)
   {
     return {batt::StatusCode::kUnimplemented};
   }
 
   /** \brief
    */ // 10/44
-  batt::Status unlink(fuse_req_t req, fuse_ino_t parent, const char* name)
+  batt::Status unlink(fuse_req_t req, fuse_ino_t parent, const std::string& name)
   {
     return {batt::StatusCode::kUnimplemented};
   }
 
   /** \brief
    */ // 11/44
-  batt::Status remove_directory(fuse_req_t req, fuse_ino_t parent, const char* name)
+  batt::Status remove_directory(fuse_req_t req, fuse_ino_t parent, const std::string& name)
   {
     return {batt::StatusCode::kUnimplemented};
   }
 
   /** \brief
    */ // 12/44
-  batt::StatusOr<const fuse_entry_param*> symbolic_link(fuse_req_t req, const char* link,
-                                                        fuse_ino_t parent, const char* name)
+  batt::StatusOr<const fuse_entry_param*> symbolic_link(fuse_req_t req, const std::string& link,
+                                                        fuse_ino_t parent, const std::string& name)
   {
     return {batt::StatusCode::kUnimplemented};
   }
 
   /** \brief
    */ // 13/44
-  batt::Status rename(fuse_req_t req, fuse_ino_t parent, const char* name, fuse_ino_t newparent,
-                      const char* newname, unsigned int flags)
+  batt::Status rename(fuse_req_t req, fuse_ino_t parent, const std::string& name,
+                      fuse_ino_t newparent, const std::string& newname, unsigned int flags)
   {
     return {batt::StatusCode::kUnimplemented};
   }
@@ -135,7 +136,8 @@ class NullWorkerTaskFuseImpl : public WorkerTaskFuseImpl<NullWorkerTaskFuseImpl>
   /** \brief
    */ // 14/44
   batt::StatusOr<const fuse_entry_param*> hard_link(fuse_req_t req, fuse_ino_t ino,
-                                                    fuse_ino_t newparent, const char* newname)
+                                                    fuse_ino_t newparent,
+                                                    const std::string& newname)
   {
     return {batt::StatusCode::kUnimplemented};
   }
@@ -231,14 +233,14 @@ class NullWorkerTaskFuseImpl : public WorkerTaskFuseImpl<NullWorkerTaskFuseImpl>
   /** \brief
    */ // 27/44
   batt::StatusOr<FuseImplBase::FuseGetExtendedAttributeReply> get_extended_attribute(
-      fuse_req_t req, fuse_ino_t ino, const char* name, size_t size)
+      fuse_req_t req, fuse_ino_t ino, const std::string& name, size_t size)
   {
     return {batt::StatusCode::kUnimplemented};
   }
 
   /** \brief
    */ // 29/44
-  batt::Status remove_extended_attribute(fuse_req_t req, fuse_ino_t ino, const char* name)
+  batt::Status remove_extended_attribute(fuse_req_t req, fuse_ino_t ino, const std::string& name)
   {
     return {batt::StatusCode::kUnimplemented};
   }
@@ -253,7 +255,7 @@ class NullWorkerTaskFuseImpl : public WorkerTaskFuseImpl<NullWorkerTaskFuseImpl>
   /** \brief
    */ // 31/44
   batt::StatusOr<FuseImplBase::FuseCreateReply> create(fuse_req_t req, fuse_ino_t parent,
-                                                       const char* name, mode_t mode,
+                                                       const std::string& name, mode_t mode,
                                                        fuse_file_info* fi)
   {
     return {batt::StatusCode::kUnimplemented};

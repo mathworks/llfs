@@ -9,6 +9,10 @@
 #include <llfs/fuse.hpp>
 #include <llfs/worker_task.hpp>
 
+#include <batteries/async/dump_tasks.hpp>
+
+#include <glog/logging.h>
+
 #include "mem_fuse.hpp"
 
 #include <boost/asio/io_context.hpp>
@@ -16,10 +20,111 @@
 #include <iostream>
 #include <thread>
 
+namespace termxx {
+
+namespace color {
+
+constexpr auto Black = "\033[30m";
+constexpr auto Red = "\033[31m";
+constexpr auto Green = "\033[32m";
+constexpr auto Yellow = "\033[33m";
+constexpr auto Blue = "\033[34m";
+constexpr auto Magenta = "\033[35m";
+constexpr auto Cyan = "\033[36m";
+constexpr auto White = "\033[37m";
+
+}  //namespace color
+
+namespace fill {
+
+constexpr auto Black = "\033[40m";
+constexpr auto Red = "\033[41m";
+constexpr auto Green = "\033[42m";
+constexpr auto Yellow = "\033[43m";
+constexpr auto Blue = "\033[44m";
+constexpr auto Magenta = "\033[45m";
+constexpr auto Cyan = "\033[46m";
+constexpr auto White = "\033[47m";
+
+}  //namespace fill
+
+namespace style {
+
+constexpr auto Bold = "\033[1m";
+constexpr auto BoldOff = "\033[21m";
+
+constexpr auto Italic = "\033[3m";
+constexpr auto ItalicOff = "\033[23m";
+
+constexpr auto Underline = "\033[4m";
+constexpr auto UnderlineOff = "\033[24m";
+
+constexpr auto Inverse = "\033[7m";
+constexpr auto InverseOff = "\033[27m";
+
+}  //namespace style
+
+constexpr auto Reset = "\033[0m";
+
+}  //namespace termxx
+
+void CustomPrefix(std::ostream& s, const google::LogMessageInfo& l, void*)
+{
+  switch (l.severity[0]) {
+    case 'E':
+      s << termxx::color::Red;
+      break;
+
+    case 'W':
+      s << termxx::color::Yellow;
+      break;
+
+    case 'I':
+      s << termxx::color::Blue;
+      break;
+  }
+
+  s << l.severity
+    << " ["  //
+
+    //----- --- -- -  -  -   -
+    << termxx::color::Green                       //
+    << std::setw(4) << 1900 + l.time.year()       //
+    << "/" << std::setw(2) << 1 + l.time.month()  //
+    << "/" << std::setw(2)
+    << l.time.day()  //
+
+    //----- --- -- -  -  -   -
+    << termxx::color::White << termxx::style::Bold  //
+    << ' ' << std::setw(2) << l.time.hour()         //
+    << ':' << std::setw(2) << l.time.min()          //
+    << ':' << std::setw(2) << l.time.sec()          //
+    << "." << std::setw(6) << l.time.usec()         //
+    << termxx::Reset                                //
+
+    //----- --- -- -  -  -   -
+    << termxx::color::Cyan  //
+    << ' ' << std::setfill(' ') << std::setw(5) << l.thread_id << std::setfill('0')
+    << ' '
+
+    //----- --- -- -  -  -   -
+    << termxx::color::Blue << termxx::style::Underline  //
+    << l.filename << ':' << l.line_number
+    << "]"  //
+
+    //----- --- -- -  -  -   -
+    << termxx::Reset;
+}
+
 int main(int argc, char* argv[])
 {
+  google::InitGoogleLogging(argv[0], google::CustomPrefixCallback{CustomPrefix},
+                            /*prefix_callback_data=*/nullptr);
+
   struct stat st;
   std::memset(&st, 0, sizeof(st));
+
+  batt::enable_dump_tasks();
 
   int rt = lstat(".", &st);
 

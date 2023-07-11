@@ -159,6 +159,7 @@ class FuseImplBase
   auto make_error_handler(fuse_req_t req)
   {
     return [req](batt::Status result) {
+      LLFS_VLOG(1) << BATT_INSPECT(req) << BATT_INSPECT(result);
       fuse_reply_err(req, FuseImplBase::errno_from_status(result));
     };
   }
@@ -1083,8 +1084,8 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
     LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(parent)
                  << BATT_INSPECT(name);
 
-    batt::Status push_status =
-        this->work_queue_->push_job([this, req, parent, name, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, parent, name = std::string{name}, handler = BATT_FORWARD(handler)] {
           BATT_FORWARD(handler)(this->derived_this()->lookup(req, parent, name));
         });
 
@@ -1188,7 +1189,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(rdev);
 
     batt::Status push_status = this->work_queue_->push_job(
-        [this, req, parent, name, mode, rdev, handler = BATT_FORWARD(handler)] {
+        [this, req, parent, name = std::string{name}, mode, rdev, handler = BATT_FORWARD(handler)] {
           BATT_FORWARD(handler)(this->derived_this()->make_node(req, parent, name, mode, rdev));
         });
 
@@ -1207,7 +1208,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(name) << BATT_INSPECT(DumpFileMode{mode});
 
     batt::Status push_status = this->work_queue_->push_job(
-        [this, req, parent, name, mode, handler = BATT_FORWARD(handler)] {
+        [this, req, parent, name = std::string{name}, mode, handler = BATT_FORWARD(handler)] {
           BATT_FORWARD(handler)(this->derived_this()->make_directory(req, parent, name, mode));
         });
 
@@ -1224,8 +1225,8 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
     LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(parent)
                  << BATT_INSPECT(name);
 
-    batt::Status push_status =
-        this->work_queue_->push_job([this, req, parent, name, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, parent, name = std::string{name}, handler = BATT_FORWARD(handler)] {
           BATT_FORWARD(handler)(this->derived_this()->unlink(req, parent, name));
         });
 
@@ -1243,8 +1244,8 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
     LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(parent)
                  << BATT_INSPECT(name);
 
-    batt::Status push_status =
-        this->work_queue_->push_job([this, req, parent, name, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, parent, name = std::string{name}, handler = BATT_FORWARD(handler)] {
           BATT_FORWARD(handler)(this->derived_this()->remove_directory(req, parent, name));
         });
 
@@ -1262,8 +1263,9 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
     LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(link)
                  << BATT_INSPECT(parent) << BATT_INSPECT(name);
 
-    batt::Status push_status = this->work_queue_->push_job(
-        [this, req, link, parent, name, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, link = std::string{link}, parent,
+                                     name = std::string{name}, handler = BATT_FORWARD(handler)] {
           BATT_FORWARD(handler)(this->derived_this()->symbolic_link(req, link, parent, name));
         });
 
@@ -1283,7 +1285,8 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(flags);
 
     batt::Status push_status = this->work_queue_->push_job(
-        [this, req, parent, name, newparent, newname, flags, handler = BATT_FORWARD(handler)] {
+        [this, req, parent, name = std::string{name}, newparent, newname = std::string{newname},
+         flags, handler = BATT_FORWARD(handler)] {
           BATT_FORWARD(handler)
           (this->derived_this()->rename(req, parent, name, newparent, newname, flags));
         });
@@ -1302,8 +1305,9 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
     LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
                  << BATT_INSPECT(newparent) << BATT_INSPECT(newname);
 
-    batt::Status push_status = this->work_queue_->push_job(
-        [this, req, ino, newparent, newname, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, ino, newparent, newname = std::string{newname},
+                                     handler = BATT_FORWARD(handler)] {
           BATT_FORWARD(handler)(this->derived_this()->hard_link(req, ino, newparent, newname));
         });
 
@@ -1561,8 +1565,8 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(name)  //
                  << BATT_INSPECT(size);
 
-    batt::Status push_status =
-        this->work_queue_->push_job([this, req, ino, name, size, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, name = std::string{name}, size, handler = BATT_FORWARD(handler)] {
           BATT_FORWARD(handler)(this->derived_this()->get_extended_attribute(req, ino, name, size));
         });
 
@@ -1583,8 +1587,8 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(ino)   //
                  << BATT_INSPECT(name);
 
-    batt::Status push_status =
-        this->work_queue_->push_job([this, req, ino, name, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, name = std::string{name}, handler = BATT_FORWARD(handler)] {
           BATT_FORWARD(handler)(this->derived_this()->remove_extended_attribute(req, ino, name));
         });
 
@@ -1627,7 +1631,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(fi);
 
     batt::Status push_status = this->work_queue_->push_job(
-        [this, req, parent, name, mode, fi, handler = BATT_FORWARD(handler)] {
+        [this, req, parent, name = std::string{name}, mode, fi, handler = BATT_FORWARD(handler)] {
           BATT_FORWARD(handler)(this->derived_this()->create(req, parent, name, mode, fi));
         });
 

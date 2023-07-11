@@ -14,8 +14,9 @@
 //
 #include <llfs/logging.hpp>
 
-#include <batteries/async/channel.hpp>
 #include <batteries/async/task.hpp>
+#include <batteries/async/watch.hpp>
+#include <batteries/optional.hpp>
 #include <batteries/small_fn.hpp>
 
 #include <boost/lockfree/policies.hpp>
@@ -93,23 +94,27 @@ class WorkQueue
 
     const u64 observed_state = this->state_.fetch_add(kJobIncrement) + kJobIncrement;
 
-    return this->dispatch(observed_state);
+    return this->dispatch(observed_state, __FUNCTION__);
   }
 
   batt::Status push_worker(WorkerTask* worker)
   {
+    LLFS_VLOG(1) << "WorkQueue::push_worker";
+
     if (!this->worker_queue_.push(worker)) {
       return batt::StatusCode::kUnavailable;
     }
 
     const u64 observed_state = this->state_.fetch_add(kWorkerIncrement) + kWorkerIncrement;
 
-    return this->dispatch(observed_state);
+    LLFS_VLOG(1) << " --" << std::hex << BATT_INSPECT(observed_state);
+
+    return this->dispatch(observed_state, __FUNCTION__);
   }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
-  batt::Status dispatch(u64 observed_state);
+  batt::Status dispatch(u64 observed_state, const char* from);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -135,6 +140,10 @@ class WorkQueue
 class WorkerTask
 {
  public:
+  static constexpr u32 kReadyState = 0;
+  static constexpr u32 kWorkingState = 1;
+  static constexpr u32 kHaltedState = 2;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   template <typename... TaskArgs>
@@ -146,38 +155,66 @@ class WorkerTask
                 this->run();
               },
               BATT_FORWARD(task_args)...}
+      , job_{}
+      , state_{WorkerTask::kReadyState}
   {
   }
 
   batt::Status push_job(WorkQueue::Job&& job)
   {
-    return this->work_channel_.write(job);
+    u32 observed_state = this->state_.get_value();
+
+    if (observed_state == WorkerTask::kHaltedState) {
+      return batt::StatusCode::kClosed;
+    }
+    BATT_CHECK_EQ(observed_state, WorkerTask::kReadyState);
+    this->job_.emplace(std::move(job));
+
+    const u32 prior_state = this->state_.set_value(WorkerTask::kWorkingState);
+    BATT_CHECK_EQ(prior_state, observed_state);
+
+    return batt::OkStatus();
   }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
   void run()
   {
+    LLFS_VLOG(1) << "WorkerTask@" << (void*)this << " ENTERED";
+
     batt::Status status = [&]() -> batt::Status {
       while (!this->halt_requested_.load()) {
+        LLFS_VLOG(1) << "WorkerTask@" << (void*)this << " Pushing self to work queue";
+
+        BATT_CHECK_EQ(this->state_.get_value(), WorkerTask::kReadyState);
         BATT_REQUIRE_OK(this->work_queue_->push_worker(this));
 
-        batt::StatusOr<WorkQueue::Job&> next_job_ref = this->work_channel_.read();
-        BATT_REQUIRE_OK(next_job_ref);
+        BATT_REQUIRE_OK(this->state_.await_equal(WorkerTask::kWorkingState));
+        BATT_CHECK_NE(this->job_, batt::None);
 
-        WorkQueue::Job next_job = std::move(*next_job_ref);
-
-        this->work_channel_.consume();
+        LLFS_VLOG(1) << "WorkerTask@" << (void*)this << " Got next job; running!";
 
         try {
-          next_job.work_fn();
+          auto on_scope_exit = batt::finally([&] {
+            this->job_ = batt::None;
+          });
+          this->job_->work_fn();
         } catch (...) {
           LLFS_LOG_ERROR() << "Unexpected exception TODO [tastolfi 2023-06-29] print details";
         }
+
+        LLFS_VLOG(1) << "WorkerTask@" << (void*)this << " job done!";
+
+        const u32 prior_state = this->state_.set_value(WorkerTask::kReadyState);
+        BATT_CHECK_EQ(prior_state, WorkerTask::kWorkingState);
       }
 
       return batt::OkStatus();
     }();
+
+    const u32 prior_state = this->state_.set_value(WorkerTask::kHaltedState);
+    BATT_CHECK_EQ(prior_state, WorkerTask::kReadyState)
+        << "WorkerTask::run() must not exit main loop with an active job!";
 
     if (!status.ok()) {
       if (this->halt_requested_.load()) {
@@ -192,18 +229,33 @@ class WorkerTask
 
   std::shared_ptr<WorkQueue> work_queue_;
   batt::Task task_;
-  batt::Channel<WorkQueue::Job> work_channel_;
+  batt::Optional<WorkQueue::Job> job_;
+  batt::Watch<u32> state_;
   std::atomic<bool> halt_requested_{false};
 };
 
 //#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
 
-inline batt::Status WorkQueue::dispatch(u64 observed_state)
+inline batt::Status WorkQueue::dispatch(u64 observed_state, const char* from)
 {
-  while (Self::get_worker_count(observed_state) > 0 && Self::get_job_count(observed_state) > 0) {
+  LLFS_VLOG(1) << "WorkQueue::dispatch()" << BATT_INSPECT_STR(from);
+
+  for (;;) {
+    const auto worker_count = Self::get_worker_count(observed_state);
+    const auto job_count = Self::get_job_count(observed_state);
+
+    LLFS_VLOG(1) << " --" << BATT_INSPECT(worker_count) << BATT_INSPECT(job_count);
+
+    if (worker_count == 0 || job_count == 0) {
+      LLFS_VLOG(1) << " -- Nothing more we can do (idle state) returning";
+      break;
+    }
+
     const u64 target_state = observed_state - (kJobIncrement | kWorkerIncrement);
 
     if (this->state_.compare_exchange_weak(observed_state, target_state)) {
+      LLFS_VLOG(1) << " -- Found worker/job pair; dispatching!";
+
       Job* next_job = nullptr;
       WorkerTask* next_worker = nullptr;
 
@@ -220,6 +272,10 @@ inline batt::Status WorkQueue::dispatch(u64 observed_state)
       });
 
       BATT_REQUIRE_OK(next_worker->push_job(std::move(*next_job)));
+
+      LLFS_VLOG(1) << " -- Handed job off successfully!";
+
+      observed_state = target_state;
     }
   }
   return batt::OkStatus();

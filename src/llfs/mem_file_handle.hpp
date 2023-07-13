@@ -10,7 +10,7 @@
 #ifndef LLFS_MEM_FILE_HANDLE_HPP
 #define LLFS_MEM_FILE_HANDLE_HPP
 
-#include <llfs_fuse/mem_inode.hpp>
+#include <llfs/mem_inode.hpp>
 
 #include <llfs/api_types.hpp>
 

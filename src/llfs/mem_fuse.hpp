@@ -10,10 +10,9 @@
 #ifndef LLFS_MEM_FUSE_HPP
 #define LLFS_MEM_FUSE_HPP
 
-#include <llfs_fuse/mem_file_handle.hpp>
-#include <llfs_fuse/mem_inode.hpp>
-
 #include <llfs/fuse.hpp>
+#include <llfs/mem_file_handle.hpp>
+#include <llfs/mem_inode.hpp>
 #include <llfs/worker_task_fuse_impl.hpp>
 
 #include <batteries/async/mutex.hpp>

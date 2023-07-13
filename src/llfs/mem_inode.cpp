@@ -6,7 +6,7 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-#include <llfs_fuse/mem_inode.hpp>
+#include <llfs/mem_inode.hpp>
 //
 
 namespace llfs {

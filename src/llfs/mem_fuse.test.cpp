@@ -6,8 +6,14 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-#include <llfs/fuse.hpp>
 #include <llfs/mem_fuse.hpp>
+//
+#include <llfs/mem_fuse.hpp>
+
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
+#include <llfs/fuse.hpp>
 #include <llfs/worker_task.hpp>
 
 #include <batteries/async/dump_tasks.hpp>
@@ -16,8 +22,11 @@
 
 #include <boost/asio/io_context.hpp>
 
+#include <filesystem>
 #include <iostream>
 #include <thread>
+
+namespace {
 
 namespace termxx {
 
@@ -83,15 +92,17 @@ void CustomPrefix(std::ostream& s, const google::LogMessageInfo& l, void*)
       break;
   }
 
-  s << l.severity
-    << " ["  //
+  s << l.severity     //
+    << termxx::Reset  //
+    << " ["           //
 
     //----- --- -- -  -  -   -
-    << termxx::color::Green                       //
+    << termxx::style::Italic                      //
+    << termxx::color::Magenta                     //
     << std::setw(4) << 1900 + l.time.year()       //
     << "/" << std::setw(2) << 1 + l.time.month()  //
-    << "/" << std::setw(2)
-    << l.time.day()  //
+    << "/" << std::setw(2) << l.time.day()        //
+    << termxx::style::ItalicOff
 
     //----- --- -- -  -  -   -
     << termxx::color::White << termxx::style::Bold  //
@@ -108,17 +119,20 @@ void CustomPrefix(std::ostream& s, const google::LogMessageInfo& l, void*)
 
     //----- --- -- -  -  -   -
     << termxx::color::Blue << termxx::style::Underline  //
-    << l.filename << ':' << l.line_number
-    << "]"  //
+    << l.filename << ':' << l.line_number               //
+    << termxx::Reset                                    //
+    << "]"                                              //
 
     //----- --- -- -  -  -   -
     << termxx::Reset;
 }
 
-int main(int argc, char* argv[])
+TEST(MemFuseTest, Test)
 {
-  google::InitGoogleLogging(argv[0], google::CustomPrefixCallback{CustomPrefix},
+  google::InitGoogleLogging("llfs_Test", google::CustomPrefixCallback{CustomPrefix},
                             /*prefix_callback_data=*/nullptr);
+
+  LLFS_LOG_INFO() << "Test log message";
 
   struct stat st;
   std::memset(&st, 0, sizeof(st));
@@ -141,11 +155,34 @@ int main(int argc, char* argv[])
 
   t.detach();
 
+  auto mountpoint = std::filesystem::path{"/tmp/llfs_fuse_test"};
+  std::string mountpoint_str = mountpoint.string();
+
+  if (std::filesystem::exists(mountpoint)) {
+    std::filesystem::remove_all(mountpoint);
+  }
+  std::filesystem::create_directories(mountpoint);
+
+  const char* argv[] = {
+      "llfs_Test",
+      mountpoint_str.c_str(),
+  };
+  int argc = sizeof(argv) / sizeof(const char*);
+
+  LLFS_LOG_INFO() << BATT_INSPECT(argc);
+
   batt::StatusOr<llfs::FuseSession> session = llfs::FuseSession::from_args(
-      argc, (const char**)argv, batt::StaticType<llfs::MemoryFuseImpl>{},
-      batt::make_copy(work_queue));
+      argc, argv, batt::StaticType<llfs::MemoryFuseImpl>{}, batt::make_copy(work_queue));
 
   BATT_CHECK_OK(session);
 
-  return session->run();
+  std::thread session_thread{[&] {
+    session->run();
+  }};
+
+  session->halt();
+
+  session_thread.join();
 }
+
+}  // namespace

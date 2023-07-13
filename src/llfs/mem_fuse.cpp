@@ -6,7 +6,7 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-#include <llfs_fuse/mem_fuse.hpp>
+#include <llfs/mem_fuse.hpp>
 
 namespace llfs {
 

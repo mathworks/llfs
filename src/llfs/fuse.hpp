@@ -535,11 +535,11 @@ class FuseSession
 {
  public:
   template <typename Impl, typename... ImplArgs>
-  static batt::StatusOr<FuseSession> from_args(int argc, char* argv[],
+  static batt::StatusOr<FuseSession> from_args(int argc, const char* argv[],
                                                batt::StaticType<Impl> /*impl*/,
                                                ImplArgs&&... impl_args)
   {
-    FuseSession instance{argc, argv};
+    FuseSession instance{argc, (char**)argv};
 
     if (fuse_parse_cmdline(&instance.args_, &instance.opts_) != 0) {
       return {batt::StatusCode::kInvalidArgument};
@@ -607,6 +607,11 @@ class FuseSession
     config.max_idle_threads = this->opts_.max_idle_threads;
 
     return fuse_session_loop_mt(this->session_.get(), &config);
+  }
+
+  void halt()
+  {
+    fuse_session_exit(this->session_.get());
   }
 
  private:

@@ -12,7 +12,7 @@
 
 #include <llfs/config.hpp>
 //
-#include <llfs/fuse.hpp>
+#include <llfs/worker_task_fuse_impl.hpp>
 
 #include <batteries/suppress.hpp>
 
@@ -74,7 +74,7 @@ class NullWorkerTaskFuseImpl : public WorkerTaskFuseImpl<NullWorkerTaskFuseImpl>
    */ // 6/44
   batt::StatusOr<FuseImplBase::Attributes> set_attributes(fuse_req_t req, fuse_ino_t ino,
                                                           struct stat* attr, int to_set,
-                                                          fuse_file_info* fi)
+                                                          batt::Optional<u64> fh_from_ftruncate)
   {
     return {batt::StatusCode::kUnimplemented};
   }
@@ -174,7 +174,7 @@ class NullWorkerTaskFuseImpl : public WorkerTaskFuseImpl<NullWorkerTaskFuseImpl>
 
   /** \brief
    */ // 19/44
-  batt::Status release(fuse_req_t req, fuse_ino_t ino, fuse_file_info* fi)
+  batt::Status release(fuse_req_t req, fuse_ino_t ino, u64 fh, int flags)
   {
     return {batt::StatusCode::kUnimplemented};
   }
@@ -257,6 +257,14 @@ class NullWorkerTaskFuseImpl : public WorkerTaskFuseImpl<NullWorkerTaskFuseImpl>
   batt::StatusOr<FuseImplBase::FuseCreateReply> create(fuse_req_t req, fuse_ino_t parent,
                                                        const std::string& name, mode_t mode,
                                                        fuse_file_info* fi)
+  {
+    return {batt::StatusCode::kUnimplemented};
+  }
+
+  /** \brief
+   */ // 37/44
+  batt::StatusOr<usize> write_buf(fuse_req_t req, fuse_ino_t ino, struct fuse_bufvec* bufv,
+                                  FileOffset offset, fuse_file_info* fi)
   {
     return {batt::StatusCode::kUnimplemented};
   }

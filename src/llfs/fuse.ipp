@@ -32,7 +32,7 @@ namespace llfs {
  * There's no reply to this function
  *
  * @param userdata the user data passed to fuse_session_new()
- */
+ */ // 1/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_init_impl(void* userdata, struct fuse_conn_info* conn)
 {
@@ -54,7 +54,7 @@ template <typename Derived>
  * There's no reply to this function
  *
  * @param userdata the user data passed to fuse_session_new()
- */
+ */ // 2/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_destroy_impl(void* userdata)
 {
@@ -79,7 +79,7 @@ template <typename Derived>
  * @param req request handle
  * @param parent inode number of the parent directory
  * @param name the name to look up
- */
+ */ // 3/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_lookup_impl(fuse_req_t req, fuse_ino_t parent,
                                                          const char* name)
@@ -125,7 +125,7 @@ template <typename Derived>
  * @param req request handle
  * @param ino the inode number
  * @param nlookup the number of lookups to forget
- */
+ */ // 4/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_forget_impl(fuse_req_t req, fuse_ino_t ino,
                                                          uint64_t nlookup)
@@ -154,7 +154,7 @@ template <typename Derived>
  * @param req request handle
  * @param ino the inode number
  * @param fi for future use, currently always NULL
- */
+ */ // 5/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_getattr_impl(fuse_req_t req, fuse_ino_t ino,
                                                           struct fuse_file_info* fi)
@@ -162,7 +162,11 @@ template <typename Derived>
   void* userdata = fuse_req_userdata(req);
   [[maybe_unused]] auto* impl = static_cast<FuseImpl<Derived>*>(userdata);
 
-  impl->derived_this()->async_get_attributes(req, ino, fi, impl->make_attributes_handler(req));
+  if (fi != nullptr) {
+    LLFS_LOG_WARNING() << "(getattr) Expected fi to be NULL!";
+  }
+
+  impl->derived_this()->async_get_attributes(req, ino, impl->make_attributes_handler(req));
 }
 
 /**
@@ -198,7 +202,7 @@ template <typename Derived>
  * @param attr the attributes
  * @param to_set bit mask of attributes which should be set
  * @param fi file information, or NULL
- */
+ */ // 6/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_setattr_impl(fuse_req_t req, fuse_ino_t ino,
                                                           struct stat* attr, int to_set,
@@ -220,7 +224,7 @@ template <typename Derived>
  *
  * @param req request handle
  * @param ino the inode number
- */
+ */ // 7/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_readlink_impl(fuse_req_t req, fuse_ino_t ino)
 {
@@ -245,7 +249,7 @@ template <typename Derived>
  * @param name to create
  * @param mode file type and mode with which to create the new file
  * @param rdev the device number (only valid if created file is a device)
- */
+ */ // 8/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_mknod_impl(fuse_req_t req, fuse_ino_t parent,
                                                         const char* name, mode_t mode, dev_t rdev)
@@ -268,7 +272,7 @@ template <typename Derived>
  * @param parent inode number of the parent directory
  * @param name to create
  * @param mode with which to create the new file
- */
+ */ // 9/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_mkdir_impl(fuse_req_t req, fuse_ino_t parent,
                                                         const char* name, mode_t mode)
@@ -294,7 +298,7 @@ template <typename Derived>
  * @param req request handle
  * @param parent inode number of the parent directory
  * @param name to remove
- */
+ */ // 10/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_unlink_impl(fuse_req_t req, fuse_ino_t parent,
                                                          const char* name)
@@ -319,7 +323,7 @@ template <typename Derived>
  * @param req request handle
  * @param parent inode number of the parent directory
  * @param name to remove
- */
+ */ // 11/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_rmdir_impl(fuse_req_t req, fuse_ino_t parent,
                                                         const char* name)
@@ -341,7 +345,7 @@ template <typename Derived>
  * @param link the contents of the symbolic link
  * @param parent inode number of the parent directory
  * @param name to create
- */
+ */ // 12/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_symlink_impl(fuse_req_t req, const char* link,
                                                           fuse_ino_t parent, const char* name)
@@ -380,7 +384,7 @@ template <typename Derived>
  * @param name old name
  * @param newparent inode number of the new parent directory
  * @param newname new name
- */
+ */ // 13/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_rename_impl(fuse_req_t req, fuse_ino_t parent,
                                                          const char* name, fuse_ino_t newparent,
@@ -404,7 +408,7 @@ template <typename Derived>
  * @param ino the old inode number
  * @param newparent inode number of the new parent directory
  * @param newname new name to create
- */
+ */ // 14/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_link_impl(fuse_req_t req, fuse_ino_t ino,
                                                        fuse_ino_t newparent, const char* newname)
@@ -471,7 +475,7 @@ template <typename Derived>
  * @param req request handle
  * @param ino the inode number
  * @param fi file information
- */
+ */ // 15/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_open_impl(fuse_req_t req, fuse_ino_t ino,
                                                        struct fuse_file_info* fi)
@@ -506,7 +510,7 @@ template <typename Derived>
  * @param size number of bytes to read
  * @param off offset to read from
  * @param fi file information
- */
+ */ // 16/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_read_impl(fuse_req_t req, fuse_ino_t ino, size_t size,
                                                        off_t off, struct fuse_file_info* fi)
@@ -543,7 +547,7 @@ template <typename Derived>
  * @param size number of bytes to write
  * @param off offset to write to
  * @param fi file information
- */
+ */ // 17/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_write_impl(fuse_req_t req, fuse_ino_t ino,
                                                         const char* buf, size_t size, off_t off,
@@ -593,7 +597,7 @@ template <typename Derived>
  * @param fi file information
  *
  * [close]: http://pubs.opengroup.org/onlinepubs/9699919799/functions/close.html
- */
+ */ // 18/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_flush_impl(fuse_req_t req, fuse_ino_t ino,
                                                         struct fuse_file_info* fi)
@@ -628,7 +632,7 @@ template <typename Derived>
  * @param req request handle
  * @param ino the inode number
  * @param fi file information
- */
+ */ // 19/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_release_impl(fuse_req_t req, fuse_ino_t ino,
                                                           struct fuse_file_info* fi)
@@ -657,7 +661,7 @@ template <typename Derived>
  * @param ino the inode number
  * @param datasync flag indicating if only data should be flushed
  * @param fi file information
- */
+ */ // 20/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_fsync_impl(fuse_req_t req, fuse_ino_t ino,
                                                         int datasync, struct fuse_file_info* fi)
@@ -689,7 +693,7 @@ template <typename Derived>
  * @param req request handle
  * @param ino the inode number
  * @param fi file information
- */
+ */ // 21/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_opendir_impl(fuse_req_t req, fuse_ino_t ino,
                                                           struct fuse_file_info* fi)
@@ -742,7 +746,7 @@ template <typename Derived>
  * @param size maximum number of bytes to send
  * @param off offset to continue reading the directory stream
  * @param fi file information
- */
+ */ // 22/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_readdir_impl(fuse_req_t req, fuse_ino_t ino,
                                                           size_t size, off_t off,
@@ -770,7 +774,7 @@ template <typename Derived>
  * @param req request handle
  * @param ino the inode number
  * @param fi file information
- */
+ */ // 23/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_releasedir_impl(fuse_req_t req, fuse_ino_t ino,
                                                              struct fuse_file_info* fi)
@@ -802,7 +806,7 @@ template <typename Derived>
  * @param ino the inode number
  * @param datasync flag indicating if only data should be flushed
  * @param fi file information
- */
+ */ // 24/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_fsyncdir_impl(fuse_req_t req, fuse_ino_t ino,
                                                            int datasync, struct fuse_file_info* fi)
@@ -822,7 +826,7 @@ template <typename Derived>
  *
  * @param req request handle
  * @param ino the inode number, zero means "undefined"
- */
+ */ // 25/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_statfs_impl(fuse_req_t req, fuse_ino_t ino)
 {
@@ -842,7 +846,7 @@ template <typename Derived>
  *
  * Valid replies:
  *   fuse_reply_err
- */
+ */ // 26/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_setxattr_impl(fuse_req_t req, fuse_ino_t ino,
                                                            const char* name, const char* value,
@@ -886,7 +890,7 @@ template <typename Derived>
  * @param ino the inode number
  * @param name of the extended attribute
  * @param size maximum size of the value to send
- */
+ */ // 27/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_getxattr_impl(fuse_req_t req, fuse_ino_t ino,
                                                            const char* name, size_t size)
@@ -925,7 +929,7 @@ template <typename Derived>
  * @param req request handle
  * @param ino the inode number
  * @param size maximum size of the list to send
- */
+ */ // 28/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_listxattr_impl(fuse_req_t req, fuse_ino_t ino,
                                                             size_t size)
@@ -954,7 +958,7 @@ template <typename Derived>
  * @param req request handle
  * @param ino the inode number
  * @param name of the extended attribute
- */
+ */ // 29/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_removexattr_impl(fuse_req_t req, fuse_ino_t ino,
                                                               const char* name)
@@ -985,7 +989,7 @@ template <typename Derived>
  * @param req request handle
  * @param ino the inode number
  * @param mask requested access mode
- */
+ */ // 30/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_access_impl(fuse_req_t req, fuse_ino_t ino, int mask)
 {
@@ -1021,7 +1025,7 @@ template <typename Derived>
  * @param name to create
  * @param mode file type and mode with which to create the new file
  * @param fi file information
- */
+ */ // 31/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_create_impl(fuse_req_t req, fuse_ino_t parent,
                                                          const char* name, mode_t mode,
@@ -1044,7 +1048,7 @@ template <typename Derived>
  * @param ino the inode number
  * @param fi file information
  * @param lock the region/type to test
- */
+ */ // 32/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_getlk_impl(fuse_req_t req, fuse_ino_t ino,
                                                         struct fuse_file_info* fi,
@@ -1082,7 +1086,7 @@ template <typename Derived>
  * @param fi file information
  * @param lock the region/type to set
  * @param sleep locking operation may sleep
- */
+ */ // 33/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_setlk_impl(fuse_req_t req, fuse_ino_t ino,
                                                         struct fuse_file_info* fi,
@@ -1119,7 +1123,7 @@ template <typename Derived>
  * @param ino the inode number
  * @param blocksize unit of block index
  * @param idx block index within file
- */
+ */ // 34/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_bmap_impl(fuse_req_t req, fuse_ino_t ino,
                                                        size_t blocksize, uint64_t idx)
@@ -1162,7 +1166,7 @@ template <typename Derived>
  *
  * Note : the unsigned long request submitted by the application
  * is truncated to 32 bits.
- */
+ */ // 35/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_ioctl_impl(fuse_req_t req, fuse_ino_t ino,
                                                         unsigned int cmd, void* arg,
@@ -1214,7 +1218,7 @@ template <typename Derived>
  * @param ino the inode number
  * @param fi file information
  * @param ph poll handle to be used for notification
- */
+ */ // 36/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_poll_impl(fuse_req_t req, fuse_ino_t ino,
                                                        struct fuse_file_info* fi,
@@ -1257,22 +1261,19 @@ template <typename Derived>
  * @param bufv buffer containing the data
  * @param off offset to write to
  * @param fi file information
- */
+ */ // 37/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_write_buf_impl(fuse_req_t req, fuse_ino_t ino,
-                                                            struct fuse_bufvec* bufv, off_t off,
+                                                            struct fuse_bufvec* bufv, off_t offset,
                                                             struct fuse_file_info* fi)
 {
   void* userdata = fuse_req_userdata(req);
   [[maybe_unused]] auto* impl = static_cast<FuseImpl<Derived>*>(userdata);
 
-  (void)ino;
-  (void)bufv;
-  (void)off;
-  (void)fi;
-
-  LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
-  // TODO [tastolfi 2023-06-28]
+  // TODO [tastolfi 2023-07-12] bufv -> ConstBufferSequence?
+  //
+  impl->derived_this()->async_write_buf(req, ino, bufv, FileOffset{offset}, fi,
+                                        impl->make_write_handler(req));
 }
 
 /**
@@ -1286,7 +1287,7 @@ template <typename Derived>
  * @param ino the inode number supplied to fuse_lowlevel_notify_retrieve()
  * @param offset the offset supplied to fuse_lowlevel_notify_retrieve()
  * @param bufv the buffer containing the returned data
- */
+ */ // 38/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_retrieve_reply_impl(fuse_req_t req, void* cookie,
                                                                  fuse_ino_t ino, off_t offset,
@@ -1311,7 +1312,7 @@ template <typename Derived>
  *   fuse_reply_none
  *
  * @param req request handle
- */
+ */ // 39/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_forget_multi_impl(fuse_req_t req, size_t count,
                                                                struct fuse_forget_data* forgets)
@@ -1337,7 +1338,7 @@ template <typename Derived>
  * @param ino the inode number
  * @param fi file information
  * @param op the locking operation, see flock(2)
- */
+ */ // 40/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_flock_impl(fuse_req_t req, fuse_ino_t ino,
                                                         struct fuse_file_info* fi, int op)
@@ -1372,7 +1373,7 @@ template <typename Derived>
  * @param length size of allocated region
  * @param mode determines the operation to be performed on the given range,
  *             see fallocate(2)
- */
+ */ // 41/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_fallocate_impl(fuse_req_t req, fuse_ino_t ino,
                                                             int mode, off_t offset, off_t length,
@@ -1409,7 +1410,7 @@ template <typename Derived>
  * @param size maximum number of bytes to send
  * @param off offset to continue reading the directory stream
  * @param fi file information
- */
+ */ // 42/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_readdirplus_impl(fuse_req_t req, fuse_ino_t ino,
                                                               size_t size, off_t off,
@@ -1451,7 +1452,7 @@ template <typename Derived>
  * @param fi_out file information of the destination file
  * @param len maximum size of the data to copy
  * @param flags passed along with the copy_file_range() syscall
- */
+ */ // 43/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_copy_file_range_impl(
     fuse_req_t req, fuse_ino_t ino_in, off_t off_in, struct fuse_file_info* fi_in,
@@ -1492,7 +1493,7 @@ template <typename Derived>
  * @param off offset to start search from
  * @param whence either SEEK_DATA or SEEK_HOLE
  * @param fi file information
- */
+ */ // 44/44
 template <typename Derived>
 /*static*/ inline void FuseImpl<Derived>::op_lseek_impl(fuse_req_t req, fuse_ino_t ino, off_t off,
                                                         int whence, struct fuse_file_info* fi)

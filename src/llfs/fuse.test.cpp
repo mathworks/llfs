@@ -9,6 +9,7 @@
 #include <llfs/fuse.hpp>
 //
 #include <llfs/fuse.hpp>
+#include <llfs/null_fuse_impl.hpp>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>

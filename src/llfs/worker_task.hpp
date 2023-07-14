@@ -81,10 +81,7 @@ class WorkQueue
    *
    * This draining method is the best we can do without an interface for job cancellation.
    */
-  void close() noexcept
-  {
-    this->state_.fetch_or(WorkQueue::kClosedFlag);
-  }
+  void close() noexcept;
 
   bool is_closed() const noexcept
   {

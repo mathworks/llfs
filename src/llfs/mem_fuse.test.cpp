@@ -23,6 +23,7 @@
 #include <boost/asio/io_context.hpp>
 
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <thread>
 
@@ -167,6 +168,7 @@ class MemFuseTest : public ::testing::Test
       std::error_code ec;
       bool mountpoint_exists = std::filesystem::exists(this->mountpoint_, ec);
       if (ec && retry == 0) {
+        LLFS_LOG_INFO() << "Attempting to umount " << this->mountpoint_;
         umount(this->mountpoint_str_.c_str());
         continue;
       }
@@ -252,6 +254,12 @@ class MemFuseTest : public ::testing::Test
 
     BATT_REQUIRE_OK(ec);
 
+    std::sort(files.begin(), files.end(),
+              [](const std::filesystem::directory_entry& left,
+                 const std::filesystem::directory_entry& right) {
+                return left.path().string() < right.path().string();
+              });
+
     return files;
   }
 
@@ -281,10 +289,36 @@ class MemFuseTest : public ::testing::Test
 //
 TEST_F(MemFuseTest, StartStop)
 {
-  batt::StatusOr<std::vector<std::filesystem::directory_entry>> files = this->find_files();
+}
 
-  ASSERT_TRUE(files.ok()) << BATT_INSPECT(files.status());
-  EXPECT_TRUE(files->empty());
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
+TEST_F(MemFuseTest, CreateFile)
+{
+  // Initially there should be no files.
+  {
+    batt::StatusOr<std::vector<std::filesystem::directory_entry>> files = this->find_files();
+
+    ASSERT_TRUE(files.ok()) << BATT_INSPECT(files.status());
+    EXPECT_TRUE(files->empty());
+  }
+
+  // Create a single file.
+  {
+    std::ofstream ofs{this->mountpoint_ / "file.txt"};
+  }
+
+  // Expect to find the file we created.
+  {
+    batt::StatusOr<std::vector<std::filesystem::directory_entry>> files = this->find_files();
+
+    ASSERT_TRUE(files.ok()) << BATT_INSPECT(files.status());
+    ASSERT_EQ(files->size(), 1u);
+
+    EXPECT_TRUE((*files)[0].is_regular_file());
+    EXPECT_EQ((*files)[0].path(), this->mountpoint_ / "file.txt");
+    EXPECT_EQ((*files)[0].file_size(), 0u);
+  }
 }
 
 }  // namespace

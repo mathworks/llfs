@@ -16,6 +16,34 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+void WorkQueue::close() noexcept
+{
+  const u64 prior_state = this->state_.fetch_or(WorkQueue::kClosedFlag);
+  u64 observed_state = prior_state | WorkQueue::kClosedFlag;
+
+  while (Self::get_worker_count(observed_state) > 0 && Self::get_job_count(observed_state) == 0) {
+    u64 worker_count = Self::get_worker_count(observed_state);
+
+    const u64 target_state = WorkQueue::kClosedFlag;
+    if (!this->state_.compare_exchange_weak(observed_state, target_state)) {
+      continue;
+    }
+
+    while (worker_count > 0) {
+      WorkerTask* worker = nullptr;
+
+      BATT_CHECK(this->worker_queue_.pop(worker));
+      BATT_CHECK_NOT_NULLPTR(worker);
+
+      worker->halt();
+      --worker_count;
+    }
+    break;
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 batt::Status WorkQueue::push_worker(WorkerTask* worker)
 {
   {
@@ -152,6 +180,8 @@ void WorkerTask::halt()
 {
   const u32 prior_state = this->state_.set_value(WorkerTask::kHaltedState);
   BATT_CHECK_EQ(prior_state, WorkerTask::kReadyState);
+
+  this->state_.close();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

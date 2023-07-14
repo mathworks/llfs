@@ -597,7 +597,21 @@ class FuseSession
 
   int run() noexcept
   {
-    this->run_thread_id_->store(pthread_self());
+    bool cleanup_thread_id = false;
+    {
+      std::unique_lock<std::mutex> lock{*this->mutex_};
+      if (!this->run_thread_id_) {
+        this->run_thread_id_ = std::make_unique<std::atomic<pthread_t>>(pthread_self());
+        this->run_thread_id_->store(pthread_self());
+        cleanup_thread_id = true;
+      }
+    }
+    auto on_scope_exit = batt::finally([&] {
+      if (cleanup_thread_id) {
+        std::unique_lock<std::mutex> lock{*this->mutex_};
+        this->run_thread_id_ = nullptr;
+      }
+    });
 
     if (this->opts_.singlethread) {
       return fuse_session_loop(this->session_.get());
@@ -615,7 +629,12 @@ class FuseSession
   void halt()
   {
     fuse_session_exit(this->session_.get());
-    pthread_kill(this->run_thread_id_->load(), SIGPIPE);
+    {
+      std::unique_lock<std::mutex> lock{*this->mutex_};
+      if (this->run_thread_id_) {
+        pthread_kill(this->run_thread_id_->load(), SIGPIPE);
+      }
+    }
   }
 
  private:
@@ -635,7 +654,9 @@ class FuseSession
 
   bool mounted_ = false;
 
-  std::shared_ptr<std::atomic<pthread_t>> run_thread_id_{new std::atomic<pthread_t>{0}};
+  std::unique_ptr<std::mutex> mutex_ = std::make_unique<std::mutex>();
+
+  std::unique_ptr<std::atomic<pthread_t>> run_thread_id_;
 };
 
 }  //namespace llfs

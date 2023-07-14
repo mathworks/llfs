@@ -28,6 +28,7 @@
 #include <string_view>
 
 #include <errno.h>
+#include <pthread.h>
 #include <sys/statvfs.h>
 
 namespace llfs {
@@ -596,6 +597,8 @@ class FuseSession
 
   int run() noexcept
   {
+    this->run_thread_id_->store(pthread_self());
+
     if (this->opts_.singlethread) {
       return fuse_session_loop(this->session_.get());
     }
@@ -612,6 +615,7 @@ class FuseSession
   void halt()
   {
     fuse_session_exit(this->session_.get());
+    pthread_kill(this->run_thread_id_->load(), SIGPIPE);
   }
 
  private:
@@ -630,6 +634,8 @@ class FuseSession
   std::unique_ptr<FuseImplBase> impl_;
 
   bool mounted_ = false;
+
+  std::shared_ptr<std::atomic<pthread_t>> run_thread_id_{new std::atomic<pthread_t>{0}};
 };
 
 }  //namespace llfs

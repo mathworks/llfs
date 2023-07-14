@@ -26,6 +26,8 @@
 #include <iostream>
 #include <thread>
 
+#include <sys/mount.h>
+
 namespace {
 
 namespace termxx {
@@ -127,62 +129,162 @@ void CustomPrefix(std::ostream& s, const google::LogMessageInfo& l, void*)
     << termxx::Reset;
 }
 
-TEST(MemFuseTest, Test)
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
+class MemFuseTest : public ::testing::Test
 {
-  google::InitGoogleLogging("llfs_Test", google::CustomPrefixCallback{CustomPrefix},
-                            /*prefix_callback_data=*/nullptr);
+ public:
+  void SetUp() override
+  {
+    // Initialize and configure logging.
+    //
+    if (false) {
+      google::InitGoogleLogging("llfs_Test", google::CustomPrefixCallback{CustomPrefix},
+                                /*prefix_callback_data=*/nullptr);
+    }
 
-  LLFS_LOG_INFO() << "Test log message";
+    // Enable task dumping signal handler.
+    //
+    batt::enable_dump_tasks();
 
-  struct stat st;
-  std::memset(&st, 0, sizeof(st));
+    // Initialize the work queue used by MemFuseImpl.
+    //
+    this->work_queue_ = std::make_shared<llfs::WorkQueue>();
 
-  batt::enable_dump_tasks();
+    // Start a single thread to pull work from the queue.
+    //
+    this->worker_task_thread_.emplace([this] {
+      boost::asio::io_context io;
 
-  int rt = lstat(".", &st);
+      llfs::WorkerTask task{batt::make_copy(this->work_queue_), io.get_executor()};
 
-  std::cout << std::endl << llfs::DumpStat{st} << BATT_INSPECT(rt) << std::endl << std::endl;
+      io.run();
+    });
 
-  auto work_queue = std::make_shared<llfs::WorkQueue>();
+    // Create a fresh mount point directory.
+    //
+    for (int retry = 0; retry < 2; ++retry) {
+      std::error_code ec;
+      bool mountpoint_exists = std::filesystem::exists(this->mountpoint_, ec);
+      if (ec && retry == 0) {
+        umount(this->mountpoint_str_.c_str());
+        continue;
+      }
 
-  std::thread t{[&work_queue] {
-    boost::asio::io_context io;
+      if (mountpoint_exists) {
+        std::filesystem::remove_all(this->mountpoint_, ec);
+        ASSERT_FALSE(ec) << "Failed to remove mountpoint";
+      }
 
-    llfs::WorkerTask task{batt::make_copy(work_queue), io.get_executor()};
+      std::filesystem::create_directories(this->mountpoint_, ec);
+      ASSERT_FALSE(ec) << "Failed to initialize mountpoint";
+    }
 
-    io.run();
-  }};
+    // Start FUSE session on a background thread.
+    //
+    {
+      BATT_CHECK_NOT_NULLPTR(this->work_queue_);
 
-  t.detach();
+      batt::StatusOr<llfs::FuseSession> status_or_session = llfs::FuseSession::from_args(
+          this->argc_, this->argv_.data(), batt::StaticType<llfs::MemoryFuseImpl>{},
+          batt::make_copy(this->work_queue_));
 
-  auto mountpoint = std::filesystem::path{"/tmp/llfs_fuse_test"};
-  std::string mountpoint_str = mountpoint.string();
+      ASSERT_TRUE(status_or_session.ok()) << BATT_INSPECT(status_or_session.status());
 
-  if (std::filesystem::exists(mountpoint)) {
-    std::filesystem::remove_all(mountpoint);
+      BATT_CHECK_EQ(this->fuse_session_, batt::None);
+      this->fuse_session_ = std::move(*status_or_session);
+    }
+    BATT_CHECK_EQ(this->fuse_session_thread_, batt::None);
+
+    this->fuse_session_thread_.emplace([this] {
+      BATT_CHECK_NE(this->fuse_session_, batt::None);
+      this->fuse_session_->run();
+    });
   }
-  std::filesystem::create_directories(mountpoint);
 
-  const char* argv[] = {
+  void TearDown() override
+  {
+    if (this->work_queue_) {
+      LLFS_LOG_INFO() << "Closing work queue";
+      this->work_queue_->close();
+      if (this->worker_task_thread_) {
+        LLFS_LOG_INFO() << "Joining worker task thread";
+        this->worker_task_thread_->join();
+        this->worker_task_thread_ = batt::None;
+      }
+    } else {
+      BATT_CHECK_EQ(this->worker_task_thread_, batt::None);
+    }
+
+    if (this->fuse_session_) {
+      LLFS_LOG_INFO() << "Halting fuse session";
+      this->fuse_session_->halt();
+      if (this->fuse_session_thread_) {
+        LLFS_LOG_INFO() << "Joining fuse thread";
+        this->fuse_session_thread_->join();
+        this->fuse_session_thread_ = batt::None;
+      }
+    }
+
+    this->work_queue_ = nullptr;
+    this->fuse_session_ = batt::None;
+  }
+
+  void print_lstat()
+  {
+    struct stat st;
+    std::memset(&st, 0, sizeof(st));
+
+    int rt = lstat(".", &st);
+
+    std::cout << std::endl << llfs::DumpStat{st} << BATT_INSPECT(rt) << std::endl << std::endl;
+  }
+
+  batt::StatusOr<std::vector<std::filesystem::directory_entry>> find_files()
+  {
+    std::vector<std::filesystem::directory_entry> files;
+
+    std::error_code ec;
+    for (const std::filesystem::directory_entry& entry :
+         std::filesystem::recursive_directory_iterator(this->mountpoint_, ec)) {
+      files.push_back(entry);
+    }
+
+    BATT_REQUIRE_OK(ec);
+
+    return files;
+  }
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  std::shared_ptr<llfs::WorkQueue> work_queue_;
+
+  batt::Optional<std::thread> worker_task_thread_;
+
+  const std::filesystem::path mountpoint_{"/tmp/llfs_fuse_test"};
+
+  const std::string mountpoint_str_ = this->mountpoint_.string();
+
+  std::array<const char*, 2> argv_{
       "llfs_Test",
-      mountpoint_str.c_str(),
+      this->mountpoint_str_.c_str(),
   };
-  int argc = sizeof(argv) / sizeof(const char*);
 
-  LLFS_LOG_INFO() << BATT_INSPECT(argc);
+  const int argc_ = this->argv_.size();
 
-  batt::StatusOr<llfs::FuseSession> session = llfs::FuseSession::from_args(
-      argc, argv, batt::StaticType<llfs::MemoryFuseImpl>{}, batt::make_copy(work_queue));
+  batt::Optional<llfs::FuseSession> fuse_session_;
 
-  BATT_CHECK_OK(session);
+  batt::Optional<std::thread> fuse_session_thread_;
+};
 
-  std::thread session_thread{[&] {
-    session->run();
-  }};
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
+TEST_F(MemFuseTest, StartStop)
+{
+  batt::StatusOr<std::vector<std::filesystem::directory_entry>> files = this->find_files();
 
-  session->halt();
-
-  session_thread.join();
+  ASSERT_TRUE(files.ok()) << BATT_INSPECT(files.status());
+  EXPECT_TRUE(files->empty());
 }
 
 }  // namespace

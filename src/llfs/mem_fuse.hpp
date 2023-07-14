@@ -42,9 +42,10 @@ class MemoryFuseImpl : public WorkerTaskFuseImpl<MemoryFuseImpl>
   struct State {
     std::unordered_map<fuse_ino_t, batt::SharedPtr<MemInode>> inodes_;
 
-    std::unordered_map<u64, batt::SharedPtr<MemFileHandle>> file_handles_;
+    std::unordered_map<FuseFileHandle, batt::SharedPtr<MemFileHandle>, std::hash<u64>>
+        file_handles_;
 
-    std::vector<u64> available_fhs_;
+    std::vector<FuseFileHandle> available_fhs_;
   };
 
   batt::Mutex<State> state_;
@@ -59,55 +60,6 @@ class MemoryFuseImpl : public WorkerTaskFuseImpl<MemoryFuseImpl>
     locked->inodes_.emplace(
         FUSE_ROOT_ID,
         batt::make_shared<MemInode>(FUSE_ROOT_ID, MemInode::Category::kDirectory, /*mode=*/0755));
-  }
-
-  /** \brief Returns an unused inode (ino) integer.
-   */
-  fuse_ino_t allocate_ino_int()
-  {
-    return this->next_unused_ino_.fetch_add(1);
-  }
-
-  /** \brief Returns an unused file handle integer.
-   */
-  u64 allocate_fh_int()
-  {
-    {
-      auto locked = this->state_.lock();
-
-      if (!locked->available_fhs_.empty()) {
-        const u64 fh = locked->available_fhs_.back();
-        locked->available_fhs_.pop_back();
-        return fh;
-      }
-    }
-    return this->next_unused_fh_int_.fetch_add(1);
-  }
-
-  /** \brief
-   */
-  batt::StatusOr<batt::SharedPtr<MemInode>> find_inode(fuse_ino_t ino)
-  {
-    auto locked = this->state_.lock();
-
-    auto iter = locked->inodes_.find(ino);
-    if (iter == locked->inodes_.end()) {
-      return {batt::status_from_errno(ENOENT)};
-    }
-    return {iter->second};
-  }
-
-  /** \brief
-   */
-  batt::StatusOr<batt::SharedPtr<MemFileHandle>> find_file_handle(u64 fh)
-  {
-    auto locked = this->state_.lock();
-
-    auto iter = locked->file_handles_.find(fh);
-    if (iter == locked->file_handles_.end()) {
-      return {batt::status_from_errno(EINVAL)};
-    }
-    return {iter->second};
   }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -182,8 +134,15 @@ class MemoryFuseImpl : public WorkerTaskFuseImpl<MemoryFuseImpl>
    */ // 6/44
   batt::StatusOr<FuseImplBase::Attributes> set_attributes(fuse_req_t req, fuse_ino_t ino,
                                                           const struct stat* attr, int to_set,
-                                                          batt::Optional<u64> fh_from_ftruncate)
+                                                          batt::Optional<FuseFileHandle> fh)
   {
+    LLFS_VLOG(1) << "MemoryFuseImpl::" << __FUNCTION__                 //
+                 << "(" << BATT_INSPECT(req)                           //
+                 << "," << BATT_INSPECT(ino)                           //
+                 << "," << BATT_INSPECT(DumpStat{*attr})               //
+                 << "," << BATT_INSPECT(std::bitset<17>{(u32)to_set})  //
+                 << "," << BATT_INSPECT(fh)                            //
+                 << " )";
     /*
      * If the setattr was invoked from the ftruncate() system call
      * under Linux kernel versions 2.6.15 or later, the fi->fh will
@@ -311,7 +270,8 @@ class MemoryFuseImpl : public WorkerTaskFuseImpl<MemoryFuseImpl>
 
   /** \brief
    */ // 15/44
-  batt::StatusOr<const fuse_file_info*> open(fuse_req_t req, fuse_ino_t ino, fuse_file_info* fi)
+  batt::StatusOr<const fuse_file_info*> open(fuse_req_t req, fuse_ino_t ino,
+                                             const fuse_file_info& fi)
   {
     LLFS_VLOG(1) << "MemoryFuseImpl::" << __FUNCTION__  //
                  << "(" << BATT_INSPECT(req)            //
@@ -331,37 +291,61 @@ class MemoryFuseImpl : public WorkerTaskFuseImpl<MemoryFuseImpl>
   /** \brief
    */ // 16/44
   batt::StatusOr<FuseImplBase::FuseReadData> read(fuse_req_t req, fuse_ino_t ino, size_t size,
-                                                  FileOffset offset, fuse_file_info* fi)
+                                                  FileOffset offset, FuseFileHandle fh)
   {
-    LLFS_LOG_ERROR() << "MemoryFuseImpl::" << __FUNCTION__  //
-                     << "("                                 //
-                     << " )"
-                     << " NOT IMPLEMENTED";
+    LLFS_VLOG(1) << "MemoryFuseImpl::" << __FUNCTION__  //
+                 << "(" << BATT_INSPECT(req)            //
+                 << "," << BATT_INSPECT(ino)            //
+                 << "," << BATT_INSPECT(size)           //
+                 << "," << BATT_INSPECT(offset)         //
+                 << "," << BATT_INSPECT(fh)             //
+                 << " )";
 
-    return {batt::StatusCode::kUnimplemented};
+    BATT_ASSIGN_OK_RESULT(batt::SharedPtr<MemInode> inode, this->find_inode(ino));
+
+    return {FuseImplBase::FuseReadData{inode->read(offset, size)}};
   }
 
   /** \brief
    */ // 17/44
   batt::StatusOr<usize> write(fuse_req_t req, fuse_ino_t ino, const batt::ConstBuffer& buffer,
-                              FileOffset offset, fuse_file_info* fi)
-  {
-    LLFS_LOG_ERROR() << "MemoryFuseImpl::" << __FUNCTION__  //
-                     << "("                                 //
-                     << " )"
-                     << " NOT IMPLEMENTED";
-
-    return {batt::StatusCode::kUnimplemented};
-  }
-
-  /** \brief
-   */ // 18/44
-  batt::Status flush(fuse_req_t req, fuse_ino_t ino, fuse_file_info* fi)
+                              FileOffset offset, FuseFileHandle fh)
   {
     LLFS_VLOG(1) << "MemoryFuseImpl::" << __FUNCTION__  //
                  << "(" << BATT_INSPECT(req)            //
                  << "," << BATT_INSPECT(ino)            //
-                 << "," << BATT_INSPECT(fi)             //
+                 << "," << BATT_INSPECT(buffer.size())  //
+                 << "," << BATT_INSPECT(offset)         //
+                 << "," << BATT_INSPECT(fh)             //
+                 << " )";
+
+    return this->write_impl(req, ino, batt::as_slice(&buffer, 1), offset, fh);
+  }
+
+  /** \brief
+   */ // 37/44
+  batt::StatusOr<usize> write_buf(fuse_req_t req, fuse_ino_t ino,
+                                  const FuseImplBase::ConstBufferVec& bufv, FileOffset offset,
+                                  FuseFileHandle fh)
+  {
+    LLFS_VLOG(1) << "MemoryFuseImpl::" << __FUNCTION__  //
+                 << "(" << BATT_INSPECT(req)            //
+                 << "," << BATT_INSPECT(ino)            //
+                 << "," << BATT_INSPECT(offset)         //
+                 << "," << BATT_INSPECT(fh)             //
+                 << " )";
+
+    return this->write_impl(req, ino, batt::as_slice(bufv), offset, fh);
+  }
+
+  /** \brief
+   */ // 18/44
+  batt::Status flush(fuse_req_t req, fuse_ino_t ino, FuseFileHandle fh)
+  {
+    LLFS_VLOG(1) << "MemoryFuseImpl::" << __FUNCTION__  //
+                 << "(" << BATT_INSPECT(req)            //
+                 << "," << BATT_INSPECT(ino)            //
+                 << "," << BATT_INSPECT(fh)             //
                  << " )";
 
     return batt::OkStatus();
@@ -369,7 +353,7 @@ class MemoryFuseImpl : public WorkerTaskFuseImpl<MemoryFuseImpl>
 
   /** \brief
    */ // 19/44
-  batt::Status release(fuse_req_t req, fuse_ino_t ino, u64 fh, int flags)
+  batt::Status release(fuse_req_t req, fuse_ino_t ino, FuseFileHandle fh, FileOpenFlags flags)
   {
     LLFS_VLOG(1) << "MemoryFuseImpl::" << __FUNCTION__  //
                  << "(" << BATT_INSPECT(req)            //
@@ -383,7 +367,7 @@ class MemoryFuseImpl : public WorkerTaskFuseImpl<MemoryFuseImpl>
 
   /** \brief
    */ // 20/44
-  batt::Status fsync(fuse_req_t req, fuse_ino_t ino, int datasync, fuse_file_info* fi)
+  batt::Status fsync(fuse_req_t req, fuse_ino_t ino, IsDataSync datasync, FuseFileHandle fh)
   {
     LLFS_LOG_ERROR() << "MemoryFuseImpl::" << __FUNCTION__  //
                      << "("                                 //
@@ -395,15 +379,14 @@ class MemoryFuseImpl : public WorkerTaskFuseImpl<MemoryFuseImpl>
 
   /** \brief
    */ // 21/44
-  batt::StatusOr<const fuse_file_info*> opendir(fuse_req_t req, fuse_ino_t ino, fuse_file_info* fi)
+  batt::StatusOr<const fuse_file_info*> opendir(fuse_req_t req, fuse_ino_t ino,
+                                                const fuse_file_info& fi)
   {
     LLFS_VLOG(1) << "MemoryFuseImpl::" << __FUNCTION__  //
                  << "(" << BATT_INSPECT(req)            //
                  << "," << BATT_INSPECT(ino)            //
                  << "," << BATT_INSPECT(fi)             //
                  << " )";
-
-    BATT_CHECK_NOT_NULLPTR(fi);
 
     BATT_ASSIGN_OK_RESULT(batt::SharedPtr<MemInode> inode, this->find_inode(ino));
     BATT_ASSIGN_OK_RESULT(
@@ -418,7 +401,7 @@ class MemoryFuseImpl : public WorkerTaskFuseImpl<MemoryFuseImpl>
   /** \brief
    */ // 22/44
   batt::StatusOr<FuseImplBase::FuseReadDirData> readdir(fuse_req_t req, fuse_ino_t ino, size_t size,
-                                                        DirentOffset offset, u64 fh)
+                                                        DirentOffset offset, FuseFileHandle fh)
   {
     LLFS_VLOG(1) << "MemoryFuseImpl::" << __FUNCTION__  //
                  << "(" << BATT_INSPECT(req)            //
@@ -433,7 +416,7 @@ class MemoryFuseImpl : public WorkerTaskFuseImpl<MemoryFuseImpl>
 
   /** \brief
    */ // 23/44
-  batt::Status releasedir(fuse_req_t req, fuse_ino_t ino, u64 fh)
+  batt::Status releasedir(fuse_req_t req, fuse_ino_t ino, FuseFileHandle fh)
   {
     LLFS_VLOG(1) << "MemoryFuseImpl::" << __FUNCTION__  //
                  << "(" << BATT_INSPECT(req)            //
@@ -446,7 +429,7 @@ class MemoryFuseImpl : public WorkerTaskFuseImpl<MemoryFuseImpl>
 
   /** \brief
    */ // 24/44
-  batt::Status fsyncdir(fuse_req_t req, fuse_ino_t ino, int datasync, u64 fh)
+  batt::Status fsyncdir(fuse_req_t req, fuse_ino_t ino, IsDataSync datasync, FuseFileHandle fh)
   {
     LLFS_LOG_ERROR() << "MemoryFuseImpl::" << __FUNCTION__  //
                      << "("                                 //
@@ -522,7 +505,7 @@ class MemoryFuseImpl : public WorkerTaskFuseImpl<MemoryFuseImpl>
    */ // 31/44
   batt::StatusOr<FuseImplBase::FuseCreateReply> create(fuse_req_t req, fuse_ino_t parent,
                                                        const std::string& name, mode_t mode,
-                                                       fuse_file_info* fi)
+                                                       const fuse_file_info& fi)
   {
     LLFS_VLOG(1) << "MemoryFuseImpl::" << __FUNCTION__       //
                  << "(" << BATT_INSPECT(req)                 //
@@ -531,8 +514,6 @@ class MemoryFuseImpl : public WorkerTaskFuseImpl<MemoryFuseImpl>
                  << "," << BATT_INSPECT(DumpFileMode{mode})  //
                  << "," << BATT_INSPECT(fi)                  //
                  << " )";
-
-    BATT_CHECK_NOT_NULLPTR(fi);
 
     BATT_ASSIGN_OK_RESULT(batt::SharedPtr<MemInode> new_inode,
                           this->create_inode_impl(parent, name, mode, MemInode::IsDir{false}));
@@ -544,18 +525,6 @@ class MemoryFuseImpl : public WorkerTaskFuseImpl<MemoryFuseImpl>
         .entry = new_inode->get_fuse_entry_param(),
         .fi = opened_file_info,
     };
-  }
-
-  /** \brief
-   */ // 37/44
-  batt::StatusOr<usize> write_buf(fuse_req_t req, fuse_ino_t ino, struct fuse_bufvec* bufv,
-                                  FileOffset offset, fuse_file_info* fi)
-  {
-    LLFS_LOG_ERROR() << "MemoryFuseImpl::" << __FUNCTION__ << "("  //
-                     << " )"
-                     << " NOT IMPLEMENTED";
-
-    return {batt::StatusCode::kUnimplemented};
   }
 
   /** \brief
@@ -593,7 +562,7 @@ class MemoryFuseImpl : public WorkerTaskFuseImpl<MemoryFuseImpl>
    */ // 42/44
   batt::StatusOr<FuseImplBase::FuseReadDirData> readdirplus(fuse_req_t req, fuse_ino_t ino,
                                                             size_t size, DirentOffset offset,
-                                                            u64 fh)
+                                                            FuseFileHandle fh)
   {
     LLFS_VLOG(1) << "MemoryFuseImpl::" << __FUNCTION__  //
                  << "(" << BATT_INSPECT(req)            //
@@ -607,114 +576,64 @@ class MemoryFuseImpl : public WorkerTaskFuseImpl<MemoryFuseImpl>
   }
 
  private:
-  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-  //
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief Returns an unused inode (ino) integer.
+   */
+  fuse_ino_t allocate_ino_int();
+
+  /** \brief Returns an unused file handle integer.
+   */
+  FuseFileHandle allocate_fh_int();
+
+  /** \brief
+   */
+  batt::StatusOr<batt::SharedPtr<MemInode>> find_inode(fuse_ino_t ino);
+
+  /** \brief
+   */
+  batt::StatusOr<batt::SharedPtr<MemFileHandle>> find_file_handle(FuseFileHandle fh);
+
+  /** \brief
+   */
   batt::StatusOr<batt::SharedPtr<MemInode>> create_inode_impl(fuse_ino_t parent,
                                                               const std::string& name, mode_t mode,
-                                                              MemInode::IsDir is_dir)
-  {
-    BATT_ASSIGN_OK_RESULT(batt::SharedPtr<MemInode> parent_inode, this->find_inode(parent));
+                                                              MemInode::IsDir is_dir);
 
-    const auto category = [&] {
-      if (is_dir) {
-        return MemInode::Category::kDirectory;
-      }
-      return static_cast<MemInode::Category>(mode & S_IFMT);
-    }();
-
-    const fuse_ino_t new_ino = this->allocate_ino_int();
-    auto new_inode = batt::make_shared<MemInode>(new_ino,   //
-                                                 category,  //
-                                                 (mode & (S_IRWXU | S_IRWXG | S_IRWXO)));
-
-    BATT_REQUIRE_OK(parent_inode->add_child(name, batt::make_copy(new_inode)));
-
-    {
-      auto locked = this->state_.lock();
-      locked->inodes_.emplace(new_ino, new_inode);
-    }
-
-    new_inode->add_lookup(1);
-
-    return {std::move(new_inode)};
-  }
-
-  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-  //
+  /** \brief
+   */
   template <typename... OpenStateArgs>
   batt::StatusOr<const fuse_file_info*> open_inode_impl(batt::SharedPtr<MemInode>&& inode,
-                                                        fuse_file_info* fi,
-                                                        OpenStateArgs&&... open_state_args)
-  {
-    BATT_CHECK_NOT_NULLPTR(inode);
-    BATT_CHECK_NOT_NULLPTR(fi);
+                                                        const fuse_file_info& fi,
+                                                        OpenStateArgs&&... open_state_args);
 
-    fi->fh = this->allocate_fh_int();
+  /** \brief
+   */
+  batt::Status close_impl(FuseFileHandle fh);
 
-    {
-      auto locked = this->state_.lock();
-
-      auto [fh_iter, inserted] = locked->file_handles_.emplace(
-          fi->fh, batt::make_shared<MemFileHandle>(std::move(inode), *fi,
-                                                   BATT_FORWARD(open_state_args)...));
-
-      BATT_CHECK(inserted);
-
-      return &fh_iter->second->info;
-    }
-  }
-
-  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-  //
-  batt::Status close_impl(u64 fh)
-  {
-    BATT_ASSIGN_OK_RESULT(batt::SharedPtr<MemFileHandle> file_handle, this->find_file_handle(fh));
-
-    {
-      auto locked = this->state_.lock();
-
-      locked->file_handles_.erase(fh);
-      locked->available_fhs_.emplace_back(fh);
-    }
-
-    return batt::OkStatus();
-  }
-
-  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-  //
+  /** \brief
+   */
   batt::StatusOr<FuseReadDirData> readdir_impl(fuse_req_t req, fuse_ino_t ino, size_t size,
-                                               DirentOffset offset, u64 fh, PlusApi plus_api)
-  {
-    BATT_ASSIGN_OK_RESULT(batt::SharedPtr<MemInode> inode, this->find_inode(ino));
-    BATT_ASSIGN_OK_RESULT(batt::SharedPtr<MemFileHandle> dh, this->find_file_handle(fh));
+                                               DirentOffset offset, FuseFileHandle fh,
+                                               PlusApi plus_api);
 
-    return inode->readdir(req, *dh, size, offset, plus_api);
-  }
-
-  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-  //
+  /** \brief
+   */
   batt::Status unlink_impl(fuse_req_t req, fuse_ino_t parent, const std::string& name,
-                           MemInode::IsDir is_dir)
-  {
-    using ResultPair = std::pair<MemInode::IsDead, batt::SharedPtr<MemInode>>;
+                           MemInode::IsDir is_dir);
 
-    BATT_ASSIGN_OK_RESULT(batt::SharedPtr<MemInode> parent_inode, this->find_inode(parent));
-    BATT_ASSIGN_OK_RESULT(ResultPair child_inode,
-                          parent_inode->remove_child(name, is_dir, MemInode::RequireEmpty{is_dir}));
-
-    if (child_inode.first) {
-      auto locked = this->state_.lock();
-
-      locked->inodes_.erase(child_inode.second->get_ino());
-    }
-
-    return batt::OkStatus();
-  }
+  /** \brief
+   */
+  batt::StatusOr<usize> write_impl(fuse_req_t req, fuse_ino_t ino,
+                                   const batt::Slice<const batt::ConstBuffer>& buffers,
+                                   FileOffset offset, FuseFileHandle fh);
 
 };  // class MemoryFuseImpl
 
 //#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
 
 }  //namespace llfs
+
+#include <llfs/mem_fuse.ipp>
 
 #endif  // LLFS_MEM_FUSE_HPP

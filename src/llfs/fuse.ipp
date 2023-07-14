@@ -518,7 +518,9 @@ template <typename Derived>
   void* userdata = fuse_req_userdata(req);
   [[maybe_unused]] auto* impl = static_cast<FuseImpl<Derived>*>(userdata);
 
-  impl->derived_this()->async_read(req, ino, size, FileOffset{off}, fi,
+  BATT_CHECK_NOT_NULLPTR(fi);
+
+  impl->derived_this()->async_read(req, ino, size, FileOffset{off}, FuseFileHandle{fi->fh},
                                    impl->make_read_handler(req));
 }
 
@@ -556,8 +558,10 @@ template <typename Derived>
   void* userdata = fuse_req_userdata(req);
   [[maybe_unused]] auto* impl = static_cast<FuseImpl<Derived>*>(userdata);
 
-  impl->derived_this()->async_write(req, ino, batt::ConstBuffer{buf, size}, FileOffset{off}, fi,
-                                    impl->make_write_handler(req));
+  BATT_CHECK_NOT_NULLPTR(fi);
+
+  impl->derived_this()->async_write(req, ino, batt::ConstBuffer{buf, size}, FileOffset{off},
+                                    FuseFileHandle{fi->fh}, impl->make_write_handler(req));
 }
 
 /**
@@ -605,7 +609,16 @@ template <typename Derived>
   void* userdata = fuse_req_userdata(req);
   [[maybe_unused]] auto* impl = static_cast<FuseImpl<Derived>*>(userdata);
 
-  impl->derived_this()->async_flush(req, ino, fi, impl->make_error_handler(req));
+  BATT_CHECK_NOT_NULLPTR(fi);
+
+  /* TODO [tastolfi 2023-07-14] Take into account:
+   *
+   * "If the filesystem supports file locking operations (setlk,
+   *  getlk) it should remove all locks belonging to 'fi->owner'."
+   */
+
+  impl->derived_this()->async_flush(req, ino, FuseFileHandle{fi->fh},
+                                    impl->make_error_handler(req));
 }
 
 /**
@@ -640,7 +653,10 @@ template <typename Derived>
   void* userdata = fuse_req_userdata(req);
   [[maybe_unused]] auto* impl = static_cast<FuseImpl<Derived>*>(userdata);
 
-  impl->derived_this()->async_release(req, ino, fi, impl->make_error_handler(req));
+  BATT_CHECK_NOT_NULLPTR(fi);
+
+  impl->derived_this()->async_release(req, ino, FuseFileHandle{fi->fh}, FileOpenFlags{fi->flags},
+                                      impl->make_error_handler(req));
 }
 
 /**
@@ -669,7 +685,10 @@ template <typename Derived>
   void* userdata = fuse_req_userdata(req);
   [[maybe_unused]] auto* impl = static_cast<FuseImpl<Derived>*>(userdata);
 
-  impl->derived_this()->async_fsync(req, ino, datasync, fi, impl->make_error_handler(req));
+  BATT_CHECK_NOT_NULLPTR(fi);
+
+  impl->derived_this()->async_fsync(req, ino, IsDataSync{datasync != 0}, FuseFileHandle{fi->fh},
+                                    impl->make_error_handler(req));
 }
 
 /**
@@ -755,7 +774,9 @@ template <typename Derived>
   void* userdata = fuse_req_userdata(req);
   [[maybe_unused]] auto* impl = static_cast<FuseImpl<Derived>*>(userdata);
 
-  impl->derived_this()->async_readdir(req, ino, size, DirentOffset{off}, fi,
+  BATT_CHECK_NOT_NULLPTR(fi);
+
+  impl->derived_this()->async_readdir(req, ino, size, DirentOffset{off}, FuseFileHandle{fi->fh},
                                       impl->make_readdir_handler(req));
 }
 
@@ -782,7 +803,10 @@ template <typename Derived>
   void* userdata = fuse_req_userdata(req);
   [[maybe_unused]] auto* impl = static_cast<FuseImpl<Derived>*>(userdata);
 
-  impl->derived_this()->async_releasedir(req, ino, fi, impl->make_error_handler(req));
+  BATT_CHECK_NOT_NULLPTR(fi);
+
+  impl->derived_this()->async_releasedir(req, ino, FuseFileHandle{fi->fh},
+                                         impl->make_error_handler(req));
 }
 
 /**
@@ -814,7 +838,10 @@ template <typename Derived>
   void* userdata = fuse_req_userdata(req);
   [[maybe_unused]] auto* impl = static_cast<FuseImpl<Derived>*>(userdata);
 
-  impl->derived_this()->async_fsyncdir(req, ino, datasync, fi, impl->make_error_handler(req));
+  BATT_CHECK_NOT_NULLPTR(fi);
+
+  impl->derived_this()->async_fsyncdir(req, ino, IsDataSync{datasync != 0}, FuseFileHandle{fi->fh},
+                                       impl->make_error_handler(req));
 }
 
 /**
@@ -1270,10 +1297,19 @@ template <typename Derived>
   void* userdata = fuse_req_userdata(req);
   [[maybe_unused]] auto* impl = static_cast<FuseImpl<Derived>*>(userdata);
 
-  // TODO [tastolfi 2023-07-12] bufv -> ConstBufferSequence?
-  //
-  impl->derived_this()->async_write_buf(req, ino, bufv, FileOffset{offset}, fi,
-                                        impl->make_write_handler(req));
+  BATT_CHECK_NOT_NULLPTR(fi);
+  BATT_CHECK_NOT_NULLPTR(bufv);
+
+  batt::StatusOr<FuseImplBase::ConstBufferVec> buf_vec =
+      FuseImplBase::const_buffer_vec_from_bufv(*bufv);
+
+  if (!buf_vec.ok()) {
+    fuse_reply_err(req, FuseImplBase::errno_from_status(buf_vec.status()));
+    return;
+  }
+
+  impl->derived_this()->async_write_buf(req, ino, *buf_vec, FileOffset{offset},
+                                        FuseFileHandle{fi->fh}, impl->make_write_handler(req));
 }
 
 /**
@@ -1419,7 +1455,9 @@ template <typename Derived>
   void* userdata = fuse_req_userdata(req);
   [[maybe_unused]] auto* impl = static_cast<FuseImpl<Derived>*>(userdata);
 
-  impl->derived_this()->async_readdirplus(req, ino, size, DirentOffset{off}, fi,
+  BATT_CHECK_NOT_NULLPTR(fi);
+
+  impl->derived_this()->async_readdirplus(req, ino, size, DirentOffset{off}, FuseFileHandle{fi->fh},
                                           impl->make_readdir_handler(req));
 }
 
@@ -1504,7 +1542,8 @@ template <typename Derived>
   (void)ino;
   (void)off;
   (void)whence;
-  (void)fi;
+
+  BATT_CHECK_NOT_NULLPTR(fi);
 
   LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
   // TODO [tastolfi 2023-06-28]

@@ -248,7 +248,7 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
   /** \brief
    */ // 16/44
   template <typename Handler>
-  void async_read(fuse_req_t req, fuse_ino_t ino, size_t size, FileOffset off, fuse_file_info* fi,
+  void async_read(fuse_req_t req, fuse_ino_t ino, size_t size, FileOffset off, FuseFileHandle fh,
                   Handler&& handler)
   {
     LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
@@ -257,7 +257,7 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
     (void)ino;
     (void)size;
     (void)off;
-    (void)fi;
+    (void)fh;
 
     BATT_FORWARD(handler)
     (batt::StatusOr<FuseReadData>{batt::Status{batt::StatusCode::kUnimplemented}});
@@ -267,7 +267,7 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
    */ // 17/44
   template <typename Handler>
   void async_write(fuse_req_t req, fuse_ino_t ino, const batt::ConstBuffer& buffer,
-                   FileOffset offset, fuse_file_info* fi, Handler&& handler)
+                   FileOffset offset, FuseFileHandle fh, Handler&& handler)
   {
     LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
 
@@ -275,7 +275,7 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
     (void)ino;
     (void)buffer;
     (void)offset;
-    (void)fi;
+    (void)fh;
 
     BATT_FORWARD(handler)(batt::StatusOr<usize>{batt::Status{batt::StatusCode::kUnimplemented}});
   }
@@ -283,13 +283,13 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
   /** \brief
    */ // 18/44
   template <typename Handler>
-  void async_flush(fuse_req_t req, fuse_ino_t ino, fuse_file_info* fi, Handler&& handler)
+  void async_flush(fuse_req_t req, fuse_ino_t ino, FuseFileHandle fh, Handler&& handler)
   {
     LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
 
     (void)req;
     (void)ino;
-    (void)fi;
+    (void)fh;
 
     BATT_FORWARD(handler)(batt::Status{batt::StatusCode::kUnimplemented});
   }
@@ -297,13 +297,15 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
   /** \brief
    */ // 19/44
   template <typename Handler>
-  void async_release(fuse_req_t req, fuse_ino_t ino, fuse_file_info* fi, Handler&& handler)
+  void async_release(fuse_req_t req, fuse_ino_t ino, FuseFileHandle fh, FileOpenFlags flags,
+                     Handler&& handler)
   {
     LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
 
     (void)req;
     (void)ino;
-    (void)fi;
+    (void)fh;
+    (void)flags;
 
     BATT_FORWARD(handler)(batt::Status{batt::StatusCode::kUnimplemented});
   }
@@ -311,7 +313,7 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
   /** \brief
    */ // 20/44
   template <typename Handler>
-  void async_fsync(fuse_req_t req, fuse_ino_t ino, int datasync, fuse_file_info* fi,
+  void async_fsync(fuse_req_t req, fuse_ino_t ino, IsDataSync datasync, FuseFileHandle fh,
                    Handler&& handler)
   {
     LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
@@ -319,7 +321,7 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
     (void)req;
     (void)ino;
     (void)datasync;
-    (void)fi;
+    (void)fh;
 
     BATT_FORWARD(handler)(batt::Status{batt::StatusCode::kUnimplemented});
   }
@@ -343,7 +345,7 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
    */ // 22/44
   template <typename Handler>
   void async_readdir(fuse_req_t req, fuse_ino_t ino, size_t size, DirentOffset off,
-                     fuse_file_info* fi, Handler&& handler)
+                     FuseFileHandle fh, Handler&& handler)
   {
     LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
 
@@ -351,7 +353,7 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
     (void)ino;
     (void)size;
     (void)off;
-    (void)fi;
+    (void)fh;
 
     BATT_FORWARD(handler)
     (batt::StatusOr<FuseReadDirData>{batt::Status{batt::StatusCode::kUnimplemented}});
@@ -360,13 +362,13 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
   /** \brief
    */ // 23/44
   template <typename Handler>
-  void async_releasedir(fuse_req_t req, fuse_ino_t ino, fuse_file_info* fi, Handler&& handler)
+  void async_releasedir(fuse_req_t req, fuse_ino_t ino, FuseFileHandle fh, Handler&& handler)
   {
     LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
 
     (void)req;
     (void)ino;
-    (void)fi;
+    (void)fh;
 
     BATT_FORWARD(handler)(batt::Status{batt::StatusCode::kUnimplemented});
   }
@@ -374,7 +376,7 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
   /** \brief
    */ // 24/44
   template <typename Handler>
-  void async_fsyncdir(fuse_req_t req, fuse_ino_t ino, int datasync, fuse_file_info* fi,
+  void async_fsyncdir(fuse_req_t req, fuse_ino_t ino, IsDataSync datasync, FuseFileHandle fh,
                       Handler&& handler)
   {
     LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
@@ -382,7 +384,7 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
     (void)req;
     (void)ino;
     (void)datasync;
-    (void)fi;
+    (void)fh;
 
     BATT_FORWARD(handler)(batt::Status{batt::StatusCode::kUnimplemented});
   }
@@ -485,8 +487,8 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
   /** \brief
    */ // 37/44
   template <typename Handler>
-  void async_write_buf(fuse_req_t req, fuse_ino_t ino, struct fuse_bufvec* bufv, FileOffset offset,
-                       struct fuse_file_info* fi, Handler&& handler)
+  void async_write_buf(fuse_req_t req, fuse_ino_t ino, const FuseImplBase::ConstBufferVec& bufv,
+                       FileOffset offset, FuseFileHandle fh, Handler&& handler)
   {
     LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
 
@@ -494,7 +496,7 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
     (void)ino;
     (void)bufv;
     (void)offset;
-    (void)fi;
+    (void)fh;
 
     BATT_FORWARD(handler)(batt::StatusOr<usize>{batt::Status{batt::StatusCode::kUnimplemented}});
   }
@@ -552,7 +554,7 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
    */ // 42/44
   template <typename Handler>
   void async_readdirplus(fuse_req_t req, fuse_ino_t ino, size_t size, DirentOffset offset,
-                         fuse_file_info* fi, Handler&& handler)
+                         FuseFileHandle fh, Handler&& handler)
   {
     LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
 
@@ -560,7 +562,7 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
     (void)ino;
     (void)size;
     (void)offset;
-    (void)fi;
+    (void)fh;
 
     BATT_FORWARD(handler)
     (batt::StatusOr<FuseReadDirData>{batt::Status{batt::StatusCode::kUnimplemented}});

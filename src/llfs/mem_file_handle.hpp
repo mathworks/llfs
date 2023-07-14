@@ -37,17 +37,17 @@ class MemFileHandle : batt::RefCounted<MemFileHandle>
   using OpenState = std::variant<OpenFileState, OpenDirState>;
 
   batt::SharedPtr<MemInode> inode;
-  fuse_file_info& info;
+  fuse_file_info info;
   batt::Mutex<OpenState> state;
 
   template <typename... StateInitArgs>
-  explicit MemFileHandle(batt::SharedPtr<MemInode>&& inode, fuse_file_info& info,
+  explicit MemFileHandle(u64 fh, batt::SharedPtr<MemInode>&& inode, const fuse_file_info& info,
                          StateInitArgs&&... state_init_args) noexcept
       : inode{std::move(inode)}
       , info{info}
       , state{BATT_FORWARD(state_init_args)...}
   {
-    BATT_CHECK_NOT_NULLPTR(&info);
+    this->info.fh = fh;
   }
 };
 

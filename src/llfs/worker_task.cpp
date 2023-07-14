@@ -19,8 +19,15 @@ namespace llfs {
 void WorkQueue::close() noexcept
 {
   const u64 prior_state = this->state_.fetch_or(WorkQueue::kClosedFlag);
-  u64 observed_state = prior_state | WorkQueue::kClosedFlag;
 
+  LLFS_VLOG(1) << "WorkQueue::close() halting all idle workers";
+  this->halt_all_idle_workers(prior_state | WorkQueue::kClosedFlag);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void WorkQueue::halt_all_idle_workers(u64 observed_state) noexcept
+{
   while (Self::get_worker_count(observed_state) > 0 && Self::get_job_count(observed_state) == 0) {
     u64 worker_count = Self::get_worker_count(observed_state);
 
@@ -46,16 +53,16 @@ void WorkQueue::close() noexcept
 //
 batt::Status WorkQueue::push_worker(WorkerTask* worker)
 {
+  LLFS_VLOG(1) << "WorkQueue::push_worker";
   {
     const u64 observed_state = this->state_.load();
 
     if (Self::is_closed_state(observed_state) && Self::get_job_count(observed_state) == 0) {
+      LLFS_VLOG(1) << " -- WorkQueue is closed and drained; halting worker";
       worker->halt();
       return batt::StatusCode::kClosed;
     }
   }
-
-  LLFS_VLOG(1) << "WorkQueue::push_worker";
 
   if (!this->worker_queue_.push(worker)) {
     return batt::StatusCode::kUnavailable;
@@ -64,6 +71,12 @@ batt::Status WorkQueue::push_worker(WorkerTask* worker)
   const u64 observed_state = this->state_.fetch_add(kWorkerIncrement) + kWorkerIncrement;
 
   LLFS_VLOG(1) << " --" << std::hex << BATT_INSPECT(observed_state);
+
+  if (Self::is_closed_state(observed_state) && Self::get_job_count(observed_state) == 0) {
+    LLFS_VLOG(1) << " -- WorkQueue is closed and drained; halting all idle workers";
+    this->halt_all_idle_workers(observed_state);
+    return batt::StatusCode::kClosed;
+  }
 
   return this->dispatch(observed_state, __FUNCTION__);
 }

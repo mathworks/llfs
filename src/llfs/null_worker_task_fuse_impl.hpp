@@ -181,14 +181,15 @@ class NullWorkerTaskFuseImpl : public WorkerTaskFuseImpl<NullWorkerTaskFuseImpl>
 
   /** \brief
    */ // 20/44
-  batt::Status fsync(fuse_req_t req, fuse_ino_t ino, int datasync, fuse_file_info* fi)
+  batt::Status fsync(fuse_req_t req, fuse_ino_t ino, IsDataSync datasync, FuseFileHandle fh)
   {
     return {batt::StatusCode::kUnimplemented};
   }
 
   /** \brief
    */ // 21/44
-  batt::StatusOr<const fuse_file_info*> opendir(fuse_req_t req, fuse_ino_t ino, fuse_file_info* fi)
+  batt::StatusOr<const fuse_file_info*> opendir(fuse_req_t req, fuse_ino_t ino,
+                                                const fuse_file_info& fi)
   {
     return {batt::StatusCode::kUnimplemented};
   }
@@ -210,7 +211,7 @@ class NullWorkerTaskFuseImpl : public WorkerTaskFuseImpl<NullWorkerTaskFuseImpl>
 
   /** \brief
    */ // 24/44
-  batt::Status fsyncdir(fuse_req_t req, fuse_ino_t ino, int datasync, fuse_file_info* fi)
+  batt::Status fsyncdir(fuse_req_t req, fuse_ino_t ino, IsDataSync datasync, FuseFileHandle fh)
   {
     return {batt::StatusCode::kUnimplemented};
   }

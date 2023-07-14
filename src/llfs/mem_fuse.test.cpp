@@ -25,11 +25,14 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <thread>
 
 #include <sys/mount.h>
 
 namespace {
+
+using namespace llfs::int_types;
 
 namespace termxx {
 
@@ -295,6 +298,16 @@ TEST_F(MemFuseTest, StartStop)
 //
 TEST_F(MemFuseTest, CreateFile)
 {
+  const std::string_view data1 = "Some stuff.";
+  const std::string data2 = [] {
+    std::ifstream ifs{__FILE__};
+    std::ostringstream oss;
+    oss << ifs.rdbuf();
+    return oss.str();
+  }();
+
+  ASSERT_GT(data2.size(), 4096u);
+
   // Initially there should be no files.
   {
     batt::StatusOr<std::vector<std::filesystem::directory_entry>> files = this->find_files();
@@ -303,9 +316,14 @@ TEST_F(MemFuseTest, CreateFile)
     EXPECT_TRUE(files->empty());
   }
 
-  // Create a single file.
+  // Create some files.
   {
     std::ofstream ofs{this->mountpoint_ / "file.txt"};
+    ofs << data1;
+  }
+  {
+    std::ofstream ofs{this->mountpoint_ / "file2.txt"};
+    ofs << data2;
   }
 
   // Expect to find the file we created.
@@ -313,11 +331,69 @@ TEST_F(MemFuseTest, CreateFile)
     batt::StatusOr<std::vector<std::filesystem::directory_entry>> files = this->find_files();
 
     ASSERT_TRUE(files.ok()) << BATT_INSPECT(files.status());
-    ASSERT_EQ(files->size(), 1u);
+    ASSERT_EQ(files->size(), 2u);
 
     EXPECT_TRUE((*files)[0].is_regular_file());
     EXPECT_EQ((*files)[0].path(), this->mountpoint_ / "file.txt");
-    EXPECT_EQ((*files)[0].file_size(), 0u);
+    EXPECT_EQ((*files)[0].file_size(), data1.size());
+
+    EXPECT_TRUE((*files)[1].is_regular_file());
+    EXPECT_EQ((*files)[1].path(), this->mountpoint_ / "file2.txt");
+    EXPECT_EQ((*files)[1].file_size(), data2.size());
+  }
+
+  // Read the file we created above.
+  {
+    std::ifstream ifs{this->mountpoint_ / "file.txt"};
+
+    EXPECT_TRUE(ifs.good());
+
+    std::ostringstream oss;
+    oss << ifs.rdbuf();
+
+    EXPECT_THAT(oss.str(), ::testing::StrEq(data1));
+    EXPECT_FALSE(oss.bad());
+    EXPECT_FALSE(ifs.bad());
+  }
+
+  // Truncate the other file and read it.
+  {
+    // Verify the original contents.
+    {
+      std::ifstream ifs{this->mountpoint_ / "file2.txt"};
+      std::ostringstream oss;
+      oss << ifs.rdbuf();
+
+      EXPECT_EQ(oss.str().size(), data2.size());
+      EXPECT_THAT(oss.str(), ::testing::StrEq(data2));
+    }
+
+    const auto resize_and_verify = [&](u64 newsize, u64 expect_from_data2, u64 expect_zeros) {
+      BATT_CHECK_EQ(newsize, expect_from_data2 + expect_zeros)
+          << BATT_INSPECT(expect_from_data2) << BATT_INSPECT(expect_zeros);
+
+      std::error_code ec;
+      std::filesystem::resize_file(this->mountpoint_ / "file2.txt", newsize, ec);
+
+      EXPECT_FALSE(ec);
+      EXPECT_EQ(std::filesystem::file_size(this->mountpoint_ / "file2.txt", ec), newsize);
+      EXPECT_FALSE(ec);
+
+      std::ifstream ifs{this->mountpoint_ / "file2.txt"};
+      std::ostringstream oss;
+      oss << ifs.rdbuf();
+
+      EXPECT_EQ(oss.str().size(), newsize);
+      EXPECT_THAT(oss.str(), ::testing::StrEq(data2.substr(0, expect_from_data2) +
+                                              std::string(expect_zeros, '\0')));
+    };
+
+    resize_and_verify(5555, 5555, 0);
+    resize_and_verify(5655, 5555, 100);
+    resize_and_verify(4096, 4096, 0);
+    resize_and_verify(4000, 4000, 0);
+    resize_and_verify(3900, 3900, 0);
+    resize_and_verify(3950, 3900, 50);
   }
 }
 

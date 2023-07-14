@@ -66,6 +66,20 @@ std::ostream& operator<<(std::ostream& out, const DumpFileMode t);
 class FuseImplBase
 {
  public:
+  using ConstBufferVec = batt::SmallVec<batt::ConstBuffer, 4>;
+
+  template <typename T>
+  struct WithCleanup {
+    T value;
+    batt::SmallFn<void(T&)> cleanup;
+  };
+
+  template <typename T, typename Fn>
+  static WithCleanup<std::decay_t<T>> with_cleanup(T&& value, Fn&& fn)
+  {
+    return {BATT_FORWARD(value), {BATT_FORWARD(fn)}};
+  }
+
   struct FileDataRef {
     FileDescriptorInt fd;
     batt::Optional<FileOffset> offset;
@@ -98,11 +112,11 @@ class FuseImplBase
     batt::Slice<FuseMutableBuffer> buffers;
   };
 
-  using FuseReadData = std::variant<   //
-      batt::ConstBuffer,               //
-      OwnedConstBuffer,                //
-      batt::Slice<batt::ConstBuffer>,  //
-      FuseConstBufferVec               //
+  using FuseReadData = std::variant<                //
+      batt::ConstBuffer,                            //
+      OwnedConstBuffer,                             //
+      WithCleanup<batt::Slice<batt::ConstBuffer>>,  //
+      FuseConstBufferVec                            //
       >;
 
   using FuseReadDirData = std::variant<  //
@@ -145,6 +159,10 @@ class FuseImplBase
   /** \brief
    */
   static int errno_from_status(batt::Status status);
+
+  /** \brief
+   */
+  static batt::StatusOr<ConstBufferVec> const_buffer_vec_from_bufv(const fuse_bufvec& bufv);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -254,8 +272,11 @@ class FuseImplBase
             },
 
             //----- --- -- -  -  -   -
-            [&req, this](const batt::Slice<batt::ConstBuffer>& cbs) {
-              this->invoke_fuse_reply_iov(req, cbs);
+            [&req, this](WithCleanup<batt::Slice<batt::ConstBuffer>> cbs) {
+              auto on_scope_exit = batt::finally([&] {
+                cbs.cleanup(cbs.value);
+              });
+              this->invoke_fuse_reply_iov(req, cbs.value);
             },
 
             //----- --- -- -  -  -   -
@@ -377,6 +398,8 @@ class FuseImplBase
   /** \brief
    */
   int invoke_fuse_reply_data(fuse_req_t req, const FuseConstBufferVec& v);
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
  protected:
   fuse_conn_info* conn_ = nullptr;

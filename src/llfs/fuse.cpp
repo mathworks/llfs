@@ -12,6 +12,31 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+/*static*/ auto FuseImplBase::const_buffer_vec_from_bufv(const fuse_bufvec& bufv)
+    -> batt::StatusOr<ConstBufferVec>
+{
+  if (bufv.idx > bufv.count) {
+    return {batt::status_from_errno(EINVAL)};
+  }
+
+  ConstBufferVec vec;
+
+  usize offset = bufv.off;
+  for (usize i = bufv.idx; i < bufv.count; ++i, offset = 0) {
+    const fuse_buf& buf = bufv.buf[i];
+
+    if (buf.flags & (FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK | FUSE_BUF_FD_RETRY)) {
+      return {batt::Status{batt::StatusCode::kUnimplemented}};
+    }
+
+    vec.emplace_back(batt::ConstBuffer{buf.mem, buf.size} + offset);
+  }
+
+  return {std::move(vec)};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 /*static*/ int FuseImplBase::errno_from_status(batt::Status status)
 {
   if (status.ok()) {
@@ -152,6 +177,7 @@ std::ostream& operator<<(std::ostream& out, const DumpStat& t)
              << ".st_dev=" << t.s.st_dev                      //
              << ", .st_ino=" << t.s.st_ino                    //
              << ", .st_mode=" << std::bitset<9>{t.s.st_mode}  //
+             << ", .st_size=" << t.s.st_size                  //
              << ", .st_nlink=" << t.s.st_nlink                //
              << ", .st_uid=" << t.s.st_uid                    //
              << ", .st_gid=" << t.s.st_gid                    //

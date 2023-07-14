@@ -225,29 +225,74 @@ batt::StatusOr<FuseImplBase::Attributes> MemInode::set_attributes(const struct s
   if ((to_set & FUSE_SET_ATTR_MODE) != 0) {
     locked->entry_.attr.st_mode = attr->st_mode;
   }
+
   if ((to_set & FUSE_SET_ATTR_UID) != 0) {
     locked->entry_.attr.st_uid = attr->st_uid;
   }
+
   if ((to_set & FUSE_SET_ATTR_GID) != 0) {
     locked->entry_.attr.st_gid = attr->st_gid;
   }
+
   if ((to_set & FUSE_SET_ATTR_SIZE) != 0) {
-    locked->entry_.attr.st_size = attr->st_size;
+    const u64 old_size = locked->entry_.attr.st_size;
+    const u64 new_size = attr->st_size;
+    const bool truncated = (new_size < old_size);
+
+    locked->entry_.attr.st_size = new_size;
+
+    if (truncated) {
+      auto iter = locked->data_blocks_.lower_bound(new_size);
+
+      // Adjust iter, in case lower_bound overshot (we want the greatest lower bound).
+      //
+      if (iter != locked->data_blocks_.begin() &&
+          (iter == locked->data_blocks_.end() || iter->first > new_size)) {
+        --iter;
+      }
+
+      if (iter != locked->data_blocks_.end()) {
+        const u64 block_pos = iter->first;
+        if (iter->first < BATT_CHECKED_CAST(u64, attr->st_size)) {
+          // Clear out the truncated portion of the new last block.
+          //
+          const u64 block_offset = new_size - block_pos;
+          const usize n_to_clear =
+              std::min(iter->second->size() - block_offset, old_size - new_size);
+
+          LLFS_VLOG(1) << BATT_INSPECT(block_offset) << BATT_INSPECT(n_to_clear)
+                       << BATT_INSPECT(iter->second->size() - block_offset)
+                       << BATT_INSPECT(old_size - new_size);
+
+          std::memset(iter->second->data() + block_offset, 0, n_to_clear);
+
+          // Move to iter to the next block before erasing.
+          //
+          ++iter;
+        }
+        locked->data_blocks_.erase(iter, locked->data_blocks_.end());
+      }
+    }
   }
+
   if ((to_set & FUSE_SET_ATTR_ATIME) != 0) {
     locked->entry_.attr.st_atime = attr->st_atime;
   }
+
   if ((to_set & FUSE_SET_ATTR_MTIME) != 0) {
     locked->entry_.attr.st_mtime = attr->st_mtime;
   }
+
   if ((to_set & FUSE_SET_ATTR_ATIME_NOW) != 0) {
     BATT_REQUIRE_OK(
         batt::status_from_retval(clock_gettime(CLOCK_REALTIME, &locked->entry_.attr.st_atim)));
   }
+
   if ((to_set & FUSE_SET_ATTR_MTIME_NOW) != 0) {
     BATT_REQUIRE_OK(
         batt::status_from_retval(clock_gettime(CLOCK_REALTIME, &locked->entry_.attr.st_mtim)));
   }
+
   if ((to_set & FUSE_SET_ATTR_CTIME) != 0) {
     locked->entry_.attr.st_ctime = attr->st_ctime;
   }
@@ -416,6 +461,122 @@ auto MemInode::is_dir() const noexcept -> IsDir
 {
   return IsDir{static_cast<MemInode::Category>(this->state_.lock()->entry_.attr.st_mode & S_IFMT) ==
                MemInode::Category::kDirectory};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+usize MemInode::write(u64 offset, const batt::Slice<const batt::ConstBuffer>& buffers)
+{
+  auto locked = this->state_.lock();
+
+  const usize begin_offset = offset;
+  for (const batt::ConstBuffer& buffer : buffers) {
+    locked->write_chunk(offset, buffer);
+    offset += buffer.size();
+  }
+
+  // Update the file size.
+  //
+  const auto written_upper_bound = BATT_CHECKED_CAST(i64, offset);
+  if (written_upper_bound > locked->file_size()) {
+    locked->file_size(written_upper_bound);
+  }
+
+  return offset - begin_offset;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void MemInode::State::write_chunk(u64 offset, batt::ConstBuffer buffer)
+{
+  const u64 first_block_pos = batt::round_down_bits(MemInode::kBlockBufferSizeLog2, offset);
+
+  for (u64 block_pos = first_block_pos; buffer.size() > 0;
+       block_pos += MemInode::kBlockBufferSize) {
+    const usize block_offset = offset - block_pos;
+
+    BATT_CHECK_GE(offset, block_pos);
+
+    auto& p_block_buf = this->data_blocks_[block_pos];
+    if (!p_block_buf) {
+      p_block_buf = std::make_shared<BlockBuffer>();
+      std::memset(p_block_buf->data(), 0, p_block_buf->size());
+    }
+
+    usize n_to_copy = std::min(buffer.size(), p_block_buf->size() - block_offset);
+    std::memcpy(p_block_buf->data() + block_offset, buffer.data(), n_to_copy);
+
+    buffer += n_to_copy;
+    offset += n_to_copy;
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+FuseImplBase::WithCleanup<batt::Slice<batt::ConstBuffer>> MemInode::read(u64 offset, usize count)
+{
+  std::vector<std::shared_ptr<BlockBuffer>> blocks;
+  std::vector<batt::ConstBuffer> buffers;
+
+  {
+    auto locked = this->state_.lock();
+
+    while (count > 0) {
+      std::shared_ptr<BlockBuffer> p_block;
+
+      batt::ConstBuffer chunk = locked->read_chunk(offset, count, &p_block);
+      if (chunk.size() == 0) {
+        break;
+      }
+      buffers.emplace_back(chunk);
+
+      offset += buffers.back().size();
+      count -= buffers.back().size();
+    }
+  }
+
+  auto buffers_slice = batt::as_slice(buffers);
+  return FuseImplBase::with_cleanup(
+      buffers_slice, [buffers = std::move(buffers), blocks = std::move(blocks)](auto&&...) {
+      });
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+batt::ConstBuffer MemInode::State::read_chunk(u64 offset, usize count,
+                                              std::shared_ptr<BlockBuffer>* p_block_out)
+{
+  static BlockBuffer zero_block;
+  static const batt::ConstBuffer zero_buf = [] {
+    std::memset(zero_block.data(), 0, zero_block.size());
+    return batt::ConstBuffer{zero_block.data(), zero_block.size()};
+  }();
+
+  const u64 first_block_pos = batt::round_down_bits(MemInode::kBlockBufferSizeLog2, offset);
+  const u64 first_block_offset = offset - first_block_pos;
+
+  BATT_CHECK_GE(offset, first_block_pos);
+
+  const batt::ConstBuffer data_block = [&] {
+    auto iter = this->data_blocks_.find(first_block_pos);
+    if (iter == this->data_blocks_.end()) {
+      return zero_buf;
+    }
+
+    BATT_CHECK_NOT_NULLPTR(iter->second);
+
+    if (p_block_out) {
+      *p_block_out = iter->second;
+    }
+
+    return batt::ConstBuffer{
+        iter->second->data(),
+        iter->second->size(),
+    };
+  }();
+
+  return batt::resize_buffer(data_block + first_block_offset,
+                             std::min(count, this->file_size() - offset));
 }
 
 }  //namespace llfs

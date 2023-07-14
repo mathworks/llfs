@@ -118,6 +118,8 @@ class WorkQueue
 
   batt::Status dispatch(u64 observed_state, const char* from);
 
+  void halt_all_idle_workers(u64 observed_state) noexcept;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   std::atomic<u64> state_{0};

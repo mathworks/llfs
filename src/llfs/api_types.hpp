@@ -61,6 +61,18 @@ BATT_STRONG_TYPEDEF(usize, BufferSizeNeeded);
  */
 BATT_STRONG_TYPEDEF(bool, PlusApi);
 
+/** \brief Integer interpreted as a FUSE Impl file handle.
+ */
+BATT_STRONG_TYPEDEF(u64, FuseFileHandle);
+
+/** \brief True if only data/contents should be flushed, not metadata.
+ */
+BATT_STRONG_TYPEDEF(bool, IsDataSync);
+
+/** \brief Int flags bitmask passed into open/opendir.
+ */
+BATT_STRONG_TYPEDEF(int, FileOpenFlags);
+
 }  // namespace llfs
 
 #endif  // LLFS_API_TYPES_HPP

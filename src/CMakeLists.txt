@@ -61,6 +61,15 @@ enable_testing()
 
 include_directories(${GTest_INCLUDE_DIRS})
 
+# Configure libfuse.
+#
+include_directories(${libfuse_INCLUDE_DIRS})
+add_compile_definitions(FUSE_USE_VERSION=35)
+
+# Configure Google Logging.
+#
+add_compile_definitions(GLOG_CUSTOM_PREFIX_SUPPORT=1)
+
 add_custom_target(RunAllLibTests)
 
 #==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -               
@@ -106,6 +115,7 @@ macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
     GTest::gmock_main
     ${TARGET_NAME}
     ${TARGET_DEPS}
+    libfuse::libfuse
     Boost::context
     Boost::stacktrace_backtrace
     libbacktrace::libbacktrace
@@ -132,7 +142,7 @@ macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
 
 endmacro()
 # LLFS_DefineLibrary
-#==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -               
+#==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
 
 #=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
@@ -145,13 +155,13 @@ LLFS_DefineLibrary(llfs ./llfs
   )
 
 #=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-                   
+
 file(GLOB llfs_cli_Sources
   ./llfs_cli/*.cpp
   ./llfs_cli/*/*.cpp
   ./llfs_cli/*/*/*.cpp
   )
-  
+
 add_executable(llfs_cli ${llfs_cli_Sources})
 
 target_link_libraries(llfs_cli
@@ -173,3 +183,24 @@ install(TARGETS llfs_cli DESTINATION "."
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   )
+
+#=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+
+file(GLOB llfs_fuse_Sources
+  ./llfs_fuse/*.cpp
+  ./llfs_fuse/*/*.cpp
+  ./llfs_fuse/*/*/*.cpp
+  )
+
+add_executable(llfs_fuse ${llfs_fuse_Sources})
+
+target_link_libraries(llfs_fuse
+  llfs
+  libfuse::libfuse
+  batteries::batteries
+  Boost::context
+  Boost::stacktrace_backtrace
+  libbacktrace::libbacktrace
+  CLI11::CLI11
+  dl
+  stdc++fs)

@@ -53,9 +53,6 @@ class MemInode : public batt::RefCounted<MemInode>
     kSymbolicLink = S_IFLNK,
   };
 
-  // for this->count_ -- TODO [tastolfi 2023-07-11] we should just keep a unified ref_count Watch
-  // in this class, and modify that from all of add_child_entry, unlink, lookup, and forget.
-  //
   static constexpr u64 kLookupCountShift = 0;
   static constexpr u64 kLinkCountShift = 40;
   static constexpr u64 kLockFlag = u64{1} << 63;

@@ -129,7 +129,12 @@ class PageCache : public PageLoader
 
   const PageCacheOptions& options() const;
 
+  /** \brief DEPRECATED - use register_page_reader.
+   */
   bool register_page_layout(const PageLayoutId& layout_id, const PageReader& reader);
+
+  batt::Status register_page_reader(const PageLayoutId& layout_id, const char* file, int line,
+                                    const PageReader& reader);
 
   void close();
 
@@ -218,7 +223,15 @@ class PageCache : public PageLoader
 
  private:
   //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-  using PageLayoutReaderMap = std::unordered_map<PageLayoutId, PageReader, PageLayoutId::Hash>;
+
+  struct PageReaderFromFile {
+    PageReader page_reader;
+    const char* file;
+    int line;
+  };
+
+  using PageLayoutReaderMap =
+      std::unordered_map<PageLayoutId, PageReaderFromFile, PageLayoutId::Hash>;
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -265,8 +278,7 @@ class PageCache : public PageLoader
   // A thread-safe shared map from PageLayoutId to PageReader function; layouts must be registered
   // with the PageCache so that we trace references during page recycling (aka garbage collection).
   //
-  std::shared_ptr<batt::Mutex<std::unordered_map<PageLayoutId, PageReader, PageLayoutId::Hash>>>
-      page_readers_;
+  std::shared_ptr<batt::Mutex<PageLayoutReaderMap>> page_readers_;
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   // TODO [tastolfi 2021-09-08] We need something akin to the PageRecycler/PageAllocator to durably

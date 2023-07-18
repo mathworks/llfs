@@ -94,8 +94,7 @@ PageCache::PageCache(std::vector<PageArena>&& storage_pool,
     , arenas_by_size_log2_{}
     , arenas_by_device_id_{}
     , impl_for_size_log2_{}
-    , page_readers_{std::make_shared<
-          batt::Mutex<std::unordered_map<PageLayoutId, PageReader, PageLayoutId::Hash>>>()}
+    , page_readers_{std::make_shared<batt::Mutex<PageLayoutReaderMap>>()}
 {
   // Sort the storage pool by page size (MUST be first).
   //
@@ -177,7 +176,39 @@ const PageCacheOptions& PageCache::options() const
 //
 bool PageCache::register_page_layout(const PageLayoutId& layout_id, const PageReader& reader)
 {
-  return this->page_readers_->lock()->emplace(layout_id, reader).second;
+  LLFS_LOG_WARNING() << "PageCache::register_page_layout is DEPRECATED; please use "
+                        "PageCache::register_page_reader";
+
+  return this->page_readers_->lock()
+      ->emplace(layout_id,
+                PageReaderFromFile{
+                    .page_reader = reader,
+                    .file = __FILE__,
+                    .line = __LINE__,
+                })
+      .second;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+batt::Status PageCache::register_page_reader(const PageLayoutId& layout_id, const char* file,
+                                             int line, const PageReader& reader)
+{
+  auto locked = this->page_readers_->lock();
+  const auto [iter, was_inserted] = locked->emplace(layout_id, PageReaderFromFile{
+                                                                   .page_reader = reader,
+                                                                   .file = file,
+                                                                   .line = line,
+                                                               });
+
+  if (!was_inserted && (iter->second.file != file || iter->second.line != line)) {
+    return ::llfs::make_status(StatusCode::kPageReaderConflict);
+  }
+
+  BATT_CHECK_EQ(iter->second.file, file);
+  BATT_CHECK_EQ(iter->second.line, line);
+
+  return batt::OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -564,7 +595,7 @@ auto PageCache::find_page_in_cache(PageId page_id, const Optional<PageLayoutId>&
               latch->set_value(make_status(StatusCode::kNoReaderForPageViewType));
               return;
             }
-            reader_for_layout = iter->second;
+            reader_for_layout = iter->second.page_reader;
           }
           // ^^ Release the page_readers mutex ASAP
 

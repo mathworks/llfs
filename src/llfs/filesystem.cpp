@@ -21,11 +21,22 @@ using ::batt::syscall_retry;
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<int> open_file_read_only(std::string_view file_name)
+StatusOr<int> open_file_read_only(std::string_view file_name, OpenRawIO open_raw_io)
 {
+  int flags = O_RDONLY;
+
+  if (open_raw_io) {
+#ifdef LLFS_PLATFORM_IS_LINUX
+    flags |= O_DIRECT | O_SYNC;
+#else
+    LLFS_LOG_WARNING() << "open_raw_io only supported on Linux!";
+#endif
+  }
+
   const int fd = syscall_retry([&] {
-    return ::open(std::string(file_name).c_str(), O_RDONLY);
+    return ::open(std::string(file_name).c_str(), flags);
   });
+
   BATT_REQUIRE_OK(batt::status_from_retval(fd));
 
   return fd;

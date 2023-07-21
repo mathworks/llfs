@@ -44,6 +44,11 @@ class IoRing::File
     return *this->io_ring_;
   }
 
+  // Returns the OS-native file descriptor currently owned by this object.  Returns -1 if no file is
+  // open.
+  //
+  int get_fd() const;
+
   // Asynchronously reads data from the file starting at the given offset, copying read data into
   // the memory pointed to by `buffers`. Invokes `handler` from within `IoRing::run()` with error
   // status or the number of bytes successfully read.
@@ -59,6 +64,14 @@ class IoRing::File
   //
   template <typename Handler = void(StatusOr<i32>)>
   void async_read_some(i64 offset, const MutableBuffer& buffer, Handler&& handler);
+
+  // Asynchronously reads data from the file starting at the given offset, copying read data into
+  // the memory pointed to by `buffer`. Invokes `handler` from within `IoRing::run()` with error
+  // status or the number of bytes successfully read.
+  //
+  template <typename Handler = void(StatusOr<i32>)>
+  void async_read_some_fixed(i64 offset, const MutableBuffer& buffer, int buf_index,
+                             Handler&& handler);
 
   // Asynchronously writes the contents of `buffers` to the file starting at the given offset.
   // Invokes `handler` from within `IoRing::run()` with error status or the number of bytes
@@ -119,10 +132,7 @@ class IoRing::File
   //
   Status close();
 
-  // Returns the OS-native file descriptor currently owned by this object.  Returns -1 if no file is
-  // open.
-  //
-  int get_fd() const;
+  bool raw_io_ = true;
 
  private:
   const IoRing* io_ring_;
@@ -169,6 +179,30 @@ inline void IoRing::File::async_read_some(i64 offset, const MutableBuffer& buffe
         } else {
           LLFS_DVLOG(1) << "async_read_some - registered fd";
           io_uring_prep_read(sqe, this->registered_fd_, buffer.data(), buffer.size(), offset);
+          sqe->flags |= IOSQE_FIXED_FILE;
+        }
+      });
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename Handler>
+inline void IoRing::File::async_read_some_fixed(i64 offset, const MutableBuffer& buffer,
+                                                int buf_index, Handler&& handler)
+{
+  static const std::vector<MutableBuffer> empty;
+
+  LLFS_DVLOG(1) << "async_read_some(single buffer)";
+  this->io_ring_->submit(
+      empty, BATT_FORWARD(handler),
+      [&buffer, offset, buf_index, this](struct io_uring_sqe* sqe, auto& /*op*/) {
+        if (this->registered_fd_ == -1) {
+          io_uring_prep_read_fixed(sqe, this->fd_, buffer.data(), buffer.size(), offset, buf_index);
+          LLFS_DVLOG(1) << "async_read_some - NOT registered fd " << BATT_INSPECT(int(sqe->flags));
+        } else {
+          LLFS_DVLOG(1) << "async_read_some - registered fd";
+          io_uring_prep_read_fixed(sqe, this->registered_fd_, buffer.data(), buffer.size(), offset,
+                                   buf_index);
           sqe->flags |= IOSQE_FIXED_FILE;
         }
       });

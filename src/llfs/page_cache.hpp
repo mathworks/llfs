@@ -95,6 +95,12 @@ class PageCache : public PageLoader
  public:
   using CacheImpl = Cache<page_id_int, batt::Latch<std::shared_ptr<const PageView>>>;
 
+  struct PageReaderFromFile {
+    PageReader page_reader;
+    const char* file;
+    int line;
+  };
+
   class PageDeleterImpl : public PageDeleter
   {
    public:
@@ -223,12 +229,6 @@ class PageCache : public PageLoader
 
  private:
   //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-
-  struct PageReaderFromFile {
-    PageReader page_reader;
-    const char* file;
-    int line;
-  };
 
   using PageLayoutReaderMap =
       std::unordered_map<PageLayoutId, PageReaderFromFile, PageLayoutId::Hash>;

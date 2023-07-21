@@ -26,7 +26,8 @@ namespace fs = std::filesystem;
 BATT_STRONG_TYPEDEF(bool, OpenForAppend);
 BATT_STRONG_TYPEDEF(bool, OpenRawIO);
 
-StatusOr<int> open_file_read_only(std::string_view file_name);
+StatusOr<int> open_file_read_only(std::string_view file_name,
+                                  OpenRawIO open_raw_io = OpenRawIO{false});
 
 StatusOr<int> open_file_read_write(std::string_view file_name,
                                    OpenForAppend open_for_append = OpenForAppend{true},

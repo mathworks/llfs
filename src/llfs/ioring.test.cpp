@@ -38,6 +38,7 @@ using llfs::ConstBuffer;
 using llfs::IoRing;
 using llfs::MutableBuffer;
 using llfs::RingBuffer;
+using llfs::ScopedIoRing;
 using llfs::Status;
 using llfs::StatusOr;
 
@@ -46,7 +47,7 @@ using batt::Watch;
 using namespace llfs::int_types;
 using namespace llfs::constants;
 
-TEST(Ioring, Test)
+TEST(IoRingTest, Test)
 {
   StatusOr<IoRing> io = IoRing::make_new(llfs::MaxQueueDepth{64});
   ASSERT_TRUE(io.ok()) << io.status();
@@ -100,7 +101,7 @@ TEST(Ioring, Test)
   }
 }
 
-TEST(Ioring, DISABLED_BlockDev)
+TEST(IoRingTest, DISABLED_BlockDev)
 {
   StatusOr<IoRing> io = IoRing::make_new(llfs::MaxQueueDepth{64});
   ASSERT_TRUE(io.ok()) << io.status();
@@ -145,6 +146,34 @@ TEST(Ioring, DISABLED_BlockDev)
   LLFS_LOG_INFO() << "done (uring)";
 
   t.detach();
+}
+
+TEST(IoRingTest, MultipleThreads)
+{
+  StatusOr<ScopedIoRing> scoped_io_ring =
+      ScopedIoRing::make_new(llfs::MaxQueueDepth{64}, llfs::ThreadPoolSize{8});
+
+  const auto file_path = "/tmp/llfs_ioring_test_file";
+
+  int fd = open(file_path, O_CREAT | O_RDWR, /*mode=*/0644);
+  ASSERT_GE(fd, 0) << std::strerror(errno);
+
+  IoRing::File f{scoped_io_ring->get_io_ring(), fd};
+
+  f.raw_io_ = false;
+
+  std::string message = "Hello, World.";
+
+  Status write_status = f.write_all(/*offset=*/0, ConstBuffer{message.data(), message.size()});
+
+  ASSERT_TRUE(write_status.ok()) << BATT_INSPECT(write_status);
+
+  std::array<char, 512> buffer;
+
+  Status read_status = f.read_all(/*offset=*/0, MutableBuffer{buffer.data(), message.size()});
+
+  ASSERT_TRUE(read_status.ok()) << BATT_INSPECT(read_status);
+  EXPECT_THAT((std::string_view{buffer.data(), message.size()}), ::testing::StrEq(message));
 }
 
 }  // namespace

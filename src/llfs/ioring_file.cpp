@@ -64,8 +64,10 @@ IoRing::File::~File() noexcept
 Status IoRing::File::write_all(i64 offset, ConstBuffer buffer)
 {
   while (buffer.size() != 0) {
-    BATT_CHECK_EQ(batt::round_down_bits(Self::kBlockAlignmentLog2, offset), offset);
-    BATT_CHECK_EQ(batt::round_down_bits(Self::kBlockAlignmentLog2, buffer.size()), buffer.size());
+    if (this->raw_io_) {
+      BATT_CHECK_EQ(batt::round_down_bits(Self::kBlockAlignmentLog2, offset), offset);
+      BATT_CHECK_EQ(batt::round_down_bits(Self::kBlockAlignmentLog2, buffer.size()), buffer.size());
+    }
     StatusOr<i32> n_written = batt::Task::await<StatusOr<i32>>([&](auto&& handler) {
       this->async_write_some(offset, buffer, BATT_FORWARD(handler));
     });

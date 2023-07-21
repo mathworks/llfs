@@ -73,6 +73,14 @@ BATT_STRONG_TYPEDEF(bool, IsDataSync);
  */
 BATT_STRONG_TYPEDEF(int, FileOpenFlags);
 
+/** \brief The number of buffers.
+ */
+BATT_STRONG_TYPEDEF(usize, BufferCount);
+
+/** \brief The size of each buffer.
+ */
+BATT_STRONG_TYPEDEF(usize, BufferSize);
+
 }  // namespace llfs
 
 #endif  // LLFS_API_TYPES_HPP

@@ -1501,7 +1501,7 @@ TEST_F(VolumeSimTest, ConcurrentAppendJobs)
     //
     sim.add_page_arena(this->pages_per_device, llfs::PageSize{1 * kKiB});
 
-    sim.register_page_layout(llfs::PageGraphNodeView::page_layout_id(),
+    sim.register_page_reader(llfs::PageGraphNodeView::page_layout_id(), __FILE__, __LINE__,
                              llfs::PageGraphNodeView::page_reader());
 
     const auto main_task_fn = [&] {
@@ -1648,7 +1648,7 @@ void VolumeSimTest::run_recovery_sim(u32 seed)
   sim.add_page_arena(this->pages_per_device, llfs::PageSize{2 * kKiB});
   sim.add_page_arena(this->pages_per_device, llfs::PageSize{4 * kKiB});
 
-  sim.register_page_layout(llfs::PageGraphNodeView::page_layout_id(),
+  sim.register_page_reader(llfs::PageGraphNodeView::page_layout_id(), __FILE__, __LINE__,
                            llfs::PageGraphNodeView::page_reader());
 
   const auto main_task_fn = [&] {

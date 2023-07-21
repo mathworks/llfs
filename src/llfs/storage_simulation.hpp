@@ -205,6 +205,12 @@ class StorageSimulation
    */
   void register_page_layout(const PageLayoutId& layout_id, const PageReader& reader);
 
+  /** \brief Registers the given page format with all future instances of PageCache created by the
+   * simulation.
+   */
+  void register_page_reader(const PageLayoutId& layout_id, const char* file, int line,
+                            const PageReader& reader);
+
   /** \brief Creates/accesses a simulated Volume.
    *
    * `trim_control` and `volume_options` are always optional; `root_log_capacity` must be specified
@@ -302,8 +308,13 @@ class StorageSimulation
   std::atomic<i64> counter_{0};
 
   // Page layouts that should be registered with PageCache instances on each recovery.
+  //  DEPRECATED
   //
   std::unordered_map<PageLayoutId, PageReader, PageLayoutId::Hash> page_layouts_;
+
+  // Page readers that should be registered with PageCache instances on each recovery.
+  //
+  std::unordered_map<PageLayoutId, PageCache::PageReaderFromFile, PageLayoutId::Hash> page_readers_;
 };
 
 }  //namespace llfs

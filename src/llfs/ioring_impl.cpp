@@ -134,7 +134,7 @@ Status IoRingImpl::run() noexcept
     LLFS_DVLOG(1) << "IoRingImpl::run() " << BATT_INSPECT(this->work_count_);
 
     // Block on the event_fd until a completion event is available.
-    {
+    if (this->event_wait_.exchange(true) == false) {
       eventfd_t v;
       LLFS_DVLOG(1) << "IoRingImpl::run() reading eventfd";
       int retval = eventfd_read(this->event_fd_, &v);
@@ -149,6 +149,8 @@ Status IoRingImpl::run() noexcept
         eventfd_write(this->event_fd_, v);
         continue;
       }
+    } else {
+      std::unique_lock<std::mutex> lock{this->mutex_};
     }
 
     // The inner loop dequeues completion events until we would block.
@@ -251,28 +253,55 @@ void IoRingImpl::invoke_handler(struct io_uring_cqe* cqe) noexcept
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status IoRingImpl::register_buffers(BoxedSeq<MutableBuffer>&& buffers) noexcept
+StatusOr<usize> IoRingImpl::register_buffers(BoxedSeq<MutableBuffer>&& buffers,
+                                             bool update) noexcept
 {
-  std::vector<struct iovec> iov = std::move(buffers) | seq::map([](const MutableBuffer& b) {
-                                    struct iovec v;
-                                    v.iov_base = b.data();
-                                    v.iov_len = b.size();
-                                    return v;
-                                  }) |
-                                  seq::collect_vec();
-  {
-    std::unique_lock<std::mutex> lock{this->mutex_};
+  std::unique_lock<std::mutex> lock{this->mutex_};
 
+  // First unregister buffers if necessary.
+  //
+  if (this->buffers_registered_) {
+    std::vector<struct iovec> saved_buffers = std::move(this->registered_buffers_);
+    //
     Status unregistered = this->unregister_buffers_with_lock(lock);
     BATT_REQUIRE_OK(unregistered);
+    //
+    this->registered_buffers_ = std::move(saved_buffers);
+
     BATT_CHECK(!this->buffers_registered_);
-
-    const int retval = io_uring_register_buffers(&this->ring_, iov.data(), iov.size());
-    BATT_REQUIRE_OK(status_from_retval(retval));
-
-    this->buffers_registered_ = true;
-    return OkStatus();
+  } else {
+    BATT_CHECK(this->registered_buffers_.empty());
   }
+
+  // If update is true, then we are appending the passed buffers to the existing ones; otherwise, we
+  // are replacing the list.
+  //
+  if (!update) {
+    this->registered_buffers_.clear();
+  }
+  const usize update_index = this->registered_buffers_.size();
+
+  // Convert the passed sequence to struct iovec.
+  //
+  std::move(buffers) | seq::map([](const MutableBuffer& b) {
+    struct iovec v;
+    v.iov_base = b.data();
+    v.iov_len = b.size();
+    return v;
+  }) | seq::emplace_back(&this->registered_buffers_);
+
+  // Register the buffers!
+  //
+  const int retval = io_uring_register_buffers(&this->ring_, this->registered_buffers_.data(),
+                                               this->registered_buffers_.size());
+  if (retval < 0) {
+    this->registered_buffers_.clear();
+  }
+  BATT_REQUIRE_OK(status_from_retval(retval));
+
+  this->buffers_registered_ = true;
+
+  return update_index;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -293,6 +322,7 @@ Status IoRingImpl::unregister_buffers_with_lock(const std::unique_lock<std::mute
     BATT_REQUIRE_OK(status_from_retval(retval));
 
     this->buffers_registered_ = false;
+    this->registered_buffers_.clear();
   }
 
   return OkStatus();

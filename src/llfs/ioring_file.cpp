@@ -115,6 +115,24 @@ Status IoRing::File::read_all(i64 offset, MutableBuffer buffer)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+Status IoRing::File::read_all_fixed(i64 offset, MutableBuffer buffer, int buf_index)
+{
+  while (buffer.size() != 0) {
+    LLFS_DVLOG(1) << "IoRing::File::read_all about to async_read_some; " << BATT_INSPECT(offset)
+                  << BATT_INSPECT((void*)buffer.data()) << BATT_INSPECT(buffer.size());
+    StatusOr<i32> n_read = batt::Task::await<StatusOr<i32>>([&](auto&& handler) {
+      this->async_read_some_fixed(offset, buffer, buf_index, BATT_FORWARD(handler));
+    });
+    LLFS_DVLOG(1) << BATT_INSPECT(n_read);
+    BATT_REQUIRE_OK(n_read);
+    offset += *n_read;
+    buffer += *n_read;
+  }
+  return batt::OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 int IoRing::File::release()
 {
   if (this->registered_fd_ != -1) {

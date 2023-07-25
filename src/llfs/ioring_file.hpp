@@ -113,6 +113,8 @@ class IoRing::File
   //
   Status read_all(i64 offset, MutableBuffer buffer);
 
+  Status read_all_fixed(i64 offset, MutableBuffer buffer, int buf_index);
+
   // Releases ownership of the underlying file descriptor (fd), returning the previously owned
   // value.
   //

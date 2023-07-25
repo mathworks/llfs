@@ -118,9 +118,10 @@ class IoRing
     this->impl_->stop();
   }
 
-  Status register_buffers(batt::BoxedSeq<MutableBuffer>&& buffers) const noexcept
+  StatusOr<usize> register_buffers(batt::BoxedSeq<MutableBuffer>&& buffers,
+                                   bool update = false) const noexcept
   {
-    return this->impl_->register_buffers(std::move(buffers));
+    return this->impl_->register_buffers(std::move(buffers), update);
   }
 
   Status unregister_buffers() const noexcept

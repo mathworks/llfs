@@ -19,6 +19,7 @@
 #include <llfs/buffer.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/ioring_op_handler.hpp>
+#include <llfs/optional.hpp>
 #include <llfs/seq.hpp>
 #include <llfs/status.hpp>
 
@@ -30,6 +31,7 @@
 
 #include <liburing.h>
 
+#include <condition_variable>
 #include <iterator>
 #include <memory>
 #include <mutex>
@@ -39,7 +41,11 @@ namespace llfs {
 class IoRingImpl
 {
  public:
-  using CompletionHandler = batt::AbstractHandler<StatusOr<i32>>;
+  struct CompletionHandlerBase : batt::DefaultHandlerBase {
+    Optional<StatusOr<i32>> result;
+  };
+
+  using CompletionHandler = batt::BasicAbstractHandler<CompletionHandlerBase, StatusOr<i32>>;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -78,7 +84,12 @@ class IoRingImpl
               std::function<void(struct io_uring_sqe*, IoRingOpHandler<std::decay_t<Handler>>&)>&&
                   start_op) noexcept;
 
-  Status register_buffers(BoxedSeq<MutableBuffer>&& buffers) noexcept;
+  /** \brief Register buffers for faster I/O.
+   *
+   * If `update` is true, then returns the index of the first buffer in the new set, which is
+   * appended to the old set.
+   */
+  StatusOr<usize> register_buffers(BoxedSeq<MutableBuffer>&& buffers, bool update) noexcept;
 
   Status unregister_buffers() noexcept;
 
@@ -116,6 +127,14 @@ class IoRingImpl
   // Protects all other non-atomic data members of this class.
   //
   std::mutex mutex_;
+
+  // Used to signal that there are completions to process.
+  //
+  std::condition_variable cond_;
+
+  // The first thread to enter the critical section will set this flag.
+  //
+  std::atomic<bool> event_wait_{false};
 
   // The io_uring context.
   //
@@ -155,6 +174,10 @@ class IoRingImpl
   // TODO [tastolfi 2023-07-20] What was the idea behind this again?
   //
   std::vector<i32> free_fds_;
+
+  // The set of registered buffers.
+  //
+  std::vector<struct iovec> registered_buffers_;
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

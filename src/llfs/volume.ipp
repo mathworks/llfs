@@ -37,6 +37,7 @@ template <typename T>
 StatusOr<SlotRange> Volume::append(const T& payload, batt::Grant& grant)
 {
   llfs::PackObjectAsRawData<const T&> packed_obj_as_raw{payload};
+
   return this->slot_writer_.append(grant, packed_obj_as_raw);
 }
 

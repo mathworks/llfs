@@ -246,15 +246,14 @@ class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
     StatusOr<Append> op = this->SlotWriter::prepare(caller_grant, slot_body_size);
     BATT_REQUIRE_OK(op);
 
-    // this is where the allocation happens from the buffer to write the variant ID
+    // Do allocation for the buffer to write the variant-ID
     PackedVariant<Ts...>* variant_head =
         op->packer().pack_record(batt::StaticType<PackedVariant<Ts...>>{});
     if (!variant_head) {
       return ::llfs::make_status(StatusCode::kFailedToPackSlotVarHead);
     }
 
-    // BB: get the 'which' value (variant ID) for this entry // VolumeEventVariant which has
-    // PackedRawData as variant
+    // Get variant-ID ('which') for this entry
     variant_head->init(batt::StaticType<PackedTypeFor<T>>{});
 
     if (!pack_object(BATT_FORWARD(payload), &(op->packer()))) {

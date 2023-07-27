@@ -455,7 +455,7 @@ template <typename Policy>
 const void* DataPacker::nocheck_pack_data_large(PackedBytes* dst, const void* data, usize size,
                                                 Arena* arena, batt::StaticType<Policy>)
 {
-  // data buffer is being allocated here for the data part (could be the data part of key or value
+  // Data buffer is being allocated here for the data part (could be the data part of key or value
   // for instance)
   boost::iterator_range<u8*> buf = Policy::nocheck_alloc(arena, static_cast<isize>(size));
 

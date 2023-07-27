@@ -238,11 +238,12 @@ inline R trace_refs(const PackAsVariant<PackedVariant<Ts...>, T>& p)
 template <typename... Ts, typename T, typename Dst>
 PackedVariant<Ts...>* pack_object(const PackAsVariant<PackedVariant<Ts...>, T>& p, Dst* dst)
 {
+  // Allocate space for Variant header
   auto* packed_var = dst->template pack_record<PackedVariant<Ts...>>();
   if (!packed_var) {
     return nullptr;
   }
-  // set variant type now (examples: PackedEdit or PackedTabletCheckpoint)
+  // Set variant type now (examples: PackedEdit or PackedTabletCheckpoint)
   packed_var->init(batt::StaticType<PackedTypeFor<std::decay_t<T>>>{});
 
   auto* packed_case = pack_object(p.object, dst);

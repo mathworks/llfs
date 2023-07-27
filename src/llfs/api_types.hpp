@@ -14,6 +14,8 @@
 
 #include <batteries/strong_typedef.hpp>
 
+#include <sys/types.h>
+
 namespace llfs {
 
 BATT_STRONG_TYPEDEF(usize, ThreadPoolSize);
@@ -34,6 +36,42 @@ BATT_STRONG_TYPEDEF(bool, UseParallelCopy);
 /** \brief The number of bytes by which to delay trimming a Volume root log.
  */
 BATT_STRONG_TYPEDEF(u64, TrimDelayByteCount);
+
+/** \brief Wrapper for off_t used as an offset.
+ */
+BATT_STRONG_TYPEDEF(off_t, FileOffset);
+
+/** \brief Wrapper for off_t used as a dirent offset.
+ */
+BATT_STRONG_TYPEDEF(off_t, DirentOffset);
+
+/** \brief Wrapper for off_t used as a length.
+ */
+BATT_STRONG_TYPEDEF(off_t, FileLength);
+
+/** \brief Wrapper for int used as an fd.
+ */
+BATT_STRONG_TYPEDEF(int, FileDescriptorInt);
+
+/** \brief A buffer size requirement.
+ */
+BATT_STRONG_TYPEDEF(usize, BufferSizeNeeded);
+
+/** \brief Whether we are using the *_plus variant of an API.
+ */
+BATT_STRONG_TYPEDEF(bool, PlusApi);
+
+/** \brief Integer interpreted as a FUSE Impl file handle.
+ */
+BATT_STRONG_TYPEDEF(u64, FuseFileHandle);
+
+/** \brief True if only data/contents should be flushed, not metadata.
+ */
+BATT_STRONG_TYPEDEF(bool, IsDataSync);
+
+/** \brief Int flags bitmask passed into open/opendir.
+ */
+BATT_STRONG_TYPEDEF(int, FileOpenFlags);
 
 }  // namespace llfs
 

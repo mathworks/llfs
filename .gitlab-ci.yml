@@ -1,7 +1,7 @@
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 # See batteries/docker/Dockerfile (https://gitlab.com/batteriescpp/batteries/)
 #
-image: registry.gitlab.com/batteriescpp/batteries:v0.37.2-devel.linux_gcc11_amd64
+image: registry.gitlab.com/batteriescpp/batteries:v0.42.8.linux_gcc11_amd64
 
 variables:
   GIT_STRATEGY: clone
@@ -15,7 +15,10 @@ default:
   before_script:
     - "test -d /local/gitlab-runner-local-cache || { echo \"FATAL: no local docker cache volume mapped\"; false; }"
     - "if [ ! -d /local/gitlab-runner-local-cache/.conan ]; then rm -rf /local/gitlab-runner-local-cache/.conan.IN_PROGRESS && cp -r ~/.conan /local/gitlab-runner-local-cache/.conan.IN_PROGRESS && mv /local/gitlab-runner-local-cache/.conan.IN_PROGRESS /local/gitlab-runner-local-cache/.conan; fi"
+    - export XDG_CACHE_HOME=/local/gitlab-runner-local-cache/.cache
     - export CONAN_USER_HOME=/local/gitlab-runner-local-cache
+    - export CONAN_HOME=/local/gitlab-runner-local-cache/.conan2
+    - /setup-conan.sh
     - echo "CI_DEPLOY_USER=${CI_DEPLOY_USER}"
     - echo "CI_DEPLOY_PASSWORD=${CI_DEPLOY_PASSWORD}"
     - env | grep 'RELEASE_CONAN'

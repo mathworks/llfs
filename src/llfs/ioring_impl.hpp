@@ -37,7 +37,6 @@
 #include <mutex>
 
 namespace llfs {
-
 class IoRingImpl
 {
  public:
@@ -46,6 +45,14 @@ class IoRingImpl
   };
 
   using CompletionHandler = batt::BasicAbstractHandler<CompletionHandlerBase, StatusOr<i32>>;
+
+  template <typename Fn>
+  using CompletionHandlerImpl =
+      batt::BasicHandlerImpl</* HandlerFn= */ IoRingOpHandler<std::decay_t<Fn>>,
+                             /*      Base= */ CompletionHandlerBase,
+                             /*   Args...= */ StatusOr<i32>>;
+
+  using CompletionHandlerList = batt::BasicHandlerList<CompletionHandlerBase, StatusOr<i32>>;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -97,23 +104,21 @@ class IoRingImpl
 
   Status unregister_fd(i32 user_fd) noexcept;
 
+  bool can_run() const noexcept;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
   /** \brief Wraps the passed handler `fn` as a batt::HandlerImpl (batt::AbstractHandler) which
    * can be attached as user data to an I/O request.
    */
   template <typename Fn, typename BufferSequence>
-  static batt::HandlerImpl</*HandlerFn=*/IoRingOpHandler<std::decay_t<Fn>>,
-                           /*Args...=*/StatusOr<i32>>*
-  wrap_handler(Fn&& fn, BufferSequence&& bufs);
+  static CompletionHandlerImpl<Fn>* wrap_handler(Fn&& fn, BufferSequence&& bufs);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   // Use static make_new to create instances of this class.
   //
   IoRingImpl() = default;
-
-  void invoke_handler(struct io_uring_cqe* cqe) noexcept;
 
   Status unregister_buffers_with_lock(const std::unique_lock<std::mutex>&) noexcept;
 
@@ -122,15 +127,82 @@ class IoRingImpl
   //
   i32 free_user_fd(i32 user_fd) noexcept;
 
+  /** \brief Blocks the caller until the event_fd_ is signalled.
+   *
+   * Should be called without holding any locks.
+   */
+  Status wait_for_ring_event();
+
+  /** \brief Blocks the caller until one of the following is true:
+   *
+   *  - There is at least one completion in the queue (this->completions_.empty() == false)
+   *  - No other thread is waiting on the ioring event (this->event_wait_ == false)
+   *  - There is no work pending (this->work_count_ == 0)
+   *  - stop() has been called (this->needs_reset_ == true)
+   */
+  StatusOr<CompletionHandler*> wait_for_completions();
+
+  /** \brief Transfer up to `std::thread::hardware_concurrency()` completion events from the
+   * ioring completion queue to our local queue (this->completions_).
+   *
+   * If successful, this function will wake up one or more other threads to process the
+   * completions.
+   */
+  StatusOr<usize> transfer_completions(CompletionHandler** handler_out);
+
+  /** \brief Converts the passed cqe to a CompletionHandler, initializing the `result` field.
+   */
+  CompletionHandler* completion_from_cqe(struct io_uring_cqe* cqe);
+
+  /** \brief Pushes *handler onto the back of `this->completions_`, waking one waiter.
+   *
+   * Sets *handler to nullptr.
+   */
+  void push_completion(CompletionHandler** handler);
+
+  /** \brief Pushes the handler onto the front of `this->completions_`; do not call notify.
+   *
+   * Sets *handler to nullptr.
+   */
+  void stash_completion(CompletionHandler** handler);
+
+  /** \brief Tries to pop a single completed handler from the queue.
+   *
+   * This function never blocks; if the completion queue is empty, it just returns nullptr
+   * immediately.
+   *
+   * \return The popped completion if there is one, nullptr otherwise.
+   */
+  CompletionHandler* pop_completion();
+
+  /** \brief Same as pop_completion(), but with the queue_mutex_ lock already held.
+   */
+  CompletionHandler* pop_completion_with_lock(std::unique_lock<std::mutex>&);
+
+  /** \brief Invokes and deletes the handler, decrementing work count.
+   *
+   * Will panic if handler->result has not been initialized.
+   */
+  void invoke_handler(CompletionHandler** handler) noexcept;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  // Protects all other non-atomic data members of this class.
+  // Protects access to the io_uring context and associated data (registered_fds_, free_fds_,
+  // registered_buffers_).
   //
-  std::mutex mutex_;
+  std::mutex ring_mutex_;
+
+  // Protects access to the completions_ queue.
+  //
+  std::mutex queue_mutex_;
 
   // Used to signal that there are completions to process.
   //
-  std::condition_variable cond_;
+  std::condition_variable state_change_;
+
+  // List of handlers for completed operations.
+  //
+  CompletionHandlerList completions_;
 
   // The first thread to enter the critical section will set this flag.
   //
@@ -157,13 +229,13 @@ class IoRingImpl
   //
   std::atomic<isize> work_count_{0};
 
-  // Set to true when work count goes to zero and run() exits; it must be set to true via a call to
-  // this->reset() before new I/O events can be processed.
+  // Set to true when work count goes to zero and run() exits; it must be set to true via a call
+  // to this->reset() before new I/O events can be processed.
   //
   std::atomic<bool> needs_reset_{false};
 
-  // The event_fd registered with the io_uring context, used to receive notification of completions
-  // or other interrupts within the event processing loop.
+  // The event_fd registered with the io_uring context, used to receive notification of
+  // completions or other interrupts within the event processing loop.
   //
   std::atomic<int> event_fd_{-1};
 
@@ -186,20 +258,20 @@ class IoRingImpl
 //
 template <typename Fn, typename BufferSequence>
 /*static*/ inline auto IoRingImpl::wrap_handler(Fn&& fn, BufferSequence&& bufs)
-    -> batt::HandlerImpl</*HandlerFn=*/IoRingOpHandler<std::decay_t<Fn>>,
-                         /*Args...=*/StatusOr<i32>>*
+    -> CompletionHandlerImpl<Fn>*
 {
   auto buf_seq = boost::beast::buffers_range_ref(bufs);
   const usize buf_count = std::distance(std::begin(buf_seq), std::end(buf_seq));
   const usize extra_bytes = buf_count * sizeof(struct iovec);
 
-  auto* op = batt::HandlerImpl</*HandlerFn=*/IoRingOpHandler<std::decay_t<Fn>>,
-                               /*Args...=*/StatusOr<i32>>::make_new(BATT_FORWARD(fn), extra_bytes);
+  auto* op = CompletionHandlerImpl<Fn>::make_new(BATT_FORWARD(fn), extra_bytes);
   BATT_CHECK_NOT_NULLPTR(op);
 
   for (const auto& buf : buf_seq) {
     op->get_fn().push_buffer(buf);
   }
+
+  static_assert(std::is_convertible_v<decltype(op), CompletionHandler*>);
 
   return op;
 }
@@ -225,12 +297,13 @@ inline void IoRingImpl::submit(
         start_op) noexcept
 
 {
-  std::unique_lock<std::mutex> lock{this->mutex_};
+  CompletionHandlerImpl<Handler>* op_handler =
+      wrap_handler(BATT_FORWARD(handler), BATT_FORWARD(buffers));
+
+  std::unique_lock<std::mutex> lock{this->ring_mutex_};
 
   struct io_uring_sqe* sqe = io_uring_get_sqe(&this->ring_);
   BATT_CHECK_NOT_NULLPTR(sqe);
-
-  auto* op_handler = wrap_handler(BATT_FORWARD(handler), BATT_FORWARD(buffers));
 
   BATT_STATIC_ASSERT_TYPE_EQ(decltype(op_handler->get_fn()),
                              IoRingOpHandler<std::decay_t<Handler>>&);
@@ -241,7 +314,7 @@ inline void IoRingImpl::submit(
 
   // Set user data.
   //
-  io_uring_sqe_set_data(sqe, op_handler);
+  io_uring_sqe_set_data(sqe, static_cast<CompletionHandler*>(op_handler));
 
   // Increment work count; decrement in invoke_handler.
   //

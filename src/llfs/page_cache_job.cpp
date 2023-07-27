@@ -102,7 +102,8 @@ bool PageCacheJob::is_page_new_and_pinned(PageId page_id) const
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<std::shared_ptr<PageBuffer>> PageCacheJob::new_page(
-    PageSize size, batt::WaitForResource wait_for_resource, u64 callers)
+    PageSize size, batt::WaitForResource wait_for_resource, const PageLayoutId& layout_id,
+    u64 callers)
 {
   // TODO [tastolfi 2021-04-07] instead of WaitForResource::kTrue, implement a backoff-and-retry
   // loop with a cancel token.
@@ -112,6 +113,11 @@ StatusOr<std::shared_ptr<PageBuffer>> PageCacheJob::new_page(
   BATT_REQUIRE_OK(buffer);
 
   const PageId page_id = buffer->get()->page_id();
+
+  {
+    PackedPageHeader* const header = mutable_page_header(buffer->get());
+    header->layout_id = layout_id;
+  }
 
   this->pruned_ = false;
   this->new_pages_.emplace(page_id, NewPage{batt::make_copy(*buffer)});

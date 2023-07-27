@@ -52,7 +52,7 @@ class LlfsConan(ConanFile):
             "gtest/1.13.0",
             "boost/1.82.0",
             "glog/0.6.0",
-            "batteries/0.43.0",
+            "batteries/0.43.1-devel",
             "cli11/2.3.2",
         ]
 

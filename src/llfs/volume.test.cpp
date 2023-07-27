@@ -200,8 +200,11 @@ class VolumeTest : public ::testing::Test
 
   llfs::StatusOr<llfs::PinnedPage> make_opaque_page(llfs::PageCacheJob& job)
   {
+    BATT_REQUIRE_OK(llfs::OpaquePageView::register_layout(job.cache()));
+
     llfs::StatusOr<std::shared_ptr<llfs::PageBuffer>> page_allocated =
-        job.new_page(llfs::PageSize{256}, batt::WaitForResource::kFalse, llfs::Caller::Unknown);
+        job.new_page(llfs::PageSize{256}, batt::WaitForResource::kFalse,
+                     llfs::OpaquePageView::page_layout_id(), llfs::Caller::Unknown);
 
     BATT_REQUIRE_OK(page_allocated);
 
@@ -1912,7 +1915,8 @@ batt::StatusOr<llfs::PageId> VolumeSimTest::build_page_with_refs_to(
 {
   batt::StatusOr<llfs::PageGraphNodeBuilder> page_builder =
       llfs::PageGraphNodeBuilder::from_new_page(
-          job.new_page(page_size, batt::WaitForResource::kFalse, /*callers=*/0));
+          job.new_page(page_size, batt::WaitForResource::kFalse,
+                       llfs::PageGraphNodeView::page_layout_id(), /*callers=*/0));
 
   BATT_REQUIRE_OK(page_builder);
 

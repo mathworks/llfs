@@ -76,6 +76,8 @@ enum struct StatusCode {
   kOutOfAttachments = 58,
   kPageAllocatorNotAttached = 59,
   kPageReaderConflict = 60,
+  kPageHeaderBadLayoutId = 61,
+  kPutViewUnknownLayoutId = 62,
 };
 
 bool initialize_status_codes();

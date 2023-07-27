@@ -417,6 +417,14 @@ StatusOr<PinnedPage> PageCache::put_view(std::shared_ptr<const PageView>&& view,
 {
   BATT_CHECK_NOT_NULLPTR(view);
 
+  if (view->get_page_layout_id() != view->header().layout_id) {
+    return {::llfs::make_status(StatusCode::kPageHeaderBadLayoutId)};
+  }
+
+  if (this->page_readers_->lock()->count(view->get_page_layout_id()) == 0) {
+    return {::llfs::make_status(StatusCode::kPutViewUnknownLayoutId)};
+  }
+
   const page_id_int id_val = view->page_id().int_value();
   BATT_CHECK_NE(id_val, kInvalidPageId);
 
@@ -592,6 +600,10 @@ auto PageCache::find_page_in_cache(PageId page_id, const Optional<PageLayoutId>&
             auto locked = page_readers->lock();
             auto iter = locked->find(layout_id);
             if (iter == locked->end()) {
+              LLFS_LOG_ERROR() << "Unknown page layout: "
+                               << batt::c_str_literal(
+                                      std::string_view{(const char*)&layout_id, sizeof(layout_id)})
+                               << BATT_INSPECT(page_id);
               latch->set_value(make_status(StatusCode::kNoReaderForPageViewType));
               return;
             }

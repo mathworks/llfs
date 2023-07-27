@@ -112,7 +112,9 @@ macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
     ./${TARGET_SRCDIR}/*/*/*/*.test.cpp
     )
   
-  list(REMOVE_ITEM ${TARGET_NAME}_LibSources "FORCE_LIST_NOT_EMPTY;${${TARGET_NAME}_TestSources}")
+  foreach (_file "FORCE_LIST_NOT_EMPTY;${${TARGET_NAME}_TestSources}")
+    list(REMOVE_ITEM ${TARGET_NAME}_LibSources ${_file})
+  endforeach ()
 
   # Define the library target
   #

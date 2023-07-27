@@ -128,7 +128,7 @@ class PageCacheJob : public PageLoader
   //
   StatusOr<std::shared_ptr<PageBuffer>> new_page(PageSize size,
                                                  batt::WaitForResource wait_for_resource,
-                                                 u64 callers);
+                                                 const PageLayoutId& layout_id, u64 callers);
 
   // Inserts a new page into the cache.  The passed PageView must have been created using a
   // PageBuffer returned by `new_page` for this job, or we will panic.

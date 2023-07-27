@@ -62,14 +62,13 @@ TEST(IoRingBufferPoolTest, Test)
 
         LLFS_VLOG(1) << "making pool";
 
-        llfs::IoRingBufferPool pool{io->get_io_ring(), llfs::BufferCount{pool_size},
-                                    llfs::BufferSize{buffer_size}};
+        llfs::StatusOr<std::unique_ptr<llfs::IoRingBufferPool>> pool_status =
+            llfs::IoRingBufferPool::make_new(io->get_io_ring(), llfs::BufferCount{pool_size},
+                                             llfs::BufferSize{buffer_size});
 
-        LLFS_VLOG(1) << "initializing pool";
+        ASSERT_TRUE(pool_status.ok()) << BATT_INSPECT(pool_status.status());
 
-        llfs::Status pool_init = pool.initialize();
-
-        ASSERT_TRUE(pool_init.ok()) << BATT_INSPECT(pool_init);
+        auto& pool = **pool_status;
 
         EXPECT_EQ(pool.in_use(), 0u);
         EXPECT_EQ(pool.available(), pool_size);
@@ -79,7 +78,12 @@ TEST(IoRingBufferPoolTest, Test)
         std::vector<llfs::IoRingBufferPool::Buffer> buffers;
 
         for (usize i = 0; i < pool_size; ++i) {
-          llfs::StatusOr<llfs::IoRingBufferPool::Buffer> buf = pool.await_allocate();
+          llfs::StatusOr<llfs::IoRingBufferPool::Buffer> buf = [&] {
+            if (i % 2 == 0) {
+              return pool.await_allocate();
+            }
+            return pool.try_allocate();
+          }();
 
           ASSERT_TRUE(buf.ok()) << BATT_INSPECT(buf.status());
 
@@ -120,10 +124,23 @@ TEST(IoRingBufferPoolTest, Test)
                       ::testing::StrEq(kExpectHeader.substr(1)));
         }
 
+        {
+          llfs::StatusOr<llfs::IoRingBufferPool::Buffer> buf = pool.try_allocate();
+
+          EXPECT_FALSE(buf.ok());
+          EXPECT_EQ(buf.status(), batt::StatusCode::kResourceExhausted);
+        }
+
         buffers.resize(1);
 
         EXPECT_EQ(pool.in_use(), 1u);
         EXPECT_EQ(pool.available(), pool_size - 1);
+
+        {
+          llfs::StatusOr<llfs::IoRingBufferPool::Buffer> buf = pool.try_allocate();
+
+          EXPECT_TRUE(buf.ok()) << BATT_INSPECT(buf.status());
+        }
       },
   };
 

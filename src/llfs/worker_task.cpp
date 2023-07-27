@@ -234,7 +234,7 @@ void WorkerTask::run()
   }();
 
   if (!status.ok()) {
-    if (this->halt_requested_.load()) {
+    if (this->halt_requested_.load() || status == batt::StatusCode::kClosed) {
       LLFS_VLOG(1) << "WorkerTask terminated with status: " << status;
     } else {
       LLFS_LOG_WARNING() << "WorkerTask terminated unexpectedly with error status: " << status;

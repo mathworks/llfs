@@ -27,9 +27,13 @@ namespace llfs {
     //
     std::unique_ptr<PageCacheJob> job = cache.new_job();
 
-    LLFS_VLOG(1) << "Dropping PageId roots from the log..." << BATT_INSPECT(slot_offset);
+    const usize count = roots_to_trim.size();
+
+    LLFS_VLOG(1) << "Dropping PageId roots from the log..." << BATT_INSPECT(slot_offset)
+                 << BATT_INSPECT(count);
+
     for (PageId page_id : roots_to_trim) {
-      LLFS_VLOG(1) << " -- " << page_id;
+      LLFS_VLOG(2) << " -- " << page_id;
       job->delete_root(page_id);
     }
 
@@ -232,6 +236,33 @@ StatusOr<slot_offset_type> VolumeTrimmer::await_trim_target(slot_offset_type min
 
 //#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
 
+namespace {
+
+struct TrimmedRegionStats {
+  usize prepare_job_count = 0;
+  usize commit_job_count = 0;
+  usize rollback_job_count = 0;
+  usize volume_ids_count = 0;
+  usize volume_attach_count = 0;
+  usize volume_detach_count = 0;
+  usize volume_trim_count = 0;
+};
+
+inline std::ostream& operator<<(std::ostream& out, const TrimmedRegionStats& t)
+{
+  return out << "TrimmedRegionStats"                                //
+             << "{.prepare_job_count=" << t.prepare_job_count       //
+             << ", .commit_job_count=" << t.commit_job_count        //
+             << ", .rollback_job_count=" << t.rollback_job_count    //
+             << ", .volume_ids_count=" << t.volume_ids_count        //
+             << ", .volume_attach_count=" << t.volume_attach_count  //
+             << ", .volume_detach_count=" << t.volume_detach_count  //
+             << ", .volume_trim_count=" << t.volume_trim_count      //
+             << ",}";
+}
+
+}  //namespace
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
@@ -243,10 +274,12 @@ StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
   result->slot_range.lower_bound = slot_reader.next_slot_offset();
   result->slot_range.upper_bound = result->slot_range.lower_bound;
 
+  TrimmedRegionStats stats;
+
   StatusOr<usize> read_status = slot_reader.run(
       batt::WaitForResource::kTrue,
-      [trim_upper_bound, &result, &prior_pending_jobs](const SlotParse& slot,
-                                                       const auto& payload) -> Status {
+      [trim_upper_bound, &result, &prior_pending_jobs, &stats](const SlotParse& slot,
+                                                               const auto& payload) -> Status {
         const SlotRange& slot_range = slot.offset;
 
         LLFS_VLOG(2) << "read slot: " << BATT_INSPECT(slot_range)
@@ -267,6 +300,8 @@ StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
             //+++++++++++-+-+--+----- --- -- -  -  -   -
             //
             [&](const SlotParse& slot, const Ref<const PackedPrepareJob>& prepare) {
+              ++stats.prepare_job_count;
+
               std::vector<PageId> root_page_ids =
                   as_seq(*prepare.get().root_page_ids) |
                   seq::map([](const PackedPageId& packed) -> PageId {
@@ -274,7 +309,7 @@ StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
                   }) |
                   seq::collect_vec();
 
-              LLFS_VLOG(1) << "visit_slot(" << BATT_INSPECT(slot.offset)
+              LLFS_VLOG(2) << "visit_slot(" << BATT_INSPECT(slot.offset)
                            << ", PrepareJob) root_page_ids=" << batt::dump_range(root_page_ids);
 
               result->grant_size_to_release += packed_sizeof_slot(prepare.get());
@@ -293,6 +328,8 @@ StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
             //+++++++++++-+-+--+----- --- -- -  -  -   -
             //
             [&](const SlotParse& slot, const PackedCommitJob& commit) {
+              ++stats.commit_job_count;
+
               LLFS_VLOG(2) << "visit_slot(" << BATT_INSPECT(slot.offset) << ", CommitJob)";
 
               //----- --- -- -  -  -   -
@@ -343,9 +380,11 @@ StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
             //+++++++++++-+-+--+----- --- -- -  -  -   -
             //
             [&](const SlotParse&, const PackedRollbackJob& rollback) {
+              ++stats.rollback_job_count;
+
               // The job has been resolved (rolled back); remove it from the maps.
               //
-              LLFS_VLOG(1) << "Rolling back pending job;" << BATT_INSPECT(rollback.prepare_slot);
+              LLFS_VLOG(2) << "Rolling back pending job;" << BATT_INSPECT(rollback.prepare_slot);
               if (prior_pending_jobs.erase(rollback.prepare_slot) == 1u) {
                 result->resolved_jobs.emplace_back(rollback.prepare_slot);
               }
@@ -357,7 +396,9 @@ StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
             //+++++++++++-+-+--+----- --- -- -  -  -   -
             //
             [&](const SlotParse& slot, const PackedVolumeIds& ids) {
-              LLFS_VLOG(1) << "Found ids to refresh: " << ids << BATT_INSPECT(slot.offset);
+              ++stats.volume_ids_count;
+
+              LLFS_VLOG(2) << "Found ids to refresh: " << ids << BATT_INSPECT(slot.offset);
               result->ids_to_refresh = ids;
               return batt::OkStatus();
             },
@@ -365,6 +406,8 @@ StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
             //+++++++++++-+-+--+----- --- -- -  -  -   -
             //
             [&](const SlotParse&, const PackedVolumeAttachEvent& attach) {
+              ++stats.volume_attach_count;
+
               const auto& [iter, inserted] =
                   result->attachments_to_refresh.emplace(attach.id, attach);
               if (!inserted) {
@@ -376,6 +419,8 @@ StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
             //+++++++++++-+-+--+----- --- -- -  -  -   -
             //
             [&](const SlotParse&, const PackedVolumeDetachEvent& detach) {
+              ++stats.volume_detach_count;
+
               result->attachments_to_refresh.erase(detach.id);
               return batt::OkStatus();
             },
@@ -383,6 +428,8 @@ StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
             //+++++++++++-+-+--+----- --- -- -  -  -   -
             //
             [&](const SlotParse&, const VolumeTrimEvent& trim_event) {
+              ++stats.volume_trim_count;
+
               batt::make_copy(trim_event.trimmed_prepare_jobs)  //
                   | batt::seq::for_each([&](const TrimmedPrepareJob& job) {
                       // If the pending job from this past trim event is *still* pending as of the
@@ -409,7 +456,10 @@ StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
             )(slot, payload);
       });
 
-  LLFS_VLOG(1) << "read_trimmed_region: done visiting slots," << BATT_INSPECT(read_status);
+  const usize dropped_roots = result.ok() ? result->obsolete_roots.size() : usize{0};
+
+  LLFS_VLOG(1) << "read_trimmed_region: done visiting slots," << BATT_INSPECT(read_status)
+               << BATT_INSPECT(dropped_roots) << BATT_INSPECT(stats);
 
   if (!read_status.ok() &&
       read_status.status() != ::llfs::make_status(StatusCode::kBreakSlotReaderLoop)) {

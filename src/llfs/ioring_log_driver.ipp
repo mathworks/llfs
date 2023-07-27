@@ -277,6 +277,8 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::flush_task_main()
             << " (block=" << op.get_current_log_block_index() << "/" << block_count << "), ";
         op_i += 1;
       }
+      out << BATT_INSPECT(this->trim_pos_) << BATT_INSPECT(this->flush_pos_)
+          << BATT_INSPECT(commit_pos_);
     });
 
     this->ioring_.on_work_started();

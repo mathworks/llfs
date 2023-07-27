@@ -226,11 +226,7 @@ PackAsVariant<PackedVariant<Ts...>, T> pack_as_variant(batt::StaticType<PackedVa
 template <typename... Ts, typename T>
 inline usize packed_sizeof(const PackAsVariant<PackedVariant<Ts...>, T>& p)
 {
-  usize size_packed = packed_sizeof(p.object);
-  LOG(INFO) << "@BB packed_sizeof(PackAsVariant p) : " << sizeof(PackedVariant<Ts...>) << " , "
-            << size_packed;
-  return sizeof(PackedVariant<Ts...>) + size_packed;
-  //return sizeof(PackedVariant<Ts...>) + packed_sizeof(p.object);
+  return sizeof(PackedVariant<Ts...>) + packed_sizeof(p.object);
 }
 
 template <typename... Ts, typename T, typename R = decltype(trace_refs(std::declval<const T&>()))>
@@ -246,14 +242,9 @@ PackedVariant<Ts...>* pack_object(const PackAsVariant<PackedVariant<Ts...>, T>& 
   if (!packed_var) {
     return nullptr;
   }
-  // this is setting which as 0 - level 2 in main flow // TableEvent variants
-  // PackedEdit and PackedTabletCheckpoint
+  // set variant type now (examples: PackedEdit or PackedTabletCheckpoint)
   packed_var->init(batt::StaticType<PackedTypeFor<std::decay_t<T>>>{});
 
-  // **************** we need to add individual edits at the point...
-  LOG(INFO) << "@BB1 pack_object template(PackedVariant, dst): " << typeid(p.object).name()
-            << " , which: " << (int)(packed_var->which) << ", typenameP: " << typeid(p).name()
-            << ", TypeNameTs: " << typeid(PackedVariant<Ts...>).name();
   auto* packed_case = pack_object(p.object, dst);
   if (!packed_case) {
     return nullptr;

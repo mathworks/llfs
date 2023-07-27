@@ -200,11 +200,7 @@ inline usize packed_sizeof_slot_with_payload_size(usize payload_size)
 template <typename T>
 inline usize packed_sizeof_slot(const T& payload)
 {
-  usize payload_size = packed_sizeof(payload);
-  LOG(INFO) << "@BB packed_sizeof_slot() value1: " << payload_size
-            << ", value2: " << packed_sizeof_slot_with_payload_size(payload_size);
-  return packed_sizeof_slot_with_payload_size(payload_size);
-  //return packed_sizeof_slot_with_payload_size(packed_sizeof(payload));
+  return packed_sizeof_slot_with_payload_size(packed_sizeof(payload));
 }
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
@@ -260,10 +256,6 @@ class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
     // BB: get the 'which' value (variant ID) for this entry // VolumeEventVariant which has
     // PackedRawData as variant
     variant_head->init(batt::StaticType<PackedTypeFor<T>>{});
-
-    LOG(INFO) << "@BB0 append(grant, payload, commit_fn): " << typeid(payload).name()
-              << ", which: " << (int)(variant_head->which) << ", typename:T: " << typeid(T).name()
-              << ", TypeNameTs: " << typeid(PackedVariant<Ts...>).name();
 
     if (!pack_object(BATT_FORWARD(payload), &(op->packer()))) {
       return ::llfs::make_status(StatusCode::kFailedToPackSlotVarTail);

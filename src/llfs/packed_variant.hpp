@@ -243,6 +243,7 @@ PackedVariant<Ts...>* pack_object(const PackAsVariant<PackedVariant<Ts...>, T>& 
   if (!packed_var) {
     return nullptr;
   }
+
   // Set variant type now (examples: PackedEdit or PackedTabletCheckpoint)
   packed_var->init(batt::StaticType<PackedTypeFor<std::decay_t<T>>>{});
 

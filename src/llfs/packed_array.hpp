@@ -23,8 +23,13 @@ namespace llfs {
 //
 template <typename T>
 struct PackedArray {
+  enum Flags : u8 {
+    kSizeInBytesSet = 0x01,
+  };
+
   little_u24 item_count;
-  little_u8 reserved_[5];
+  Flags flags;
+  little_u32 size_in_bytes;
   T items[0];
 
   // This struct must never be copied since that would invalidate `items`.
@@ -39,8 +44,8 @@ struct PackedArray {
   template <typename I>
   void initialize(I count_arg)
   {
+    std::memset(&(this->item_count), 0, sizeof(PackedArray));
     this->item_count = count_arg;
-    std::memset(this->reserved_, 0, sizeof(this->reserved_));
 
     BATT_CHECK_EQ(count_arg, this->item_count.value());
   }
@@ -115,6 +120,22 @@ struct PackedArray {
 
       out << "} PackedArray;" << std::endl;
     };
+  }
+
+  void initialize_size_in_bytes(usize size_in_bytes)
+  {
+    this->size_in_bytes = size_in_bytes;
+    flags = static_cast<Flags>(flags | kSizeInBytesSet);
+  }
+
+  bool is_valid_size_in_bytes() const
+  {
+    return (this->flags & kSizeInBytesSet);
+  }
+
+  usize get_size_in_bytes() const
+  {
+    return this->size_in_bytes;
   }
 };
 

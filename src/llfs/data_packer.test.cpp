@@ -189,4 +189,52 @@ TEST(DataPackerTest, ParallelDataCopyFalse)
   run_parallel_copy_test(false, 0);
 }
 
+void run_pack_record_test(const usize count)
+{
+  struct MyTemp {
+    int data;
+  };
+  const u64 mem_size = 64;
+  std::array<u8, mem_size> memory;
+  memory.fill(0);
+
+  std::array<u8, mem_size> expected;
+  expected.fill(0);
+
+  llfs::DataPacker packer{llfs::MutableBuffer{memory.data(), memory.size()}};
+
+  EXPECT_EQ(packer.space(), mem_size);
+
+  // allocate space for first lot based on 'count'
+  if (count != 1) {
+    [[maybe_unused]] auto p_buff = packer.template pack_record(batt::StaticType<MyTemp>{}, count);
+  } else {
+    [[maybe_unused]] auto p_buff =
+        packer.template pack_record(batt::StaticType<MyTemp>{});  // use default 'count' as '1'
+  }
+
+  i64 space_allocated = sizeof(MyTemp) * count;
+  auto space_remaining = mem_size - space_allocated;
+
+  EXPECT_EQ(packer.space(), space_remaining);  // check for remaining space
+  EXPECT_EQ(
+      packer.unused(),
+      (batt::Interval<isize>{space_allocated, mem_size}));  // check remaining space offset range
+}
+
+TEST(DataPackerTest, PackRecordCnt1)
+{
+  run_pack_record_test(1);
+}
+
+TEST(DataPackerTest, PackRecordCnt5)
+{
+  run_pack_record_test(5);
+}
+
+TEST(DataPackerTest, PackRecordCnt16)
+{
+  run_pack_record_test(16);
+}
+
 }  // namespace

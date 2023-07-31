@@ -58,4 +58,36 @@ TEST(PackedArrayTest, PackBoxedSeq)
   }
 }
 
+TEST(PackedArrayTest, PackArrayCachedSize)
+{
+  std::vector<u8> buffer;
+
+  std::vector<i32> numbers{0, 10, 20, 30, 40, 50};
+
+  buffer.resize(llfs::packed_sizeof(llfs::as_seq(numbers) | llfs::seq::boxed()));
+  {
+    llfs::DataPacker dst{llfs::MutableBuffer{buffer.data(), buffer.size()}};
+
+    llfs::PackedArray<little_i32>* packed =
+        pack_object(llfs::as_seq(numbers) | llfs::seq::boxed(), &dst);
+
+    ASSERT_NE(packed, nullptr);
+    packed->initialize(numbers.size());
+
+    // check for initial value
+    //
+    ASSERT_EQ(packed->flags, 0);
+    ASSERT_EQ(packed->size_in_bytes, 0u);
+    ASSERT_FALSE(packed->is_valid_size_in_bytes());
+
+    packed->initialize_size_in_bytes(numbers.size() * sizeof(i32));
+    ASSERT_TRUE(packed->is_valid_size_in_bytes());
+
+    EXPECT_EQ(packed->get_size_in_bytes(), numbers.size() * sizeof(i32));
+
+    EXPECT_THAT(*packed, ::testing::ElementsAre(0, 10, 20, 30, 40, 50));
+    EXPECT_EQ(dst.space(), 0u);
+  }
+}
+
 }  // namespace

@@ -137,6 +137,11 @@ class DataPacker
            (rec_end <= this->buffer_end());
   }
 
+  /*! \brief Allocate buffer from Data-packer's arena for the passed in Type.
+   *
+   * Param 'count' is specifying number of elements of type 'T' for which memory allocation is
+   * requested. By default it is going allocate space for 'one' element.
+   */
   template <typename T>
   [[nodiscard]] T* pack_record(const batt::StaticType<T>& = {}, const usize count = 1)
   {
@@ -316,6 +321,7 @@ class DataPacker
     }
 
     // This will set the `which` field of the variant record.
+    //
     instance->init();
 
     return instance;

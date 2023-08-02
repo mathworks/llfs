@@ -144,7 +144,7 @@ StatusOr<SlotParse> SlotReader::parse_next(batt::WaitForResource wait_for_data)
             },
         .body = slot_body,
         .depends_on_offset = None,
-        .total_byte_size = slot_size,
+        .total_grant_spent = slot_size,
     };
   }
 }

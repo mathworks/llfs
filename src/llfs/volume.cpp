@@ -490,13 +490,15 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
   BATT_DEBUG_INFO("appending PrepareJob slot to the WAL");
 
   auto prepared_job = prepare(appendable);
+  const u64 prepared_job_size = packed_sizeof_slot(prepared_job);
   {
-    BATT_ASSIGN_OK_RESULT(batt::Grant trim_refresh_grant,
-                          grant.spend(packed_sizeof_slot(prepared_job)));
+    BATT_ASSIGN_OK_RESULT(batt::Grant trim_refresh_grant, grant.spend(prepared_job_size));
     this->trimmer_.push_grant(std::move(trim_refresh_grant));
   }
 
   Optional<slot_offset_type> prev_user_slot;
+
+  const auto grant_size_before_prepare = grant.size();
 
   StatusOr<SlotRange> prepare_slot = LLFS_COLLECT_LATENCY(
       this->metrics_.prepare_slot_append_latency,
@@ -508,6 +510,8 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
             return slot_range;
           }));
 
+  const auto grant_size_after_prepare = grant.size();
+
   if (sequencer) {
     if (!prepare_slot.ok()) {
       BATT_CHECK(sequencer->set_error(prepare_slot.status()))
@@ -517,7 +521,10 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
           << "each slot within a sequence may only be set once!";
     }
   }
+
   BATT_REQUIRE_OK(prepare_slot);
+
+  BATT_CHECK_EQ(prepared_job_size, grant_size_before_prepare - grant_size_after_prepare);
   BATT_CHECK(prev_user_slot);
   BATT_CHECK(slot_at_most(*prev_user_slot, prepare_slot->lower_bound))
       << BATT_INSPECT(prev_user_slot) << BATT_INSPECT(prepare_slot);

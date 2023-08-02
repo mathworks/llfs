@@ -34,11 +34,11 @@ struct SlotParse {
    */
   Optional<SlotRange> depends_on_offset;
 
-  /** \brief The total number of bytes appended by the logical entity represented by this parse. For
+  /** \brief The total grant size spent to append the logical entity represented by this parse. For
    * most records, this is just the number of bytes spanned by the slot (this->offset.size()); for
-   * commit job events, it includes the `total_byte_size` of the prepare job slot as well.
+   * commit job events, it includes the `total_grant_spent` of the prepare job slot as well.
    */
-  u64 total_byte_size;
+  u64 total_grant_spent;
 };
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

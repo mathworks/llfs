@@ -160,7 +160,7 @@ TEST_F(RawVolumeLogDataParserTest, Test)
             },
         .body = user_event_1_packed_variant,
         .depends_on_offset = batt::None,
-        .total_byte_size = second_slot_end - second_slot_begin,
+        .total_grant_spent = second_slot_end - second_slot_begin,
     };
 
     {
@@ -246,8 +246,8 @@ TEST_F(RawVolumeLogDataParserTest, Test)
                 .lower_bound = third_slot_begin,
                 .upper_bound = third_slot_end,
             },
-        .total_byte_size =
-            ((fourth_slot_end - fourth_slot_begin) + (third_slot_end - third_slot_begin)),
+        .total_grant_spent = (third_slot_end - third_slot_begin) * 2  //
+                             + (fourth_slot_end - fourth_slot_begin),
     };
 
     {

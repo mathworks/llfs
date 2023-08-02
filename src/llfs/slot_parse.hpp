@@ -22,9 +22,23 @@ namespace llfs {
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 struct SlotParse {
+  /** \brief The slot offset range of the parsed record.
+   */
   SlotRange offset;
+
+  /** \brief The slot payload data; this excludes only the var-int header portion.
+   */
   std::string_view body;
+
+  /** \brief If set, indicates a logical dependency on an earlier slot.
+   */
   Optional<SlotRange> depends_on_offset;
+
+  /** \brief The total number of bytes appended by the logical entity represented by this parse. For
+   * most records, this is just the number of bytes spanned by the slot (this->offset.size()); for
+   * commit job events, it includes the `total_byte_size` of the prepare job slot as well.
+   */
+  u64 total_byte_size;
 };
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

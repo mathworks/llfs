@@ -246,8 +246,9 @@ TEST_F(RawVolumeLogDataParserTest, Test)
                 .lower_bound = third_slot_begin,
                 .upper_bound = third_slot_end,
             },
-        .total_grant_spent = (third_slot_end - third_slot_begin) * 2  //
-                             + (fourth_slot_end - fourth_slot_begin),
+        .total_grant_spent = ((third_slot_end - third_slot_begin)  //
+                              + (fourth_slot_end - fourth_slot_begin)) *
+                             2,
     };
 
     {

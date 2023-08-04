@@ -37,6 +37,8 @@ Status PageCache::PageDeleterImpl::delete_pages(const Slice<const PageToRecycle>
   if (to_delete.empty()) {
     return OkStatus();
   }
+  BATT_DEBUG_INFO("delete_pages()" << BATT_INSPECT_RANGE(to_delete) << BATT_INSPECT(recycle_depth));
+
   const boost::uuids::uuid& caller_uuid = recycler.uuid();
 
   JobCommitParams params{

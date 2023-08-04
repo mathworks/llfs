@@ -132,7 +132,7 @@ StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_commit_job(const SlotParse& slot,
         .offset = commit_slot.offset,
         .body = commit_slot.body,
         .depends_on_offset = prepare_slot.offset,
-        .total_grant_spent = prepare_slot.total_grant_spent + commit_slot.total_grant_spent,
+        .total_grant_spent = prepare_slot.total_grant_spent + commit_slot.total_grant_spent * 2,
     };
 
     this->pending_jobs_.erase(iter);

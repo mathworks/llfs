@@ -196,6 +196,31 @@ class Volume
   //
   u64 root_log_capacity() const;
 
+  u64 available_to_reserve() const noexcept
+  {
+    return this->slot_writer_.pool_size();
+  }
+
+  u64 trimmer_grant_size() const noexcept
+  {
+    return this->trimmer_.grant_pool_size();
+  }
+
+  u64 trim_count() const noexcept
+  {
+    return this->trimmer_.trim_count();
+  }
+
+  u64 trimmer_grant_pushed_size() const noexcept
+  {
+    return this->trimmer_.pushed_grant_size();
+  }
+
+  u64 trimmer_grant_popped_size() const noexcept
+  {
+    return this->trimmer_.popped_grant_size();
+  }
+
   // Returns the current valid slot offset range for the root log at the specified durability level.
   //
   SlotRange root_log_slot_range(LogReadMode mode) const;

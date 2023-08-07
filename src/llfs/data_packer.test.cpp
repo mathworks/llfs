@@ -206,10 +206,9 @@ void run_pack_record_test(const usize count)
 
   MyTemp* p_buff;
   if (count != 1) {
-    p_buff = packer.template pack_record(batt::StaticType<MyTemp>{}, count);
+    p_buff = packer.pack_record(batt::StaticType<MyTemp>{}, count);
   } else {
-    p_buff =
-        packer.template pack_record(batt::StaticType<MyTemp>{});  // Use default 'count' as '1'.
+    p_buff = packer.pack_record(batt::StaticType<MyTemp>{});  // Use default 'count' as '1'.
   }
 
   if (requested_space > kMemSize) {

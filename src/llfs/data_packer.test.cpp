@@ -194,32 +194,36 @@ void run_pack_record_test(const usize count)
   struct MyTemp {
     int data;
   };
-  const u64 mem_size = 64;
-  std::array<u8, mem_size> memory;
-  memory.fill(0);
+  constexpr u64 kMemSize = 64;
+  u64 requested_space = sizeof(MyTemp) * count;
+  std::array<u8, kMemSize> memory;
 
-  std::array<u8, mem_size> expected;
-  expected.fill(0);
+  memory.fill(0);
 
   llfs::DataPacker packer{llfs::MutableBuffer{memory.data(), memory.size()}};
 
-  EXPECT_EQ(packer.space(), mem_size);
+  EXPECT_EQ(packer.space(), kMemSize);
 
-  // allocate space for first lot based on 'count'
+  MyTemp* p_buff;
   if (count != 1) {
-    [[maybe_unused]] auto p_buff = packer.template pack_record(batt::StaticType<MyTemp>{}, count);
+    p_buff = packer.template pack_record(batt::StaticType<MyTemp>{}, count);
   } else {
-    [[maybe_unused]] auto p_buff =
-        packer.template pack_record(batt::StaticType<MyTemp>{});  // use default 'count' as '1'
+    p_buff =
+        packer.template pack_record(batt::StaticType<MyTemp>{});  // Use default 'count' as '1'.
   }
 
-  i64 space_allocated = sizeof(MyTemp) * count;
-  auto space_remaining = mem_size - space_allocated;
+  if (requested_space > kMemSize) {
+    requested_space = 0;
+    EXPECT_EQ(p_buff, reinterpret_cast<MyTemp*>(0));
+  } else {
+    EXPECT_GE(p_buff, reinterpret_cast<MyTemp*>(packer.buffer_begin()));
+    EXPECT_LE(p_buff, reinterpret_cast<MyTemp*>(packer.buffer_end() - 1));
+  }
 
-  EXPECT_EQ(packer.space(), space_remaining);  // check for remaining space
-  EXPECT_EQ(
-      packer.unused(),
-      (batt::Interval<isize>{space_allocated, mem_size}));  // check remaining space offset range
+  const auto space_remaining = kMemSize - requested_space;
+
+  EXPECT_EQ(packer.space(), space_remaining);
+  EXPECT_EQ(packer.unused(), (batt::Interval<isize>{i64(requested_space), kMemSize}));
 }
 
 TEST(DataPackerTest, PackRecordCnt1)
@@ -237,4 +241,8 @@ TEST(DataPackerTest, PackRecordCnt16)
   run_pack_record_test(16);
 }
 
+TEST(DataPackerTest, PackRecordCntNegative)
+{
+  run_pack_record_test(17);
+}
 }  // namespace

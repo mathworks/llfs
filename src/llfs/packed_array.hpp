@@ -11,8 +11,10 @@
 #define LLFS_PACKED_ARRAY_HPP
 
 #include <llfs/data_layout.hpp>
+#include <llfs/optional.hpp>
 #include <llfs/seq.hpp>
 
+#include <batteries/optional.hpp>
 #include <batteries/static_assert.hpp>
 
 #include <cstring>
@@ -125,15 +127,15 @@ struct PackedArray {
   void initialize_size_in_bytes(usize size_in_bytes)
   {
     this->size_in_bytes = size_in_bytes;
-    flags = static_cast<Flags>(flags | kSizeInBytesSet);
+    this->flags = static_cast<Flags>(this->flags | kSizeInBytesSet);
   }
 
-  bool is_valid_size_in_bytes() const
+  bool has_size_in_bytes() const
   {
     return (this->flags & kSizeInBytesSet);
   }
 
-  usize get_size_in_bytes() const
+  Optional<usize> get_size_in_bytes() const
   {
     return this->size_in_bytes;
   }

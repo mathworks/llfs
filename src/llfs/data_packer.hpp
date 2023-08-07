@@ -139,8 +139,10 @@ class DataPacker
 
   /*! \brief Allocate buffer from Data-packer's arena for the passed in Type.
    *
-   * Param 'count' is specifying number of elements of type 'T' for which memory allocation is
-   * requested. By default it is going allocate space for 'one' element.
+   * \param count It's specifying number of elements of type 'T' for which memory allocation is
+   *              requested. By default it is going to allocate space for 'one' element.
+   *
+   * \return Base address of the allocated space.
    */
   template <typename T>
   [[nodiscard]] T* pack_record(const batt::StaticType<T>& = {}, const usize count = 1)

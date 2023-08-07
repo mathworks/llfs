@@ -189,6 +189,17 @@ TEST(DataPackerTest, ParallelDataCopyFalse)
   run_parallel_copy_test(false, 0);
 }
 
+/*! \brief Runs a DataPacker (pack_record) test to check space allocation correctness.
+ *
+ * The function is allocating space for 'N' (='count') elements using a DataPacker object.
+ * DataPacker object is initialized to have 64 bytes of buffer space. Each element is 4 bytes long.
+ * Further, it uses default parameter value when count=1. Post space allocation it verifies
+ * DataPacker object's remaining space and unused space range. For a negative test it checks to make
+ * sure there was no space allocation.
+ *
+ * \param count Specify number of elements which data packer will use to allocate the space for.
+ *
+ */
 void run_pack_record_test(const usize count)
 {
   struct MyTemp {

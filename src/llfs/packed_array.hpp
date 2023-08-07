@@ -137,7 +137,7 @@ struct PackedArray {
 
   Optional<usize> get_size_in_bytes() const
   {
-    if (has_size_in_bytes()) {
+    if (this->has_size_in_bytes()) {
       return this->size_in_bytes;
     }
     return 0;

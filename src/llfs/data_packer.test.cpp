@@ -189,4 +189,70 @@ TEST(DataPackerTest, ParallelDataCopyFalse)
   run_parallel_copy_test(false, 0);
 }
 
+/*! \brief Runs a DataPacker (pack_record) test to check space allocation correctness.
+ *
+ * The function is allocating space for 'N' (='count') elements using a DataPacker object.
+ * DataPacker object is initialized to have 64 bytes of buffer space. Each element is 4 bytes long.
+ * Further, it uses default parameter value when count=1. Post space allocation it verifies
+ * DataPacker object's remaining space and unused space range. For a negative test it checks to make
+ * sure there was no space allocation.
+ *
+ * \param count Specify number of elements which data packer will use to allocate the space for.
+ *
+ */
+void run_pack_record_test(const usize count)
+{
+  struct MyTemp {
+    int data;
+  };
+  constexpr u64 kMemSize = 64;
+  u64 requested_space = sizeof(MyTemp) * count;
+  std::array<u8, kMemSize> memory;
+
+  memory.fill(0);
+
+  llfs::DataPacker packer{llfs::MutableBuffer{memory.data(), memory.size()}};
+
+  EXPECT_EQ(packer.space(), kMemSize);
+
+  MyTemp* p_buff;
+  if (count != 1) {
+    p_buff = packer.pack_record(batt::StaticType<MyTemp>{}, count);
+  } else {
+    p_buff = packer.pack_record(batt::StaticType<MyTemp>{});  // Use default 'count' as '1'.
+  }
+
+  if (requested_space > kMemSize) {
+    requested_space = 0;
+    EXPECT_EQ(p_buff, reinterpret_cast<MyTemp*>(0));
+  } else {
+    EXPECT_GE(p_buff, reinterpret_cast<MyTemp*>(packer.buffer_begin()));
+    EXPECT_LE(p_buff, reinterpret_cast<MyTemp*>(packer.buffer_end() - 1));
+  }
+
+  const auto space_remaining = kMemSize - requested_space;
+
+  EXPECT_EQ(packer.space(), space_remaining);
+  EXPECT_EQ(packer.unused(), (batt::Interval<isize>{i64(requested_space), kMemSize}));
+}
+
+TEST(DataPackerTest, PackRecordCnt1)
+{
+  run_pack_record_test(1);
+}
+
+TEST(DataPackerTest, PackRecordCnt5)
+{
+  run_pack_record_test(5);
+}
+
+TEST(DataPackerTest, PackRecordCnt16)
+{
+  run_pack_record_test(16);
+}
+
+TEST(DataPackerTest, PackRecordCntNegative)
+{
+  run_pack_record_test(17);
+}
 }  // namespace

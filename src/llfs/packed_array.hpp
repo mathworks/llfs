@@ -11,8 +11,10 @@
 #define LLFS_PACKED_ARRAY_HPP
 
 #include <llfs/data_layout.hpp>
+#include <llfs/optional.hpp>
 #include <llfs/seq.hpp>
 
+#include <batteries/optional.hpp>
 #include <batteries/static_assert.hpp>
 
 #include <cstring>
@@ -23,8 +25,13 @@ namespace llfs {
 //
 template <typename T>
 struct PackedArray {
+  enum Flags : u8 {
+    kSizeInBytesSet = 0x01,
+  };
+
   little_u24 item_count;
-  little_u8 reserved_[5];
+  Flags flags;
+  little_u32 size_in_bytes;
   T items[0];
 
   // This struct must never be copied since that would invalidate `items`.
@@ -39,8 +46,8 @@ struct PackedArray {
   template <typename I>
   void initialize(I count_arg)
   {
+    std::memset(&(this->item_count), 0, sizeof(PackedArray));
     this->item_count = count_arg;
-    std::memset(this->reserved_, 0, sizeof(this->reserved_));
 
     BATT_CHECK_EQ(count_arg, this->item_count.value());
   }
@@ -115,6 +122,25 @@ struct PackedArray {
 
       out << "} PackedArray;" << std::endl;
     };
+  }
+
+  void initialize_size_in_bytes(usize size_in_bytes)
+  {
+    this->size_in_bytes = size_in_bytes;
+    this->flags = static_cast<Flags>(this->flags | kSizeInBytesSet);
+  }
+
+  bool has_size_in_bytes() const
+  {
+    return (this->flags & kSizeInBytesSet);
+  }
+
+  Optional<usize> get_size_in_bytes() const
+  {
+    if (this->has_size_in_bytes()) {
+      return this->size_in_bytes;
+    }
+    return 0;
   }
 };
 

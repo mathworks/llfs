@@ -211,14 +211,10 @@ StatusOr<PageId> PageAllocator::allocate_page(batt::WaitForResource wait_for_res
     }
     BATT_DEBUG_INFO("[PageAllocator::allocate_page] waiting for free page");
     if (cancel_token) {
-      Optional<Status> free_page_status;
-      this->state_->async_wait_free_page(cancel_token.make_handler(free_page_status));
-      Status cancel_status = cancel_token.await();
-      BATT_REQUIRE_OK(cancel_status);
-      BATT_CHECK(free_page_status)
-          << BATT_INSPECT(cancel_status) << BATT_INSPECT(cancel_token.debug_info());
-      BATT_REQUIRE_OK(*free_page_status);
-
+      Status status = cancel_token.await([&](auto&& handler) {
+        this->state_->async_wait_free_page(BATT_FORWARD(handler));
+      });
+      BATT_REQUIRE_OK(status) << BATT_INSPECT(cancel_token.debug_info());
     } else {
       auto wait_status = this->state_->await_free_page();
       BATT_REQUIRE_OK(wait_status);

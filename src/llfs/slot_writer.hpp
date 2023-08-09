@@ -242,15 +242,18 @@ class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
     const usize slot_body_size = sizeof(PackedVariant<Ts...>) + packed_sizeof(payload);
     BATT_CHECK_NE(slot_body_size, 0u);
 
+    // lock the writer in SlotWriter::prepare
     StatusOr<Append> op = this->SlotWriter::prepare(caller_grant, slot_body_size);
     BATT_REQUIRE_OK(op);
 
+    // Do allocation for the buffer to write the variant-ID
     PackedVariant<Ts...>* variant_head =
         op->packer().pack_record(batt::StaticType<PackedVariant<Ts...>>{});
     if (!variant_head) {
       return ::llfs::make_status(StatusCode::kFailedToPackSlotVarHead);
     }
 
+    // Get variant-ID ('which') for this entry
     variant_head->init(batt::StaticType<PackedTypeFor<T>>{});
 
     if (!pack_object(BATT_FORWARD(payload), &(op->packer()))) {

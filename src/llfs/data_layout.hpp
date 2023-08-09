@@ -46,10 +46,14 @@ template <typename T, typename Dst,
               std::declval<T>(), std::declval<PackedTypeFor<T>*>(), std::declval<Dst*>()))>
 [[nodiscard]] Result pack_object(T&& obj, Dst* dst)
 {
+  // This is where the memory is allocated for Packed variant (like PackedEdit or equivalant
+  // struct)
   auto* packed_rec = dst->pack_record(batt::StaticType<PackedTypeFor<T>>{});
   if (!packed_rec) {
     return Result{};
   }
+
+  // Call variant specific packing logic
   return pack_object_to(BATT_FORWARD(obj), packed_rec, dst);
 }
 

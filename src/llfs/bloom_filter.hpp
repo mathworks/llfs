@@ -220,18 +220,20 @@ void parallel_build_bloom_filter(batt::WorkerPool& worker_pool, Iter first, Iter
   {
     batt::ScopedWorkContext work_context{worker_pool};
 
-    slice_work(work_context, stage1_plan,
-               /*gen_work_fn=*/[&](usize task_index, isize task_offset, isize task_size) {
-                 auto src_begin = std::next(first, task_offset);
-                 return
-                     [src = boost::make_iterator_range(src_begin, std::next(src_begin, task_size)),
-                      dst = temp_filters[task_index], hash_fn] {
-                       dst->clear();
-                       for (const auto& item : src) {
-                         dst->insert(hash_fn(item));
-                       }
-                     };
-               });
+    BATT_CHECK_OK(slice_work(work_context, stage1_plan,
+                             /*gen_work_fn=*/
+                             [&](usize task_index, isize task_offset, isize task_size) {
+                               auto src_begin = std::next(first, task_offset);
+                               return [src = boost::make_iterator_range(
+                                           src_begin, std::next(src_begin, task_size)),
+                                       dst = temp_filters[task_index], hash_fn] {
+                                 dst->clear();
+                                 for (const auto& item : src) {
+                                   dst->insert(hash_fn(item));
+                                 }
+                               };
+                             }))
+        << "work_context must not be closed!";
   }
 
   // Merge the temporary filters by sliced output shard, in parallel.
@@ -245,17 +247,19 @@ void parallel_build_bloom_filter(batt::WorkerPool& worker_pool, Iter first, Iter
 
     batt::ScopedWorkContext work_context{worker_pool};
 
-    slice_work(work_context, stage2_plan,
-               /*gen_work_fn=*/[&](usize /*task_index*/, isize task_offset, isize task_size) {
-                 return [task_offset, task_size, filter, &temp_filters] {
-                   for (isize i = task_offset; i < task_offset + task_size; ++i) {
-                     filter->words[i] = 0;
-                     for (PackedBloomFilter* partial : temp_filters) {
-                       filter->words[i] |= partial->words[i];
-                     }
-                   }
-                 };
-               });
+    BATT_CHECK_OK(slice_work(work_context, stage2_plan,
+                             /*gen_work_fn=*/
+                             [&](usize /*task_index*/, isize task_offset, isize task_size) {
+                               return [task_offset, task_size, filter, &temp_filters] {
+                                 for (isize i = task_offset; i < task_offset + task_size; ++i) {
+                                   filter->words[i] = 0;
+                                   for (PackedBloomFilter* partial : temp_filters) {
+                                     filter->words[i] |= partial->words[i];
+                                   }
+                                 }
+                               };
+                             }))
+        << "work_context must not be closed!";
   }
 }
 

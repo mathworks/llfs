@@ -247,7 +247,7 @@ StatusOr<FileLogDriver::ActiveFile> FileLogDriver::recover_segments()
 
   // Insert the SegmentFile objects into the segments queue.
   //
-  this->shared_state_.segments.push_all(std::move(segments));
+  BATT_REQUIRE_OK(this->shared_state_.segments.push_all(std::move(segments)));
 
   return active_file;
 }

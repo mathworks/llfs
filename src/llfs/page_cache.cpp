@@ -241,19 +241,22 @@ std::unique_ptr<PageCacheJob> PageCache::new_job()
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<std::shared_ptr<PageBuffer>> PageCache::allocate_page_of_size(
-    PageSize size, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id)
+    PageSize size, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id,
+    const batt::CancelToken& cancel_token)
 {
   const PageSizeLog2 size_log2 = log2_ceil(size);
   BATT_CHECK_EQ(usize{1} << size_log2, size) << "size must be a power of 2";
 
-  return this->allocate_page_of_size_log2(
-      size_log2, wait_for_resource, callers | Caller::PageCache_allocate_page_of_size, job_id);
+  return this->allocate_page_of_size_log2(size_log2, wait_for_resource,
+                                          callers | Caller::PageCache_allocate_page_of_size, job_id,
+                                          std::move(cancel_token));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<std::shared_ptr<PageBuffer>> PageCache::allocate_page_of_size_log2(
-    PageSizeLog2 size_log2, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id)
+    PageSizeLog2 size_log2, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id,
+    const batt::CancelToken& cancel_token)
 {
   BATT_CHECK_LT(size_log2, kMaxPageSizeLog2);
 
@@ -266,7 +269,7 @@ StatusOr<std::shared_ptr<PageBuffer>> PageCache::allocate_page_of_size_log2(
   //
   for (auto wait_arg : {batt::WaitForResource::kFalse, batt::WaitForResource::kTrue}) {
     for (const PageArena& arena : arenas) {
-      StatusOr<PageId> page_id = arena.allocator().allocate_page(wait_arg);
+      StatusOr<PageId> page_id = arena.allocator().allocate_page(wait_arg, cancel_token);
       if (!page_id.ok()) {
         if (page_id.status() == batt::StatusCode::kResourceExhausted) {
           const u64 page_size = u64{1} << size_log2;

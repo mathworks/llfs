@@ -39,6 +39,9 @@ class PageAllocatorStateNoLock
 
   Status await_free_page();
 
+  template <typename HandlerFn = void(Status)>
+  void async_wait_free_page(HandlerFn&& handler);
+
   u64 page_device_capacity() const noexcept;
 
   u64 free_pool_size() noexcept;
@@ -72,5 +75,7 @@ class PageAllocatorStateNoLock
 };
 
 }  // namespace llfs
+
+#include <llfs/page_allocator_state_no_lock.ipp>
 
 #endif  // LLFS_PAGE_ALLOCATOR_PAGE_ALLOCATOR_STATE_NO_LOCK_HPP

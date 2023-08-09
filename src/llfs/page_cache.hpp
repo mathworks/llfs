@@ -10,6 +10,8 @@
 #ifndef LLFS_PAGE_CACHE_HPP
 #define LLFS_PAGE_CACHE_HPP
 
+#include <llfs/config.hpp>
+//
 #include <llfs/api_types.hpp>
 #include <llfs/cache.hpp>
 #include <llfs/caller.hpp>
@@ -36,6 +38,7 @@
 #include <llfs/logging.hpp>
 
 #include <batteries/assert.hpp>
+#include <batteries/async/cancel_token.hpp>
 #include <batteries/async/latch.hpp>
 #include <batteries/async/mutex.hpp>
 
@@ -149,10 +152,12 @@ class PageCache : public PageLoader
   std::unique_ptr<PageCacheJob> new_job();
 
   StatusOr<std::shared_ptr<PageBuffer>> allocate_page_of_size(
-      PageSize size, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id);
+      PageSize size, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id,
+      const batt::CancelToken& cancel_token = None);
 
   StatusOr<std::shared_ptr<PageBuffer>> allocate_page_of_size_log2(
-      PageSizeLog2 size_log2, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id);
+      PageSizeLog2 size_log2, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id,
+      const batt::CancelToken& cancel_token = None);
 
   // Returns a page allocated via `allocate_page` to the free pool.  This MUST be done before the
   // page is written to the `PageDevice`.

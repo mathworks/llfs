@@ -130,7 +130,7 @@ StatusOr<PinnedPage> FinalizedPageCacheJob::finalized_get(
 {
   const std::shared_ptr<const PageCacheJob> job = lock_job(this->tracker_.get());
   if (job == nullptr) {
-    if (this->tracker_ && this->tracker_->get_progress() == PageCacheJobProgress::kAborted) {
+    if (this->tracker_ && this->tracker_->get_progress() == PageCacheJobProgress::kCancelled) {
       return Status{batt::StatusCode::kCancelled};
     }
     return Status{batt::StatusCode::kUnavailable};
@@ -205,7 +205,7 @@ CommittablePageCacheJob::~CommittablePageCacheJob() noexcept
       if (is_terminal_state(old)) {
         return old;
       }
-      return PageCacheJobProgress::kAborted;
+      return PageCacheJobProgress::kCancelled;
     });
   }
 }
@@ -272,6 +272,17 @@ BoxedSeq<page_device_id_int> CommittablePageCacheJob::page_device_ids() const
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+void CommittablePageCacheJob::cancel()
+{
+  if (!this->tracker_) {
+    return;
+  }
+
+  this->tracker_->cancel();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 FinalizedPageCacheJob CommittablePageCacheJob::finalized_job() const
 {
   return FinalizedPageCacheJob{batt::make_copy(this->tracker_)};
@@ -311,7 +322,7 @@ Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 c
         if (p == PageCacheJobProgress::kDurable) {
           return p;
         }
-        return PageCacheJobProgress::kAborted;
+        return PageCacheJobProgress::kCancelled;
       });
     }
   });

@@ -181,7 +181,8 @@ void PageAllocator::join() noexcept
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<PageId> PageAllocator::allocate_page(batt::WaitForResource wait_for_resource)
+StatusOr<PageId> PageAllocator::allocate_page(batt::WaitForResource wait_for_resource,
+                                              const batt::CancelToken& cancel_token)
 {
   // If some attached users are still recovering, then fail/block (to prevent accidental
   // re-allocation of a page that belonged to some page job that was partially committed).
@@ -209,8 +210,19 @@ StatusOr<PageId> PageAllocator::allocate_page(batt::WaitForResource wait_for_res
       }
     }
     BATT_DEBUG_INFO("[PageAllocator::allocate_page] waiting for free page");
-    auto wait_status = this->state_->await_free_page();
-    BATT_REQUIRE_OK(wait_status);
+    if (cancel_token) {
+      Optional<Status> free_page_status;
+      this->state_->async_wait_free_page(cancel_token.make_handler(free_page_status));
+      Status cancel_status = cancel_token.await();
+      BATT_REQUIRE_OK(cancel_status);
+      BATT_CHECK(free_page_status)
+          << BATT_INSPECT(cancel_status) << BATT_INSPECT(cancel_token.debug_info());
+      BATT_REQUIRE_OK(*free_page_status);
+
+    } else {
+      auto wait_status = this->state_->await_free_page();
+      BATT_REQUIRE_OK(wait_status);
+    }
   }
 }
 

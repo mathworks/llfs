@@ -433,7 +433,6 @@ StatusOr<batt::Grant> Volume::reserve(u64 size, batt::WaitForResource wait_for_l
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-
 StatusOr<SlotRange> Volume::append(const std::string_view& payload, batt::Grant& grant)
 {
   // We must use `pack_as_raw` here so that when/if the payload is passed to a

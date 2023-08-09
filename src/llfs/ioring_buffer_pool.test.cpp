@@ -142,6 +142,7 @@ TEST(IoRingBufferPoolTest, Test)
           EXPECT_TRUE(buf.ok()) << BATT_INSPECT(buf.status());
         }
       },
+      "IoRingBufferPoolTest.Test",
   };
 
   ctx.run();

@@ -47,5 +47,6 @@ jobs:
           RELEASE_CONAN_REMOTE: ${{ vars.RELEASE_CONAN_REMOTE }}
           RELEASE_CONAN_LOGIN_USERNAME: ${{ vars.RELEASE_CONAN_LOGIN_USERNAME }}
           RELEASE_CONAN_PASSWORD: ${{ secrets.RELEASE_CONAN_PASSWORD }}
+          EXPORT_PKG_ONLY: 1
         run: script/run-with-docker.sh script/publish-release.sh
   

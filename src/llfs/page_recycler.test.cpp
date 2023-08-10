@@ -302,7 +302,9 @@ class FakePageDeleter : public PageDeleter
     //
     StatusOr<slot_offset_type> result;
     auto on_return = batt::finally([&] {
-      this->recursive_recycle_events_.push(result);
+      this->recursive_recycle_events_.push(result).IgnoreError();
+      //
+      // If the queue is closed, we are shutting down so ignoring is the right thing to do.
     });
 
     // Verify that the caller has recovered the correct UUID.
@@ -358,7 +360,7 @@ class FakePageDeleter : public PageDeleter
       // If no new dead pages were discovered by this operation, we still want to notify the test
       // task to recheck for completion.
       //
-      this->recursive_recycle_events_.push(caller_slot);
+      BATT_REQUIRE_OK(this->recursive_recycle_events_.push(caller_slot));
       result = caller_slot;
     } else {
       // Recursively recycle any newly dead pages.  If we try to recycle the same page multiple
@@ -397,7 +399,7 @@ class FakePageDeleter : public PageDeleter
     auto iter = this->current_slot_.find(caller_uuid);
     BATT_CHECK_NE(iter, this->current_slot_.end());
 
-    this->recursive_recycle_events_.push(slot);
+    this->recursive_recycle_events_.push(slot).IgnoreError();
   }
 
   void notify_failure(PageRecycler& recycler, Status failure) override
@@ -407,7 +409,7 @@ class FakePageDeleter : public PageDeleter
     BATT_CHECK_NE(iter, this->current_slot_.end());
     BATT_CHECK(!failure.ok());
 
-    this->recursive_recycle_events_.push(failure);
+    this->recursive_recycle_events_.push(failure).IgnoreError();
   }
 
   PageRecyclerTest* test_;

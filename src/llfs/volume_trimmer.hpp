@@ -56,7 +56,7 @@ using VolumeDropRootsFn = std::function<batt::Status(slot_offset_type, Slice<con
  */
 StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
     TypedSlotReader<VolumeEventVariant>& slot_reader, slot_offset_type upper_bound,
-    VolumePendingJobsUMap& prior_pending_jobs);
+    VolumePendingJobsUMap& prior_pending_jobs, std::atomic<u64>& job_slots_byte_count);
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 /** \brief Tracks when the Volume metadata was last refreshed.
@@ -112,8 +112,7 @@ inline std::ostream& operator<<(std::ostream& out, const VolumeTrimEventInfo& t)
  */
 StatusOr<VolumeTrimEventInfo> write_trim_event(TypedSlotWriter<VolumeEventVariant>& slot_writer,
                                                batt::Grant& grant,
-                                               VolumeTrimmedRegionInfo& trimmed_region,
-                                               VolumePendingJobsUMap& prior_pending_jobs);
+                                               VolumeTrimmedRegionInfo& trimmed_region);
 
 /** \brief Decrement ref counts of obsolete roots in the given trimmed region and trim the log.
  */
@@ -170,6 +169,26 @@ class VolumeTrimmer
   void halt();
 
   Status run();
+
+  u64 grant_pool_size() const noexcept
+  {
+    return this->trimmer_grant_.size();
+  }
+
+  u64 trim_count() const noexcept
+  {
+    return this->trim_count_.load();
+  }
+
+  u64 pushed_grant_size() const noexcept
+  {
+    return this->pushed_grant_size_.load();
+  }
+
+  u64 popped_grant_size() const noexcept
+  {
+    return this->popped_grant_size_.load();
+  }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -245,6 +264,18 @@ class VolumeTrimmer
   /** \brief When present, contains information about the most recent durable TrimEvent slot.
    */
   Optional<VolumeTrimEventInfo> latest_trim_event_;
+
+  /** \brief The number of trim operations completed.
+   */
+  std::atomic<u64> trim_count_{0};
+
+  /** \brief The number of bytes of grant obtained via push_grant.
+   */
+  std::atomic<u64> pushed_grant_size_{0};
+
+  /** \brief The number of push_grant-obtained grant bytes that have been released via a trim.
+   */
+  std::atomic<u64> popped_grant_size_{0};
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

@@ -18,6 +18,8 @@
 #include <llfs/testing/fake_log_device.hpp>
 #include <llfs/uuid.hpp>
 
+#include <batteries/async/fake_execution_context.hpp>
+#include <batteries/async/fake_executor.hpp>
 #include <batteries/async/fake_task_scheduler.hpp>
 #include <batteries/env.hpp>
 #include <batteries/state_machine_model.hpp>
@@ -1223,6 +1225,83 @@ TEST(PageAllocatorTest, TooManyAttachments)
 
       user_ids.pop_back();
     }
+  }
+}
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
+TEST(PageAllocatorTest, CancelAllocate)
+{
+  constexpr usize kNumRandomSeeds = 100;
+  constexpr usize kNumPages = 4;
+  constexpr usize kMaxAttachments = 64;
+  static const usize kLogSize = llfs::PageAllocator::calculate_log_size(kNumPages, kMaxAttachments);
+
+  const llfs::PageAllocatorRuntimeOptions options{
+      .scheduler = batt::Runtime::instance().default_scheduler(),
+      .name = "TestAllocator",
+  };
+
+  const llfs::PageIdFactory id_factory{llfs::PageCount{kNumPages}, /*device_id=*/0};
+
+  for (usize seed = 0; seed < kNumRandomSeeds; ++seed) {
+    batt::StatusOr<std::unique_ptr<llfs::PageAllocator>> page_allocator_status =
+        llfs::PageAllocator::recover(options, id_factory,
+                                     *std::make_unique<llfs::MemoryLogDeviceFactory>(kLogSize));
+
+    ASSERT_TRUE(page_allocator_status.ok()) << BATT_INSPECT(page_allocator_status.status());
+
+    llfs::PageAllocator& page_allocator = **page_allocator_status;
+
+    // Allocate all the pages.
+    //
+    std::vector<llfs::PageId> allocated_page_ids;
+    for (usize i = 0; i < kNumPages; ++i) {
+      llfs::StatusOr<llfs::PageId> result =
+          page_allocator.allocate_page(batt::WaitForResource::kFalse);
+      ASSERT_TRUE(result.ok()) << BATT_INSPECT(result.status());
+
+      allocated_page_ids.emplace_back(*result);
+    }
+
+    // Try to allocate more in non-blocking mode; this should immediately fail with
+    // kResourceExhausted.
+    //
+    {
+      llfs::StatusOr<llfs::PageId> result =
+          page_allocator.allocate_page(batt::WaitForResource::kFalse);
+
+      EXPECT_EQ(result.status(), batt::StatusCode::kResourceExhausted);
+    }
+
+    // Now launch a background Task to do a blocking alloc; cancel it in another task and verify
+    // that the status was `kCancelled`.
+    //
+    llfs::StatusOr<llfs::PageId> final_result;
+
+    batt::CancelToken cancel_token;
+
+    batt::FakeExecutionContext ex;
+
+    batt::Task allocate_task{ex.get_executor(),
+                             [&cancel_token, &page_allocator, &final_result] {
+                               final_result = page_allocator.allocate_page(
+                                   batt::WaitForResource::kTrue, cancel_token);
+                             },
+                             "PageAllocatorTest.CancelAllocate.allocate_task"};
+
+    batt::Task canceller_task{ex.get_executor(),
+                              [&cancel_token] {
+                                cancel_token.cancel();
+                              },
+                              "PageAllocatorTest.CancelAllocate.canceller_task"};
+
+    ex.run_with_random_seed(seed);
+
+    allocate_task.join();
+    canceller_task.join();
+
+    EXPECT_EQ(final_result.status(), batt::StatusCode::kCancelled);
   }
 }
 

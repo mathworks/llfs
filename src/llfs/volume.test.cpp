@@ -200,8 +200,11 @@ class VolumeTest : public ::testing::Test
 
   llfs::StatusOr<llfs::PinnedPage> make_opaque_page(llfs::PageCacheJob& job)
   {
-    llfs::StatusOr<std::shared_ptr<llfs::PageBuffer>> page_allocated =
-        job.new_page(llfs::PageSize{256}, batt::WaitForResource::kFalse, llfs::Caller::Unknown);
+    BATT_REQUIRE_OK(llfs::OpaquePageView::register_layout(job.cache()));
+
+    llfs::StatusOr<std::shared_ptr<llfs::PageBuffer>> page_allocated = job.new_page(
+        llfs::PageSize{256}, batt::WaitForResource::kFalse, llfs::OpaquePageView::page_layout_id(),
+        llfs::Caller::Unknown, /*cancel_token=*/llfs::None);
 
     BATT_REQUIRE_OK(page_allocated);
 
@@ -1501,7 +1504,7 @@ TEST_F(VolumeSimTest, ConcurrentAppendJobs)
     //
     sim.add_page_arena(this->pages_per_device, llfs::PageSize{1 * kKiB});
 
-    sim.register_page_layout(llfs::PageGraphNodeView::page_layout_id(),
+    sim.register_page_reader(llfs::PageGraphNodeView::page_layout_id(), __FILE__, __LINE__,
                              llfs::PageGraphNodeView::page_reader());
 
     const auto main_task_fn = [&] {
@@ -1648,7 +1651,7 @@ void VolumeSimTest::run_recovery_sim(u32 seed)
   sim.add_page_arena(this->pages_per_device, llfs::PageSize{2 * kKiB});
   sim.add_page_arena(this->pages_per_device, llfs::PageSize{4 * kKiB});
 
-  sim.register_page_layout(llfs::PageGraphNodeView::page_layout_id(),
+  sim.register_page_reader(llfs::PageGraphNodeView::page_layout_id(), __FILE__, __LINE__,
                            llfs::PageGraphNodeView::page_reader());
 
   const auto main_task_fn = [&] {
@@ -1911,8 +1914,9 @@ batt::StatusOr<llfs::PageId> VolumeSimTest::build_page_with_refs_to(
     llfs::PageCacheJob& job, llfs::StorageSimulation& /*sim*/)
 {
   batt::StatusOr<llfs::PageGraphNodeBuilder> page_builder =
-      llfs::PageGraphNodeBuilder::from_new_page(
-          job.new_page(page_size, batt::WaitForResource::kFalse, /*callers=*/0));
+      llfs::PageGraphNodeBuilder::from_new_page(job.new_page(
+          page_size, batt::WaitForResource::kFalse, llfs::PageGraphNodeView::page_layout_id(),
+          /*callers=*/0, /*cancel_token=*/llfs::None));
 
   BATT_REQUIRE_OK(page_builder);
 

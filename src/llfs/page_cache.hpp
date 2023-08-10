@@ -10,6 +10,8 @@
 #ifndef LLFS_PAGE_CACHE_HPP
 #define LLFS_PAGE_CACHE_HPP
 
+#include <llfs/config.hpp>
+//
 #include <llfs/api_types.hpp>
 #include <llfs/cache.hpp>
 #include <llfs/caller.hpp>
@@ -36,6 +38,7 @@
 #include <llfs/logging.hpp>
 
 #include <batteries/assert.hpp>
+#include <batteries/async/cancel_token.hpp>
 #include <batteries/async/latch.hpp>
 #include <batteries/async/mutex.hpp>
 
@@ -95,6 +98,12 @@ class PageCache : public PageLoader
  public:
   using CacheImpl = Cache<page_id_int, batt::Latch<std::shared_ptr<const PageView>>>;
 
+  struct PageReaderFromFile {
+    PageReader page_reader;
+    const char* file;
+    int line;
+  };
+
   class PageDeleterImpl : public PageDeleter
   {
    public:
@@ -129,7 +138,12 @@ class PageCache : public PageLoader
 
   const PageCacheOptions& options() const;
 
+  /** \brief DEPRECATED - use register_page_reader.
+   */
   bool register_page_layout(const PageLayoutId& layout_id, const PageReader& reader);
+
+  batt::Status register_page_reader(const PageLayoutId& layout_id, const char* file, int line,
+                                    const PageReader& reader);
 
   void close();
 
@@ -138,10 +152,12 @@ class PageCache : public PageLoader
   std::unique_ptr<PageCacheJob> new_job();
 
   StatusOr<std::shared_ptr<PageBuffer>> allocate_page_of_size(
-      PageSize size, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id);
+      PageSize size, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id,
+      const batt::CancelToken& cancel_token = None);
 
   StatusOr<std::shared_ptr<PageBuffer>> allocate_page_of_size_log2(
-      PageSizeLog2 size_log2, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id);
+      PageSizeLog2 size_log2, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id,
+      const batt::CancelToken& cancel_token = None);
 
   // Returns a page allocated via `allocate_page` to the free pool.  This MUST be done before the
   // page is written to the `PageDevice`.
@@ -218,7 +234,9 @@ class PageCache : public PageLoader
 
  private:
   //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-  using PageLayoutReaderMap = std::unordered_map<PageLayoutId, PageReader, PageLayoutId::Hash>;
+
+  using PageLayoutReaderMap =
+      std::unordered_map<PageLayoutId, PageReaderFromFile, PageLayoutId::Hash>;
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -265,8 +283,7 @@ class PageCache : public PageLoader
   // A thread-safe shared map from PageLayoutId to PageReader function; layouts must be registered
   // with the PageCache so that we trace references during page recycling (aka garbage collection).
   //
-  std::shared_ptr<batt::Mutex<std::unordered_map<PageLayoutId, PageReader, PageLayoutId::Hash>>>
-      page_readers_;
+  std::shared_ptr<batt::Mutex<PageLayoutReaderMap>> page_readers_;
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   // TODO [tastolfi 2021-09-08] We need something akin to the PageRecycler/PageAllocator to durably

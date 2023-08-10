@@ -287,10 +287,14 @@ void StorageSimulation::add_page_arena(PageCount page_count, PageSize page_size)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void StorageSimulation::register_page_layout(const PageLayoutId& layout_id,
-                                             const PageReader& reader)
+void StorageSimulation::register_page_reader(const PageLayoutId& layout_id, const char* file,
+                                             int line, const PageReader& reader)
 {
-  this->page_layouts_.emplace(layout_id, reader);
+  this->page_readers_.emplace(layout_id, PageCache::PageReaderFromFile{
+                                             .page_reader = reader,
+                                             .file = file,
+                                             .line = line,
+                                         });
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -322,9 +326,11 @@ const batt::SharedPtr<PageCache>& StorageSimulation::init_cache() noexcept
 
     // Register all page layouts for this simulation.
     //
-    for (const auto& [layout_id, reader] : this->page_layouts_) {
-      this->log_event("registering page layout: ", layout_id);
-      this->cache_->register_page_layout(layout_id, reader);
+    for (const auto& [layout_id, reader] : this->page_readers_) {
+      this->log_event("registering page reader: ", layout_id);
+      BATT_CHECK_OK(this->cache_->register_page_reader(layout_id, reader.file, reader.line,
+                                                       reader.page_reader))
+          << BATT_INSPECT(reader.file) << BATT_INSPECT(reader.line);
     }
   }
   return this->cache_;

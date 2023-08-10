@@ -57,7 +57,7 @@ void FileLogDriver::FlushTaskMain::operator()()
       if (this->active_file_.size() >= this->shared_state_.config.min_segment_split_size) {
         StatusOr<SegmentFile> next_segment = this->active_file_.split();
         BATT_REQUIRE_OK(next_segment);
-        this->shared_state_.segments.push(std::move(*next_segment));
+        BATT_REQUIRE_OK(this->shared_state_.segments.push(std::move(*next_segment)));
       }
     }
   }();

@@ -22,9 +22,23 @@ namespace llfs {
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 struct SlotParse {
+  /** \brief The slot offset range of the parsed record.
+   */
   SlotRange offset;
+
+  /** \brief The slot payload data; this excludes only the var-int header portion.
+   */
   std::string_view body;
+
+  /** \brief If set, indicates a logical dependency on an earlier slot.
+   */
   Optional<SlotRange> depends_on_offset;
+
+  /** \brief The total grant size spent to append the logical entity represented by this parse. For
+   * most records, this is just the number of bytes spanned by the slot (this->offset.size()); for
+   * commit job events, it includes the `total_grant_spent` of the prepare job slot as well.
+   */
+  u64 total_grant_spent;
 };
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -33,9 +47,10 @@ std::ostream& operator<<(std::ostream& out, const SlotParse& t);
 
 inline bool operator==(const SlotParse& l, const SlotParse& r)
 {
-  return l.offset == r.offset &&  //
-         l.body == r.body &&      //
-         l.depends_on_offset == r.depends_on_offset;
+  return l.offset == r.offset &&                        //
+         l.body == r.body &&                            //
+         l.depends_on_offset == r.depends_on_offset &&  //
+         l.total_grant_spent == r.total_grant_spent;
 }
 
 inline bool operator!=(const SlotParse& l, const SlotParse& r)

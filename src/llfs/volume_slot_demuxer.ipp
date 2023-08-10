@@ -75,9 +75,20 @@ StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_prepare_job(
 
   LLFS_VLOG(1) << "on_prepare_job(" << BATT_INSPECT(slot) << ")";
 
+  BATT_CHECK_EQ(slot.depends_on_offset, None);
+
+  const auto prepare_slot = SlotParse{
+      .offset = slot.offset,
+      .body = slot.body,
+      .depends_on_offset = None,
+      .total_grant_spent =
+          slot.total_grant_spent * 2, /* double the prepare slot size because we give the
+                             trimmer an equal-sized grant when appending */
+  };
+
   const auto [iter, inserted] = this->pending_jobs_.emplace(
       slot.offset.lower_bound, SlotParseWithPayload<Ref<const PackedPrepareJob>>{
-                                   slot,
+                                   prepare_slot,
                                    prepare,
                                });
 
@@ -103,18 +114,28 @@ StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_commit_job(const SlotParse& slot,
   auto iter = this->pending_jobs_.find(commit.prepare_slot);
   if (iter != this->pending_jobs_.end()) {
     const SlotParse& commit_slot = slot;
+
     const SlotParseWithPayload<Ref<const PackedPrepareJob>>& prepare_slot_with_payload =
         iter->second;
-    const PackedPrepareJob* prepare_slot = prepare_slot_with_payload.payload.pointer();
+
+    const PackedPrepareJob* p_prepare_job = prepare_slot_with_payload.payload.pointer();
+
     std::string_view user_data = raw_data_from_slot(prepare_slot_with_payload.slot,  //
-                                                    prepare_slot->user_data.get());
-    this->pending_jobs_.erase(iter);
+                                                    p_prepare_job->user_data.get());
+
+    const SlotParse& prepare_slot = prepare_slot_with_payload.slot;
 
     // The user_slot must reference the job prepare slot so that data isn't trimmed too soon by user
     // code.
     //
-    SlotParse user_slot = commit_slot;
-    user_slot.depends_on_offset = prepare_slot_with_payload.slot.offset;
+    const auto user_slot = SlotParse{
+        .offset = commit_slot.offset,
+        .body = commit_slot.body,
+        .depends_on_offset = prepare_slot.offset,
+        .total_grant_spent = prepare_slot.total_grant_spent + commit_slot.total_grant_spent * 2,
+    };
+
+    this->pending_jobs_.erase(iter);
 
     Status status = this->visitor_fn_(user_slot, user_data);
     BATT_REQUIRE_OK(status);

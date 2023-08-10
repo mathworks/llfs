@@ -135,7 +135,7 @@ void CustomPrefix(std::ostream& s, const google::LogMessageInfo& l, void*)
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-class DISABLED_MemFuseTest : public ::testing::Test
+class MemFuseTest : public ::testing::Test
 {
  public:
   void SetUp() override
@@ -290,13 +290,13 @@ class DISABLED_MemFuseTest : public ::testing::Test
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-TEST_F(DISABLED_MemFuseTest, StartStop)
+TEST_F(MemFuseTest, StartStop)
 {
 }
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-TEST_F(DISABLED_MemFuseTest, CreateFile)
+TEST_F(MemFuseTest, CreateFile)
 {
   const std::string_view data1 = "Some stuff.";
   const std::string data2 = [] {

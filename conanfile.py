@@ -57,7 +57,7 @@ class LlfsConan(ConanFile):
         ]
 
         override_deps = [
-            "openssl/3.1.0",
+            "openssl/3.1.1",
             "zlib/1.2.13",
         ]
 
@@ -69,21 +69,8 @@ class LlfsConan(ConanFile):
             ]
         }
 
-        if platform.system() in platform_deps:
-            deps += platform_deps[platform.system()]
-
-        for dep_name in deps:
-            self.requires(dep_name,
-                          visible=True,
-                          transitive_headers=True,
-                          transitive_libs=True,
-                          force=True)
-
-        for override_name in override_deps:
-            self.requires(override_name,
-                          override=True)
-
-        self.build_requires("b2/4.10.0")
+        import batt
+        batt.conanfile_requirements(self, deps, override_deps, platform_deps)
 
 
     def layout(self):
@@ -105,6 +92,7 @@ class LlfsConan(ConanFile):
     def configure(self):
         self.options["gtest"].shared = False
         self.options["boost"].shared = False
+        self.options["boost"].without_test = True
         self.options["batteries"].with_glog = True
         self.options["batteries"].header_only = False
 

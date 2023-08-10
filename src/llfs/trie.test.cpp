@@ -13,6 +13,7 @@
 #include <llfs/packed_seq.hpp>
 
 #include <batteries/compare.hpp>
+#include <batteries/env.hpp>
 #include <batteries/interval.hpp>
 #include <batteries/optional.hpp>
 #include <batteries/segv.hpp>
@@ -102,6 +103,8 @@ struct PackedSSTableWrapper {
 
 TEST(Trie, Test)
 {
+  const bool extra_testing = batt::getenv_as<int>("LLFS_EXTRA_TESTING").value_or(0);
+
   auto words = load_words();
 
   LLFS_LOG_INFO() << BATT_INSPECT(words.size());
@@ -114,8 +117,13 @@ TEST(Trie, Test)
   double speedup_total_packed_bfs = 0;
   double speedup_total_packed_veb = 0;
 
+  const usize kMaxTake = extra_testing ? words.size() : 1000;
+
   for (const usize kTake : {10, 50, 80, 100, 200, 500, 1000, 2000, 3000, 4000, 8000, 16000, 32000,
                             64000, 128000, (int)words.size()}) {
+    if (kTake > kMaxTake) {
+      break;
+    }
     LOG(INFO) << BATT_INSPECT(kTake);
     for (const usize kStep : {1, 2, 3, 4, 5, 6, 7, 8, 16, 32, 64, 128, 256}) {
       std::vector<std::string> sample;
@@ -349,6 +357,8 @@ inline bool operator<(const Rec& l, const Rec& r)
 
 TEST(Trie, VEBLayoutTest)
 {
+  const bool extra_testing = batt::getenv_as<int>("LLFS_EXTRA_TESTING").value_or(0);
+
   std::cerr << "depth, avg(BFS), avg(vEB), avg(RND),";
   for (usize i = 0; i < 32; ++i) {
     std::cerr << " vEB(offset=" << (2 << i) << " %branch),";
@@ -357,7 +367,10 @@ TEST(Trie, VEBLayoutTest)
     std::cerr << " BFS(offset=" << (2 << i) << " %branch),";
   }
   std::cerr << std::endl;
-  for (int max_depth = 1; max_depth <= 24; ++max_depth) {
+
+  const int max_depth_limit = extra_testing ? 24 : 16;
+
+  for (int max_depth = 1; max_depth <= max_depth_limit; ++max_depth) {
     std::vector<unsigned> n((1 << max_depth) + 1);
     std::iota(n.begin(), n.end(), 1);
 

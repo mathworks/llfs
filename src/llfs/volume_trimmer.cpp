@@ -27,10 +27,8 @@ namespace llfs {
     //
     std::unique_ptr<PageCacheJob> job = cache.new_job();
 
-    const usize count = roots_to_trim.size();
-
     LLFS_VLOG(1) << "Dropping PageId roots from the log..." << BATT_INSPECT(slot_offset)
-                 << BATT_INSPECT(count);
+                 << BATT_INSPECT(roots_to_trim.size());
 
     for (PageId page_id : roots_to_trim) {
       LLFS_VLOG(2) << " -- " << page_id;

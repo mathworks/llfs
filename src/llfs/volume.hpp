@@ -196,26 +196,50 @@ class Volume
   //
   u64 root_log_capacity() const;
 
+  /*! \brief The current total number of log bytes available to reserve.
+   *
+   * This number goes down when Volume::reserve is called, and goes up with either the Grant objects
+   * returned by reserve are spent/destructed, or when the log is trimmed.
+   */
   u64 available_to_reserve() const noexcept
   {
     return this->slot_writer_.pool_size();
   }
 
+  /*! \brief The amount of reserved log space currently held by the VolumeTrimmer for its own
+   * internal use.
+   *
+   * This is exposed for debugging/tuning purposes only (e.g., to detect possible leaks)
+   */
   u64 trimmer_grant_size() const noexcept
   {
     return this->trimmer_.grant_pool_size();
   }
 
+  /*! \brief The number of successful log trims that have completed since this Volume object was
+   * created.
+   */
   u64 trim_count() const noexcept
   {
     return this->trimmer_.trim_count();
   }
 
+  /*! \brief The number of grant bytes that have been passed on to the VolumeTrimmer inside job
+   * append.
+   */
   u64 trimmer_grant_pushed_size() const noexcept
   {
     return this->trimmer_.pushed_grant_size();
   }
 
+  /*! \brief The number of grant bytes that have been consumed by the VolumeTrimmer, which were
+   * earlier counted in this->trimmer_grant_pushed_size().
+   *
+   * This acts as a cross check to make sure all the grant size calculations are correct from append
+   * to trim.  The expression `(this->trimmer_grant_pushed_size() -
+   * this->trimmer_grant_popped_size()` is the current amount of the VolumeTrimmer grant that was
+   * contributed via Volume::append.
+   */
   u64 trimmer_grant_popped_size() const noexcept
   {
     return this->trimmer_.popped_grant_size();

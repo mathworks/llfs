@@ -9,16 +9,33 @@
 cmake_minimum_required(VERSION 3.16)
 project(LLFS CXX)
 
+# Enable link-time optimization. NOTE: currently breaks arm64 Linux (M1)
+#
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
+
+# The src dir should appear in the include path.
+#
+set(CMAKE_INCLUDE_CURRENT_DIR ON)
+set(CMAKE_INCLUDE_CURRENT_DIR_IN_INTERFACE ON)
+
+# Generate compile_commands.json.
+#
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Enable ccache on systems where it is installed.
+#
+find_program(CCACHE_PROGRAM ccache)
+if (CCACHE_PROGRAM)
+  set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_PROGRAM}")
+  message("Enabled ccache builds")
+endif ()
+
+#==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+# Include the options file we generated in conanfile.py.
+#
 include(${CMAKE_BINARY_DIR}/conan_find_requirements.cmake)
 
 add_definitions("-fno-diagnostics-color")
-
-#==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -               
-# Set the language version.
-#
-add_compile_options(-std=c++17)
 
 # Set options needed for stack tracing.
 #
@@ -48,8 +65,6 @@ set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-point
 
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer -march=native -mtune=native ") # -pg
 set (CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -fno-omit-frame-pointer -march=native -mtune=native") # -pg
-
-include_directories(.)
 
 if(APPLE)
   set(BACKTRACE_DEPENDENCY "")
@@ -97,7 +112,9 @@ macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
     ./${TARGET_SRCDIR}/*/*/*/*.test.cpp
     )
   
-  list(REMOVE_ITEM ${TARGET_NAME}_LibSources "FORCE_LIST_NOT_EMPTY;${${TARGET_NAME}_TestSources}")
+  foreach (_file "FORCE_LIST_NOT_EMPTY;${${TARGET_NAME}_TestSources}")
+    list(REMOVE_ITEM ${TARGET_NAME}_LibSources ${_file})
+  endforeach ()
 
   # Define the library target
   #

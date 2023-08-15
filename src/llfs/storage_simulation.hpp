@@ -203,11 +203,6 @@ class StorageSimulation
   /** \brief Registers the given page format with all future instances of PageCache created by the
    * simulation.
    */
-  void register_page_layout(const PageLayoutId& layout_id, const PageReader& reader);
-
-  /** \brief Registers the given page format with all future instances of PageCache created by the
-   * simulation.
-   */
   void register_page_reader(const PageLayoutId& layout_id, const char* file, int line,
                             const PageReader& reader);
 
@@ -306,11 +301,6 @@ class StorageSimulation
   // A counter to make unique object names.
   //
   std::atomic<i64> counter_{0};
-
-  // Page layouts that should be registered with PageCache instances on each recovery.
-  //  DEPRECATED
-  //
-  std::unordered_map<PageLayoutId, PageReader, PageLayoutId::Hash> page_layouts_;
 
   // Page readers that should be registered with PageCache instances on each recovery.
   //

@@ -33,6 +33,7 @@
 #include <vector>
 
 namespace {
+
 using namespace llfs::int_types;
 
 using llfs::BPTrie;

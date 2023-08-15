@@ -14,7 +14,6 @@ default:
     when: runner_system_failure
   before_script:
     - "test -d /local/gitlab-runner-local-cache || { echo \"FATAL: no local docker cache volume mapped\"; false; }"
-    - "if [ ! -d /local/gitlab-runner-local-cache/.conan ]; then rm -rf /local/gitlab-runner-local-cache/.conan.IN_PROGRESS && cp -r ~/.conan /local/gitlab-runner-local-cache/.conan.IN_PROGRESS && mv /local/gitlab-runner-local-cache/.conan.IN_PROGRESS /local/gitlab-runner-local-cache/.conan; fi"
     - export XDG_CACHE_HOME=/local/gitlab-runner-local-cache/.cache
     - export CONAN_USER_HOME=/local/gitlab-runner-local-cache
     - export CONAN_HOME=/local/gitlab-runner-local-cache/.conan2

@@ -578,7 +578,7 @@ StatusOr<VolumeTrimEventInfo> write_trim_event(TypedSlotWriter<VolumeEventVarian
         })  //
       | batt::seq::boxed();
 
-  // Reserve enough grant to refresh this event in the next trim.
+  // Retain enough recovered grant from the trim to cover the trim event.
   //
   const u64 event_size = packed_sizeof_slot(event);
 

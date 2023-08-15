@@ -89,7 +89,7 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::open()
     op.initialize(this);
   }
 
-  Status buffers_registered = this->ioring_.register_buffers(
+  StatusOr<usize> buffers_registered = this->ioring_.register_buffers(
       as_seq(this->flush_ops_) | seq::map([](const IoRingLogFlushOp& op) {
         return op.get_buffer();
       }) |
@@ -277,6 +277,8 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::flush_task_main()
             << " (block=" << op.get_current_log_block_index() << "/" << block_count << "), ";
         op_i += 1;
       }
+      out << BATT_INSPECT(this->trim_pos_) << BATT_INSPECT(this->flush_pos_)
+          << BATT_INSPECT(commit_pos_);
     });
 
     this->ioring_.on_work_started();

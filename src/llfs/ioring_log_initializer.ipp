@@ -57,7 +57,7 @@ inline batt::Status BasicIoRingLogInitializer<IoRingImpl>::run()
 
     // Map our memory buffer to the kernel for faster I/O.
     //
-    Status buffers_status = this->file_.get_io_ring().register_buffers(
+    StatusOr<usize> buffers_status = this->file_.get_io_ring().register_buffers(
         seq::single_item(std::move(memory)) | seq::boxed());
 
     LLFS_VLOG(2) << "register_buffers status=" << buffers_status;

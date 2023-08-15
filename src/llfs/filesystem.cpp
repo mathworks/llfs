@@ -19,13 +19,53 @@ namespace llfs {
 
 using ::batt::syscall_retry;
 
+namespace {
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<int> open_file_read_only(std::string_view file_name)
+int build_open_flags(OpenForRead open_for_read, OpenForWrite open_for_write,
+                     OpenForAppend open_for_append, OpenRawIO open_raw_io)
 {
+  int flags = 0;
+
+  if (open_for_read && open_for_write) {
+    flags |= O_RDWR;
+  } else if (open_for_read) {
+    flags |= O_RDONLY;
+  } else if (open_for_write) {
+    flags |= O_WRONLY;
+  }
+
+  if (open_for_write && open_for_append) {
+    flags |= O_APPEND;
+  }
+
+  if (open_raw_io) {
+#ifdef LLFS_PLATFORM_IS_LINUX
+    flags |= O_DIRECT | O_SYNC;
+#else
+    LLFS_LOG_WARNING() << "open_raw_io only supported on Linux!";
+#endif
+  }
+
+  return flags;
+}
+
+}  //namespace
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<int> open_file_read_only(std::string_view file_name, OpenRawIO open_raw_io)
+{
+  int flags = build_open_flags(OpenForRead{true},     //
+                               OpenForWrite{false},   //
+                               OpenForAppend{false},  //
+                               open_raw_io);
+
   const int fd = syscall_retry([&] {
-    return ::open(std::string(file_name).c_str(), O_RDONLY);
+    return ::open(std::string(file_name).c_str(), flags);
   });
+
   BATT_REQUIRE_OK(batt::status_from_retval(fd));
 
   return fd;
@@ -36,17 +76,11 @@ StatusOr<int> open_file_read_only(std::string_view file_name)
 StatusOr<int> open_file_read_write(std::string_view file_name, OpenForAppend open_for_append,
                                    OpenRawIO open_raw_io)
 {
-  int flags = O_RDWR;
-  if (open_for_append) {
-    flags |= O_APPEND;
-  }
-  if (open_raw_io) {
-#ifdef LLFS_PLATFORM_IS_LINUX
-    flags |= O_DIRECT | O_SYNC;
-#else
-    LLFS_LOG_WARNING() << "open_raw_io only supported on Linux!";
-#endif
-  }
+  int flags = build_open_flags(OpenForRead{true},   //
+                               OpenForWrite{true},  //
+                               open_for_append,     //
+                               open_raw_io);
+
   const int fd = syscall_retry([&] {
     return ::open(std::string(file_name).c_str(), flags);
   });
@@ -59,10 +93,12 @@ StatusOr<int> open_file_read_write(std::string_view file_name, OpenForAppend ope
 //
 StatusOr<int> create_file_read_write(std::string_view file_name, OpenForAppend open_for_append)
 {
-  int flags = O_RDWR | O_CREAT | O_EXCL | O_TRUNC;
-  if (open_for_append) {
-    flags |= O_APPEND;
-  }
+  int flags = build_open_flags(OpenForRead{true},   //
+                               OpenForWrite{true},  //
+                               open_for_append,     //
+                               OpenRawIO{false})    //
+              | O_CREAT | O_EXCL | O_TRUNC;
+
   const int fd = syscall_retry([&] {
     return ::open(std::string(file_name).c_str(), flags, /*mode=*/0644);
   });
@@ -302,8 +338,8 @@ Status enable_raw_io_fd(int fd, bool enabled)
 {
 #ifdef LLFS_PLATFORM_IS_LINUX  //----- --- -- -  -  -   -
 
-  // TODO [tastolfi 2022-06-21] Add O_SYNC/O_DSYNC to the flags masks below once Linux supports this
-  // (https://man7.org/linux/man-pages/man2/fcntl.2.html#BUGS)
+  // TODO [tastolfi 2022-06-21] Add O_SYNC/O_DSYNC to the flags masks below once Linux supports
+  // this (https://man7.org/linux/man-pages/man2/fcntl.2.html#BUGS)
   //
   if (enabled) {
     return update_file_status_flags(fd, EnableFileFlags{O_DIRECT}, DisableFileFlags{0});

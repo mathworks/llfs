@@ -46,7 +46,7 @@ struct PackedArray {
   template <typename I>
   void initialize(I count_arg)
   {
-    std::memset(&(this->item_count), 0, sizeof(PackedArray));
+    std::memset(this, 0, sizeof(PackedArray));
     this->item_count = count_arg;
 
     BATT_CHECK_EQ(count_arg, this->item_count.value());

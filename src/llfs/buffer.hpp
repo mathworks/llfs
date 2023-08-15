@@ -14,6 +14,8 @@
 
 #include <batteries/buffer.hpp>
 
+#include <vector>
+
 namespace llfs {
 
 using batt::buffer_from_struct;
@@ -29,6 +31,15 @@ using batt::resize_buffer;
 inline isize byte_distance(const void* begin, const void* end)
 {
   return static_cast<const u8*>(end) - static_cast<const u8*>(begin);
+}
+
+/** \brief Returns an empty sequence of ConstBuffer objects.
+ */
+inline const std::vector<ConstBuffer>& no_buffers()
+{
+  static const std::vector<ConstBuffer> no_buffers_;
+
+  return no_buffers_;
 }
 
 }  // namespace llfs

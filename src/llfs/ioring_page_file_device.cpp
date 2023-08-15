@@ -199,6 +199,8 @@ void IoRingPageFileDevice::read_some(PageId page_id, i64 page_offset_in_file,
             handler(status);
             return;
           }
+          VLOG(1) << "Short read: " << BATT_INSPECT(page_id) << BATT_INSPECT(page_offset_in_file)
+                  << BATT_INSPECT(page_buffer_size) << BATT_INSPECT(n_read_so_far);
         }
 
         // If we have reached the end of the buffer, invoke the handler.  Success!

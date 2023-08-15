@@ -10,6 +10,8 @@
 #ifndef LLFS_OPAQUE_PAGE_VIEW_HPP
 #define LLFS_OPAQUE_PAGE_VIEW_HPP
 
+#include <llfs/page_cache.hpp>
+#include <llfs/page_reader.hpp>
 #include <llfs/page_view.hpp>
 
 namespace llfs {
@@ -17,6 +19,14 @@ namespace llfs {
 class OpaquePageView : public PageView
 {
  public:
+  static const PageLayoutId& page_layout_id() noexcept;
+
+  static PageReader page_reader() noexcept;
+
+  static Status register_layout(PageCache& cache) noexcept;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   using PageView::PageView;
 
   // Get the tag for this page view.

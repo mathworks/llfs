@@ -447,124 +447,148 @@ StatusOr<SlotRange> Volume::append(const std::string_view& payload, batt::Grant&
 StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& grant,
                                    Optional<SlotSequencer>&& sequencer)
 {
-  const auto check_sequencer_is_resolved = batt::finally([&sequencer] {
+  StatusOr<SlotRange> result;
+
+  const auto check_sequencer_is_resolved = batt::finally([&sequencer, &result] {
     BATT_CHECK_IMPLIES(bool{sequencer}, sequencer->is_resolved())
         << "If a SlotSequencer is passed, it must be resolved even on failure "
-           "paths.";
+           "paths."
+        << BATT_INSPECT(result);
   });
 
-  //+++++++++++-+-+--+----- --- -- -  -  -   -
-  // Phase 0: Wait for the previous slot in the sequence to be appended to the
-  // log.
-  //
-  if (sequencer) {
-    BATT_DEBUG_INFO("awaiting previous slot in sequence; "
-                    << BATT_INSPECT(sequencer->has_prev()) << BATT_INSPECT(sequencer->poll_prev())
-                    << BATT_INSPECT(sequencer->get_current()) << sequencer->debug_info());
-
-    StatusOr<SlotRange> prev_slot = sequencer->await_prev();
-    if (!prev_slot.ok()) {
-      sequencer->set_error(prev_slot.status());
-    }
-    BATT_REQUIRE_OK(prev_slot);
-
-    // We only need to do a speculative sync here, because flushing later slots
-    // in the log implies that all earlier ones are flushed, and we are going to
-    // do a durable sync (flush) for our prepare event below.
+  result = [&]() -> StatusOr<SlotRange> {
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+    // Phase 0: Wait for the previous slot in the sequence to be appended to the
+    // log.
     //
-    BATT_DEBUG_INFO("awaiting flush of previous slot: " << *prev_slot);
+    if (sequencer) {
+      BATT_DEBUG_INFO("awaiting previous slot in sequence; "
+                      << BATT_INSPECT(sequencer->has_prev()) << BATT_INSPECT(sequencer->poll_prev())
+                      << BATT_INSPECT(sequencer->get_current()) << sequencer->debug_info());
 
-    Status sync_prev = this->slot_writer_.sync(LogReadMode::kSpeculative,
-                                               SlotUpperBoundAt{prev_slot->upper_bound});
-    if (!sync_prev.ok()) {
-      sequencer->set_error(sync_prev);
+      StatusOr<SlotRange> prev_slot = sequencer->await_prev();
+      if (!prev_slot.ok()) {
+        sequencer->set_error(prev_slot.status());
+      }
+      BATT_REQUIRE_OK(prev_slot);
+
+      // We only need to do a speculative sync here, because flushing later slots
+      // in the log implies that all earlier ones are flushed, and we are going to
+      // do a durable sync (flush) for our prepare event below.
+      //
+      BATT_DEBUG_INFO("awaiting flush of previous slot: " << *prev_slot);
+
+      Status sync_prev = this->slot_writer_.sync(LogReadMode::kSpeculative,
+                                                 SlotUpperBoundAt{prev_slot->upper_bound});
+      if (!sync_prev.ok()) {
+        sequencer->set_error(sync_prev);
+      }
+      BATT_REQUIRE_OK(sync_prev);
     }
-    BATT_REQUIRE_OK(sync_prev);
-  }
 
-  //+++++++++++-+-+--+----- --- -- -  -  -   -
-  // Phase 1: Write a prepare slot to the write-ahead log and flush it to
-  // durable storage.
-  //
-  BATT_DEBUG_INFO("appending PrepareJob slot to the WAL");
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+    // Phase 1: Write a prepare slot to the write-ahead log and flush it to
+    // durable storage.
+    //
+    BATT_DEBUG_INFO("appending PrepareJob slot to the WAL");
 
-  auto prepared_job = prepare(appendable);
-  {
-    BATT_ASSIGN_OK_RESULT(batt::Grant trim_refresh_grant,
-                          grant.spend(packed_sizeof_slot(prepared_job)));
-    this->trimmer_.push_grant(std::move(trim_refresh_grant));
-  }
+    auto prepared_job = prepare(appendable);
+    const u64 prepared_job_size = packed_sizeof_slot(prepared_job);
+    {
+      StatusOr<batt::Grant> trim_refresh_grant =
+          grant.spend(prepared_job_size + packed_sizeof_slot(batt::StaticType<PackedCommitJob>{}));
 
-  Optional<slot_offset_type> prev_user_slot;
+      if (sequencer && !trim_refresh_grant.ok()) {
+        sequencer->set_error(trim_refresh_grant.status());
+      }
+      BATT_REQUIRE_OK(trim_refresh_grant);
 
-  StatusOr<SlotRange> prepare_slot = LLFS_COLLECT_LATENCY(
-      this->metrics_.prepare_slot_append_latency,
-      this->slot_writer_.append(
-          grant, std::move(prepared_job), [this, &prev_user_slot](StatusOr<SlotRange> slot_range) {
-            if (slot_range.ok()) {
-              prev_user_slot = this->latest_user_slot_.exchange(slot_range->lower_bound);
-            }
-            return slot_range;
-          }));
-
-  if (sequencer) {
-    if (!prepare_slot.ok()) {
-      BATT_CHECK(sequencer->set_error(prepare_slot.status()))
-          << "each slot within a sequence may only be set once!";
-    } else {
-      BATT_CHECK(sequencer->set_current(*prepare_slot))
-          << "each slot within a sequence may only be set once!";
+      this->trimmer_.push_grant(std::move(*trim_refresh_grant));
     }
-  }
-  BATT_REQUIRE_OK(prepare_slot);
-  BATT_CHECK(prev_user_slot);
-  BATT_CHECK(slot_at_most(*prev_user_slot, prepare_slot->lower_bound))
-      << BATT_INSPECT(prev_user_slot) << BATT_INSPECT(prepare_slot);
 
-  BATT_DEBUG_INFO("flushing PrepareJob slot to storage");
+    Optional<slot_offset_type> prev_user_slot;
 
-  Status sync_prepare = LLFS_COLLECT_LATENCY(
-      this->metrics_.prepare_slot_sync_latency,
-      this->slot_writer_.sync(LogReadMode::kDurable, SlotUpperBoundAt{prepare_slot->upper_bound}));
+    const auto grant_size_before_prepare = grant.size();
 
-  BATT_REQUIRE_OK(sync_prepare);
+    StatusOr<SlotRange> prepare_slot = LLFS_COLLECT_LATENCY(
+        this->metrics_.prepare_slot_append_latency,
+        this->slot_writer_.append(grant, std::move(prepared_job),
+                                  [this, &prev_user_slot](StatusOr<SlotRange> slot_range) {
+                                    if (slot_range.ok()) {
+                                      prev_user_slot =
+                                          this->latest_user_slot_.exchange(slot_range->lower_bound);
+                                    }
+                                    return slot_range;
+                                  }));
 
-  //+++++++++++-+-+--+----- --- -- -  -  -   -
-  // Phase 2a: Commit the job; this writes new pages, updates ref counts, and
-  // deletes dropped pages.
-  //
-  BATT_DEBUG_INFO("committing PageCacheJob");
+    const auto grant_size_after_prepare = grant.size();
 
-  const JobCommitParams params{
-      .caller_uuid = &this->get_volume_uuid(),
-      .caller_slot = prepare_slot->lower_bound,
-      .recycler = as_ref(*this->recycler_),
-      .recycle_grant = nullptr,
-      .recycle_depth = -1,
-  };
+    BATT_CHECK_EQ(prepared_job_size, grant_size_before_prepare - grant_size_after_prepare);
 
-  Status commit_job_result = commit(std::move(appendable.job), params, Caller::Unknown,
-                                    *prev_user_slot, &this->durable_user_slot_);
+    if (sequencer) {
+      if (!prepare_slot.ok()) {
+        BATT_CHECK(sequencer->set_error(prepare_slot.status()))
+            << "each slot within a sequence may only be set once!";
+      } else {
+        BATT_CHECK(sequencer->set_current(*prepare_slot))
+            << "each slot within a sequence may only be set once!";
+      }
+    }
 
-  BATT_REQUIRE_OK(commit_job_result);
+    BATT_REQUIRE_OK(prepare_slot);
 
-  //+++++++++++-+-+--+----- --- -- -  -  -   -
-  // Phase 2b: Write the commit slot.
-  //
-  BATT_DEBUG_INFO("writing commit slot");
+    BATT_CHECK(prev_user_slot);
+    BATT_CHECK(slot_at_most(*prev_user_slot, prepare_slot->lower_bound))
+        << BATT_INSPECT(prev_user_slot) << BATT_INSPECT(prepare_slot);
 
-  StatusOr<SlotRange> commit_slot =
-      this->slot_writer_.append(grant, PackedCommitJob{
-                                           .reserved_ = {},
-                                           .prepare_slot = prepare_slot->lower_bound,
-                                       });
+    BATT_DEBUG_INFO("flushing PrepareJob slot to storage");
 
-  BATT_REQUIRE_OK(commit_slot);
+    Status sync_prepare =
+        LLFS_COLLECT_LATENCY(this->metrics_.prepare_slot_sync_latency,
+                             this->slot_writer_.sync(LogReadMode::kDurable,
+                                                     SlotUpperBoundAt{prepare_slot->upper_bound}));
 
-  return SlotRange{
-      .lower_bound = prepare_slot->lower_bound,
-      .upper_bound = commit_slot->upper_bound,
-  };
+    BATT_REQUIRE_OK(sync_prepare);
+
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+    // Phase 2a: Commit the job; this writes new pages, updates ref counts, and
+    // deletes dropped pages.
+    //
+    BATT_DEBUG_INFO("committing PageCacheJob");
+
+    const JobCommitParams params{
+        .caller_uuid = &this->get_volume_uuid(),
+        .caller_slot = prepare_slot->lower_bound,
+        .recycler = as_ref(*this->recycler_),
+        .recycle_grant = nullptr,
+        .recycle_depth = -1,
+    };
+
+    Status commit_job_result = commit(std::move(appendable.job), params, Caller::Unknown,
+                                      *prev_user_slot, &this->durable_user_slot_);
+
+    BATT_REQUIRE_OK(commit_job_result);
+
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+    // Phase 2b: Write the commit slot.
+    //
+    BATT_DEBUG_INFO("writing commit slot");
+
+    StatusOr<SlotRange> commit_slot =
+        this->slot_writer_.append(grant, PackedCommitJob{
+                                             .reserved_ = {},
+                                             .prepare_slot = prepare_slot->lower_bound,
+                                         });
+
+    BATT_REQUIRE_OK(commit_slot);
+
+    return SlotRange{
+        .lower_bound = prepare_slot->lower_bound,
+        .upper_bound = commit_slot->upper_bound,
+    };
+  }();
+
+  return result;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

@@ -71,7 +71,7 @@ class FinalizedJobTracker : public boost::intrusive_ref_counter<FinalizedJobTrac
         BATT_PANIC() << "Pending is not a terminal state!";
         BATT_UNREACHABLE();
 
-      case PageCacheJobProgress::kAborted:
+      case PageCacheJobProgress::kCancelled:
         return batt::StatusCode::kCancelled;
 
       case PageCacheJobProgress::kDurable:
@@ -84,6 +84,11 @@ class FinalizedJobTracker : public boost::intrusive_ref_counter<FinalizedJobTrac
   PageCacheJobProgress get_progress() const
   {
     return this->progress_.get_value();
+  }
+
+  void cancel()
+  {
+    this->progress_.set_value(PageCacheJobProgress::kCancelled);
   }
 
  private:
@@ -169,7 +174,7 @@ class CommittablePageCacheJob
   CommittablePageCacheJob(CommittablePageCacheJob&&) = default;
   CommittablePageCacheJob& operator=(CommittablePageCacheJob&&) = default;
 
-  // Sets the tracker status to kAborted if not already in a terminal state.
+  // Sets the tracker status to kCancelled if not already in a terminal state.
   //
   ~CommittablePageCacheJob() noexcept;
 
@@ -193,6 +198,10 @@ class CommittablePageCacheJob
   {
     return this->job_ && this->tracker_;
   }
+
+  /** \brief Cancels this job, reporting batt::StatusCode::kCancelled to any status listeners.
+   */
+  void cancel();
 
  private:
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

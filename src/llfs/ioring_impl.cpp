@@ -1,0 +1,653 @@
+//#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
+//
+// Part of the LLFS Project, under Apache License v2.0.
+// See https://www.apache.org/licenses/LICENSE-2.0 for license information.
+// SPDX short identifier: Apache-2.0
+//
+//+++++++++++-+-+--+----- --- -- -  -  -   -
+
+#include <llfs/ioring_impl.hpp>
+//
+
+#ifndef LLFS_DISABLE_IO_URING
+
+#include <llfs/logging.hpp>
+
+#include <batteries/finally.hpp>
+
+#include <sys/eventfd.h>
+
+namespace llfs {
+
+namespace {
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status status_from_uring_retval(int retval)
+{
+  if (retval != 0) {
+    return batt::status_from_errno(-retval);
+  }
+  return OkStatus();
+}
+
+}  //namespace
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*static*/ auto IoRingImpl::make_new(MaxQueueDepth entries) noexcept
+    -> StatusOr<std::unique_ptr<IoRingImpl>>
+{
+  std::unique_ptr<IoRingImpl> impl{new IoRingImpl};
+
+  // Create the event_fd so we can wake the ioring completion event loop.
+  {
+    BATT_CHECK_EQ(impl->event_fd_, -1);
+
+    impl->event_fd_ = eventfd(0, /*flags=*/EFD_SEMAPHORE);
+    if (impl->event_fd_ < 0) {
+      LLFS_LOG_ERROR() << "failed to create eventfd: " << std::strerror(errno);
+      return batt::status_from_retval(impl->event_fd_.load());
+    }
+
+    BATT_CHECK_NE(impl->event_fd_, -1);
+  }
+
+  // Initialize the io_uring.
+  {
+    BATT_CHECK(!impl->ring_init_);
+
+    const int retval = io_uring_queue_init(entries, &impl->ring_, /*flags=*/0);
+    if (retval != 0) {
+      LLFS_LOG_ERROR() << "failed io_uring_queue_init: " << std::strerror(-retval);
+      return batt::status_from_retval(retval);
+    }
+    impl->ring_init_ = true;
+  }
+
+  // Register the event_fd with the io_uring.
+  {
+    BATT_CHECK_NE(impl->event_fd_, -1);
+
+    const int retval = io_uring_register_eventfd(&impl->ring_, impl->event_fd_);
+    if (retval != 0) {
+      LLFS_LOG_ERROR() << "failed io_uring_register_eventfd: " << std::strerror(-retval);
+      return batt::status_from_errno(-retval);
+    }
+  }
+
+  return {std::move(impl)};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+bool IoRingImpl::is_valid() const noexcept
+{
+  return this->ring_init_ && this->event_fd_ >= 0;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+IoRingImpl::~IoRingImpl() noexcept
+{
+  LLFS_DVLOG(1) << "IoRingImpl::~IoRingImpl()";
+
+  const bool prior_ring_init = this->ring_init_.exchange(false);
+  LLFS_VLOG(1) << "Closing IoRing context: " << BATT_INSPECT(prior_ring_init);
+  if (prior_ring_init) {
+    io_uring_queue_exit(&this->ring_);
+  }
+
+  const int prior_event_fd = this->event_fd_.exchange(-1);
+  LLFS_VLOG(1) << "Closing IoRing event_fd: " << BATT_INSPECT(prior_event_fd);
+  if (prior_event_fd >= 0) {
+    ::close(prior_event_fd);
+  }
+
+  batt::invoke_all_handlers(&this->completions_,  //
+                            StatusOr<i32>{Status{batt::StatusCode::kClosed}});
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void IoRingImpl::on_work_started() noexcept
+{
+  this->work_count_.fetch_add(1);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void IoRingImpl::on_work_finished() noexcept
+{
+  LLFS_DVLOG(1) << "IoRingImpl::on_work_finished()";
+
+  const isize prior_count = this->work_count_.fetch_sub(1);
+  if (prior_count == 1) {
+    this->state_change_.notify_all();
+  }
+
+  // Submit a no-op to wake the run loop.
+  //
+  this->submit(
+      no_buffers(),
+
+      /*handler=*/
+      [this](StatusOr<i32>) {
+      },
+
+      /*start_op=*/
+      [](struct io_uring_sqe* sqe, auto&& /*op_handler*/) {
+        io_uring_prep_nop(sqe);
+      });
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+bool IoRingImpl::can_run() const noexcept
+{
+  return this->work_count_ && !this->needs_reset_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status IoRingImpl::run() noexcept
+{
+  LLFS_DVLOG(1) << "IoRingImpl::run() ENTERED";
+
+  // This is just an arbitrary limit; how many times can we iterate without successfully
+  // grabbing/running a completion handler?
+  //
+  constexpr usize kMaxNoopCount = 1000 * 1000;
+
+  auto on_scope_exit = batt::finally([this] {
+    LLFS_DVLOG(1) << "IoRingImpl::run() " << BATT_INSPECT(this->work_count_) << " LEAVING";
+  });
+
+  CompletionHandler* handler = nullptr;
+  usize noop_count = 0;
+
+  while (this->can_run()) {
+    LLFS_DVLOG(1) << "IoRingImpl::run() top of loop;" << BATT_INSPECT(this->work_count_);
+
+    // Highest priority is to invoke all completion handlers.
+    //
+    if (handler != nullptr) {
+      noop_count = 0;
+      this->invoke_handler(&handler);
+      continue;
+    }
+
+    // The goal of the rest of the loop is to grab a completion handler to run.  First try the
+    // direct approach...
+    //
+    handler = this->pop_completion();
+    if (handler != nullptr) {
+      noop_count = 0;
+      continue;
+    }
+
+    // Once we run out of handlers, transfer more completed events from the queue.
+    //  Only one thread is allowed to do the ring event wait; the rest will fall through to the
+    //  `else` block below, waiting for condition_variable notification that more completions are
+    //  available (or we're out of work, etc.)
+    //
+    if (this->event_wait_.exchange(true) == false) {
+      auto on_scope_exit3 = batt::finally([this, &handler] {
+        this->event_wait_.store(false);
+
+        // If we have a handler to run, then the current thread will get back to the event_wait_
+        // step (unless this->can_run() becomes false, which should have sent a notification to all
+        // waiters), therefore we are not in danger of having waiting threads with no thread inside
+        // eventfd_read, UNLESS handler is nullptr.  So in that case, wake up a waiting thread.
+        //
+        if (handler == nullptr) {
+          this->state_change_.notify_one();
+        }
+      });
+
+      // Try to transfer at least one completion without waiting on the event_fd; if this fails
+      // (returned count is 0), then we block waiting to be notified of new completion events.
+      //
+      BATT_ASSIGN_OK_RESULT(usize transfer_count, this->transfer_completions(&handler));
+      if (transfer_count == 0) {
+        BATT_REQUIRE_OK(this->wait_for_ring_event());
+        BATT_REQUIRE_OK(this->transfer_completions(&handler));
+      }
+
+    } else {
+      // Some other thread won the race to enter `event_wait_`; wait on `this->state_change_`.
+      //
+      BATT_ASSIGN_OK_RESULT(handler, this->wait_for_completions());
+    }
+
+    // Some spurious wake-ups are fine, but only up to a point; if we execute the loop enough times
+    // without seeing anything interesting happen, panic.
+    //
+    if (handler) {
+      noop_count = 0;
+    } else {
+      std::this_thread::yield();
+      ++noop_count;
+
+      if (noop_count > kMaxNoopCount) {
+        BATT_CHECK(!this->can_run())
+            << "Possible infinite loop detected!" << BATT_INSPECT(this->work_count_)
+            << BATT_INSPECT(this->needs_reset_) << BATT_INSPECT(noop_count);
+      }
+    }
+  }
+
+  // If we are returning with a ready-to-run handler, stash it for later.
+  //
+  if (handler) {
+    this->stash_completion(&handler);
+  }
+
+  return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status IoRingImpl::wait_for_ring_event()
+{
+  LLFS_DVLOG(1) << "IoRingImpl::wait_for_ring_event()";
+
+  // Block on the event_fd until a completion event is available.
+  //
+  eventfd_t v;
+  int retval = eventfd_read(this->event_fd_, &v);
+  if (retval != 0) {
+    return status_from_retval(retval);
+  }
+
+  // If we are stopping, then write to the eventfd to wake up any other threads which might be
+  // blocked inside eventfd_read.
+  //
+  if (this->needs_reset_) {
+    eventfd_write(this->event_fd_, v);
+  }
+
+  return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+auto IoRingImpl::wait_for_completions() -> StatusOr<CompletionHandler*>
+{
+  std::unique_lock<std::mutex> queue_lock{this->queue_mutex_};
+
+  this->state_change_.wait(queue_lock, [this] {
+    return !this->can_run()                // block while we `can_run`...
+           || !this->completions_.empty()  //  and there are no completions...
+           || !this->event_wait_.load()    //  and someone else is in event_wait.
+        ;
+  });
+
+  return {this->pop_completion_with_lock(queue_lock)};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void IoRingImpl::push_completion(CompletionHandler** handler)
+{
+  BATT_ASSERT_NOT_NULLPTR(handler);
+
+  auto on_scope_exit = batt::finally([&] {
+    *handler = nullptr;
+  });
+  {
+    std::unique_lock<std::mutex> queue_lock{this->queue_mutex_};
+    this->completions_.push_back(**handler);
+  }
+  this->state_change_.notify_one();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void IoRingImpl::stash_completion(CompletionHandler** handler)
+{
+  BATT_ASSERT_NOT_NULLPTR(handler);
+
+  auto on_scope_exit = batt::finally([&] {
+    *handler = nullptr;
+  });
+  {
+    std::unique_lock<std::mutex> queue_lock{this->queue_mutex_};
+    this->completions_.push_front(**handler);
+  }
+
+  // We do not notify state_change_ here because this function is only called when this->can_run()
+  // is false.
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+auto IoRingImpl::completion_from_cqe(struct io_uring_cqe* cqe) -> CompletionHandler*
+{
+  auto* handler = (CompletionHandler*)io_uring_cqe_get_data(cqe);
+  BATT_CHECK_NOT_NULLPTR(handler);
+
+  if (cqe->res < 0) {
+    handler->result.emplace(status_from_errno(-cqe->res));
+  } else {
+    handler->result.emplace(cqe->res);
+  }
+
+  return handler;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+auto IoRingImpl::pop_completion() -> CompletionHandler*
+{
+  std::unique_lock<std::mutex> queue_lock{this->queue_mutex_};
+
+  return this->pop_completion_with_lock(queue_lock);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+auto IoRingImpl::pop_completion_with_lock(std::unique_lock<std::mutex>&) -> CompletionHandler*
+{
+  if (this->completions_.empty()) {
+    return nullptr;
+  }
+
+  CompletionHandler& next = this->completions_.front();
+  this->completions_.pop_front();
+  return &next;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<usize> IoRingImpl::transfer_completions(CompletionHandler** handler_out)
+{
+  static const usize kMaxCount = std::thread::hardware_concurrency();
+  //
+  // The rationale for this limit is that we should switch to running completion handlers once we
+  // can reasonably assume that all CPUs will have something to do.
+
+  BATT_ASSERT_NOT_NULLPTR(handler_out);
+
+  usize count = 0;
+  *handler_out = nullptr;
+
+  std::unique_lock<std::mutex> ring_lock{this->ring_mutex_};
+  for (; count < kMaxCount; ++count) {
+    struct io_uring_cqe cqe;
+    struct io_uring_cqe* p_cqe = nullptr;
+
+    // Dequeue a single completion event from the ring buffer.
+    //
+    LLFS_DVLOG(1) << "IoRingImpl::run() io_uring_peek_cqe";
+    const int retval = io_uring_peek_cqe(&this->ring_, &p_cqe);
+    if (retval == -EAGAIN) {
+      //
+      // EAGAIN means there are no completions in the ring; we are done!
+
+      LLFS_DVLOG(1) << "IoRingImpl::run() io_uring_peek_cqe: EAGAIN";
+      break;
+    }
+    if (retval < 0) {
+      LLFS_LOG_ERROR() << "IoRingImpl::run() io_uring_peek_cqe: fail, retval=" << retval << ";"
+                       << BATT_INSPECT(EAGAIN);
+      //
+      Status status = status_from_retval(retval);
+      //
+      LLFS_LOG_WARNING() << "io_uring_wait_cqe failed: " << status;
+      return status;
+    }
+    BATT_CHECK_NOT_NULLPTR(p_cqe);
+
+    // Copy the completion event data to the stack so we can signal the ring ASAP
+    // (io_uring_cqe_seen).
+    //
+    cqe = *p_cqe;
+
+    // Consume the event so the ring buffer can move on.
+    //
+    LLFS_DVLOG(1) << "IoRingImpl::run() io_uring_cqe_seen";
+    //
+    io_uring_cqe_seen(&this->ring_, p_cqe);
+
+    // Save the op result in the handler and push the previous handler to the completion queue.
+    //
+    if (*handler_out != nullptr) {
+      this->push_completion(handler_out);
+    }
+    *handler_out = this->completion_from_cqe(&cqe);
+  }
+
+  return {count};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void IoRingImpl::stop() noexcept
+{
+  this->needs_reset_.store(true);
+  this->state_change_.notify_all();
+
+  // Submit a no-op to wake the run loop.
+  //
+  this->submit(
+      no_buffers(),
+      [](StatusOr<i32>) {
+      },
+      [](struct io_uring_sqe* sqe, auto&&) {
+        io_uring_prep_nop(sqe);
+      });
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void IoRingImpl::reset() noexcept
+{
+  this->needs_reset_.store(false);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void IoRingImpl::invoke_handler(CompletionHandler** handler) noexcept
+{
+  auto on_scope_exit = batt::finally([handler, this] {
+    *handler = nullptr;
+    const isize prior_count = this->work_count_.fetch_sub(1);
+    if (prior_count == 1) {
+      this->state_change_.notify_all();
+    }
+  });
+
+  BATT_CHECK((*handler)->result);
+
+  StatusOr<i32> result = *(*handler)->result;
+  try {
+    LLFS_DVLOG(1) << "IoRingImpl::run() invoke_handler " << BATT_INSPECT(this->work_count_);
+    //
+    (*handler)->notify(result);
+    //
+    LLFS_DVLOG(1) << "IoRingImpl::run() ... " << BATT_INSPECT(this->work_count_);
+
+  } catch (...) {
+    LLFS_LOG_ERROR() << "Uncaught exception";
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<usize> IoRingImpl::register_buffers(BoxedSeq<MutableBuffer>&& buffers,
+                                             bool update) noexcept
+{
+  std::unique_lock<std::mutex> lock{this->ring_mutex_};
+
+  // First unregister buffers if necessary.
+  //
+  if (this->buffers_registered_) {
+    std::vector<struct iovec> saved_buffers = std::move(this->registered_buffers_);
+    //
+    Status unregistered = this->unregister_buffers_with_lock(lock);
+    BATT_REQUIRE_OK(unregistered);
+    //
+    this->registered_buffers_ = std::move(saved_buffers);
+
+    BATT_CHECK(!this->buffers_registered_);
+  } else {
+    BATT_CHECK(this->registered_buffers_.empty());
+  }
+
+  // If update is true, then we are appending the passed buffers to the existing ones; otherwise,
+  // we are replacing the list.
+  //
+  if (!update) {
+    this->registered_buffers_.clear();
+  }
+  const usize update_index = this->registered_buffers_.size();
+
+  // Convert the passed sequence to struct iovec.
+  //
+  std::move(buffers) | seq::map([](const MutableBuffer& b) {
+    struct iovec v;
+    v.iov_base = b.data();
+    v.iov_len = b.size();
+    return v;
+  }) | seq::emplace_back(&this->registered_buffers_);
+
+  // Register the buffers!
+  //
+  const int retval = io_uring_register_buffers(&this->ring_, this->registered_buffers_.data(),
+                                               this->registered_buffers_.size());
+  if (retval < 0) {
+    this->registered_buffers_.clear();
+  }
+  BATT_REQUIRE_OK(status_from_retval(retval));
+
+  this->buffers_registered_ = true;
+
+  return update_index;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status IoRingImpl::unregister_buffers() noexcept
+{
+  std::unique_lock<std::mutex> lock{this->ring_mutex_};
+
+  return this->unregister_buffers_with_lock(lock);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status IoRingImpl::unregister_buffers_with_lock(const std::unique_lock<std::mutex>&) noexcept
+{
+  if (this->buffers_registered_) {
+    const int retval = io_uring_unregister_buffers(&this->ring_);
+    BATT_REQUIRE_OK(status_from_retval(retval));
+
+    this->buffers_registered_ = false;
+    this->registered_buffers_.clear();
+  }
+
+  return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<i32> IoRingImpl::register_fd(i32 system_fd) noexcept
+{
+  std::unique_lock<std::mutex> lock{this->ring_mutex_};
+
+  i32 user_fd = -1;
+
+  if (this->free_fds_.empty()) {
+    user_fd = this->registered_fds_.size();
+
+    // If the registered files (fds) buffer will need to be reallocated, then first unregister it.
+    //
+    if (static_cast<usize>(user_fd) >= this->registered_fds_.capacity()) {
+      BATT_REQUIRE_OK(this->unregister_files_with_lock(lock));
+    }
+    this->registered_fds_.push_back(system_fd);
+    while (this->registered_fds_.size() < this->registered_fds_.capacity()) {
+      this->free_fds_.push_back(this->registered_fds_.size());
+      this->registered_fds_.push_back(-1);
+    }
+
+  } else {
+    user_fd = this->free_fds_.back();
+    this->free_fds_.pop_back();
+
+    BATT_CHECK_EQ(this->registered_fds_[user_fd], -1);
+
+    this->registered_fds_[user_fd] = system_fd;
+  }
+
+  auto revert_fd_alloc = batt::finally([&] {
+    this->registered_fds_[user_fd] = -1;
+    this->free_fds_.push_back(user_fd);
+  });
+
+  LLFS_VLOG(1) << "IoRingImpl::register_fd() " << batt::dump_range(this->registered_fds_)
+               << BATT_INSPECT(user_fd) << "; update=" << (this->fds_registered_);
+
+  if (this->fds_registered_) {
+    BATT_REQUIRE_OK(status_from_uring_retval(
+        io_uring_register_files_update(&this->ring_, /*off=*/user_fd, /*files=*/&system_fd,
+                                       /*nr_files=*/1)));
+
+  } else {
+    BATT_REQUIRE_OK(status_from_uring_retval(
+        io_uring_register_files(&this->ring_,
+                                /*files=*/this->registered_fds_.data(),
+                                /*nr_files=*/this->registered_fds_.size())));
+
+    this->fds_registered_ = true;
+  }
+
+  revert_fd_alloc.cancel();
+
+  return user_fd;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status IoRingImpl::unregister_fd(i32 user_fd) noexcept
+{
+  BATT_CHECK_GE(user_fd, 0);
+  BATT_CHECK_LT(static_cast<usize>(user_fd), this->registered_fds_.size());
+
+  std::unique_lock<std::mutex> lock{this->ring_mutex_};
+
+  BATT_CHECK(this->fds_registered_);
+
+  const i32 system_fd = this->registered_fds_[user_fd];
+  if (system_fd == -1) {
+    return OkStatus();
+  }
+
+  i32 invalid_fd = -1;
+
+  BATT_REQUIRE_OK(
+      status_from_uring_retval(io_uring_register_files_update(&this->ring_, /*off=*/user_fd,
+                                                              /*files=*/&invalid_fd,  //
+                                                              /*nr_files=*/1)));
+
+  this->registered_fds_[user_fd] = -1;
+  this->free_fds_.push_back(user_fd);
+
+  return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status IoRingImpl::unregister_files_with_lock(const std::unique_lock<std::mutex>&) noexcept
+{
+  if (this->fds_registered_) {
+    BATT_REQUIRE_OK(status_from_uring_retval(io_uring_unregister_files(&this->ring_)));
+    this->fds_registered_ = false;
+  }
+  return OkStatus();
+}
+
+}  //namespace llfs
+
+#endif  // LLFS_DISABLE_IO_URING

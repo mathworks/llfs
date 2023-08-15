@@ -19,7 +19,7 @@ namespace llfs {
 enum struct PageCacheJobProgress {
   kPending,
   kDurable,
-  kAborted,
+  kCancelled,
 };
 
 inline bool is_terminal_state(PageCacheJobProgress t)
@@ -29,7 +29,7 @@ inline bool is_terminal_state(PageCacheJobProgress t)
       return false;
     case PageCacheJobProgress::kDurable:
       return true;
-    case PageCacheJobProgress::kAborted:
+    case PageCacheJobProgress::kCancelled:
       return true;
   }
   BATT_PANIC() << "bad value for PageCacheJobProgress: " << (int)t;
@@ -43,8 +43,8 @@ inline std::ostream& operator<<(std::ostream& out, PageCacheJobProgress t)
       return out << "Pending";
     case PageCacheJobProgress::kDurable:
       return out << "Durable";
-    case PageCacheJobProgress::kAborted:
-      return out << "Aborted";
+    case PageCacheJobProgress::kCancelled:
+      return out << "Cancelled";
   }
   return out << "Unknown";
 }

@@ -17,22 +17,17 @@
 #include <llfs/api_types.hpp>
 #include <llfs/buffer.hpp>
 #include <llfs/int_types.hpp>
-#include <llfs/seq.hpp>
+#include <llfs/ioring_impl.hpp>
 #include <llfs/status.hpp>
 #include <llfs/system_config.hpp>
 
-#include <batteries/async/handler.hpp>
 #include <batteries/async/task.hpp>
 #include <batteries/buffer.hpp>
 #include <batteries/math.hpp>
 #include <batteries/static_assert.hpp>
 #include <batteries/syscall_retry.hpp>
 
-#include <boost/beast/core/buffers_range.hpp>
-
 #include <llfs/logging.hpp>
-
-#include <liburing.h>
 
 #include <sys/ioctl.h>
 #include <sys/stat.h>
@@ -48,230 +43,135 @@ namespace llfs {
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-
-inline constexpr u64 disk_block_floor(u64 n)
-{
-  return n & ~u64{511};
-}
-
-inline constexpr u64 disk_block_ceil(u64 n)
-{
-  return disk_block_floor(n + 511);
-}
-
-//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-//
 class IoRing
 {
-  struct Impl {
-    std::mutex mutex_;
-    struct io_uring ring_;
-    bool ring_init_{false};
-    bool buffers_registered_{false};
-    std::atomic<isize> work_count_{0};
-    std::atomic<bool> needs_reset_{false};
-    int event_fd_{-1};
-    bool fds_registered_{false};
-    std::vector<i32> registered_fds_;
-    std::vector<i32> free_fds_;
-
-    Impl() = default;
-    Impl(const Impl&) = delete;
-    Impl& operator=(const Impl&) = delete;
-    ~Impl() noexcept;
-  };
-
  public:
+  // See <llfs/ioring_file.hpp>
+  //
   class File;
 
-  using CompletionHandler = batt::AbstractHandler<StatusOr<i32>>;
+  using Impl = IoRingImpl;
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief Creates and returns a new io_uring with the specified maximum queue depth.
+   */
   static StatusOr<IoRing> make_new(MaxQueueDepth entries) noexcept;
 
-  template <typename Fn>
-  struct OpHandler {
-    using allocator_type = boost::asio::associated_allocator_t<Fn>;
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-    Fn fn_;
-    usize iov_count_ = 0;
-    struct iovec iov_[0];  // MUST BE LAST!
-
-    explicit OpHandler(Fn&& fn) noexcept : fn_{BATT_FORWARD(fn)}
-    {
-    }
-
-    allocator_type get_allocator() const noexcept
-    {
-      return boost::asio::get_associated_allocator(fn_);
-    }
-
-    template <typename... Args>
-    void operator()(Args&&... args)
-    {
-      this->fn_(BATT_FORWARD(args)...);
-    }
-
-    // Append a buffer to the end of `this->iov_`.
-    //
-    // This function MUST NOT be called more times than the value `entries` passed to
-    // `OpHandler::make_new` used to allocate this object.
-    //
-    template <typename B>
-    void push_buffer(const B& buf)
-    {
-      struct iovec& iov = this->iov_[this->iov_count_];
-      this->iov_count_ += 1;
-      iov.iov_base = (void*)buf.data();
-      iov.iov_len = buf.size();
-    }
-
-    // Consume `byte_count` bytes from the front of the buffers list in `this->iov_`.
-    //
-    void shift_buffer(usize byte_count)
-    {
-      struct iovec* next = this->iov_;
-      struct iovec* last = this->iov_ + this->iov_count_;
-
-      while (next != last && byte_count) {
-        usize n_to_consume = std::min(next->iov_len, byte_count);
-        next->iov_base = ((u8*)next->iov_base) + n_to_consume;
-        next->iov_len -= n_to_consume;
-        byte_count -= n_to_consume;
-        ++next;
-      }
-
-      if (this->iov_ != next) {
-        struct iovec* new_last = std::copy(next, last, this->iov_);
-        this->iov_count_ = std::distance(this->iov_, new_last);
-      }
-    }
-  };
-
+  /** \brief IoRing is move-only (no copying).
+   */
   IoRing(const IoRing&) = delete;
+
+  /** \brief IoRing is move-only (no copying).
+   */
   IoRing& operator=(const IoRing&) = delete;
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief IoRing is move-only (no copying).
+   */
   IoRing(IoRing&&) = default;
+
+  /** \brief IoRing is move-only (no copying).
+   */
   IoRing& operator=(IoRing&&) = default;
 
-  template <typename Handler, typename BufferSequence>
-  void submit(BufferSequence&& buffers, Handler&& handler,
-              std::function<void(struct io_uring_sqe*, OpHandler<std::decay_t<Handler>>&)>&&
-                  start_op) const;
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  Status run() const;
-
-  void reset() const;
-
-  void on_work_started() const;
-
-  void on_work_finished() const;
-
-  template <typename Handler>
-  void post(Handler&& handler) const
+  /** \brief Wait for I/O completions and run their handlers while work count is non-zero and
+   * this->stop() has not been called.
+   */
+  Status run() const noexcept
   {
-    static const std::vector<ConstBuffer> empty;
-
-    // Submit a no-op to wake the run loop.
-    //
-    this->submit(empty, BATT_FORWARD(handler), [](struct io_uring_sqe* sqe, auto&&) {
-      io_uring_prep_nop(sqe);
-    });
+    return this->impl_->run();
   }
 
-  void stop() const;
+  /** \brief Resets the IoRing after calling `this->stop()`, so that `this->run()` can be called
+   * again.
+   */
+  void reset() const noexcept
+  {
+    this->impl_->reset();
+  }
 
-  Status register_buffers(batt::BoxedSeq<MutableBuffer>&& buffers) const;
+  /** \brief Increments the work count.
+   */
+  void on_work_started() const noexcept
+  {
+    this->impl_->on_work_started();
+  }
 
-  Status unregister_buffers() const;
+  /** \brief Decrements the work count.
+   */
+  void on_work_finished() const noexcept
+  {
+    this->impl_->on_work_finished();
+  }
 
-  // Registers the given file descriptor with the io_uring in kernel space, speeding performance for
-  // repeated access to the same file.  Returns the "user_fd" that should be used to achieve faster
-  // syscalls in the future.
-  //
-  StatusOr<i32> register_fd(i32 system_fd) const;
+  /** \brief Causes the passed handler to be executed inside `this->run()` on some thread, after
+   * this function returns.
+   */
+  template <typename Handler = void(StatusOr<i32>)>
+  void post(Handler&& handler) const noexcept
+  {
+    this->impl_->post(BATT_FORWARD(handler));
+  }
 
-  // Unregisters the given "user_fd" that was previously returned by a call to
-  // `IoRing::register_fd`.  Behavior is undefined if a user_fd obtained from one IoRing is handed
-  // to another!
-  //
-  Status unregister_fd(i32 user_fd) const;
+  template <typename Handler = void(StatusOr<i32>), typename BufferSequence>
+  void submit(BufferSequence&& buffers, Handler&& handler,
+              std::function<void(struct io_uring_sqe*, IoRingOpHandler<std::decay_t<Handler>>&)>&&
+                  start_op) const noexcept
+  {
+    this->impl_->submit(BATT_FORWARD(buffers), BATT_FORWARD(handler), std::move(start_op));
+  }
+
+  void stop() const noexcept
+  {
+    this->impl_->stop();
+  }
+
+  StatusOr<usize> register_buffers(batt::BoxedSeq<MutableBuffer>&& buffers,
+                                   bool update = false) const noexcept
+  {
+    return this->impl_->register_buffers(std::move(buffers), update);
+  }
+
+  /** \brief Unregisters all currently registered buffers.
+   */
+  Status unregister_buffers() const noexcept
+  {
+    return this->impl_->unregister_buffers();
+  }
+
+  /** \brief Registers the given file descriptor with the io_uring in kernel space, speeding
+   * performance for repeated access to the same file.
+   *
+   * \return the "user_fd" that should be used to achieve faster syscalls in the future.
+   */
+  StatusOr<i32> register_fd(i32 system_fd) const noexcept
+  {
+    return this->impl_->register_fd(system_fd);
+  }
+
+  /** \brief Unregisters the given "user_fd" that was previously returned by a call to
+   * `IoRing::register_fd`.
+   *
+   * Behavior is undefined if a user_fd obtained from one IoRing is handed to another!
+   */
+  Status unregister_fd(i32 user_fd) const noexcept
+  {
+    return this->impl_->unregister_fd(user_fd);
+  }
 
  private:
   explicit IoRing(std::unique_ptr<Impl>&& impl) noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  template <typename Fn, typename BufferSequence>
-  static batt::HandlerImpl</*HandlerFn=*/OpHandler<std::decay_t<Fn>>, /*Args...=*/StatusOr<i32>>*
-  wrap_handler(Fn&& fn, BufferSequence&& bufs);
-
-  void invoke_handler(struct io_uring_cqe* cqe) const;
-
-  Status unregister_buffers_with_lock(const std::unique_lock<std::mutex>&) const;
-
-  // Removes the specified user_fd from the registered fds table, returning the previously
-  // registered system fd that was in that slot.
-  //
-  i32 free_user_fd(i32 user_fd) const;
-
-  //+++++++++++-+-+--+----- --- -- -  -  -   -
-
   std::unique_ptr<Impl> impl_;
 };
-
-//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-template <typename Fn, typename BufferSequence>
-inline auto IoRing::wrap_handler(Fn&& fn, BufferSequence&& bufs)
-    -> batt::HandlerImpl</*HandlerFn=*/OpHandler<std::decay_t<Fn>>, /*Args...=*/StatusOr<i32>>*
-{
-  auto buf_seq = boost::beast::buffers_range_ref(bufs);
-  const usize buf_count = std::distance(std::begin(buf_seq), std::end(buf_seq));
-  const usize extra_bytes = buf_count * sizeof(struct iovec);
-
-  auto* op = batt::HandlerImpl</*HandlerFn=*/OpHandler<std::decay_t<Fn>>,
-                               /*Args...=*/StatusOr<i32>>::make_new(BATT_FORWARD(fn), extra_bytes);
-  BATT_CHECK_NOT_NULLPTR(op);
-
-  for (const auto& buf : buf_seq) {
-    op->get_fn().push_buffer(buf);
-  }
-
-  return op;
-}
-
-template <typename Handler, typename BufferSequence>
-inline void IoRing::submit(
-    BufferSequence&& buffers, Handler&& handler,
-    std::function<void(struct io_uring_sqe*, OpHandler<std::decay_t<Handler>>&)>&& start_op) const
-
-{
-  std::unique_lock<std::mutex> lock{this->impl_->mutex_};
-
-  struct io_uring_sqe* sqe = io_uring_get_sqe(&this->impl_->ring_);
-  BATT_CHECK_NOT_NULLPTR(sqe);
-
-  auto* op_handler = wrap_handler(BATT_FORWARD(handler), BATT_FORWARD(buffers));
-
-  BATT_STATIC_ASSERT_TYPE_EQ(decltype(op_handler->get_fn()), OpHandler<std::decay_t<Handler>>&);
-
-  // Initiate the operation.
-  //
-  start_op(sqe, op_handler->get_fn());
-
-  // Set user data.
-  //
-  io_uring_sqe_set_data(sqe, op_handler);
-
-  // Increment work count; decrement in invoke_handler.
-  //
-  LLFS_DVLOG(1) << "(submit) before; " << BATT_INSPECT(this->impl_->work_count_);
-  this->on_work_started();
-  LLFS_DVLOG(1) << "(submit) after; " << BATT_INSPECT(this->impl_->work_count_);
-
-  // Finally, submit the request.
-  //
-  BATT_CHECK_EQ(1, io_uring_submit(&this->impl_->ring_)) << std::strerror(errno);
-}
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 // An IoRing with fixed-size thread pool; the thread pool and the IoRing are shut down when the last

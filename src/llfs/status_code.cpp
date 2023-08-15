@@ -124,6 +124,13 @@ bool initialize_status_codes()
                      "Failed to attach to PageAllocator: no more available attachments"),  // 58,
       CODE_WITH_MSG_(StatusCode::kPageAllocatorNotAttached,
                      "Client not attached to the PageAllocator"),  // 59,
+      CODE_WITH_MSG_(StatusCode::kPageReaderConflict,
+                     "Conflicting PageReaders registered for the same layout id"),  // 60,
+      CODE_WITH_MSG_(
+          StatusCode::kPageHeaderBadLayoutId,
+          "PackedPageHeader::layout_id does not match PageView::get_page_layout_id()"),  // 61,
+      CODE_WITH_MSG_(StatusCode::kPutViewUnknownLayoutId,
+                     "PageCache::put_view failed; page layout id is not registered"),  // 62,
   });
   return initialized;
 }

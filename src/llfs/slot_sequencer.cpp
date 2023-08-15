@@ -60,6 +60,7 @@ StatusOr<SlotRange> SlotSequencer::await_prev() const
   if (this->prev_ == nullptr) {
     return SlotRange{0, 0};
   }
+  BATT_DEBUG_INFO(this->debug_info());
 
   return this->prev_->await();
 }
@@ -71,6 +72,8 @@ StatusOr<SlotRange> SlotSequencer::await_current() const
   if (this->current_ == nullptr) {
     return {batt::StatusCode::kUnavailable};
   }
+  BATT_DEBUG_INFO(this->debug_info());
+
   return this->current_->await();
 }
 
@@ -95,7 +98,7 @@ bool SlotSequencer::set_current(const SlotRange& slot_range)
 //
 bool SlotSequencer::set_error(batt::Status status)
 {
-  return this->current_->set_value(std::move(status));
+  return this->current_->set_error(std::move(status));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -113,8 +116,17 @@ SlotSequencer SlotSequencer::get_next() const
 std::function<void(std::ostream&)> SlotSequencer::debug_info() const
 {
   return [this](std::ostream& out) {
-    out << "SlotSequencer{.prev_=" << (const void*)this->prev_.get() << ", .current=_"
-        << (const void*)this->current_.get() << ",}";
+    out << "SlotSequencer{.prev_=" << (const void*)this->prev_.get();
+    if (this->prev_) {
+      out << "(ready=" << this->prev_->is_ready() << ", value=" << this->prev_->poll() << ")";
+    }
+
+    out << ", .current_=" << (const void*)this->current_.get();
+    if (this->current_) {
+      out << "(ready=" << this->current_->is_ready() << ", value=" << this->current_->poll() << ")";
+    }
+
+    out << ",}";
   };
 }
 

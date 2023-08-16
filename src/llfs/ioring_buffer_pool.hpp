@@ -80,7 +80,7 @@ class IoRingBufferPool
   };
 
   //----- --- -- -  -  -   -
-  /** \brief Tracks an user-visible buffer in the 'allocated' state.
+  /** \brief Tracks a user-visible buffer in the 'allocated' state.
    */
   class Allocated : public batt::RefCounted<Allocated>
   {

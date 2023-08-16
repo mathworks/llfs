@@ -18,9 +18,16 @@ namespace llfs {
 /*static*/ batt::StatusOr<std::unique_ptr<IoRingBufferPool>> IoRingBufferPool::make_new(
     const IoRing& io_ring, BufferCount count, BufferSize size) noexcept
 {
+  // Check for invalid buffer size.
+  //
+  if (size > Self::kMemoryUnitSize) {
+    return {batt::StatusCode::kInvalidArgument};
+  }
+
   std::unique_ptr<IoRingBufferPool> p_pool{new IoRingBufferPool{io_ring, count, size}};
 
-  BATT_REQUIRE_OK(p_pool->initialize());
+  batt::Status status = p_pool->initialize();
+  BATT_REQUIRE_OK(status);
 
   return p_pool;
 }
@@ -47,11 +54,7 @@ IoRingBufferPool::~IoRingBufferPool() noexcept
 //
 batt::Status IoRingBufferPool::initialize() noexcept
 {
-  // Check for invalid buffer size.
-  //
-  if (this->buffer_size_ > Self::kMemoryUnitSize) {
-    return batt::StatusCode::kInvalidArgument;
-  }
+  BATT_CHECK_LE(this->buffer_size_, Self::kMemoryUnitSize);
 
   // Initialize the free_pool_.
   //
@@ -116,9 +119,9 @@ void IoRingBufferPool::deallocate(void* ptr) noexcept
   {
     std::unique_lock<std::mutex> lock{this->mutex_};
 
+    // Use FILO (stack) order to try to reuse "hot" buffers.
+    //
     if (this->waiters_.empty()) {
-      // Use FILO (stack) order to try to reuse "hot" buffers.
-      //
       this->free_pool_.push_front(*(new (ptr) Deallocated{}));
       return;
     }
@@ -196,6 +199,7 @@ auto IoRingBufferPool::try_allocate() -> batt::StatusOr<Buffer>
 usize IoRingBufferPool::in_use() noexcept
 {
   std::unique_lock<std::mutex> lock{this->mutex_};
+  BATT_CHECK_GE(this->buffer_count_, this->free_pool_.size());
   return this->buffer_count_ - this->free_pool_.size();
 }
 

@@ -308,6 +308,13 @@ inline FakeLogDeviceFactory<MemoryLogStorageDriver> make_fake_log_device_factory
                                                       std::make_shared<FakeLogDevice::State>()};
 }
 
+inline FakeLogDeviceFactory<MemoryLogStorageDriver> make_fake_log_device_factory(
+    MemoryLogDevice& mem_log, std::shared_ptr<FakeLogDevice::State>&& state)
+{
+  return FakeLogDeviceFactory<MemoryLogStorageDriver>{mem_log, mem_log.driver().impl(),
+                                                      std::move(state)};
+}
+
 //#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

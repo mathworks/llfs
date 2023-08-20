@@ -330,4 +330,30 @@ Status validate_packed_value(const PackedVolumeTrimEvent& packed, const void* bu
   return batt::OkStatus();
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+std::ostream& operator<<(std::ostream& out, const VolumeTrimEvent& t)
+{
+  return out << "VolumeTrimEvent"                     //
+             << "{.old_trim_pos=" << t.old_trim_pos   //
+             << ", .new_trim_pos=" << t.new_trim_pos  //
+             << ", .committed_jobs="
+             << batt::dump_range(batt::make_copy(t.committed_jobs) | batt::seq::collect_vec())  //
+             << ", .trimmed_prepare_jobs="
+             << batt::dump_range(batt::make_copy(t.trimmed_prepare_jobs) |
+                                 batt::seq::collect_vec())  //
+             << ",}";
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+std::ostream& operator<<(std::ostream& out, const TrimmedPrepareJob& t)
+{
+  return out << "TrimmedPrepareJob"                  //
+             << "{.prepare_slot=" << t.prepare_slot  //
+             << ", .page_ids="
+             << batt::dump_range(batt::make_copy(t.page_ids) | batt::seq::collect_vec())  //
+             << ",}";
+}
+
 }  // namespace llfs

@@ -82,13 +82,15 @@ inline std::ostream& operator<<(std::ostream& out, const PackedVolumeAttachmentE
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-struct PackedVolumeAttachEvent : PackedVolumeAttachmentEvent<PackedVolumeAttachEvent> {
+struct PackedVolumeAttachEvent {
+  PackedVolumeAttachmentEvent<PackedVolumeAttachEvent> base;
+  little_u64 trim_slot_offset;
 };
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedVolumeAttachEvent),
-                      sizeof(boost::uuids::uuid) + sizeof(page_device_id_int) + 8);
+                      sizeof(boost::uuids::uuid) + sizeof(page_device_id_int) + sizeof(u64) * 2);
 
-BATT_STATIC_ASSERT_EQ(sizeof(PackedVolumeAttachEvent), 32);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedVolumeAttachEvent), 40);
 
 LLFS_SIMPLE_PACKED_TYPE(PackedVolumeAttachEvent);
 
@@ -98,7 +100,7 @@ struct PackedVolumeDetachEvent : PackedVolumeAttachmentEvent<PackedVolumeDetachE
 };
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedVolumeDetachEvent),
-                      sizeof(boost::uuids::uuid) + sizeof(page_device_id_int) + 8);
+                      sizeof(boost::uuids::uuid) + sizeof(page_device_id_int) + sizeof(u64));
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedVolumeDetachEvent), 32);
 
@@ -110,6 +112,7 @@ struct PackedVolumeIds {
   boost::uuids::uuid main_uuid;
   boost::uuids::uuid recycler_uuid;
   boost::uuids::uuid trimmer_uuid;
+  little_u64 trim_slot_offset;
 };
 
 LLFS_SIMPLE_PACKED_TYPE(PackedVolumeIds);
@@ -148,6 +151,8 @@ StatusOr<TrimmedPrepareJob> unpack_object(const PackedTrimmedPrepareJob& packed,
 
 Status validate_packed_value(const PackedTrimmedPrepareJob& packed, const void* buffer_data,
                              usize buffer_size);
+
+std::ostream& operator<<(std::ostream& out, const TrimmedPrepareJob& t);
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 /** \brief Written and flushed to the Volume WAL before trimming a segment of the log.  This allows
@@ -194,6 +199,8 @@ StatusOr<VolumeTrimEvent> unpack_object(const PackedVolumeTrimEvent& packed, Dat
 
 Status validate_packed_value(const PackedVolumeTrimEvent& packed, const void* buffer_data,
                              usize buffer_size);
+
+std::ostream& operator<<(std::ostream& out, const VolumeTrimEvent& t);
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
@@ -258,10 +265,13 @@ LLFS_SIMPLE_PACKED_TYPE(PackedCommitJob);
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 struct PackedRollbackJob {
+  u8 reserved_[sizeof(PackedVolumeTrimEvent) + sizeof(PackedArray<PackedSlotOffset>)];
   PackedSlotOffset prepare_slot;
 };
 
 LLFS_SIMPLE_PACKED_TYPE(PackedRollbackJob);
+
+BATT_STATIC_ASSERT_EQ(sizeof(PackedCommitJob), sizeof(PackedRollbackJob));
 
 }  // namespace llfs
 

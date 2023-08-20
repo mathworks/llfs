@@ -39,6 +39,15 @@ struct SlotParse {
    * commit job events, it includes the `total_grant_spent` of the prepare job slot as well.
    */
   u64 total_grant_spent;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief Returns the byte size of the entire parsed slot.
+   */
+  usize size_in_bytes() const noexcept
+  {
+    return BATT_CHECKED_CAST(usize, this->offset.size());
+  }
 };
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

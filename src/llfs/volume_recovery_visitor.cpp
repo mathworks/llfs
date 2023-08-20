@@ -26,7 +26,7 @@ namespace llfs {
 StatusOr<NoneType> VolumeRecoveryVisitor::on_volume_attach(const SlotParse& /*slot*/,
                                                            const PackedVolumeAttachEvent& attach)
 {
-  this->device_attachments.emplace(attach.id);
+  this->device_attachments.emplace(attach.base.id);
   return None;
 }
 
@@ -117,6 +117,7 @@ Status VolumeRecoveryVisitor::resolve_pending_jobs(PageCache& cache, PageRecycle
 
       StatusOr<SlotRange> rollback_slot =
           slot_writer.append(grant, PackedRollbackJob{
+                                        .reserved_ = {0},
                                         .prepare_slot = prepare_slot,
                                     });
 

@@ -44,6 +44,8 @@ struct VolumeRecoverParams {
   std::shared_ptr<SlotLockManager> trim_control;
 };
 
+class VolumeRecoveryVisitor;
+
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 class Volume
@@ -271,14 +273,24 @@ class Volume
     return *(this->root_log_);
   }
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
+  /** \brief Called during recovery to create a PageAllocator attachment for each PageDevice.
+   */
+  static Status restore_attachments(PageCache* cache, PageRecycler* recycler,
+                                    VolumeRecoveryVisitor& visitor,
+                                    TypedSlotWriter<VolumeEventVariant>& slot_writer,
+                                    batt::Grant& grant);
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   explicit Volume(batt::TaskScheduler& task_scheduler, const VolumeOptions& options,
                   const boost::uuids::uuid& volume_uuid, batt::SharedPtr<PageCache>&& page_cache,
                   std::shared_ptr<SlotLockManager>&& trim_control,
                   std::unique_ptr<PageCache::PageDeleterImpl>&& page_deleter,
                   std::unique_ptr<LogDevice>&& root_log, std::unique_ptr<PageRecycler>&& recycler,
                   const boost::uuids::uuid& trimmer_uuid,
-                  const VolumeTrimmer::RecoveryVisitor& trimmer_recovery_visitor) noexcept;
+                  const VolumeTrimmerRecoveryVisitor& trimmer_recovery_visitor) noexcept;
 
   // Launch background tasks associated with this Volume.
   //

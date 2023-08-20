@@ -11,6 +11,7 @@
 
 #include <llfs/page_cache_job.hpp>
 #include <llfs/slot_reader.hpp>
+#include <llfs/volume_trimmer_recovery_visitor.hpp>
 
 #include <batteries/stream_util.hpp>
 
@@ -52,13 +53,11 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*explicit*/ VolumeTrimmer::VolumeTrimmer(const boost::uuids::uuid& trimmer_uuid,
-                                          std::string&& name, SlotLockManager& trim_control,
-                                          TrimDelayByteCount trim_delay,
-                                          std::unique_ptr<LogDevice::Reader>&& log_reader,
-                                          TypedSlotWriter<VolumeEventVariant>& slot_writer,
-                                          VolumeDropRootsFn&& drop_roots,
-                                          const RecoveryVisitor& recovery_visitor) noexcept
+/*explicit*/ VolumeTrimmer::VolumeTrimmer(
+    const boost::uuids::uuid& trimmer_uuid, std::string&& name, SlotLockManager& trim_control,
+    TrimDelayByteCount trim_delay, std::unique_ptr<LogDevice::Reader>&& log_reader,
+    TypedSlotWriter<VolumeEventVariant>& slot_writer, VolumeDropRootsFn&& drop_roots,
+    const VolumeTrimmerRecoveryVisitor& recovery_visitor) noexcept
     : trimmer_uuid_{trimmer_uuid}
     , name_{std::move(name)}
     , trim_control_{trim_control}
@@ -67,15 +66,25 @@ namespace llfs {
     , slot_reader_{*this->log_reader_}
     , slot_writer_{slot_writer}
     , drop_roots_{std::move(drop_roots)}
-    , trimmer_grant_{BATT_OK_RESULT_OR_PANIC(this->slot_writer_.reserve(
-          (packed_sizeof_slot_with_payload_size(sizeof(PackedVolumeIds)) +
-           packed_sizeof_slot_with_payload_size(sizeof(PackedVolumeTrimEvent)) * 2 +
-           recovery_visitor.get_trimmer_grant_size()),
-          batt::WaitForResource::kFalse))}
+    , trimmer_grant_{BATT_OK_RESULT_OR_PANIC(
+          this->slot_writer_.reserve(0, batt::WaitForResource::kFalse))}
     , pending_jobs_{recovery_visitor.get_pending_jobs()}
     , refresh_info_{recovery_visitor.get_refresh_info()}
     , latest_trim_event_{recovery_visitor.get_trim_event_info()}
+    , reserve_from_next_trim_{recovery_visitor.get_reserve_from_pending_trim()}
+    , pushed_grant_size_{trimmer_grant_.size()}
+    , popped_grant_size_{0}
 {
+  StatusOr<batt::Grant> initial_grant = this->slot_writer_.reserve(
+      recovery_visitor.get_trimmer_grant_size(), batt::WaitForResource::kFalse);
+
+  BATT_CHECK_OK(initial_grant) << BATT_INSPECT(slot_writer.pool_size())
+                               << BATT_INSPECT(recovery_visitor.get_trimmer_grant_size())
+                               << BATT_INSPECT(recovery_visitor.get_reserve_from_pending_trim())
+                               << BATT_INSPECT(this->latest_trim_event_)
+                               << recovery_visitor.debug_info();
+
+  this->trimmer_grant_.subsume(std::move(*initial_grant));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -161,51 +170,52 @@ Status VolumeTrimmer::run()
     //+++++++++++-+-+--+----- --- -- -  -  -   -
     // Scan the trimmed region if necessary.
     //
-    if (!this->trimmed_region_info_) {
-      StatusOr<VolumeTrimmedRegionInfo> info = read_trimmed_region(
-          this->slot_reader_, *trim_upper_bound, this->pending_jobs_, this->popped_grant_size_);
-      BATT_REQUIRE_OK(info);
-      this->trimmed_region_info_.emplace(std::move(*info));
-    }
-    BATT_CHECK(this->trimmed_region_info_);
+    StatusOr<VolumeTrimmedRegionInfo> trimmed_region_info = read_trimmed_region(
+        this->slot_reader_, *trim_upper_bound, this->pending_jobs_, this->popped_grant_size_);
 
-    if (this->trimmed_region_info_->slot_range.empty()) {
+    BATT_REQUIRE_OK(trimmed_region_info);
+
+    LLFS_VLOG(1) << BATT_INSPECT(trimmed_region_info->grant_size_to_release)
+                 << BATT_INSPECT(trimmed_region_info->grant_size_to_reserve)
+                 << BATT_INSPECT(this->reserve_from_next_trim_);
+
+    if (trimmed_region_info->slot_range.empty()) {
       LLFS_VLOG(1) << "Trimmed region too small; waiting for more to be trimmed,"
                    << BATT_INSPECT(least_upper_bound);
-      this->trimmed_region_info_ = batt::None;
       continue;
     }
+    trimmed_region_info->grant_size_to_reserve += this->reserve_from_next_trim_;
+    this->reserve_from_next_trim_ = 0;
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
     // Make sure all Volume metadata has been refreshed.
     //
     BATT_REQUIRE_OK(refresh_volume_metadata(this->slot_writer_, this->trimmer_grant_,
-                                            this->refresh_info_, *this->trimmed_region_info_));
+                                            this->refresh_info_, *trimmed_region_info));
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
     // Write a TrimEvent to the log if necessary.
     //
-    if (this->trimmed_region_info_->requires_trim_event_slot() && !this->latest_trim_event_) {
+    if (trimmed_region_info->requires_trim_event_slot() && !this->latest_trim_event_) {
       BATT_ASSIGN_OK_RESULT(
           this->latest_trim_event_,
-          write_trim_event(this->slot_writer_, this->trimmer_grant_, *this->trimmed_region_info_));
+          write_trim_event(this->slot_writer_, this->trimmer_grant_, *trimmed_region_info));
       BATT_CHECK(this->latest_trim_event_);
     }
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
     // Trim the log.
     //
-    const slot_offset_type new_trim_target = this->trimmed_region_info_->slot_range.upper_bound;
+    const slot_offset_type new_trim_target = trimmed_region_info->slot_range.upper_bound;
 
     BATT_DEBUG_INFO("VolumeTrimmer -> trim_volume_log;" << BATT_INSPECT(this->name_));
 
     Status trim_result = trim_volume_log(
         this->slot_writer_, this->trimmer_grant_, std::move(this->latest_trim_event_),
-        std::move(*this->trimmed_region_info_), this->drop_roots_, this->pending_jobs_);
+        std::move(*trimmed_region_info), this->drop_roots_, this->pending_jobs_);
 
     this->trim_count_.fetch_add(1);
     this->latest_trim_event_ = batt::None;
-    this->trimmed_region_info_ = batt::None;
 
     BATT_REQUIRE_OK(trim_result);
 
@@ -265,25 +275,124 @@ inline std::ostream& operator<<(std::ostream& out, const TrimmedRegionStats& t)
 }  //namespace
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// The main functions of VolumeTrimmer per se are:
+//
+//  1. To ensure that Volume metadata such as attachments to PageDevice instances and the UUID list
+//     of the various components of the Volume itself (namely, the Volume "root log" LogDevice, the
+//     VolumeTrimmer, and the PageRecycler) are preserved when the log is trimmed.
+//
+//  2. To participate in the lifetime management of reference-counted Pages by decrementing the ref
+//     counts of any "root_page_ids" in the trimmed region (e.g., the trimmed region contains the
+//     record of a new page being added, or an existing page being newly referenced; since these
+//     references to said pages will no longer be accessible once the log is trimmed, the ref
+//     counts should be reversed so as to prevent "leaks," broadly defined as allocated pages which
+//     are unreachable through a transitive path beginning in a Volume root log -- according to this
+//     definition, hopefully the rationale for calling the Volume's log the "root log" becomes
+//     evident).
+//
+// Notice that both of these functions depend on explicit knowledge of the contents of a region to
+// be trimmed; thus we must scan the interval between the current trim offset and the target offset
+// to collect this knowledge and act upon it.  This is the purpose of `read_trimmed_region`.
+//
+// The first parameter `slot_reader` provides basic access to the data to be scanned.
+//
+// The second parameter `trim_upper_bound` defines the offset at which to stop scanning.
+//
+// Implementing function (2.) above means correctly interpreting the effect of PageCacheJob
+// transactions recorded in the log as a series of PackedPrepareJob and PackedCommitJob (or
+// PackedRollbackJob) event pairs.  In general, there is no guarantee that trimmed regions do not
+// bisect such pairs of events in the log (nor, in fact, that a transactional event pair straddles
+// only a single trim boundary): for example, the prepare event for a transaction may appear in one
+// trimmed region and its corresponding commit may appear several trimmed regions later.  Further,
+// both events are necessary in order for the VolumeTrimmer to take correct action wrt updating (or
+// not) ref counts.
+//
+// The third parameter `prior_pending_jobs` tracks the set of jobs whose prepare event (which,
+// importantly, contains the actual ref count update information) has been trimmed at some point in
+// the past.
+//
+// The fourth and final paramater `job_slots_byte_count` is for diagnostic purposes, and will make
+// sense in the context of the detailed explanation of what read_trimmed_region does below.
+//
+// Each time a trim is performed, a PackedVolumeTrimEvent is appended to the log.  In this event, of
+// all the `root_page_ids` from before the trim point which appear in some PackedPrepareJob without
+// a corresponding PackedCommitJob (yet) are saved so that when we do finally see the commits which
+// resolve the jobs, we can release the appropriate page refs and possibly garbage collect dead
+// pages.
+//
+// An important detail here is that a PackedVolumeTrimEvent must be appended _before_ the actual
+// trim occurs, since once we trim, there is no way to recover the crucial information this event
+// contains.  Therefore, even though we are about to reclaim a bunch of log space that can be used
+// to write the trim event, we can't rely on reclaimed (trimmed) space to reserve the Grant needed
+// for this append.  Instead, any Grant the PackedVolumeTrimEvent might need must be reserved
+// beforehand.
+//
+// To solve this dilemma, Volume requires 2x the actual slot append size in order to append a
+// transactional page job.  This is reflected in `Volume::calcaulte_grant_size(AppendableJob)` and
+// `Volume::append(AppendableJob, ...)`.  Inside append, half of the passed Grant is used to do the
+// actual slot writing, and half is sent off to the VolumeTrimmer, where it sits in a pool until we
+// can be absolutely certain it is no longer needed.
+//
+// This same idea is used for the PackedVolumeTrimEvent itself; we "reserve" twice the amount of
+// grant needed to append the trim event, once for the immediate append, and once to refresh the
+// information it contains should the trim event itself be trimmed while jobs are still pending.
+//
+// The trim algorithm is:
+//
+//  1. Await a new trim target
+//  2. Read up to the new trim target, gathering:
+//     a. The number of pre-reserved grant bytes to be released after the trim is completed
+//     b. The set of (root) page ids whose ref count to decrement
+//  3. Refresh any attachments or volume uuids that would otherwise be lost in the trimmed region
+//     (i.e., any such info that doesn't appear at some later offset in the log)
+//  4. Write the trim event
+//  5. Trim the log to reclaim Grant for the trimmed region
+//  6. Release the portion of Grant that isn't needed for some future refresh
+//
+// Step (6.) requires an accounting of "necessary Grant" count; this is achieved via two fields of
+// the VolumeTrimmedRegionInfo struct:
+//  - grant_size_to_release
+//  - grant_size_to_reserve
+//
+// The rules for correct update and usage of these are simple:
+//
+//  - When appending some event slot that may need to be refreshed on trim, always reserve 2x the
+//    necessary grant (packed slot size); when such slots are first appended, we reserve directly
+//    from the SlotWriter, using half and pushing the other half to the VolumeTrimmer; when we
+//    refresh during a trim, we "reserve" by incrementing the `grant_size_to_reserve` field.
+//  - When scanning the log before a trim (Step 2. above), we "release" the extra grant by adding
+//    the slot size of certain record types (prepare, commit, trim, attachments, and uuids) to the
+//    `grant_size_to_release` field.
+//
+// The process follows a principle similar to swinging from vine to vine, always making sure the
+// next vine is in hand before releasing the previous one.  This way, we make sure we always have
+// enough Grant, when we need it (Honor Necessity), aggressively releasing any extra as soon as we
+// can without violating this principle (Honor Sufficiency).
 //
 StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
     TypedSlotReader<VolumeEventVariant>& slot_reader, slot_offset_type trim_upper_bound,
-    VolumePendingJobsUMap& prior_pending_jobs, std::atomic<u64>& job_slots_byte_count)
+    VolumePendingJobsUMap& prior_pending_jobs, std::atomic<u64>& popped_grant_size)
 {
   StatusOr<VolumeTrimmedRegionInfo> result = VolumeTrimmedRegionInfo{};
 
   result->slot_range.lower_bound = slot_reader.next_slot_offset();
   result->slot_range.upper_bound = result->slot_range.lower_bound;
 
+  LLFS_VLOG(2) << BATT_INSPECT(result->grant_size_to_release)
+               << BATT_INSPECT(result->grant_size_to_reserve);
+
   TrimmedRegionStats stats;
 
   StatusOr<usize> read_status = slot_reader.run(
       batt::WaitForResource::kTrue,
-      [trim_upper_bound, &result, &prior_pending_jobs, &stats, &job_slots_byte_count](
+      [trim_upper_bound, &result, &prior_pending_jobs, &stats, &popped_grant_size](
           const SlotParse& slot, const auto& payload) -> Status {
         const SlotRange& slot_range = slot.offset;
+        const u64 slot_size = slot.size_in_bytes();
 
-        LLFS_VLOG(2) << "read slot: " << BATT_INSPECT(slot_range)
+        auto& metrics = VolumeTrimmer::metrics();
+
+        LLFS_VLOG(2) << "read slot: " << BATT_INSPECT(slot_range) << BATT_INSPECT(slot_size)
                      << BATT_INSPECT(!slot_less_than(slot_range.lower_bound, trim_upper_bound))
                      << BATT_INSPECT(slot_less_than(trim_upper_bound, slot_range.upper_bound));
 
@@ -297,15 +406,19 @@ StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
         result->slot_range.upper_bound =
             slot_max(result->slot_range.upper_bound, slot_range.upper_bound);
 
+        // Use batt::make_case_of_visitor because the alternative, batt::case_of, requires a
+        // std::variant, which has already been unwrapped by the time we are inside the outer
+        // lambda.
+        //
         return batt::make_case_of_visitor(
             //+++++++++++-+-+--+----- --- -- -  -  -   -
             //
-            [&](const SlotParse& slot, const Ref<const PackedPrepareJob>& prepare) {
+            [&](const Ref<const PackedPrepareJob>& prepare) {
               ++stats.prepare_job_count;
 
-              const u64 prepare_slot_size = BATT_CHECKED_CAST(u64, slot.offset.size());
-              result->grant_size_to_release += prepare_slot_size;
-              job_slots_byte_count.fetch_add(prepare_slot_size);
+              result->grant_size_to_release += slot_size;
+              metrics.prepare_grant_released_byte_count.add(slot_size);
+              popped_grant_size.fetch_add(slot_size);
 
               std::vector<PageId> root_page_ids =
                   as_seq(*prepare.get().root_page_ids) |
@@ -315,7 +428,8 @@ StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
                   seq::collect_vec();
 
               LLFS_VLOG(2) << "visit_slot(" << BATT_INSPECT(slot.offset)
-                           << ", PrepareJob) root_page_ids=" << batt::dump_range(root_page_ids);
+                           << ", PrepareJob) root_page_ids=" << batt::dump_range(root_page_ids)
+                           << BATT_INSPECT(slot_size);
 
               const auto& [iter, inserted] =
                   result->pending_jobs.emplace(slot.offset.lower_bound, std::move(root_page_ids));
@@ -330,16 +444,21 @@ StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
 
             //+++++++++++-+-+--+----- --- -- -  -  -   -
             //
-            [&](const SlotParse& slot, const PackedCommitJob& commit) {
+            [&](const PackedCommitJob& commit) {
               ++stats.commit_job_count;
 
-              const u64 commit_slot_size = BATT_CHECKED_CAST(u64, slot.offset.size());
-              result->grant_size_to_release += commit_slot_size;
-              job_slots_byte_count.fetch_add(commit_slot_size);
+              result->grant_size_to_release += slot_size;
+              metrics.commit_grant_released_byte_count.add(slot_size);
+              popped_grant_size.fetch_add(slot_size);
 
-              LLFS_VLOG(2) << "visit_slot(" << BATT_INSPECT(slot.offset) << ", CommitJob)";
+              LLFS_VLOG(2) << "visit_slot(" << BATT_INSPECT(slot.offset) << ", CommitJob)"
+                           << BATT_INSPECT(slot_size);
 
               //----- --- -- -  -  -   -
+              // Define a local helper function to resolve pending jobs, because we don't know a
+              // priori whether the prepare for a given commit/rollback will be found in the current
+              // region (result->pending_jobs) or in a previous one (prior_pending_jobs).
+              //
               const auto extract_pending_job = [&](VolumePendingJobsUMap& from) -> bool {
                 auto iter = from.find(commit.prepare_slot);
                 if (iter == from.end()) {
@@ -384,12 +503,17 @@ StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
 
             //+++++++++++-+-+--+----- --- -- -  -  -   -
             //
-            [&](const SlotParse&, const PackedRollbackJob& rollback) {
+            [&](const PackedRollbackJob& rollback) {
               ++stats.rollback_job_count;
+
+              result->grant_size_to_release += slot_size;
+              popped_grant_size.fetch_add(slot_size);
 
               // The job has been resolved (rolled back); remove it from the maps.
               //
-              LLFS_VLOG(2) << "Rolling back pending job;" << BATT_INSPECT(rollback.prepare_slot);
+              LLFS_VLOG(2) << "visit_slot(" << BATT_INSPECT(slot.offset) << ", RollbackJob)"
+                           << BATT_INSPECT(rollback.prepare_slot) << BATT_INSPECT(slot_size);
+
               if (prior_pending_jobs.erase(rollback.prepare_slot) == 1u) {
                 result->resolved_jobs.emplace_back(rollback.prepare_slot);
               }
@@ -400,30 +524,43 @@ StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
 
             //+++++++++++-+-+--+----- --- -- -  -  -   -
             //
-            [&](const SlotParse& slot, const PackedVolumeIds& ids) {
+            [&](const PackedVolumeIds& ids) {
               ++stats.volume_ids_count;
 
-              LLFS_VLOG(2) << "Found ids to refresh: " << ids << BATT_INSPECT(slot.offset);
+              metrics.ids_grant_released_byte_count.add(slot_size);
+              result->grant_size_to_release += slot_size;
+              popped_grant_size.fetch_add(slot_size);
+
+              LLFS_VLOG(2) << "visit_slot(" << BATT_INSPECT(slot.offset) << ", PackedVolumeIds)"
+                           << ids << BATT_INSPECT(slot_size);
+
               result->ids_to_refresh = ids;
               return batt::OkStatus();
             },
 
             //+++++++++++-+-+--+----- --- -- -  -  -   -
             //
-            [&](const SlotParse&, const PackedVolumeAttachEvent& attach) {
+            [&](const PackedVolumeAttachEvent& attach) {
               ++stats.volume_attach_count;
 
+              result->grant_size_to_release += slot_size;
+              metrics.attach_grant_released_byte_count.add(slot_size);
+              popped_grant_size.fetch_add(slot_size);
+
+              LLFS_VLOG(2) << "visit_slot(" << BATT_INSPECT(slot.offset) << ", AttachEvent)"
+                           << BATT_INSPECT(slot_size);
+
               const auto& [iter, inserted] =
-                  result->attachments_to_refresh.emplace(attach.id, attach);
+                  result->attachments_to_refresh.emplace(attach.base.id, attach);
               if (!inserted) {
-                BATT_CHECK_EQ(iter->second.user_slot_offset, attach.user_slot_offset);
+                BATT_CHECK_EQ(iter->second.base.user_slot_offset, attach.base.user_slot_offset);
               }
               return batt::OkStatus();
             },
 
             //+++++++++++-+-+--+----- --- -- -  -  -   -
             //
-            [&](const SlotParse&, const PackedVolumeDetachEvent& detach) {
+            [&](const PackedVolumeDetachEvent& detach) {
               ++stats.volume_detach_count;
 
               result->attachments_to_refresh.erase(detach.id);
@@ -432,8 +569,17 @@ StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
 
             //+++++++++++-+-+--+----- --- -- -  -  -   -
             //
-            [&](const SlotParse&, const VolumeTrimEvent& trim_event) {
+            [&](const VolumeTrimEvent& trim_event) {
               ++stats.volume_trim_count;
+
+              metrics.trim_grant_released_byte_count.add(slot_size);
+              result->grant_size_to_release += slot_size;
+              //
+              // Don't update popped_grant_size here because Grant for trim events isn't acquired
+              // via VolumeTrimmer::push_grant.
+
+              LLFS_VLOG(2) << "visit_slot(" << BATT_INSPECT(slot.offset) << ", TrimEvent)"
+                           << BATT_INSPECT(slot_size);
 
               batt::make_copy(trim_event.trimmed_prepare_jobs)  //
                   | batt::seq::for_each([&](const TrimmedPrepareJob& job) {
@@ -454,11 +600,11 @@ StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
 
             //+++++++++++-+-+--+----- --- -- -  -  -   -
             //
-            [](const SlotParse&, const auto& /*payload*/) {
+            [](const auto& /*payload*/) {
               return batt::OkStatus();
             }
             //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-            )(slot, payload);
+            )(payload);
       });
 
   const usize dropped_roots = result.ok() ? result->obsolete_roots.size() : usize{0};
@@ -489,16 +635,25 @@ Status refresh_volume_metadata(TypedSlotWriter<VolumeEventVariant>& slot_writer,
   if (trimmed_region.ids_to_refresh) {
     LLFS_VLOG(1) << "Refreshing volume ids: " << *trimmed_region.ids_to_refresh;
 
-    trimmed_region.grant_size_to_reserve += packed_sizeof_slot(*trimmed_region.ids_to_refresh);
+    const usize id_slot_size = packed_sizeof_slot(*trimmed_region.ids_to_refresh);
+    trimmed_region.grant_size_to_reserve += id_slot_size * 2;
+
+    LLFS_VLOG(1) << "(ids) grant_size_to_reserve: "
+                 << (trimmed_region.grant_size_to_reserve - id_slot_size * 2) << " -> "
+                 << trimmed_region.grant_size_to_reserve << " (+" << id_slot_size * 2 << ")";
 
     const slot_offset_type last_refresh_slot =
         refresh_info.most_recent_ids_slot.value_or(trimmed_region.slot_range.lower_bound);
 
     if (slot_less_than(last_refresh_slot, trimmed_region.slot_range.upper_bound)) {
+      trimmed_region.ids_to_refresh->trim_slot_offset = trimmed_region.slot_range.lower_bound;
+
       StatusOr<SlotRange> id_refresh_slot =
           slot_writer.append(grant, *trimmed_region.ids_to_refresh);
 
       BATT_REQUIRE_OK(id_refresh_slot);
+
+      VolumeTrimmer::metrics().ids_grant_reserved_byte_count.add(id_slot_size);
 
       refresh_info.most_recent_ids_slot = id_refresh_slot->lower_bound;
       clamp_min_slot(&sync_point, id_refresh_slot->upper_bound);
@@ -509,7 +664,7 @@ Status refresh_volume_metadata(TypedSlotWriter<VolumeEventVariant>& slot_writer,
 
   // Refresh any attachments that will be lost in this trim.
   //
-  for (const auto& [attach_id, event] : trimmed_region.attachments_to_refresh) {
+  for (auto& [attach_id, event] : trimmed_region.attachments_to_refresh) {
     // Skip this attachment if we know it has been refreshed at a higher slot.
     //
     {
@@ -521,12 +676,21 @@ Status refresh_volume_metadata(TypedSlotWriter<VolumeEventVariant>& slot_writer,
       }
     }
 
-    trimmed_region.grant_size_to_reserve += packed_sizeof_slot(event);
+    event.trim_slot_offset = trimmed_region.slot_range.lower_bound;
+
+    const usize attach_slot_size = packed_sizeof_slot(event);
+    trimmed_region.grant_size_to_reserve += attach_slot_size * 2;
+
+    LLFS_VLOG(1) << "(attach) grant_size_to_reserve: "
+                 << (trimmed_region.grant_size_to_reserve - attach_slot_size * 2) << " -> "
+                 << trimmed_region.grant_size_to_reserve << " (+" << attach_slot_size * 2 << ")";
 
     LLFS_VLOG(1) << "Refreshing attachment " << attach_id;
 
     StatusOr<SlotRange> slot_range = slot_writer.append(grant, event);
     BATT_REQUIRE_OK(slot_range);
+
+    VolumeTrimmer::metrics().attach_grant_reserved_byte_count.add(attach_slot_size);
 
     // Update the latest refresh slot for this attachment.
     //
@@ -578,13 +742,18 @@ StatusOr<VolumeTrimEventInfo> write_trim_event(TypedSlotWriter<VolumeEventVarian
         })  //
       | batt::seq::boxed();
 
-  // Retain enough recovered grant from the trim to cover the trim event.
+  // Retain enough recovered grant from the trim to cover the trim event we're about to append *and*
+  // a future trim event where we pull forward all still-pending job info.
   //
-  const u64 event_size = packed_sizeof_slot(event);
+  const u64 trim_slot_size = packed_sizeof_slot(event);
+  trimmed_region.grant_size_to_reserve += trim_slot_size * 2;
 
-  trimmed_region.grant_size_to_reserve += event_size;
+  LLFS_VLOG(1) << "(trim) grant_size_to_reserve: "
+               << (trimmed_region.grant_size_to_reserve - trim_slot_size * 2) << " -> "
+               << trimmed_region.grant_size_to_reserve << " (+" << trim_slot_size * 2 << ")"
+               << BATT_INSPECT(grant.size());
 
-  StatusOr<batt::Grant> event_grant = grant.spend(event_size, batt::WaitForResource::kFalse);
+  StatusOr<batt::Grant> event_grant = grant.spend(trim_slot_size, batt::WaitForResource::kFalse);
   BATT_REQUIRE_OK(event_grant);
 
   const u64 event_grant_size_before = event_grant->size();
@@ -593,7 +762,9 @@ StatusOr<VolumeTrimEventInfo> write_trim_event(TypedSlotWriter<VolumeEventVarian
   BATT_REQUIRE_OK(result);
   //
   const u64 event_grant_size_after = event_grant->size();
-  BATT_CHECK_EQ(event_grant_size_before - event_grant_size_after, event_size);
+  BATT_CHECK_EQ(event_grant_size_before - event_grant_size_after, trim_slot_size);
+
+  VolumeTrimmer::metrics().trim_grant_reserved_byte_count.add(trim_slot_size);
 
   LLFS_VLOG(1) << "Flushing trim event at slot_range=" << *result
                << BATT_INSPECT(trimmed_region.slot_range);
@@ -644,180 +815,28 @@ Status trim_volume_log(TypedSlotWriter<VolumeEventVariant>& slot_writer, batt::G
 
   // Balance the books.
   //
-  BATT_CHECK_GE(trimmed_region.grant_size_to_release, trimmed_region.grant_size_to_reserve);
+  BATT_CHECK_LE(trimmed_region.grant_size_to_reserve, trimmed_region.grant_size_to_release);
+  if (trimmed_region.grant_size_to_reserve > trimmed_region.grant_size_to_release) {
+    trimmed_region.grant_size_to_reserve -= trimmed_region.grant_size_to_release;
+    trimmed_region.grant_size_to_release = 0;
+  } else {
+    trimmed_region.grant_size_to_release -= trimmed_region.grant_size_to_reserve;
+    trimmed_region.grant_size_to_reserve = 0;
 
-  trimmed_region.grant_size_to_release -= trimmed_region.grant_size_to_reserve;
-  trimmed_region.grant_size_to_reserve = 0;
-
-  if (trimmed_region.grant_size_to_release > 0) {
-    usize release_size = 0;
-    std::swap(release_size, trimmed_region.grant_size_to_release);
-    StatusOr<batt::Grant> released = grant.spend(release_size, batt::WaitForResource::kFalse);
-    BATT_REQUIRE_OK(released);
-    LLFS_VLOG(1) << "released trimmer grant;" << BATT_INSPECT(release_size)
-                 << BATT_INSPECT(grant_size_before);
+    if (trimmed_region.grant_size_to_release > 0) {
+      usize release_size = 0;
+      std::swap(release_size, trimmed_region.grant_size_to_release);
+      StatusOr<batt::Grant> released = grant.spend(release_size, batt::WaitForResource::kFalse);
+      BATT_REQUIRE_OK(released);
+      LLFS_VLOG(1) << "released trimmer grant;" << BATT_INSPECT(release_size)
+                   << BATT_INSPECT(grant_size_before);
+    }
   }
 
   // Move pending jobs from the trimmed region to `prior_pending_jobs`
   //
   prior_pending_jobs.insert(std::make_move_iterator(trimmed_region.pending_jobs.begin()),
                             std::make_move_iterator(trimmed_region.pending_jobs.end()));
-
-  return batt::OkStatus();
-}
-
-//#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
-
-/*explicit*/ VolumeTrimmer::RecoveryVisitor::RecoveryVisitor(slot_offset_type trim_pos) noexcept
-    : log_trim_pos_{trim_pos}
-{
-  LLFS_VLOG(1) << "RecoveryVisitor created;" << BATT_INSPECT(trim_pos);
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Status VolumeTrimmer::RecoveryVisitor::on_raw_data(const SlotParse&,
-                                                   const Ref<const PackedRawData>&) /*override*/
-{
-  return batt::OkStatus();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Status VolumeTrimmer::RecoveryVisitor::on_prepare_job(
-    const SlotParse& slot, const Ref<const PackedPrepareJob>& /*prepare*/) /*override*/
-{
-  const usize slot_size = BATT_CHECKED_CAST(usize, slot.offset.size());
-
-  this->trimmer_grant_size_ += slot_size;
-
-  LLFS_VLOG(1) << "RecoveryVisitor::on_prepare_job(slot=" << slot.offset << "); trimmer_grant_size "
-               << (this->trimmer_grant_size_ - slot_size) << " -> " << this->trimmer_grant_size_;
-
-  return batt::OkStatus();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Status VolumeTrimmer::RecoveryVisitor::on_commit_job(const SlotParse& slot,
-                                                     const PackedCommitJob& /*commit*/) /*override*/
-{
-  const usize slot_size = BATT_CHECKED_CAST(usize, slot.offset.size());
-
-  this->trimmer_grant_size_ += slot_size;
-
-  LLFS_VLOG(1) << "RecoveryVisitor::on_commit_job(slot=" << slot.offset << "); trimmer_grant_size "
-               << (this->trimmer_grant_size_ - slot_size) << " -> " << this->trimmer_grant_size_;
-
-  return batt::OkStatus();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Status VolumeTrimmer::RecoveryVisitor::on_rollback_job(const SlotParse&,
-                                                       const PackedRollbackJob&) /*override*/
-{
-  // TODO [tastolfi 2022-11-23] Figure out whether we need to do anything here to avoid leaking log
-  // grant...
-  //
-  return batt::OkStatus();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Status VolumeTrimmer::RecoveryVisitor::on_volume_attach(
-    const SlotParse& slot, const PackedVolumeAttachEvent& attach) /*override*/
-{
-  this->refresh_info_.most_recent_attach_slot[attach.id] = slot.offset.lower_bound;
-
-  return batt::OkStatus();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Status VolumeTrimmer::RecoveryVisitor::on_volume_detach(
-    const SlotParse& slot, const PackedVolumeDetachEvent& detach) /*override*/
-{
-  this->refresh_info_.most_recent_attach_slot[detach.id] = slot.offset.lower_bound;
-
-  return batt::OkStatus();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Status VolumeTrimmer::RecoveryVisitor::on_volume_ids(const SlotParse& slot,
-                                                     const PackedVolumeIds&) /*override*/
-{
-  LLFS_VLOG(1) << "RecoveryVisitor::on_volume_ids(slot=" << slot.offset << ")";
-
-  this->refresh_info_.most_recent_ids_slot = slot.offset.lower_bound;
-
-  return batt::OkStatus();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Status VolumeTrimmer::RecoveryVisitor::on_volume_recovered(
-    const SlotParse&, const PackedVolumeRecovered&) /*override*/
-{
-  return batt::OkStatus();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Status VolumeTrimmer::RecoveryVisitor::on_volume_format_upgrade(
-    const SlotParse&, const PackedVolumeFormatUpgrade&) /*override*/
-{
-  return batt::OkStatus();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-Status VolumeTrimmer::RecoveryVisitor::on_volume_trim(
-    const SlotParse& slot, const VolumeTrimEvent& trim_event) /*override*/
-{
-  const bool is_pending = slot_less_than(this->log_trim_pos_, trim_event.new_trim_pos);
-
-  LLFS_VLOG(1) << "RecoveryVisitor::on_volume_trim(slot=" << slot.offset << ") trimmed_region == "
-               << SlotRange{trim_event.old_trim_pos, trim_event.new_trim_pos}
-               << BATT_INSPECT(is_pending);
-
-  this->trimmer_grant_size_ += BATT_CHECKED_CAST(usize, slot.offset.size());
-
-  if (is_pending) {
-    if (this->trim_event_info_ != None) {
-      LLFS_LOG_WARNING() << "Multiple pending trim events found!  Likely corrupted log...";
-      //
-      // TODO [tastolfi 2022-11-28] Fail recovery?
-    }
-
-    this->trim_event_info_.emplace();
-    this->trim_event_info_->trim_event_slot = slot.offset;
-    this->trim_event_info_->trimmed_region_slot_range = SlotRange{
-        trim_event.old_trim_pos,
-        trim_event.new_trim_pos,
-    };
-  } else {
-    // If the trim is pending (branch above), then the trimmer will rescan the trimmed region and
-    // recover the information in the trim event.  Otherwise, we need to apply this information
-    // here.
-    //
-    batt::make_copy(trim_event.trimmed_prepare_jobs) |
-        batt::seq::for_each([this](const TrimmedPrepareJob& job) {
-          auto page_ids = batt::make_copy(job.page_ids) | batt::seq::collect_vec();
-
-          LLFS_VLOG(1) << " -- " << BATT_INSPECT(job.prepare_slot) << ","
-                       << BATT_INSPECT_RANGE(page_ids);
-
-          this->pending_jobs_.emplace(job.prepare_slot, std::move(page_ids));
-        });
-
-    batt::make_copy(trim_event.committed_jobs) |
-        batt::seq::for_each([this](slot_offset_type prepare_slot) {
-          LLFS_VLOG(1) << " -- commit{prepare_slot=" << prepare_slot << "}";
-          this->pending_jobs_.erase(prepare_slot);
-        });
-  }
 
   return batt::OkStatus();
 }

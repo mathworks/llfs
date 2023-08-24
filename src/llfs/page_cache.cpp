@@ -9,6 +9,7 @@
 #include <llfs/page_cache.hpp>
 //
 
+#include <llfs/committable_page_cache_job.hpp>
 #include <llfs/memory_log_device.hpp>
 #include <llfs/metrics.hpp>
 #include <llfs/page_cache_job.hpp>

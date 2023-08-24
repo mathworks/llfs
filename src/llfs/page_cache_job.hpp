@@ -29,8 +29,6 @@
 
 namespace llfs {
 
-class PageCacheJob;
-
 class PageCacheJob : public PageLoader
 {
  public:

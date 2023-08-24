@@ -10,13 +10,18 @@
 #ifndef LLFS_VOLUME_TRIMMER_HPP
 #define LLFS_VOLUME_TRIMMER_HPP
 
+#include <llfs/config.hpp>
+//
 #include <llfs/log_device.hpp>
 #include <llfs/page_cache.hpp>
 #include <llfs/slot_lock_manager.hpp>
 #include <llfs/slot_writer.hpp>
 #include <llfs/status.hpp>
+#include <llfs/volume_cancelled_job_tracker.hpp>
 #include <llfs/volume_event_visitor.hpp>
 #include <llfs/volume_events.hpp>
+#include <llfs/volume_metadata_refresher.hpp>
+#include <llfs/volume_trimmed_region_info.hpp>
 #include <llfs/volume_trimmer_metrics.hpp>
 
 #include <atomic>
@@ -25,75 +30,11 @@
 
 namespace llfs {
 
-using VolumePendingJobsUMap =
-    std::unordered_map<slot_offset_type /*prepare_slot*/, std::vector<PageId>>;
-
-struct VolumeTrimmedRegionInfo {
-  SlotRange slot_range;
-  std::vector<slot_offset_type> resolved_jobs;
-  VolumePendingJobsUMap pending_jobs;
-  std::vector<PageId> obsolete_roots;
-  Optional<PackedVolumeIds> ids_to_refresh;
-  std::unordered_map<VolumeAttachmentId, PackedVolumeAttachEvent, VolumeAttachmentId::Hash>
-      attachments_to_refresh;
-  usize grant_size_to_release = 0;
-  usize grant_size_to_reserve = 0;
-
-  //+++++++++++-+-+--+----- --- -- -  -  -   -
-
-  bool requires_trim_event_slot() const
-  {
-    return !this->resolved_jobs.empty() || !this->obsolete_roots.empty() ||
-           !this->pending_jobs.empty();
-  }
-};
-
 /** \brief Consumer of dropped root page refs.
  */
-using VolumeDropRootsFn = std::function<batt::Status(slot_offset_type, Slice<const PageId>)>;
-
-/** \brief Reads slots from the passed reader, up to the given slot upper bound, collecting the
- * information needed to trim the log.
- */
-StatusOr<VolumeTrimmedRegionInfo> read_trimmed_region(
-    TypedSlotReader<VolumeEventVariant>& slot_reader, slot_offset_type upper_bound,
-    VolumePendingJobsUMap& prior_pending_jobs, std::atomic<u64>& popped_grant_size);
-
-//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-/** \brief Tracks when the Volume metadata was last refreshed.
- */
-struct VolumeMetadataRefreshInfo {
-  using AttachSlotMap =
-      std::unordered_map<VolumeAttachmentId, slot_offset_type, VolumeAttachmentId::Hash>;
-
-  Optional<slot_offset_type> most_recent_ids_slot;
-  AttachSlotMap most_recent_attach_slot;
-};
-
-inline bool operator==(const VolumeMetadataRefreshInfo& l, const VolumeMetadataRefreshInfo& r)
-{
-  return l.most_recent_ids_slot == r.most_recent_ids_slot  //
-         && l.most_recent_attach_slot == r.most_recent_attach_slot;
-}
-
-inline bool operator!=(const VolumeMetadataRefreshInfo& l, const VolumeMetadataRefreshInfo& r)
-{
-  return !(l == r);
-}
-
-inline std::ostream& operator<<(std::ostream& out, const VolumeMetadataRefreshInfo& t)
-{
-  return out << "{.most_recent_ids_slot=" << t.most_recent_ids_slot
-             << ",  .most_recent_attach_slot=" << batt::dump_range(t.most_recent_attach_slot)
-             << ",}";
-}
-
-/** \brief Appends any Volume metadata that will be lost when trimmed_region is trimmed to the end
- * of the log using the passed grant.
- */
-Status refresh_volume_metadata(TypedSlotWriter<VolumeEventVariant>& slot_writer, batt::Grant& grant,
-                               VolumeMetadataRefreshInfo& refresh_info,
-                               VolumeTrimmedRegionInfo& trimmed_region);
+using VolumeDropRootsFn = std::function<batt::Status(const boost::uuids::uuid& trimmer_uuid,
+                                                     slot_offset_type trim_event_slot_offset,
+                                                     Slice<const PageId> root_ref_page_ids)>;
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 /** \brief Information about a durably committed PackedVolumeTrimEvent.
@@ -114,15 +55,16 @@ inline std::ostream& operator<<(std::ostream& out, const VolumeTrimEventInfo& t)
  */
 StatusOr<VolumeTrimEventInfo> write_trim_event(TypedSlotWriter<VolumeEventVariant>& slot_writer,
                                                batt::Grant& grant,
-                                               VolumeTrimmedRegionInfo& trimmed_region);
+                                               const VolumeTrimmedRegionInfo& trimmed_region);
 
 /** \brief Decrement ref counts of obsolete roots in the given trimmed region and trim the log.
  */
-Status trim_volume_log(TypedSlotWriter<VolumeEventVariant>& slot_writer, batt::Grant& grant,
+Status trim_volume_log(const boost::uuids::uuid& trimmer_uuid,
+                       TypedSlotWriter<VolumeEventVariant>& slot_writer, batt::Grant& grant,
                        Optional<VolumeTrimEventInfo>&& trim_event,
                        VolumeTrimmedRegionInfo&& trimmed_region,
-                       const VolumeDropRootsFn& drop_roots,
-                       VolumePendingJobsUMap& prior_pending_jobs);
+                       VolumeMetadataRefresher& metadata_refresher,
+                       const VolumeDropRootsFn& drop_roots);
 
 // Forward-declaration.
 //
@@ -144,17 +86,30 @@ class VolumeTrimmer
     return metrics_;
   }
 
-  static VolumeDropRootsFn make_default_drop_roots_fn(PageCache& cache, PageRecycler& recycler,
-                                                      const boost::uuids::uuid& trimmer_uuid);
+  /** \brief Creates and returns a function to drop trimmed page root refs.
+   */
+  static VolumeDropRootsFn make_default_drop_roots_fn(PageCache& cache, PageRecycler& recycler);
+
+  static StatusOr<std::unique_ptr<VolumeTrimmer>> recover(
+      const boost::uuids::uuid& trimmer_uuid,            //
+      std::string&& name,                                //
+      TrimDelayByteCount trim_delay,                     //
+      LogDevice& volume_root_log,                        //
+      TypedSlotWriter<VolumeEventVariant>& slot_writer,  //
+      VolumeDropRootsFn&& drop_roots,                    //
+      SlotLockManager& trim_control,                     //
+      VolumeMetadataRefresher& metadata_refresher);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  explicit VolumeTrimmer(const boost::uuids::uuid& trimmer_uuid, std::string&& name,
-                         SlotLockManager& trim_control, TrimDelayByteCount trim_delay,
-                         std::unique_ptr<LogDevice::Reader>&& log_reader,
-                         TypedSlotWriter<VolumeEventVariant>& slot_writer,
-                         VolumeDropRootsFn&& drop_roots,
-                         const VolumeTrimmerRecoveryVisitor& recovery_visitor) noexcept;
+  explicit VolumeTrimmer(const boost::uuids::uuid& trimmer_uuid,            //
+                         std::string&& name,                                //
+                         SlotLockManager& trim_control,                     //
+                         TrimDelayByteCount trim_delay,                     //
+                         std::unique_ptr<LogDevice::Reader>&& log_reader,   //
+                         TypedSlotWriter<VolumeEventVariant>& slot_writer,  //
+                         VolumeDropRootsFn&& drop_roots_fn,                 //
+                         VolumeMetadataRefresher& metadata_refresher) noexcept;
 
   VolumeTrimmer(const VolumeTrimmer&) = delete;
   VolumeTrimmer& operator=(const VolumeTrimmer&) = delete;
@@ -171,11 +126,6 @@ class VolumeTrimmer
     return this->name_;
   }
 
-  /** \brief Adds the given grant to the trim event grant held by this object, which is used to
-   * append the log.
-   */
-  void push_grant(batt::Grant&& grant) noexcept;
-
   void halt();
 
   Status run();
@@ -188,16 +138,6 @@ class VolumeTrimmer
   u64 trim_count() const noexcept
   {
     return this->trim_count_.load();
-  }
-
-  u64 pushed_grant_size() const noexcept
-  {
-    return this->pushed_grant_size_.load();
-  }
-
-  u64 popped_grant_size() const noexcept
-  {
-    return this->popped_grant_size_.load();
   }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -258,34 +198,14 @@ class VolumeTrimmer
    */
   std::atomic<bool> halt_requested_{false};
 
-  /** \brief Contains all PrepareJobs that haven't been resolved yet by a corresponding commit or
-   * rollback.
+  /** \brief Contains the last known slot(s) where Volume metadata (ids and attachments) was
+   * refreshed, and takes care of refreshing this information on trim.
    */
-  VolumePendingJobsUMap pending_jobs_;
-
-  /** \brief Contains the last known slot where Volume metadata (ids and attachments) was refreshed.
-   */
-  VolumeMetadataRefreshInfo refresh_info_;
-
-  /** \brief When present, contains information about the most recent durable TrimEvent slot.
-   */
-  Optional<VolumeTrimEventInfo> latest_trim_event_;
-
-  /** \brief The number of bytes to reserve from the next trim.
-   */
-  u64 reserve_from_next_trim_ = 0;
+  VolumeMetadataRefresher& metadata_refresher_;
 
   /** \brief The number of trim operations completed.
    */
   std::atomic<u64> trim_count_{0};
-
-  /** \brief The number of bytes of grant obtained via push_grant.
-   */
-  std::atomic<u64> pushed_grant_size_;
-
-  /** \brief The number of push_grant-obtained grant bytes that have been released via a trim.
-   */
-  std::atomic<u64> popped_grant_size_;
 };
 
 }  // namespace llfs

@@ -14,14 +14,14 @@
 
 namespace llfs {
 
+struct PackedVolumeIds;
 struct PackedVolumeAttachEvent;
 struct PackedVolumeDetachEvent;
-struct PackedVolumeIds;
 struct PackedVolumeRecovered;
-struct PackedVolumeFormatUpgrade;
 struct PackedPrepareJob;
 struct PackedCommitJob;
 struct PackedRollbackJob;
+struct PackedVolumeFormatUpgrade;
 struct PackedVolumeTrimEvent;
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

@@ -1077,8 +1077,6 @@ TEST_F(VolumeTest, PageJobs)
               [&](const llfs::SlotParse& slot, std::string_view user_data) -> llfs::Status {
                 job_i += 1;
 
-                EXPECT_TRUE(slot.depends_on_offset);
-
                 LLFS_VLOG(1) << "Visiting slot: " << BATT_INSPECT(slot)
                              << " user_data=" << batt::c_str_literal(user_data);
 

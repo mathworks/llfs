@@ -13,11 +13,12 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <llfs/testing/fake_log_device.hpp>
+
 #include <llfs/log_device_snapshot.hpp>
 #include <llfs/pack_as_raw.hpp>
-#include <llfs/testing/fake_log_device.hpp>
 #include <llfs/uuid.hpp>
-#include <llfs/volume_trimmer_recovery_visitor.hpp>
+#include <llfs/volume_metadata_recovery_visitor.hpp>
 
 #include <batteries/async/fake_execution_context.hpp>
 #include <batteries/async/fake_executor.hpp>
@@ -55,32 +56,13 @@ using llfs::testing::FakeLogDevice;
 // - Model:
 //   - 4 pages
 
-/*
-TODO [tastolfi 2023-08-18] bug:
-
-constexpr usize kNumPages = 100;
-constexpr usize kLogSize = 64 * kKiB;
-constexpr usize kMinTTF = 5;
-constexpr usize kMaxTTF = 400;  //10 * kLogSize;  //500;
-constexpr usize kMinOpaqueDataSize = 10;
-constexpr usize kMaxOpaqueDataSize = 1000;
-constexpr usize kMaxSlotOverhead = 32;
-
-  const usize kInitialSeed = 53161;  //1;
-
- */
-
-constexpr usize kNumPages = 3;
+constexpr usize kNumPages = 4;
 constexpr usize kLogSize = 4 * kKiB;
 constexpr usize kMinTTF = 5;
 constexpr usize kMaxTTF = 30;  //10 * kLogSize;  //500;
 constexpr usize kMinOpaqueDataSize = 1;
 constexpr usize kMaxOpaqueDataSize = 100;
 constexpr usize kMaxSlotOverhead = 32;
-
-class VolumeTrimmerTestContext
-{
-};
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
@@ -95,26 +77,14 @@ class VolumeTrimmerTest : public ::testing::Test
    */
   void reset_state()
   {
-    this->recovery_visitor = batt::None;
     this->page_ref_count.fill(0);
     this->pending_jobs.clear();
     this->committed_jobs.clear();
+    this->snapshot = batt::None;
     this->job_grant = batt::None;
-    this->job_grant_size = 0;
-    this->leaked_job_grant_size = 0;
     this->verified_client_slot = 0;
     this->trim_delay_byte_count = 0;
     this->last_recovered_trim_pos = 0;
-    this->trimmer_grant_size_pre_shutdown = 0;
-    this->opaque_data_attempt = 0;
-    this->opaque_data_success = 0;
-    this->trim_attempt = 0;
-    this->trim_success = 0;
-    this->prepare_attempt = 0;
-    this->prepare_success = 0;
-    this->commit_attempt = 0;
-    this->commit_success = 0;
-    this->conserved_trimmer_grant_count = 0;
     this->initialize_log();
   }
 
@@ -137,6 +107,8 @@ class VolumeTrimmerTest : public ::testing::Test
    */
   void initialize_log()
   {
+    LLFS_VLOG(1) << "initialize_log()";
+
     this->mem_log_device.emplace(kLogSize);
 
     llfs::TypedSlotWriter<llfs::VolumeEventVariant> slot_writer{*this->mem_log_device};
@@ -150,8 +122,6 @@ class VolumeTrimmerTest : public ::testing::Test
 
     ASSERT_TRUE(ids_slot.ok());
     EXPECT_EQ(ids_slot->lower_bound, 0u);
-
-    this->metadata_state.most_recent_ids_slot = ids_slot->lower_bound;
   }
 
   /** \brief Creates a new FakeLogDevice that wraps this->mem_log_device, giving it a pseudo-random
@@ -162,17 +132,23 @@ class VolumeTrimmerTest : public ::testing::Test
    */
   void open_fake_log()
   {
+    bool from_snapshot = false;
+    if (this->snapshot) {
+      from_snapshot = true;
+      this->mem_log_device.emplace(kLogSize);
+      this->mem_log_device->restore_snapshot(*snapshot, llfs::LogReadMode::kDurable);
+      this->snapshot = batt::None;
+    }
+
     llfs::testing::FakeLogDeviceFactory<llfs::MemoryLogStorageDriver> factory =
         llfs::testing::make_fake_log_device_factory(*this->mem_log_device);
 
     this->fake_log_state = factory.state();
 
-    const llfs::slot_offset_type initial_trim_pos =
-        this->mem_log_device->slot_range(llfs::LogReadMode::kDurable).lower_bound;
-
-    this->recovery_visitor.emplace(initial_trim_pos);
-
+    llfs::VolumeMetadata metadata;
     {
+      llfs::VolumeMetadataRecoveryVisitor metadata_visitor{metadata};
+
       batt::StatusOr<std::unique_ptr<llfs::LogDevice>> status_or_fake_log = factory.open_log_device(
           [&](llfs::LogDevice::Reader& log_reader) -> batt::StatusOr<llfs::slot_offset_type> {
             llfs::TypedSlotReader<llfs::VolumeEventVariant> slot_reader{log_reader};
@@ -180,7 +156,8 @@ class VolumeTrimmerTest : public ::testing::Test
             batt::StatusOr<usize> slots_read = slot_reader.run(
                 batt::WaitForResource::kFalse,
                 [&](const llfs::SlotParse& slot, const auto& payload) -> batt::Status {
-                  BATT_REQUIRE_OK((*this->recovery_visitor)(slot, payload));
+                  BATT_REQUIRE_OK(metadata_visitor(slot, payload));
+                  this->handle_recovered_slot(slot, payload);
                   return batt::OkStatus();
                 });
 
@@ -194,11 +171,11 @@ class VolumeTrimmerTest : public ::testing::Test
                                            << BATT_INSPECT(this->fake_log_state->failure_time);
 
       this->fake_log = std::move(*status_or_fake_log);
-    }
 
-    EXPECT_EQ(this->metadata_state.most_recent_ids_slot != batt::None,
-              recovery_visitor->get_refresh_info().most_recent_ids_slot != batt::None)
-        << BATT_INSPECT(this->metadata_state) << BATT_INSPECT(recovery_visitor->get_refresh_info());
+      ASSERT_TRUE(metadata.ids) << BATT_INSPECT(
+                                       fake_log->slot_range(llfs::LogReadMode::kSpeculative))
+                                << BATT_INSPECT(from_snapshot);
+    }
 
     // Reset the simulated device failure time.
     //
@@ -209,89 +186,92 @@ class VolumeTrimmerTest : public ::testing::Test
     // Initialize the slot lock manager.
     //
     this->trim_lock.clear();
+    this->pending_job_slot_lock.clear();
     this->trim_control.emplace();
     this->trim_lock = BATT_OK_RESULT_OR_PANIC(
         this->trim_control->lock_slots(this->fake_log->slot_range(llfs::LogReadMode::kSpeculative),
                                        "VolumeTrimmerTest::open_fake_log"));
 
-    // Create a slot writer for the fake log.
+    // Initialize the slot writer.
     //
-    if (this->job_grant) {
-      LLFS_VLOG(1) << "releasing job_grant" << BATT_INSPECT(job_grant->size())
-                   << BATT_INSPECT(leaked_job_grant_size);
-
-      this->job_grant_size = this->job_grant->size() + this->leaked_job_grant_size;
-      this->leaked_job_grant_size = 0;
-    }
     this->job_grant = batt::None;
+    this->metadata_refresher = nullptr;
     this->fake_slot_writer.emplace(*this->fake_log);
-    LLFS_VLOG(1) << BATT_INSPECT(fake_slot_writer->pool_size());
+    this->job_grant =
+        BATT_OK_RESULT_OR_PANIC(this->fake_slot_writer->reserve(0, batt::WaitForResource::kFalse));
 
-    // Set `last_recovered_trim_pos` so we don't think that trim delay is failing to
-    // arrest log trimming immediately after (re-)opening the log.
+    // Initialize the VolumeMetadataRefresher.
     //
-    this->last_recovered_trim_pos =
-        this->fake_log->slot_range(llfs::LogReadMode::kDurable).lower_bound;
+    this->metadata_refresher = std::make_unique<llfs::VolumeMetadataRefresher>(
+        *this->fake_slot_writer, batt::make_copy(metadata));
+
+    if (this->metadata_refresher->grant_required() > 0) {
+      batt::Grant metadata_grant = BATT_OK_RESULT_OR_PANIC(this->fake_slot_writer->reserve(
+          this->metadata_refresher->grant_required(), batt::WaitForResource::kFalse));
+
+      batt::Status status = this->metadata_refresher->update_grant(metadata_grant);
+
+      ASSERT_TRUE(status.ok()) << BATT_INSPECT(status);
+
+      BATT_CHECK_EQ(this->metadata_refresher->grant_required(), 0u);
+    }
+
+    // Reacquire slot locks and grant for all pending jobs.
+    //
+    for (const auto& [slot_offset, job_info] : this->pending_jobs) {
+      ASSERT_NE(this->prepare_job_ptr.count(slot_offset), 0)
+          << "PackedPrepareJob slot not found for pending job at slot: " << slot_offset;
+
+      llfs::SlotReadLock slot_lock = BATT_OK_RESULT_OR_PANIC(this->trim_control->lock_slots(
+          llfs::SlotRange{slot_offset, slot_offset + 1}, "open_fake_log()"));
+
+      this->pending_job_slot_lock[slot_offset] =
+          std::make_unique<llfs::SlotReadLock>(std::move(slot_lock));
+
+      batt::Grant single_job_grant = BATT_OK_RESULT_OR_PANIC(this->fake_slot_writer->reserve(
+          job_info.commit_slot_size, batt::WaitForResource::kFalse));
+
+      this->job_grant->subsume(std::move(single_job_grant));
+    }
   }
 
   /** \brief Create a VolumeTrimmer for testing.
    */
   void initialize_trimmer()
   {
+    // Re-open the log and verify.
+    //
+    this->open_fake_log();
+
     ASSERT_TRUE(this->trim_control);
     ASSERT_TRUE(this->fake_log);
     ASSERT_TRUE(this->fake_slot_writer);
-    ASSERT_TRUE(this->recovery_visitor);
 
-    if (this->job_grant_size > 0) {
-      batt::StatusOr<batt::Grant> reserved =
-          this->fake_slot_writer->reserve(this->job_grant_size, batt::WaitForResource::kFalse);
-      if (!reserved.ok()) {
-        LLFS_LOG_ERROR() << "Failed to reserve grant;" << BATT_INSPECT(reserved.status())
-                         << BATT_INSPECT(this->job_grant_size)
-                         << BATT_INSPECT(this->fake_slot_writer->pool_size());
-      }
-      ASSERT_TRUE(reserved.ok());
-      this->job_grant.emplace(std::move(*reserved));
-    }
-
-    BATT_DEBUG_INFO(BATT_INSPECT(this->job_grant_size)
-                    << BATT_INSPECT(this->fake_log->size())
-                    << BATT_INSPECT(this->trimmer_grant_size_pre_shutdown));
-
-    LLFS_VLOG(1) << BATT_INSPECT(this->job_grant_size)
-                 << BATT_INSPECT(this->recovery_visitor->get_refresh_info())
-                 << BATT_INSPECT(this->recovery_visitor->get_trim_event_info())
-                 << BATT_INSPECT_RANGE(this->recovery_visitor->get_pending_jobs())
-                 << BATT_INSPECT(this->recovery_visitor->get_trimmer_grant_size())
-                 << BATT_INSPECT(this->trim_delay_byte_count);
-
-    this->trimmer = std::make_unique<llfs::VolumeTrimmer>(
-        this->volume_ids.trimmer_uuid, "TestTrimmer", *this->trim_control,
-        llfs::TrimDelayByteCount{this->trim_delay_byte_count},
-        this->fake_log->new_reader(/*slot_lower_bound=*/batt::None,
-                                   llfs::LogReadMode::kSpeculative),
-        *this->fake_slot_writer,
+    batt::StatusOr<std::unique_ptr<llfs::VolumeTrimmer>> new_trimmer = llfs::VolumeTrimmer::recover(
+        this->volume_ids.trimmer_uuid,                          //
+        /*name=*/"TestTrimmer",                                 //
+        llfs::TrimDelayByteCount{this->trim_delay_byte_count},  //
+        *this->fake_log,                                        //
+        *this->fake_slot_writer,                                //
         [this](auto&&... args) -> decltype(auto) {
           return this->handle_drop_roots(BATT_FORWARD(args)...);
         },
-        *this->recovery_visitor);
+        *this->trim_control,       //
+        *this->metadata_refresher  //
+    );
+
+    ASSERT_TRUE(new_trimmer.ok()) << BATT_INSPECT(new_trimmer.status());
+
+    // Set `last_recovered_trim_pos` so we don't think that trim delay is failing to
+    // arrest log trimming immediately after (re-)opening the log.
+    //
+    this->last_recovered_trim_pos =
+        this->fake_log->slot_range(llfs::LogReadMode::kDurable).lower_bound;
+
+    LLFS_VLOG(1) << "initialize_trimmer(): " << (void*)std::addressof(**new_trimmer);
+    this->trimmer = std::move(*new_trimmer);
 
     EXPECT_EQ(this->trimmer->uuid(), this->volume_ids.trimmer_uuid);
-
-    if (this->trimmer_grant_size_pre_shutdown != this->trimmer->grant_pool_size()) {
-      const i64 delta =
-          (i64)this->trimmer->grant_pool_size() - (i64)this->trimmer_grant_size_pre_shutdown;
-
-      LLFS_VLOG(1) << BATT_INSPECT(this->trimmer_grant_size_pre_shutdown) << ";"
-                   << BATT_INSPECT(this->trimmer->grant_pool_size()) << ";" << BATT_INSPECT(delta)
-                   << BATT_INSPECT(this->conserved_trimmer_grant_count)
-                   << BATT_INSPECT(this->fake_log_state->device_time);
-
-      this->conserved_trimmer_grant_count = 0;
-    } else {
-      this->conserved_trimmer_grant_count += 1;
-    }
 
     LLFS_VLOG(1) << "Starting trimmer task";
 
@@ -306,8 +286,6 @@ class VolumeTrimmerTest : public ::testing::Test
   {
     LLFS_VLOG(1) << "shutdown_trimmer()" << BATT_INSPECT(this->trimmer->grant_pool_size());
 
-    this->trimmer_grant_size_pre_shutdown = this->trimmer->grant_pool_size();
-
     // Tell everything to shut down.
     //
     this->shutting_down = true;
@@ -315,6 +293,7 @@ class VolumeTrimmerTest : public ::testing::Test
       this->shutting_down = false;
     });
 
+    this->prepare_job_ptr.clear();
     this->fake_log->close().IgnoreError();
     this->trimmer->halt();
     this->trim_control->halt();
@@ -322,8 +301,8 @@ class VolumeTrimmerTest : public ::testing::Test
     // Before we close the MemoryLogDevice (to unblock the VolumeTrimmer task), take a snapshot so
     // it can be restored afterward.
     //
-    auto snapshot =
-        llfs::LogDeviceSnapshot::from_device(*this->mem_log_device, llfs::LogReadMode::kDurable);
+    this->snapshot.emplace(
+        llfs::LogDeviceSnapshot::from_device(*this->mem_log_device, llfs::LogReadMode::kDurable));
 
     this->mem_log_device->close().IgnoreError();
 
@@ -337,12 +316,6 @@ class VolumeTrimmerTest : public ::testing::Test
         << "n_tasks=" << batt::Task::backtrace_all(/*force=*/true);
 
     LLFS_VLOG(1) << "Trimmer task joined";
-
-    // Re-open the log and verify.
-    //
-    this->mem_log_device.emplace(kLogSize);
-    this->mem_log_device->restore_snapshot(snapshot, llfs::LogReadMode::kDurable);
-    this->open_fake_log();
   }
 
   /** \brief Called in response to the VolumeTrimmer requesting that a set of PageId's be dropped
@@ -351,9 +324,12 @@ class VolumeTrimmerTest : public ::testing::Test
    * Verifies that the correct set of page ids is specified, according to the trimmed region pointed
    * to by the VolumeTrimEvent record at client_slot.
    */
-  batt::Status handle_drop_roots(llfs::slot_offset_type client_slot,
+  batt::Status handle_drop_roots(boost::uuids::uuid const& trimmer_uuid,
+                                 llfs::slot_offset_type client_slot,
                                  llfs::Slice<const llfs::PageId> page_ids)
   {
+    EXPECT_EQ(trimmer_uuid, this->volume_ids.trimmer_uuid);
+
     if (!llfs::slot_less_than(this->verified_client_slot, client_slot)) {
       return batt::OkStatus();
     }
@@ -383,12 +359,15 @@ class VolumeTrimmerTest : public ::testing::Test
 
               for (auto iter = this->committed_jobs.begin(); iter != this->committed_jobs.end();
                    iter = this->committed_jobs.erase(iter)) {
-                const auto& [prepare_slot, page_ids] = *iter;
+                const auto& [prepare_slot, job_info] = *iter;
                 if (!llfs::slot_less_than(prepare_slot, trim_event.new_trim_pos)) {
                   break;
                 }
+                auto& page_ids = job_info.page_ids;
+
                 LLFS_VLOG(1) << " -- expecting: " << BATT_INSPECT(prepare_slot)
                              << BATT_INSPECT_RANGE(page_ids);
+
                 expected_page_ids.insert(expected_page_ids.end(), page_ids.begin(), page_ids.end());
               }
 
@@ -437,8 +416,6 @@ class VolumeTrimmerTest : public ::testing::Test
     ASSERT_TRUE(this->fake_slot_writer);
     ASSERT_TRUE(this->trim_control);
 
-    this->opaque_data_attempt += 1;
-
     const usize data_size = this->pick_usize(kMinOpaqueDataSize, kMaxOpaqueDataSize);
     std::vector<char> buffer(data_size, 'a');
     std::string_view data_str{buffer.data(), buffer.size()};
@@ -465,8 +442,6 @@ class VolumeTrimmerTest : public ::testing::Test
     }
 
     LLFS_VLOG(1) << "Appended opaque data: " << batt::c_str_literal(data_str);
-
-    this->opaque_data_success += 1;
   }
 
   /** \brief Selects a pseudo-random trim point and updates the trim lock to cause the VolumeTrimmer
@@ -480,8 +455,6 @@ class VolumeTrimmerTest : public ::testing::Test
     ASSERT_TRUE(this->fake_log);
     ASSERT_TRUE(this->trim_control);
 
-    this->trim_attempt += 1;
-
     const llfs::SlotRange log_range = this->fake_log->slot_range(llfs::LogReadMode::kSpeculative);
     const llfs::SlotRange lock_range = this->trim_lock.slot_range();
     const llfs::SlotRange new_range{this->pick_usize(lock_range.lower_bound, log_range.upper_bound),
@@ -492,8 +465,6 @@ class VolumeTrimmerTest : public ::testing::Test
 
     this->trim_lock = BATT_OK_RESULT_OR_PANIC(this->trim_control->update_lock(
         std::move(this->trim_lock), new_range, "VolumeTrimmerTest::trim_log"));
-
-    this->trim_success += 1;
   }
 
   /** \brief Appends a psuedo-randomly generated PrepareJob slot containing one or more PageId
@@ -526,8 +497,8 @@ class VolumeTrimmerTest : public ::testing::Test
     };
 
     const usize prepare_slot_size = packed_sizeof_slot(prepare);
-    const usize commit_slot_size = packed_sizeof_slot(batt::StaticType<llfs::PackedCommitJob>{});
-    const usize n_to_reserve = (prepare_slot_size + commit_slot_size) * 2;
+    const usize commit_slot_size = packed_sizeof_commit_slot(prepare);
+    const usize n_to_reserve = (prepare_slot_size + commit_slot_size);
 
     batt::StatusOr<batt::Grant> slot_grant =
         this->fake_slot_writer->reserve(n_to_reserve, batt::WaitForResource::kFalse);
@@ -537,33 +508,35 @@ class VolumeTrimmerTest : public ::testing::Test
       return;
     }
 
-    llfs::VolumeTrimmer::metrics().prepare_grant_reserved_byte_count.add(prepare_slot_size);
-    this->prepare_attempt += 1;
-
-    {
-      batt::Grant trim_grant = BATT_OK_RESULT_OR_PANIC(slot_grant->spend(prepare_slot_size));
-      this->trimmer->push_grant(std::move(trim_grant));
-    }
-
-    batt::StatusOr<llfs::SlotRange> prepare_slot =
-        this->fake_slot_writer->append(*slot_grant, std::move(prepare));
+    batt::StatusOr<llfs::SlotParseWithPayload<const llfs::PackedPrepareJob*>> prepare_slot =
+        this->fake_slot_writer->typed_append(*slot_grant, std::move(prepare));
 
     ASSERT_TRUE(prepare_slot.ok() || this->fake_log_has_failed());
-
-    if (!this->job_grant) {
-      this->job_grant.emplace(std::move(*slot_grant));
-    } else {
-      this->job_grant->subsume(std::move(*slot_grant));
-    }
 
     if (prepare_slot.ok()) {
       LLFS_VLOG(1) << "Wrote prepare slot at " << *prepare_slot
                    << BATT_INSPECT(this->job_grant->size());
 
-      this->pending_jobs.emplace_back(prepare_slot->lower_bound, std::move(page_ids));
-    }
+      if (!this->job_grant) {
+        this->job_grant.emplace(std::move(*slot_grant));
+      } else {
+        this->job_grant->subsume(std::move(*slot_grant));
+      }
 
-    this->prepare_success += 1;
+      this->prepare_job_ptr[prepare_slot->slot.offset.lower_bound] = prepare_slot->payload;
+
+      this->pending_jobs.emplace(prepare_slot->slot.offset.lower_bound,
+                                 JobInfo{
+                                     .page_ids = std::move(page_ids),
+                                     .prepare_slot_size = prepare_slot_size,
+                                     .commit_slot_size = commit_slot_size,
+                                 });
+
+      this->pending_job_slot_lock.emplace(
+          prepare_slot->slot.offset.lower_bound,
+          std::make_unique<llfs::SlotReadLock>(BATT_OK_RESULT_OR_PANIC(
+              this->trim_control->lock_slots(prepare_slot->slot.offset, "prepare_one_job"))));
+    }
   }
 
   /** \brief Appends a CommitJob slot corresponding to a pending PrepareJob selected
@@ -577,64 +550,50 @@ class VolumeTrimmerTest : public ::testing::Test
 
     LLFS_VLOG(1) << "Committing job";
 
-    this->commit_attempt += 1;
-
     const usize grant_size_before = this->job_grant->size();
 
     const usize job_i = this->pick_usize(0, this->pending_jobs.size() - 1);
 
-    const llfs::PackedCommitJob commit{
-        .reserved_ = {},
-        .prepare_slot = this->pending_jobs[job_i].first,
+    const auto iter = std::next(this->pending_jobs.begin(), job_i);
+
+    llfs::slot_offset_type prepare_slot_offset = iter->first;
+    JobInfo& job_info = iter->second;
+
+    const llfs::CommitJob commit{
+        .prepare_slot = prepare_slot_offset,
+        .prepare_job = this->prepare_job_ptr[prepare_slot_offset],
     };
+
+    BATT_CHECK_NOT_NULLPTR(commit.prepare_job);
 
     const llfs::slot_offset_type log_upper_bound =
         this->mem_log_device->slot_range(llfs::LogReadMode::kSpeculative).upper_bound;
 
     ASSERT_LT(commit.prepare_slot, log_upper_bound)
-        << BATT_INSPECT(job_i) << BATT_INSPECT(this->pending_jobs.size())
-        << BATT_INSPECT_RANGE(this->pending_jobs);
-    ASSERT_GE(this->job_grant->size(), llfs::packed_sizeof_slot(commit) * 2);
+        << BATT_INSPECT(job_i) << BATT_INSPECT(this->pending_jobs.size());
 
     const usize commit_slot_size = llfs::packed_sizeof_slot(commit);
-    {
-      batt::Grant trim_grant = BATT_OK_RESULT_OR_PANIC(
-          this->job_grant->spend(commit_slot_size, batt::WaitForResource::kFalse));
-      this->trimmer->push_grant(std::move(trim_grant));
-    }
 
-    llfs::VolumeTrimmer::metrics().commit_grant_reserved_byte_count.add(commit_slot_size);
+    ASSERT_GE(this->job_grant->size(), commit_slot_size);
+    EXPECT_EQ(commit_slot_size, job_info.commit_slot_size);
 
     batt::StatusOr<llfs::SlotRange> commit_slot =
         this->fake_slot_writer->append(*this->job_grant, std::move(commit));
 
     const usize grant_size_after = this->job_grant->size();
-    const usize grant_size_spent = grant_size_before - grant_size_after;
 
     ASSERT_GE(grant_size_before, grant_size_after);
-
-    if (!commit_slot.ok() && grant_size_spent > 0) {
-      this->leaked_job_grant_size += grant_size_spent;
-    }
-
     ASSERT_TRUE(commit_slot.ok() || this->fake_log_has_failed());
 
     if (commit_slot.ok()) {
       LLFS_VLOG(1) << "Wrote commit slot at " << *commit_slot
                    << " (prepare_slot=" << commit.prepare_slot << ")";
 
-      std::swap(this->pending_jobs[job_i], this->pending_jobs.back());
+      this->committed_jobs.emplace(commit_slot->lower_bound, std::move(job_info));
 
-      LLFS_VLOG(1) << "adding {slot=" << commit_slot->lower_bound
-                   << ", page_ids=" << batt::dump_range(this->pending_jobs.back().second)
-                   << "} to committed_jobs";
-
-      this->committed_jobs.emplace(commit_slot->lower_bound,
-                                   std::move(this->pending_jobs.back().second));
-
-      this->pending_jobs.pop_back();
-
-      this->commit_success += 1;
+      this->pending_job_slot_lock.erase(prepare_slot_offset);
+      this->prepare_job_ptr.erase(prepare_slot_offset);
+      this->pending_jobs.erase(iter);
     }
   }
 
@@ -659,6 +618,13 @@ class VolumeTrimmerTest : public ::testing::Test
       } else {
         ASSERT_EQ(trim_pos, this->last_recovered_trim_pos)
             << BATT_INSPECT(least_locked_slot) << BATT_INSPECT(this->trim_delay_byte_count);
+      }
+
+      // No pending jobs should be trimmed!
+      //
+      for (const auto& [prepare_slot_offset, job_info] : this->pending_jobs) {
+        ASSERT_TRUE(!llfs::slot_less_than(prepare_slot_offset, trim_pos))
+            << BATT_INSPECT(prepare_slot_offset) << BATT_INSPECT(trim_pos);
       }
     }
   }
@@ -702,13 +668,37 @@ class VolumeTrimmerTest : public ::testing::Test
     BATT_CHECK_EQ(this->trimmer_task->try_join(), batt::Task::IsDone{true});
   }
 
+  template <typename T>
+  void handle_recovered_slot(const llfs::SlotParse& slot, const T& /*event*/)
+  {
+    LLFS_VLOG(1) << BATT_INSPECT(slot.offset) << BATT_INSPECT(batt::name_of<T>());
+  }
+
+  void handle_recovered_slot(const llfs::SlotParse& slot,
+                             const llfs::Ref<const llfs::PackedPrepareJob>& prepare)
+  {
+    this->prepare_job_ptr[slot.offset.lower_bound] = prepare.pointer();
+  }
+
+  void handle_recovered_slot(const llfs::SlotParse& /*slot*/,
+                             const llfs::Ref<const llfs::PackedCommitJob>& commit)
+  {
+    this->prepare_job_ptr.erase(commit.get().prepare_slot);
+  }
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  struct JobInfo {
+    std::vector<llfs::PageId> page_ids;
+    usize prepare_slot_size = 0;
+    usize commit_slot_size = 0;
+  };
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   std::default_random_engine rng{1234567};
 
   u64 trim_delay_byte_count = 0;
-
-  llfs::slot_offset_type last_recovered_trim_pos = 0;
 
   std::array<i64, kNumPages> page_ref_count;
 
@@ -719,8 +709,6 @@ class VolumeTrimmerTest : public ::testing::Test
       .trim_slot_offset = 0,
   };
 
-  llfs::VolumeMetadataRefreshInfo metadata_state;
-
   batt::Optional<llfs::MemoryLogDevice> mem_log_device;
 
   std::shared_ptr<FakeLogDevice::State> fake_log_state = nullptr;
@@ -729,47 +717,37 @@ class VolumeTrimmerTest : public ::testing::Test
 
   batt::Optional<llfs::TypedSlotWriter<llfs::VolumeEventVariant>> fake_slot_writer;
 
+  batt::Optional<llfs::LogDeviceSnapshot> snapshot;
+
   batt::FakeExecutionContext task_context;
 
   batt::Optional<llfs::SlotLockManager> trim_control;
 
   llfs::SlotReadLock trim_lock;
 
-  batt::Optional<llfs::VolumeTrimmerRecoveryVisitor> recovery_visitor;
-
   std::unique_ptr<llfs::VolumeTrimmer> trimmer;
 
   batt::Status trimmer_status;
 
-  std::vector<std::pair<llfs::slot_offset_type, std::vector<llfs::PageId>>> pending_jobs;
+  std::map<llfs::slot_offset_type, JobInfo> pending_jobs;
+
+  std::map<llfs::slot_offset_type, const llfs::PackedPrepareJob*> prepare_job_ptr;
+
+  std::map<llfs::slot_offset_type, std::unique_ptr<llfs::SlotReadLock>> pending_job_slot_lock;
 
   batt::Optional<batt::Grant> job_grant;
 
-  usize job_grant_size = 0;
-  usize leaked_job_grant_size = 0;
+  std::unique_ptr<llfs::VolumeMetadataRefresher> metadata_refresher;
 
-  std::map<llfs::slot_offset_type, std::vector<llfs::PageId>> committed_jobs;
+  std::map<llfs::slot_offset_type, JobInfo> committed_jobs;
 
   batt::Optional<batt::Task> trimmer_task;
 
   llfs::slot_offset_type verified_client_slot = 0;
 
+  llfs::slot_offset_type last_recovered_trim_pos = 0;
+
   bool shutting_down = false;
-
-  u64 trimmer_grant_size_pre_shutdown = 0;
-  u64 conserved_trimmer_grant_count = 0;
-
-  usize opaque_data_attempt = 0;
-  usize opaque_data_success = 0;
-
-  usize trim_attempt = 0;
-  usize trim_success = 0;
-
-  usize prepare_attempt = 0;
-  usize prepare_success = 0;
-
-  usize commit_attempt = 0;
-  usize commit_success = 0;
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
@@ -778,9 +756,9 @@ TEST_F(VolumeTrimmerTest, RandomizedTest)
 {
   const bool kExtraTesting = batt::getenv_as<int>("LLFS_EXTRA_TESTING").value_or(0);
   const usize kNumSeeds = kExtraTesting ? 10 * 1000 * 1000 : 100 * 1000;
-  const int kLogEveryN = kExtraTesting ? 10 * 1000 : 100;
-  const usize kInitialSeed = 8424;  //1;
-  const usize kNumThreads = 1;      //std::thread::hardware_concurrency();
+  const int kLogEveryN = kNumSeeds / 10;
+  const usize kInitialSeed = 1;
+  const usize kNumThreads = 1;  //std::thread::hardware_concurrency();
 
   batt::Watch<usize> crash_count{0};
   batt::Watch<usize> max_log_size{0};
@@ -797,11 +775,6 @@ TEST_F(VolumeTrimmerTest, RandomizedTest)
     for (usize seed_i = kInitialSeed + thread_i; seed_i < kInitialSeed + kNumSeeds;
          seed_i += kNumThreads) {
       BATT_DEBUG_INFO(BATT_INSPECT(seed_i)
-                      << BATT_INSPECT(this->opaque_data_attempt)
-                      << BATT_INSPECT(this->opaque_data_success) << BATT_INSPECT(this->trim_attempt)
-                      << BATT_INSPECT(this->trim_success) << BATT_INSPECT(this->prepare_attempt)
-                      << BATT_INSPECT(this->prepare_success) << BATT_INSPECT(this->commit_attempt)
-                      << BATT_INSPECT(this->commit_success)
                       << BATT_INSPECT(this->fake_log->slot_range(llfs::LogReadMode::kSpeculative)));
 
       LLFS_LOG_INFO_EVERY_N(kLogEveryN) << "Starting new test run with empty log;"
@@ -819,7 +792,6 @@ TEST_F(VolumeTrimmerTest, RandomizedTest)
       //
       this->trim_delay_byte_count = this->pick_usize(0, 16) * 64;
 
-      this->open_fake_log();
       this->initialize_trimmer();
 
       std::ofstream ofs{batt::to_string("/tmp/volume_trimmer_", seed_i, ".csv")};

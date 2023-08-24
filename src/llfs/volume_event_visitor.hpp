@@ -26,6 +26,10 @@ template <typename R>
 class VolumeEventVisitor
 {
  public:
+  class NullImpl;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   static VolumeEventVisitor& null_impl();
 
   VolumeEventVisitor(const VolumeEventVisitor&) = delete;
@@ -46,7 +50,7 @@ class VolumeEventVisitor
 
   LLFS_VOLUME_EVENT_HANDLER_DECL(Ref<const PackedRawData>, on_raw_data)
   LLFS_VOLUME_EVENT_HANDLER_DECL(Ref<const PackedPrepareJob>, on_prepare_job)
-  LLFS_VOLUME_EVENT_HANDLER_DECL(PackedCommitJob, on_commit_job)
+  LLFS_VOLUME_EVENT_HANDLER_DECL(Ref<const PackedCommitJob>, on_commit_job)
   LLFS_VOLUME_EVENT_HANDLER_DECL(PackedRollbackJob, on_rollback_job)
   LLFS_VOLUME_EVENT_HANDLER_DECL(PackedVolumeAttachEvent, on_volume_attach)
   LLFS_VOLUME_EVENT_HANDLER_DECL(PackedVolumeDetachEvent, on_volume_detach)
@@ -61,65 +65,68 @@ class VolumeEventVisitor
   VolumeEventVisitor() = default;
 };
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+
+template <typename R>
+class VolumeEventVisitor<R>::NullImpl : public VolumeEventVisitor<R>
+{
+ public:
+  R on_raw_data(const SlotParse&, const Ref<const PackedRawData>&) override
+  {
+    return batt::make_default<R>();
+  }
+
+  R on_prepare_job(const SlotParse&, const Ref<const PackedPrepareJob>&) override
+  {
+    return batt::make_default<R>();
+  }
+
+  R on_commit_job(const SlotParse&, const Ref<const PackedCommitJob>&) override
+  {
+    return batt::make_default<R>();
+  }
+
+  R on_rollback_job(const SlotParse&, const PackedRollbackJob&) override
+  {
+    return batt::make_default<R>();
+  }
+
+  R on_volume_attach(const SlotParse&, const PackedVolumeAttachEvent&) override
+  {
+    return batt::make_default<R>();
+  }
+
+  R on_volume_detach(const SlotParse&, const PackedVolumeDetachEvent&) override
+  {
+    return batt::make_default<R>();
+  }
+
+  R on_volume_ids(const SlotParse&, const PackedVolumeIds&) override
+  {
+    return batt::make_default<R>();
+  }
+
+  R on_volume_recovered(const SlotParse&, const PackedVolumeRecovered&) override
+  {
+    return batt::make_default<R>();
+  }
+
+  R on_volume_format_upgrade(const SlotParse&, const PackedVolumeFormatUpgrade&) override
+  {
+    return batt::make_default<R>();
+  }
+
+  R on_volume_trim(const SlotParse&, const VolumeTrimEvent&) override
+  {
+    return batt::make_default<R>();
+  }
+};
+
 //#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
 
 template <typename R>
 /*static*/ VolumeEventVisitor<R>& VolumeEventVisitor<R>::null_impl()
 {
-  class NullImpl : public VolumeEventVisitor<R>
-  {
-   public:
-    R on_raw_data(const SlotParse&, const Ref<const PackedRawData>&) override
-    {
-      return batt::make_default<R>();
-    }
-
-    R on_prepare_job(const SlotParse&, const Ref<const PackedPrepareJob>&) override
-    {
-      return batt::make_default<R>();
-    }
-
-    R on_commit_job(const SlotParse&, const PackedCommitJob&) override
-    {
-      return batt::make_default<R>();
-    }
-
-    R on_rollback_job(const SlotParse&, const PackedRollbackJob&) override
-    {
-      return batt::make_default<R>();
-    }
-
-    R on_volume_attach(const SlotParse&, const PackedVolumeAttachEvent&) override
-    {
-      return batt::make_default<R>();
-    }
-
-    R on_volume_detach(const SlotParse&, const PackedVolumeDetachEvent&) override
-    {
-      return batt::make_default<R>();
-    }
-
-    R on_volume_ids(const SlotParse&, const PackedVolumeIds&) override
-    {
-      return batt::make_default<R>();
-    }
-
-    R on_volume_recovered(const SlotParse&, const PackedVolumeRecovered&) override
-    {
-      return batt::make_default<R>();
-    }
-
-    R on_volume_format_upgrade(const SlotParse&, const PackedVolumeFormatUpgrade&) override
-    {
-      return batt::make_default<R>();
-    }
-
-    R on_volume_trim(const SlotParse&, const VolumeTrimEvent&) override
-    {
-      return batt::make_default<R>();
-    }
-  };
-
   // It's OK that this is non-const, since it has no state.
   //
   static NullImpl impl_;

@@ -408,6 +408,28 @@ void VolumeTrimmerTest::LogSession::initialize(const Config& config, SimRun& sim
   }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
+  // Reacquire slot locks and grant for all pending jobs.
+  //
+  {
+    BATT_CHECK(this->pending_job_slot_lock.empty());
+
+    for (const auto& [slot_offset, job_info] : this->sim->pending_jobs) {
+      ASSERT_NE(this->prepare_job_ptr.count(slot_offset), 0)
+          << "PackedPrepareJob slot not found for pending job at slot: " << slot_offset;
+
+      llfs::SlotReadLock slot_lock = BATT_OK_RESULT_OR_PANIC(this->trim_control->lock_slots(
+          llfs::SlotRange{slot_offset, slot_offset + 1}, "open_fake_log()"));
+
+      this->pending_job_slot_lock[slot_offset] = std::move(slot_lock);
+
+      batt::Grant single_job_grant = BATT_OK_RESULT_OR_PANIC(
+          this->slot_writer->reserve(job_info.commit_slot_size, batt::WaitForResource::kFalse));
+
+      this->job_grant->subsume(std::move(single_job_grant));
+    }
+  }
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
   // Initialize the VolumeMetadataRefresher.
   //
   {
@@ -429,28 +451,6 @@ void VolumeTrimmerTest::LogSession::initialize(const Config& config, SimRun& sim
       batt::Status update_status = this->metadata_refresher->update_grant_partial(*metadata_grant);
 
       ASSERT_TRUE(update_status.ok()) << BATT_INSPECT(update_status);
-    }
-  }
-
-  //+++++++++++-+-+--+----- --- -- -  -  -   -
-  // Reacquire slot locks and grant for all pending jobs.
-  //
-  {
-    BATT_CHECK(this->pending_job_slot_lock.empty());
-
-    for (const auto& [slot_offset, job_info] : this->sim->pending_jobs) {
-      ASSERT_NE(this->prepare_job_ptr.count(slot_offset), 0)
-          << "PackedPrepareJob slot not found for pending job at slot: " << slot_offset;
-
-      llfs::SlotReadLock slot_lock = BATT_OK_RESULT_OR_PANIC(this->trim_control->lock_slots(
-          llfs::SlotRange{slot_offset, slot_offset + 1}, "open_fake_log()"));
-
-      this->pending_job_slot_lock[slot_offset] = std::move(slot_lock);
-
-      batt::Grant single_job_grant = BATT_OK_RESULT_OR_PANIC(
-          this->slot_writer->reserve(job_info.commit_slot_size, batt::WaitForResource::kFalse));
-
-      this->job_grant->subsume(std::move(single_job_grant));
     }
   }
 

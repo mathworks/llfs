@@ -135,7 +135,6 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
         .main_uuid = volume_options.uuid.value_or(boost::uuids::random_generator{}()),
         .recycler_uuid = recycler->uuid(),
         .trimmer_uuid = boost::uuids::random_generator{}(),
-        .trim_slot_offset = slot_writer->get_trim_pos(),
     });
   }
 
@@ -205,21 +204,20 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
       }
     }
 
-    auto refresh_metadata_grant = [&]() -> Status {
-      batt::Grant grant = BATT_OK_RESULT_OR_PANIC(slot_writer->reserve(
-          metadata_refresher->grant_required(), batt::WaitForResource::kFalse));
-
-      BATT_REQUIRE_OK(metadata_refresher->update_grant(grant));
-
-      return OkStatus();
-    };
-
-    BATT_REQUIRE_OK(refresh_metadata_grant());
-
+    //----- --- -- -  -  -   -
+    // Flush any non-durable metadata to the log.
+    //
     if (metadata_refresher->needs_flush()) {
+      batt::Grant initial_metadata_flush_grant = BATT_OK_RESULT_OR_PANIC(slot_writer->reserve(
+          metadata_refresher->flush_grant_size(), batt::WaitForResource::kFalse));
+
       BATT_REQUIRE_OK(metadata_refresher->flush());
-      BATT_REQUIRE_OK(refresh_metadata_grant());
     }
+
+    batt::Grant initial_metadata_refresh_grant = BATT_OK_RESULT_OR_PANIC(slot_writer->reserve(
+        metadata_visitor.calculate_initial_refresh_grant(), batt::WaitForResource::kFalse));
+
+    BATT_REQUIRE_OK(metadata_refresher->update_grant(initial_metadata_refresh_grant));
   }
 
   {

@@ -158,6 +158,20 @@ class MemoryLogDevice : public BasicRingBufferLogDevice</*Impl=*/MemoryLogStorag
  public:
   explicit MemoryLogDevice(usize size) noexcept;
 
+  /** \brief Equivalent to constructing a MemoryLogDevice with `size` and then calling
+   * `restore_snapshot(snapshot, mode)`.
+   */
+  explicit MemoryLogDevice(usize size, const LogDeviceSnapshot& snapshot,
+                           LogReadMode mode) noexcept;
+
+  /** \brief Restores the state of the log device from the passed snapshot.
+   *
+   * If `mode` is LogReadMode::kDurable, the commit pos is set to the flush pos, emulating the
+   * effect of post-crash recovery.
+   *
+   * If `mode` is LogReadMode::kSpeculative, then the saved commit pos from the snapshot is used to
+   * set the commit pos of this device.
+   */
   void restore_snapshot(const LogDeviceSnapshot& snapshot, LogReadMode mode);
 };
 

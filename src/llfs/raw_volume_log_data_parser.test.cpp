@@ -111,7 +111,6 @@ class RawVolumeLogDataParserTest : public ::testing::Test
       .main_uuid = llfs::random_uuid(),
       .recycler_uuid = llfs::random_uuid(),
       .trimmer_uuid = llfs::random_uuid(),
-      .trim_slot_offset = 0,
   };
 
   const std::string_view user_event_1 = "user event 1";

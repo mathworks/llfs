@@ -93,6 +93,9 @@ const usize kTrimEventGrantSize =
         /*slot_lower_bound=*/None, LogReadMode::kDurable);
 
   } else {
+    LLFS_VLOG(1) << "[VolumeTrimmer::recover] resolving partial trim:"
+                 << BATT_INSPECT(trim_event_info);
+
     // A pending VolumeTrimEventInfo record was recovered from the log.  Scan the trimmed region and
     // complete the trim before creating the VolumeTrimmer object.
     //
@@ -105,18 +108,20 @@ const usize kTrimEventGrantSize =
 
     TypedSlotReader<VolumeEventVariant> slot_reader{*log_reader};
 
-    StatusOr<VolumeTrimmedRegionInfo> trimmed_region_info =
-        read_trimmed_region(slot_reader, trim_upper_bound);
+    // have_trim_event_grant arg is set to true because, evidently, we had a trim event grant when
+    // this was written!
+    //
+    StatusOr<VolumeTrimmedRegionInfo> trimmed_region_info = read_trimmed_region(
+        slot_reader, metadata_refresher, HaveTrimEventGrant{true}, trim_upper_bound);
 
     BATT_REQUIRE_OK(trimmed_region_info);
 
     //----- --- -- -  -  -   -
-    // There is no need to refresh metadata or write a trim event; the presence of the recovered but
-    // incomplete trim event slot proves that both of these steps were already completed.
+    // Metadata is refreshed *after* writing the trim event, so it has already been done!
     //----- --- -- -  -  -   -
 
-    // Sanity check; the scanned slot range should be the same as it was when the trim event record
-    // was written.
+    // Sanity check; the scanned slot range should be the same as it was when the trim event
+    // record was written.
     //
     BATT_CHECK_EQ(trim_event_info->trimmed_region_slot_range, trimmed_region_info->slot_range);
 
@@ -124,7 +129,7 @@ const usize kTrimEventGrantSize =
     // region necessary to pay for the next trim event, but since we're going to allocate a new
     // grant inside VolumeTrimmer::VolumeTrimmer anyhow, this is just a formality.
     //
-    // The grant size is 0 here because the trim even was already written, prior to recovery.
+    // We preallocate the grant here because the trim even was already written, prior to recovery.
     //
     batt::Grant grant =
         BATT_OK_RESULT_OR_PANIC(slot_writer.reserve(0, batt::WaitForResource::kFalse));
@@ -162,9 +167,19 @@ const usize kTrimEventGrantSize =
     , slot_writer_{slot_writer}
     , drop_roots_{std::move(drop_roots_fn)}
     , trimmer_grant_{BATT_OK_RESULT_OR_PANIC(
-          this->slot_writer_.reserve(kTrimEventGrantSize, batt::WaitForResource::kFalse))}
+          this->slot_writer_.reserve(0, batt::WaitForResource::kFalse))}
     , metadata_refresher_{metadata_refresher}
 {
+  StatusOr<batt::Grant> init_grant = this->slot_writer_.reserve(
+      std::min<usize>(this->slot_writer_.pool_size(), kTrimEventGrantSize),
+      batt::WaitForResource::kFalse);
+
+  BATT_CHECK_OK(init_grant) << BATT_INSPECT(kTrimEventGrantSize)
+                            << BATT_INSPECT(this->slot_writer_.log_size())
+                            << BATT_INSPECT(this->slot_writer_.log_capacity())
+                            << BATT_INSPECT(this->slot_writer_.pool_size());
+
+  this->trimmer_grant_.subsume(std::move(*init_grant));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -224,8 +239,10 @@ Status VolumeTrimmer::run()
     // Scan the trimmed region.
     //
     LLFS_VLOG(1) << "[VolumeTrimmer] read_trimmed_region";
-    StatusOr<VolumeTrimmedRegionInfo> trimmed_region_info =
-        read_trimmed_region(this->slot_reader_, *trim_upper_bound);
+    //
+    StatusOr<VolumeTrimmedRegionInfo> trimmed_region_info = read_trimmed_region(
+        this->slot_reader_, this->metadata_refresher_,
+        HaveTrimEventGrant{this->trimmer_grant_.size() >= kTrimEventGrantSize}, *trim_upper_bound);
 
     BATT_REQUIRE_OK(trimmed_region_info);
 
@@ -240,14 +257,19 @@ Status VolumeTrimmer::run()
     {
       Optional<slot_offset_type> sync_point;
 
-      //+++++++++++-+-+--+----- --- -- -  -  -   -
-      // Make sure all Volume metadata has been refreshed.
+      // Invalidate the new trim pos with the metadata refresher, since it might make the difference
+      // between writing a trim event and not.
       //
       LLFS_VLOG(1) << "[VolumeTrimmer] metadata_refresher.invalidate(" << *trim_upper_bound << ")"
                    << BATT_INSPECT(this->metadata_refresher_.grant_target())
                    << BATT_INSPECT(this->metadata_refresher_.grant_required())
                    << BATT_INSPECT(this->metadata_refresher_.grant_size());
+
       BATT_REQUIRE_OK(this->metadata_refresher_.invalidate(*trim_upper_bound));
+
+      //+++++++++++-+-+--+----- --- -- -  -  -   -
+      // Make sure all Volume metadata has been refreshed.
+      //
       if (this->metadata_refresher_.needs_flush()) {
         StatusOr<SlotRange> metadata_slots = this->metadata_refresher_.flush();
         BATT_REQUIRE_OK(metadata_slots);
@@ -257,9 +279,12 @@ Status VolumeTrimmer::run()
 
       //+++++++++++-+-+--+----- --- -- -  -  -   -
       // Write a TrimEvent to the log if necessary.
+      //  IMPORTANT: this must come BEFORE refreshing metadata so that we don't refresh metadata,
+      //  crash, then forget there was a trim; this could exhaust available grant!
       //
       if (trimmed_region_info->requires_trim_event_slot()) {
         LLFS_VLOG(1) << "[VolumeTrimmer] write_trim_event";
+        //
         BATT_ASSIGN_OK_RESULT(
             trim_event_info,
             write_trim_event(this->slot_writer_, this->trimmer_grant_, *trimmed_region_info));
@@ -273,7 +298,7 @@ Status VolumeTrimmer::run()
       if (sync_point) {
         LLFS_VLOG(1) << "Flushing trim event," << BATT_INSPECT(*sync_point) << ";"
                      << BATT_INSPECT(trimmed_region_info->slot_range);
-
+        //
         BATT_REQUIRE_OK(
             this->slot_writer_.sync(LogReadMode::kDurable, SlotUpperBoundAt{*sync_point}));
       }
@@ -365,7 +390,9 @@ Status trim_volume_log(const boost::uuids::uuid& trimmer_uuid,
 {
   LLFS_VLOG(1) << "trim_volume_log()" << BATT_INSPECT(trimmed_region.slot_range);
 
-  BATT_CHECK_EQ(trimmed_region.requires_trim_event_slot(), bool{trim_event});
+  auto on_scope_exit = batt::finally([&] {
+    BATT_CHECK_LE(grant.size(), kTrimEventGrantSize);
+  });
 
   // If we found some obsolete jobs in the newly trimmed log segment, then collect up all root set
   // ref counts to release.
@@ -378,8 +405,9 @@ Status trim_volume_log(const boost::uuids::uuid& trimmer_uuid,
     BATT_REQUIRE_OK(
         drop_roots(trimmer_uuid, trim_event->trim_event_slot.lower_bound, as_slice(roots_to_trim)));
   }
-  // ** IMPORTANT ** It is only safe to trim the log after `commit(PageCacheJob, ...)` returns;
-  // otherwise we will lose information about which root set page references to remove!
+  // ** IMPORTANT ** It is only safe to trim the log after `commit(PageCacheJob, ...)` (which is
+  // called inside `drop_roots`) returns; otherwise we will lose information about which root set
+  // page references to remove!
 
   StatusOr<batt::Grant> trimmed_space = [&slot_writer, &trimmed_region] {
     BATT_DEBUG_INFO("[VolumeTrimmer] SlotWriter::trim_and_reserve("
@@ -388,17 +416,27 @@ Status trim_volume_log(const boost::uuids::uuid& trimmer_uuid,
   }();
   BATT_REQUIRE_OK(trimmed_space);
 
-  // Use as much of the trimmed space as necessary to restore the metadata refresher's grant.
-  //
-  BATT_REQUIRE_OK(metadata_refresher.update_grant(*trimmed_space));
-
   // Take some of the trimmed space and retain it to cover the trim event that was just written.
   //
-  if (trim_event) {
+  if (trim_event && grant.size() < kTrimEventGrantSize) {
     StatusOr<batt::Grant> trim_event_grant =
-        trimmed_space->spend(kTrimEventGrantSize, batt::WaitForResource::kFalse);
-    BATT_REQUIRE_OK(trim_event_grant);
+        trimmed_space->spend(kTrimEventGrantSize - grant.size(), batt::WaitForResource::kFalse);
+
+    BATT_REQUIRE_OK(trim_event_grant)
+        << BATT_INSPECT(slot_writer.log_size()) << BATT_INSPECT(slot_writer.log_capacity())
+        << BATT_INSPECT(slot_writer.pool_size()) << BATT_INSPECT(grant.size());
+
     grant.subsume(std::move(*trim_event_grant));
+  }
+
+  if (grant.size() >= kTrimEventGrantSize) {
+    // Use as much of the trimmed space as necessary to restore the metadata refresher's grant.
+    //
+    LLFS_VLOG(1) << "trim_volume_log(): updating metadata refresher grant;"
+                 << BATT_INSPECT(metadata_refresher.grant_required())
+                 << BATT_INSPECT(trimmed_space->size());
+
+    BATT_REQUIRE_OK(metadata_refresher.update_grant_partial(*trimmed_space));
   }
 
   return batt::OkStatus();

@@ -34,8 +34,12 @@ class VolumeMetadataRecoveryVisitor : public VolumeEventVisitor<Status>::NullImp
   //
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  usize calculate_initial_refresh_grant() const noexcept;
+
  private:
   VolumeMetadata& metadata_;
+  bool ids_duplicated_ = false;
+  std::unordered_set<VolumeAttachmentId, VolumeAttachmentId::Hash> attachment_duplicated_;
 };
 
 }  //namespace llfs

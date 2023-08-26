@@ -32,8 +32,8 @@ namespace llfs {
 class VolumeMetadataRefresher
 {
  public:
-  static const usize kAttachmentGrantSize =
-      packed_sizeof_slot_with_payload_size(sizeof(PackedVolumeAttachEvent));
+  static const usize kVolumeIdsGrantSize = VolumeMetadata::kVolumeIdsGrantSize;
+  static const usize kAttachmentGrantSize = VolumeMetadata::kAttachmentGrantSize;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -44,6 +44,17 @@ class VolumeMetadataRefresher
   VolumeMetadataRefresher& operator=(const VolumeMetadataRefresher&) = delete;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief Returns the most recent slot at which the volume ids were refreshed, or None if they
+   * are not currently in the log.
+   */
+  Optional<slot_offset_type> ids_last_refresh_slot() const noexcept;
+
+  /** \brief Returns the most recent slot at which the given attachment was refreshed, or None if it
+   * is not currently in the log.
+   */
+  Optional<slot_offset_type> attachment_last_refresh_slot(
+      const VolumeAttachmentId& attach_id) const noexcept;
 
   /** \brief Returns the size that the refresh grant *should*, ideally, be.
    */
@@ -57,6 +68,12 @@ class VolumeMetadataRefresher
    * `this->grant_target() - this->grant_size()`.
    */
   u64 grant_required() const noexcept;
+
+  /** \brief Spends some of `pool`, if necessary, to bring the refresh grant up to where it should
+   * be.  Differs from this->update_grant(pool) in that this function does not fail if it can only
+   * grab _some_ grant from `pool`.
+   */
+  Status update_grant_partial(batt::Grant& pool) noexcept;
 
   /** \brief Spends some of `pool`, if necessary, to bring the refresh grant up to where it should
    * be.
@@ -85,6 +102,10 @@ class VolumeMetadataRefresher
    */
   bool needs_flush() const noexcept;
 
+  /** \brief The size of grant needed to call flush() successfully.
+   */
+  u64 flush_grant_size() const noexcept;
+
   /** \brief Writes all pending updates to the log, returning the slot range of the update(s).
    */
   StatusOr<SlotRange> flush() noexcept;
@@ -97,11 +118,18 @@ class VolumeMetadataRefresher
     explicit State(TypedSlotWriter<VolumeEventVariant>& slot_writer,
                    VolumeMetadata&& recovered) noexcept;
 
+    Optional<slot_offset_type> ids_last_refresh_slot() const noexcept;
+
+    Optional<slot_offset_type> attachment_last_refresh_slot(
+        const VolumeAttachmentId& attach_id) const noexcept;
+
     u64 grant_target() const noexcept;
 
     u64 grant_size() const noexcept;
 
     u64 grant_required() const noexcept;
+
+    Status update_grant_partial(batt::Grant& pool) noexcept;
 
     Status update_grant(batt::Grant& pool) noexcept;
 
@@ -115,6 +143,8 @@ class VolumeMetadataRefresher
     Status invalidate(slot_offset_type slot_offset) noexcept;
 
     bool needs_flush() const noexcept;
+
+    u64 flush_grant_size() const noexcept;
 
     StatusOr<SlotRange> flush() noexcept;
 

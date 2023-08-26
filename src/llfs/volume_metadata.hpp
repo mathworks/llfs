@@ -33,6 +33,16 @@ struct VolumeMetadata {
     PackedVolumeAttachEvent event;
   };
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  static const usize kVolumeIdsGrantSize =
+      packed_sizeof_slot_with_payload_size(sizeof(PackedVolumeIds));
+
+  static const usize kAttachmentGrantSize =
+      packed_sizeof_slot_with_payload_size(sizeof(PackedVolumeAttachEvent));
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   /** \brief The uuids for this Volume.
    */
   Optional<PackedVolumeIds> ids;
@@ -44,6 +54,13 @@ struct VolumeMetadata {
   /** \brief The current set of attachments, with most recent slot (if present).
    */
   std::unordered_map<VolumeAttachmentId, AttachInfo, VolumeAttachmentId::Hash> attachments;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  u64 grant_target() const noexcept
+  {
+    return kVolumeIdsGrantSize + kAttachmentGrantSize * this->attachments.size();
+  }
 };
 
 }  //namespace llfs

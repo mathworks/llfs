@@ -34,7 +34,6 @@ struct PackedVolumeIds {
   boost::uuids::uuid main_uuid;
   boost::uuids::uuid recycler_uuid;
   boost::uuids::uuid trimmer_uuid;
-  little_u64 trim_slot_offset;
 };
 
 LLFS_SIMPLE_PACKED_TYPE(PackedVolumeIds);

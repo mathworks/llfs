@@ -19,6 +19,21 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+Optional<slot_offset_type> VolumeMetadataRefresher::ids_last_refresh_slot() const noexcept
+{
+  return this->state_.lock()->ids_last_refresh_slot();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Optional<slot_offset_type> VolumeMetadataRefresher::attachment_last_refresh_slot(
+    const VolumeAttachmentId& attach_id) const noexcept
+{
+  return this->state_.lock()->attachment_last_refresh_slot(attach_id);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 u64 VolumeMetadataRefresher::grant_target() const noexcept
 {
   return this->state_.lock()->grant_target();
@@ -36,6 +51,13 @@ u64 VolumeMetadataRefresher::grant_size() const noexcept
 u64 VolumeMetadataRefresher::grant_required() const noexcept
 {
   return this->state_.lock()->grant_required();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status VolumeMetadataRefresher::update_grant_partial(batt::Grant& pool) noexcept
+{
+  return this->state_.lock()->update_grant_partial(pool);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -84,6 +106,13 @@ bool VolumeMetadataRefresher::needs_flush() const noexcept
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+u64 VolumeMetadataRefresher::flush_grant_size() const noexcept
+{
+  return this->state_.lock()->flush_grant_size();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 StatusOr<SlotRange> VolumeMetadataRefresher::flush() noexcept
 {
   return this->state_.lock()->flush();
@@ -98,8 +127,7 @@ StatusOr<SlotRange> VolumeMetadataRefresher::flush() noexcept
                                                    VolumeMetadata&& metadata) noexcept
     : slot_writer_{slot_writer}
     , metadata_{std::move(metadata)}
-    , grant_{BATT_OK_RESULT_OR_PANIC(
-          this->slot_writer_.reserve(this->grant_target(), batt::WaitForResource::kFalse))}
+    , grant_{BATT_OK_RESULT_OR_PANIC(this->slot_writer_.reserve(0, batt::WaitForResource::kFalse))}
 {
   BATT_CHECK(this->metadata_.ids);
 
@@ -116,10 +144,28 @@ StatusOr<SlotRange> VolumeMetadataRefresher::flush() noexcept
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+Optional<slot_offset_type> VolumeMetadataRefresher::State::ids_last_refresh_slot() const noexcept
+{
+  return this->metadata_.ids_last_refresh;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Optional<slot_offset_type> VolumeMetadataRefresher::State::attachment_last_refresh_slot(
+    const VolumeAttachmentId& attach_id) const noexcept
+{
+  auto iter = this->metadata_.attachments.find(attach_id);
+  if (iter == this->metadata_.attachments.end()) {
+    return None;
+  }
+  return iter->second.last_refresh;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 u64 VolumeMetadataRefresher::State::grant_target() const noexcept
 {
-  return packed_sizeof_slot_with_payload_size(sizeof(PackedVolumeIds)) +
-         kAttachmentGrantSize * this->attachment_count();
+  return this->metadata_.grant_target();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -136,6 +182,26 @@ u64 VolumeMetadataRefresher::State::grant_required() const noexcept
   const u64 target = this->grant_target();
 
   return target - std::min(target, this->grant_size());
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status VolumeMetadataRefresher::State::update_grant_partial(batt::Grant& pool) noexcept
+{
+  for (;;) {
+    StatusOr<batt::Grant> spent = pool.spend(std::min<usize>(pool.size(), this->grant_required()),
+                                             batt::WaitForResource::kFalse);
+
+    if (spent.status() == batt::StatusCode::kGrantUnavailable) {
+      // retry...
+      continue;
+    }
+    if (spent.ok()) {
+      this->grant_.subsume(std::move(*spent));
+      return OkStatus();
+    }
+    return spent.status();
+  }
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -226,6 +292,14 @@ Status VolumeMetadataRefresher::State::invalidate(slot_offset_type slot_offset) 
 bool VolumeMetadataRefresher::State::needs_flush() const noexcept
 {
   return this->ids_need_refresh_ || !this->attachments_needing_refresh_.empty();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+u64 VolumeMetadataRefresher::State::flush_grant_size() const noexcept
+{
+  return (this->ids_need_refresh_ ? kVolumeIdsGrantSize : 0u) +
+         (this->attachments_needing_refresh_.size() * kAttachmentGrantSize);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

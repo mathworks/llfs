@@ -218,6 +218,10 @@ struct PrepareJob {
   BoxedSeq<PageId> new_page_ids;
   BoxedSeq<PageId> deleted_page_ids;
   BoxedSeq<page_device_id_int> page_device_ids;
+
+  // This is the source of both the opaque user data at the end of the slot and the `root_page_ids`
+  // in PackedPrepareJob.
+  //
   PackableRef user_data;
 };
 

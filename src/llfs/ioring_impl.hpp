@@ -37,6 +37,7 @@
 #include <mutex>
 
 namespace llfs {
+
 class IoRingImpl
 {
  public:
@@ -122,10 +123,7 @@ class IoRingImpl
 
   Status unregister_buffers_with_lock(const std::unique_lock<std::mutex>&) noexcept;
 
-  // Removes the specified user_fd from the registered fds table, returning the previously
-  // registered system fd that was in that slot.
-  //
-  i32 free_user_fd(i32 user_fd) noexcept;
+  Status unregister_files_with_lock(const std::unique_lock<std::mutex>&) noexcept;
 
   /** \brief Blocks the caller until the event_fd_ is signalled.
    *
@@ -319,7 +317,9 @@ inline void IoRingImpl::submit(
   // Increment work count; decrement in invoke_handler.
   //
   LLFS_DVLOG(1) << "(submit) before; " << BATT_INSPECT(this->work_count_);
+  //
   this->on_work_started();
+  //
   LLFS_DVLOG(1) << "(submit) after; " << BATT_INSPECT(this->work_count_);
 
   // Finally, submit the request.

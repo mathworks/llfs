@@ -43,69 +43,83 @@ namespace llfs {
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-
-inline constexpr u64 disk_block_floor(u64 n)
-{
-  return n & ~u64{511};
-}
-
-inline constexpr u64 disk_block_ceil(u64 n)
-{
-  return disk_block_floor(n + 511);
-}
-
-//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-//
 class IoRing
 {
  public:
+  // See <llfs/ioring_file.hpp>
+  //
   class File;
 
   using Impl = IoRingImpl;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  /** \brief Creates and returns a new io_uring with the specified maximum queue depth.
+   */
   static StatusOr<IoRing> make_new(MaxQueueDepth entries) noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  /** \brief IoRing is move-only (no copying).
+   */
   IoRing(const IoRing&) = delete;
+
+  /** \brief IoRing is move-only (no copying).
+   */
   IoRing& operator=(const IoRing&) = delete;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  /** \brief IoRing is move-only (no copying).
+   */
   IoRing(IoRing&&) = default;
+
+  /** \brief IoRing is move-only (no copying).
+   */
   IoRing& operator=(IoRing&&) = default;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  /** \brief Wait for I/O completions and run their handlers while work count is non-zero and
+   * this->stop() has not been called.
+   */
   Status run() const noexcept
   {
     return this->impl_->run();
   }
 
+  /** \brief Resets the IoRing after calling `this->stop()`, so that `this->run()` can be called
+   * again.
+   */
   void reset() const noexcept
   {
     this->impl_->reset();
   }
 
+  /** \brief Increments the work count.
+   */
   void on_work_started() const noexcept
   {
     this->impl_->on_work_started();
   }
 
+  /** \brief Decrements the work count.
+   */
   void on_work_finished() const noexcept
   {
     this->impl_->on_work_finished();
   }
 
-  template <typename Handler>
+  /** \brief Causes the passed handler to be executed inside `this->run()` on some thread, after
+   * this function returns.
+   */
+  template <typename Handler = void(StatusOr<i32>)>
   void post(Handler&& handler) const noexcept
   {
     this->impl_->post(BATT_FORWARD(handler));
   }
 
-  template <typename Handler, typename BufferSequence>
+  template <typename Handler = void(StatusOr<i32>), typename BufferSequence>
   void submit(BufferSequence&& buffers, Handler&& handler,
               std::function<void(struct io_uring_sqe*, IoRingOpHandler<std::decay_t<Handler>>&)>&&
                   start_op) const noexcept
@@ -124,6 +138,8 @@ class IoRing
     return this->impl_->register_buffers(std::move(buffers), update);
   }
 
+  /** \brief Unregisters all currently registered buffers.
+   */
   Status unregister_buffers() const noexcept
   {
     return this->impl_->unregister_buffers();

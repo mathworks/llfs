@@ -134,12 +134,26 @@ class IoRing::File
   //
   Status close();
 
-  bool raw_io_ = true;
+  /** \brief Sets whether the file is open in raw I/O mode (default=true); this enables additional
+   * buffer alignment checks.
+   */
+  void set_raw_io(bool on) noexcept
+  {
+    this->raw_io_ = on;
+  }
+
+  /** \brief Returns whether the file is open in raw I/O mode.
+   */
+  bool is_raw_io() const noexcept
+  {
+    return this->raw_io_;
+  }
 
  private:
   const IoRing* io_ring_;
   int fd_ = -1;
   int registered_fd_ = -1;
+  bool raw_io_ = true;
 };
 
 //#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++

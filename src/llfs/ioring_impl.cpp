@@ -19,6 +19,20 @@
 
 namespace llfs {
 
+namespace {
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status status_from_uring_retval(int retval)
+{
+  if (retval != 0) {
+    return batt::status_from_errno(-retval);
+  }
+  return OkStatus();
+}
+
+}  //namespace
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 /*static*/ auto IoRingImpl::make_new(MaxQueueDepth entries) noexcept
@@ -107,6 +121,11 @@ void IoRingImpl::on_work_finished() noexcept
 {
   LLFS_DVLOG(1) << "IoRingImpl::on_work_finished()";
 
+  const isize prior_count = this->work_count_.fetch_sub(1);
+  if (prior_count == 1) {
+    this->state_change_.notify_all();
+  }
+
   // Submit a no-op to wake the run loop.
   //
   this->submit(
@@ -114,10 +133,6 @@ void IoRingImpl::on_work_finished() noexcept
 
       /*handler=*/
       [this](StatusOr<i32>) {
-        const isize prior_count = this->work_count_.fetch_sub(1);
-        if (prior_count == 1) {
-          this->state_change_.notify_all();
-        }
       },
 
       /*start_op=*/
@@ -374,7 +389,8 @@ StatusOr<usize> IoRingImpl::transfer_completions(CompletionHandler** handler_out
       break;
     }
     if (retval < 0) {
-      LLFS_DVLOG(1) << "IoRingImpl::run() io_uring_peek_cqe: fail, retval=" << retval;
+      LLFS_LOG_ERROR() << "IoRingImpl::run() io_uring_peek_cqe: fail, retval=" << retval << ";"
+                       << BATT_INSPECT(EAGAIN);
       //
       Status status = status_from_retval(retval);
       //
@@ -451,6 +467,7 @@ void IoRingImpl::invoke_handler(CompletionHandler** handler) noexcept
     (*handler)->notify(result);
     //
     LLFS_DVLOG(1) << "IoRingImpl::run() ... " << BATT_INSPECT(this->work_count_);
+
   } catch (...) {
     LLFS_LOG_ERROR() << "Uncaught exception";
   }
@@ -543,39 +560,50 @@ StatusOr<i32> IoRingImpl::register_fd(i32 system_fd) noexcept
 
   if (this->free_fds_.empty()) {
     user_fd = this->registered_fds_.size();
+
+    // If the registered files (fds) buffer will need to be reallocated, then first unregister it.
+    //
+    if (static_cast<usize>(user_fd) >= this->registered_fds_.capacity()) {
+      BATT_REQUIRE_OK(this->unregister_files_with_lock(lock));
+    }
     this->registered_fds_.push_back(system_fd);
+    while (this->registered_fds_.size() < this->registered_fds_.capacity()) {
+      this->free_fds_.push_back(this->registered_fds_.size());
+      this->registered_fds_.push_back(-1);
+    }
+
   } else {
     user_fd = this->free_fds_.back();
     this->free_fds_.pop_back();
+
     BATT_CHECK_EQ(this->registered_fds_[user_fd], -1);
+
     this->registered_fds_[user_fd] = system_fd;
   }
 
-  auto revert_fd_update = batt::finally([&] {
-    this->free_user_fd(user_fd);
+  auto revert_fd_alloc = batt::finally([&] {
+    this->registered_fds_[user_fd] = -1;
+    this->free_fds_.push_back(user_fd);
   });
 
-  LLFS_VLOG(1) << "IoRingImpl::register_fd() " << batt::dump_range(this->registered_fds_);
+  LLFS_VLOG(1) << "IoRingImpl::register_fd() " << batt::dump_range(this->registered_fds_)
+               << BATT_INSPECT(user_fd) << "; update=" << (this->fds_registered_);
 
-  const int retval = [&] {
-    if (this->fds_registered_) {
-      return io_uring_register_files_update(&this->ring_, /*off=*/0,
-                                            /*files=*/this->registered_fds_.data(),
-                                            /*nr_files=*/this->registered_fds_.size());
-    } else {
-      return io_uring_register_files(&this->ring_,
-                                     /*files=*/this->registered_fds_.data(),
-                                     /*nr_files=*/this->registered_fds_.size());
-    }
-  }();
+  if (this->fds_registered_) {
+    BATT_REQUIRE_OK(status_from_uring_retval(
+        io_uring_register_files_update(&this->ring_, /*off=*/user_fd, /*files=*/&system_fd,
+                                       /*nr_files=*/1)));
 
-  if (retval != 0) {
-    return batt::status_from_errno(-retval);
+  } else {
+    BATT_REQUIRE_OK(status_from_uring_retval(
+        io_uring_register_files(&this->ring_,
+                                /*files=*/this->registered_fds_.data(),
+                                /*nr_files=*/this->registered_fds_.size())));
+
+    this->fds_registered_ = true;
   }
 
-  this->fds_registered_ = true;
-
-  revert_fd_update.cancel();
+  revert_fd_alloc.cancel();
 
   return user_fd;
 }
@@ -585,59 +613,39 @@ StatusOr<i32> IoRingImpl::register_fd(i32 system_fd) noexcept
 Status IoRingImpl::unregister_fd(i32 user_fd) noexcept
 {
   BATT_CHECK_GE(user_fd, 0);
+  BATT_CHECK_LT(static_cast<usize>(user_fd), this->registered_fds_.size());
 
   std::unique_lock<std::mutex> lock{this->ring_mutex_};
 
   BATT_CHECK(this->fds_registered_);
 
-  const i32 system_fd = this->free_user_fd(user_fd);
-
-  const int retval = [&] {
-    if (this->registered_fds_.empty()) {
-      return io_uring_unregister_files(&this->ring_);
-    } else {
-      return io_uring_register_files_update(&this->ring_, /*off=*/0,
-                                            /*files=*/this->registered_fds_.data(),
-                                            /*nr_files=*/this->registered_fds_.size());
-    }
-  }();
-
-  if (retval != 0) {
-    // Revert the change in the tables.
-    //
-    while (static_cast<usize>(user_fd) >= this->registered_fds_.size()) {
-      this->registered_fds_.emplace_back(-1);
-    }
-    this->registered_fds_[user_fd] = system_fd;
-    if (!this->free_fds_.empty() && this->free_fds_.back() == user_fd) {
-      this->free_fds_.pop_back();
-    }
-
-    return batt::status_from_errno(-retval);
+  const i32 system_fd = this->registered_fds_[user_fd];
+  if (system_fd == -1) {
+    return OkStatus();
   }
 
-  this->fds_registered_ = !this->registered_fds_.empty();
+  i32 invalid_fd = -1;
+
+  BATT_REQUIRE_OK(
+      status_from_uring_retval(io_uring_register_files_update(&this->ring_, /*off=*/user_fd,
+                                                              /*files=*/&invalid_fd,  //
+                                                              /*nr_files=*/1)));
+
+  this->registered_fds_[user_fd] = -1;
+  this->free_fds_.push_back(user_fd);
 
   return OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-i32 IoRingImpl::free_user_fd(i32 user_fd) noexcept
+Status IoRingImpl::unregister_files_with_lock(const std::unique_lock<std::mutex>&) noexcept
 {
-  BATT_CHECK_GE(user_fd, 0);
-  BATT_CHECK_LT(static_cast<usize>(user_fd), this->registered_fds_.size());
-
-  const i32 system_fd = this->registered_fds_[user_fd];
-
-  if (static_cast<usize>(user_fd) + 1 == this->registered_fds_.size()) {
-    this->registered_fds_.pop_back();
-  } else {
-    this->registered_fds_[user_fd] = -1;
-    this->free_fds_.push_back(user_fd);
+  if (this->fds_registered_) {
+    BATT_REQUIRE_OK(status_from_uring_retval(io_uring_unregister_files(&this->ring_)));
+    this->fds_registered_ = false;
   }
-
-  return system_fd;
+  return OkStatus();
 }
 
 }  //namespace llfs

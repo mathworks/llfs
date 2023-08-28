@@ -33,6 +33,8 @@ inline isize byte_distance(const void* begin, const void* end)
   return static_cast<const u8*>(end) - static_cast<const u8*>(begin);
 }
 
+/** \brief Returns an empty sequence of ConstBuffer objects.
+ */
 inline const std::vector<ConstBuffer>& no_buffers()
 {
   static const std::vector<ConstBuffer> no_buffers_;

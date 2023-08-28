@@ -23,6 +23,8 @@ namespace llfs {
 
 namespace fs = std::filesystem;
 
+BATT_STRONG_TYPEDEF(bool, OpenForRead);
+BATT_STRONG_TYPEDEF(bool, OpenForWrite);
 BATT_STRONG_TYPEDEF(bool, OpenForAppend);
 BATT_STRONG_TYPEDEF(bool, OpenRawIO);
 

@@ -62,6 +62,11 @@ TEST(RingBufferTest, Test)
 //
 TEST(RingBufferTest, PooledBuffers)
 {
+  const bool previously_enabled = RingBuffer::pool_enabled().exchange(true);
+  auto on_scope_exit = batt::finally([&] {
+    RingBuffer::pool_enabled().store(previously_enabled);
+  });
+
   for (usize j = 0; j < 3; ++j) {
     // No interference from other tests, please!
     //

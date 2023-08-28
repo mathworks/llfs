@@ -17,8 +17,12 @@
 
 namespace {
 
+using namespace llfs::int_types;
+
 using llfs::RingBuffer;
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 TEST(RingBufferTest, Test)
 {
   RingBuffer rb{RingBuffer::TempFile{4096}};
@@ -51,6 +55,56 @@ TEST(RingBufferTest, Test)
     EXPECT_THAT(rb.physical_offsets_from_logical(
                     Interval{789 + wrap_count * 4096, 4100 + wrap_count * 4096}),
                 ::testing::ElementsAre(Interval{789, 4096}, Interval{0, 4}));
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST(RingBufferTest, PooledBuffers)
+{
+  for (usize j = 0; j < 3; ++j) {
+    // No interference from other tests, please!
+    //
+    RingBuffer::reset_pool();
+
+    void* ptr_4k = nullptr;
+    void* ptr_16k = nullptr;
+    {
+      RingBuffer rb{RingBuffer::TempFile{4096}};
+      ptr_4k = rb.get_mut(0).data();
+    }
+    {
+      RingBuffer rb{RingBuffer::TempFile{16384}};
+      ptr_16k = rb.get_mut(0).data();
+    }
+
+    EXPECT_NE(ptr_4k, ptr_16k);
+    EXPECT_NE(ptr_4k, nullptr);
+    EXPECT_NE(ptr_16k, nullptr);
+
+    // Verify that each are re-used from the pool.
+    //
+    for (usize i = 0; i < 10; ++i) {
+      {
+        RingBuffer rb{RingBuffer::TempFile{4096}};
+        EXPECT_EQ(ptr_4k, rb.get_mut(0).data());
+      }
+      {
+        RingBuffer rb{RingBuffer::TempFile{16384}};
+        EXPECT_EQ(ptr_16k, rb.get_mut(0).data());
+      }
+    }
+
+    // Exhaust the pool and force a realloc.
+    //
+    {
+      RingBuffer rb1{RingBuffer::TempFile{4096}};
+      EXPECT_EQ(ptr_4k, rb1.get_mut(0).data());
+
+      RingBuffer rb2{RingBuffer::TempFile{4096}};
+      EXPECT_NE(ptr_4k, rb2.get_mut(0).data());
+      EXPECT_NE(nullptr, rb2.get_mut(0).data());
+    }
   }
 }
 

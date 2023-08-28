@@ -10,6 +10,7 @@
 //
 
 namespace llfs {
+namespace testing {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
@@ -52,4 +53,5 @@ std::filesystem::path get_test_data_file_path(std::string_view file_rel_path)
   return get_project_dir() / "testdata" / file_rel_path;
 }
 
+}  //namespace testing
 }  //namespace llfs

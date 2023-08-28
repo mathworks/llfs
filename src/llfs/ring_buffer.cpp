@@ -12,6 +12,7 @@
 #include <llfs/status.hpp>
 
 #include <batteries/checked_cast.hpp>
+#include <batteries/env.hpp>
 #include <batteries/syscall_retry.hpp>
 
 #include <sys/mman.h>
@@ -22,10 +23,27 @@ static_assert(sizeof(char) == 1);
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+/*static*/ void RingBuffer::reset_pool()
+{
+  RingBuffer::impl_pool().reset();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 /*static*/ auto RingBuffer::impl_pool() noexcept -> ImplPool&
 {
   static ImplPool* instance_ = new ImplPool;
   return *instance_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*static*/ std::atomic<bool>& RingBuffer::pool_enabled()
+{
+  static std::atomic<bool> enabled{
+      batt::getenv_as<int>("LLFS_RING_BUFFER_POOL_ENABLED").value_or(1) == 1};
+
+  return enabled;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -39,7 +57,8 @@ auto RingBuffer::ImplPool::allocate(const Params& params) noexcept -> Impl
       // Create a new temporary file and map it into our address space.
       //
       [this](const TempFile& p) -> Impl {
-        {
+        // ---- begin pool lock
+        if (RingBuffer::pool_enabled()) {
           std::unique_lock<std::mutex> lock{this->mutex_};
 
           ImplNodeList& subpool = this->pool_[p.byte_size];
@@ -62,6 +81,7 @@ auto RingBuffer::ImplPool::allocate(const Params& params) noexcept -> Impl
           }
           // else - there is no buffer of the required size in the pool; fall-through...
         }
+        // ---- end pool lock
 
         return Impl{FileDescriptor{
             .fd = fileno(tmpfile()),
@@ -118,6 +138,14 @@ auto RingBuffer::ImplPool::deallocate(Impl&& impl) noexcept -> void
     std::unique_lock<std::mutex> lock{this->mutex_};
     this->pool_[node->impl.size_].push_front(*node);
   }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void RingBuffer::ImplPool::reset() noexcept
+{
+  std::unique_lock<std::mutex> lock{this->mutex_};
+  this->pool_.clear();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -180,19 +208,19 @@ RingBuffer::Impl::Impl(Impl&& other) noexcept
 //
 RingBuffer::Impl::~Impl() noexcept
 {
+  if (this->fd_ != -1 && this->close_fd_) {
+    close(this->fd_);
+  }
+
   if (this->memory_ != nullptr) {
+    BATT_CHECK_GT(this->capacity_, 0u);
+
     char* local_ptr = nullptr;
     std::swap(this->memory_, local_ptr);
 
     LLFS_WARN_IF_NOT_OK(batt::status_from_retval(batt::syscall_retry([&] {
-      return munmap(local_ptr, this->size_);
+      return munmap(local_ptr, this->capacity_ * 2);
     })));
-    LLFS_WARN_IF_NOT_OK(batt::status_from_retval(batt::syscall_retry([&] {
-      return munmap(local_ptr + this->size_, this->size_);
-    })));
-  }
-  if (this->fd_ != -1 && this->close_fd_) {
-    close(this->fd_);
   }
 }
 
@@ -240,6 +268,10 @@ void RingBuffer::Impl::update_mapped_regions() noexcept
 
   BATT_CHECK_EQ(mirror_1,
                 mmap(mirror_1, this->size_, mode, flags, this->fd_, this->offset_within_file_));
+
+  LLFS_WARN_IF_NOT_OK(batt::status_from_retval(batt::syscall_retry([&] {
+    return madvise(this->memory_, this->capacity_ * 2, MADV_SEQUENTIAL);
+  })));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -253,7 +285,7 @@ void RingBuffer::Impl::update_mapped_regions() noexcept
 //
 RingBuffer::~RingBuffer() noexcept
 {
-  if (this->impl_.cache_on_deallocate_) {
+  if (this->impl_.cache_on_deallocate_ && RingBuffer::pool_enabled()) {
     RingBuffer::impl_pool().deallocate(std::move(this->impl_));
   }
 }

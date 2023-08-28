@@ -69,6 +69,18 @@ class RingBuffer
 
   using Params = std::variant<TempFile, NamedFile, FileDescriptor>;
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief Accesses the global atomic bool flag that controls whether buffer pooling is enabled.
+   */
+  static std::atomic<bool>& pool_enabled();
+
+  /** \brief Clears the cached buffer pool.
+   */
+  static void reset_pool();
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   // Create a new RingBuffer using the prescribed method.
   //
   // `params` can be one of the following types:
@@ -269,6 +281,10 @@ class RingBuffer
     /** \brief Inserts `impl` into the pool for future reuse.
      */
     auto deallocate(Impl&& impl) noexcept -> void;
+
+    /** \brief Clears all cached buffers from the pool.
+     */
+    void reset() noexcept;
 
    private:
     std::mutex mutex_;

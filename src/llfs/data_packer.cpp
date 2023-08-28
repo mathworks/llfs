@@ -55,6 +55,13 @@ void DataPacker::invalidate()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+Optional<MutableBuffer> DataPacker::reserve_front(usize byte_size) noexcept
+{
+  return this->arena_.allocate_front(byte_size);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 const void* DataPacker::pack_data(const void* data, usize size)
 {
   if (this->full() || this->space() < this->estimate_packed_data_size(size)) {

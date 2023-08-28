@@ -68,6 +68,8 @@ usize packed_sizeof(const PackAsRawData& pack_as_raw_data);
  */
 PackedRawData* pack_object(const PackAsRawData& pack_as_raw_data, DataPacker* dst);
 
+std::ostream& operator<<(std::ostream& out, const PackAsRawData& t);
+
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 /** \brief Wraps a reference or copy to some packable type `T`; causes this type to be packed as
  * PackedRawData.

@@ -150,7 +150,7 @@ class VolumeTest : public ::testing::Test
         },  //
         BATT_FORWARD(slot_visitor_fn));
 
-    BATT_CHECK(test_volume_recovered.ok());
+    BATT_CHECK(test_volume_recovered.ok()) << BATT_INSPECT(test_volume_recovered.status());
 
     return std::move(*test_volume_recovered);
   }
@@ -1079,8 +1079,6 @@ TEST_F(VolumeTest, PageJobs)
               batt::WaitForResource::kFalse,
               [&](const llfs::SlotParse& slot, std::string_view user_data) -> llfs::Status {
                 job_i += 1;
-
-                EXPECT_TRUE(slot.depends_on_offset);
 
                 LLFS_VLOG(1) << "Visiting slot: " << BATT_INSPECT(slot)
                              << " user_data=" << batt::c_str_literal(user_data);

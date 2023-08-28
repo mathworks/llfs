@@ -56,10 +56,6 @@ class RawVolumeLogDataParser
    */
   Optional<SlotRange> current_chunk_slot_range_;
 
-  /** \brief Used by the demuxer object inside `parse_chunk` to track prepare/commit event pairs.
-   */
-  VolumePendingJobsMap pending_jobs_;
-
   /** \brief The last value reported by VolumeSlotDemuxer::get_visited_upper_bound (inside
    * parse_chunk).
    */

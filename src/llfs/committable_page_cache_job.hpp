@@ -140,9 +140,8 @@ class CommittablePageCacheJob
    */
   void cancel();
 
- private:
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-
+ private:
   struct DeviceUpdateState {
     std::vector<PageRefCount> ref_count_updates;
     const PageArena* p_arena = nullptr;

@@ -78,6 +78,12 @@ struct PackedVariant {
   {
     return batt::static_dispatch<tuple_type>(this->which.value(), BATT_FORWARD(visitor));
   }
+
+  /** \brief If the variant case is the given type, returns a pointer to the packed T; else returns
+   * nullptr.
+   */
+  template <typename T>
+  const T* as(batt::StaticType<T>) const noexcept;
 };
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedVariant<>), 1);
@@ -112,12 +118,26 @@ inline constexpr u8 index_of_type_within_packed_variant(batt::StaticType<Variant
   return static_cast<u8>(value);
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 template <typename... Ts>
 template <typename T>
 void PackedVariant<Ts...>::init(batt::StaticType<T>)
 {
   constexpr unsigned kWhich = index_of_type_within_packed_variant<PackedVariant<Ts...>, T>();
   this->init(kWhich);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename... Ts>
+template <typename T>
+const T* PackedVariant<Ts...>::as(batt::StaticType<T>) const noexcept
+{
+  if (this->which == index_of_type_within_packed_variant<PackedVariant<Ts...>, T>()) {
+    return reinterpret_cast<const T*>(this + 1);
+  }
+  return nullptr;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

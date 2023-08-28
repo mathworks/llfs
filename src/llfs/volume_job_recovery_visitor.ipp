@@ -12,7 +12,7 @@
 
 #include <llfs/page_cache_job.hpp>
 #include <llfs/page_write_op.hpp>
-#include <llfs/volume_recovery_visitor.hpp>
+#include <llfs/volume_job_recovery_visitor.hpp>
 
 namespace llfs {
 

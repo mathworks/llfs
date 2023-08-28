@@ -45,4 +45,27 @@ PrepareJob prepare(const AppendableJob& appendable)
   };
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+u64 AppendableJob::calculate_grant_size() const noexcept
+{
+  const usize user_data_size = packed_sizeof(this->user_data);
+  const usize root_refs_size = packed_array_size<PackedPageId>(this->job.root_count());
+
+  return                                                                                 //
+      packed_sizeof_slot_with_payload_size(                                              //
+          sizeof(PackedPrepareJob)                                                       //
+          + user_data_size                                                               //
+          + root_refs_size                                                               //
+          + packed_array_size<PackedPageId>(this->job.new_page_count())                  //
+          + packed_array_size<PackedPageId>(this->job.deleted_page_count())              //
+          + packed_array_size<little_page_device_id_int>(this->job.page_device_count())  //
+          )                                                                              //
+      + packed_sizeof_slot_with_payload_size(                                            //
+            sizeof(PackedCommitJob)                                                      //
+            + user_data_size                                                             //
+            + root_refs_size                                                             //
+        );
+}
+
 }  // namespace llfs

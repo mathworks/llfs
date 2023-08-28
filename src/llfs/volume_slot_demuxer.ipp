@@ -21,11 +21,9 @@ namespace llfs {
 template <typename R, typename Fn>
 template <typename FnArg>
 /*explicit*/ VolumeSlotDemuxer<R, Fn>::VolumeSlotDemuxer(FnArg&& slot_visitor_fn,
-                                                         VolumePendingJobsMap& pending_jobs,
                                                          VolumeEventVisitor<R>& base) noexcept
     : visitor_fn_{BATT_FORWARD(slot_visitor_fn)}
     , base_{base}
-    , pending_jobs_{pending_jobs}
     , visited_upper_bound_{None}
 {
   initialize_status_codes();
@@ -36,14 +34,7 @@ template <typename FnArg>
 template <typename R, typename Fn>
 Optional<slot_offset_type> VolumeSlotDemuxer<R, Fn>::get_safe_trim_pos() const
 {
-  if (this->pending_jobs_.empty()) {
-    return this->visited_upper_bound_;
-  }
-  const slot_offset_type oldest_pending_job_offset = this->pending_jobs_.begin()->first;
-  if (!this->visited_upper_bound_) {
-    return oldest_pending_job_offset;
-  }
-  return slot_min(oldest_pending_job_offset, *this->visited_upper_bound_);
+  return this->visited_upper_bound_;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -75,35 +66,14 @@ StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_prepare_job(
 
   LLFS_VLOG(1) << "on_prepare_job(" << BATT_INSPECT(slot) << ")";
 
-  BATT_CHECK_EQ(slot.depends_on_offset, None);
-
-  const auto prepare_slot = SlotParse{
-      .offset = slot.offset,
-      .body = slot.body,
-      .depends_on_offset = None,
-      .total_grant_spent =
-          slot.total_grant_spent * 2, /* double the prepare slot size because we give the
-                             trimmer an equal-sized grant when appending */
-  };
-
-  const auto [iter, inserted] = this->pending_jobs_.emplace(
-      slot.offset.lower_bound, SlotParseWithPayload<Ref<const PackedPrepareJob>>{
-                                   prepare_slot,
-                                   prepare,
-                               });
-
-  if (!inserted) {
-    return ::llfs::make_status(StatusCode::kDuplicatePrepareJob);
-  }
-
   return this->base_.on_prepare_job(slot, prepare);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <typename R, typename Fn>
-StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_commit_job(const SlotParse& slot,
-                                                    const PackedCommitJob& commit) /*override*/
+StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_commit_job(
+    const SlotParse& slot, const Ref<const PackedCommitJob>& commit) /*override*/
 {
   auto on_scope_exit = batt::finally([&] {
     this->mark_slot_visited(slot);
@@ -111,35 +81,22 @@ StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_commit_job(const SlotParse& slot,
 
   LLFS_VLOG(1) << "on_commit_job(" << BATT_INSPECT(slot) << ")";
 
-  auto iter = this->pending_jobs_.find(commit.prepare_slot);
-  if (iter != this->pending_jobs_.end()) {
-    const SlotParse& commit_slot = slot;
+  const SlotParse& commit_slot = slot;
+  const usize commit_slot_size = slot.size_in_bytes();
+  std::string_view user_data = commit.get().user_data();
 
-    const SlotParseWithPayload<Ref<const PackedPrepareJob>>& prepare_slot_with_payload =
-        iter->second;
+  // The user_slot must reference the job prepare slot so that data isn't trimmed too soon by user
+  // code.
+  //
+  const auto user_slot = SlotParse{
+      .offset = commit_slot.offset,
+      .body = commit_slot.body,
+      .total_grant_spent = commit.get().prepare_slot_size + commit_slot_size,
+  };
 
-    const PackedPrepareJob* p_prepare_job = prepare_slot_with_payload.payload.pointer();
+  Status status = this->visitor_fn_(user_slot, user_data);
+  BATT_REQUIRE_OK(status);
 
-    std::string_view user_data = raw_data_from_slot(prepare_slot_with_payload.slot,  //
-                                                    p_prepare_job->user_data.get());
-
-    const SlotParse& prepare_slot = prepare_slot_with_payload.slot;
-
-    // The user_slot must reference the job prepare slot so that data isn't trimmed too soon by user
-    // code.
-    //
-    const auto user_slot = SlotParse{
-        .offset = commit_slot.offset,
-        .body = commit_slot.body,
-        .depends_on_offset = prepare_slot.offset,
-        .total_grant_spent = prepare_slot.total_grant_spent + commit_slot.total_grant_spent * 2,
-    };
-
-    this->pending_jobs_.erase(iter);
-
-    Status status = this->visitor_fn_(user_slot, user_data);
-    BATT_REQUIRE_OK(status);
-  }
   return this->base_.on_commit_job(slot, commit);
 }
 
@@ -154,8 +111,6 @@ StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_rollback_job(
   });
 
   LLFS_VLOG(1) << "on_rollback_job(" << BATT_INSPECT(slot) << ")";
-
-  this->pending_jobs_.erase(rollback.prepare_slot);
 
   return this->base_.on_rollback_job(slot, rollback);
 }
@@ -216,8 +171,6 @@ StatusOr<R> VolumeSlotDemuxer<R, Fn>::on_volume_recovered(
   });
 
   LLFS_VLOG(1) << "on_volume_recovered(" << BATT_INSPECT(slot) << ")";
-
-  this->pending_jobs_.clear();
 
   return this->base_.on_volume_recovered(slot, recovered);
 }

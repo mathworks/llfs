@@ -9,7 +9,7 @@
 #ifndef LLFS_APPENDABLE_JOB_HPP
 #define LLFS_APPENDABLE_JOB_HPP
 
-#include <llfs/finalized_page_cache_job.hpp>
+#include <llfs/committable_page_cache_job.hpp>
 #include <llfs/packable_ref.hpp>
 #include <llfs/page_cache_job.hpp>
 #include <llfs/status.hpp>
@@ -29,6 +29,13 @@ struct PrepareJob;
 struct AppendableJob {
   CommittablePageCacheJob job;
   PackableRef user_data;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief Returns the total grant size needed to append both the PrepareJob and CommitJob events
+   * for this job.
+   */
+  u64 calculate_grant_size() const noexcept;
 };
 
 // Construct an AppendableJob.

@@ -10,12 +10,15 @@
 //
 
 #include <llfs/pack_as_raw.hpp>
+#include <llfs/volume_job_recovery_visitor.hpp>
+#include <llfs/volume_metadata_recovery_visitor.hpp>
 #include <llfs/volume_reader.hpp>
-#include <llfs/volume_recovery_visitor.hpp>
+#include <llfs/volume_trimmer_recovery_visitor.hpp>
 
 #include <boost/uuid/random_generator.hpp>
 
 namespace llfs {
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 const VolumeOptions& Volume::options() const
@@ -41,7 +44,7 @@ const boost::uuids::uuid& Volume::get_recycler_uuid() const
 //
 const boost::uuids::uuid& Volume::get_trimmer_uuid() const
 {
-  return this->trimmer_.uuid();
+  return this->trimmer_->uuid();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -59,14 +62,7 @@ u64 Volume::calculate_grant_size(const std::string_view& payload) const
 //
 u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
 {
-  return (packed_sizeof_slot(prepare(appendable)) +
-          packed_sizeof_slot(batt::StaticType<PackedCommitJob>{}))
-
-         // We double the grant size to reserve log space to save the list of pages (and the record
-         // of a job being committed) in TrimEvent slots, should prepare and commit be split across
-         // two trimmed regions.
-         //
-         * 2;
+  return appendable.calculate_grant_size();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -100,118 +96,83 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
 
   LLFS_VLOG(1) << "PageRecycler recovered";
 
-  VolumePendingJobsMap pending_jobs;
-  VolumeRecoveryVisitor visitor{batt::make_copy(slot_visitor_fn), pending_jobs};
-  Optional<VolumeTrimmer::RecoveryVisitor> trimmer_visitor;
+  VolumeMetadata metadata;
+
+  VolumeJobRecoveryVisitor job_visitor;
+  VolumeMetadataRecoveryVisitor metadata_visitor{metadata};
+  VolumeSlotDemuxer<Status> user_fn_visitor{batt::make_copy(slot_visitor_fn)};
 
   // Open the log device and scan all slots.
   //
   BATT_ASSIGN_OK_RESULT(std::unique_ptr<LogDevice> root_log,
                         root_log_factory.open_log_device(
                             [&](LogDevice::Reader& log_reader) -> StatusOr<slot_offset_type> {
-                              trimmer_visitor.emplace(/*trim_pos=*/log_reader.slot_offset());
-
                               TypedSlotReader<VolumeEventVariant> slot_reader{log_reader};
 
                               StatusOr<usize> slots_read = slot_reader.run(
-                                  batt::WaitForResource::kFalse,
-                                  [&visitor, &trimmer_visitor](auto&&... args) -> Status {
-                                    BATT_REQUIRE_OK(visitor(args...));
-                                    BATT_REQUIRE_OK((*trimmer_visitor)(args...));
-
+                                  batt::WaitForResource::kFalse, [&](auto&&... args) -> Status {
+                                    BATT_REQUIRE_OK(job_visitor(args...));
+                                    BATT_REQUIRE_OK(metadata_visitor(args...));
+                                    BATT_REQUIRE_OK(user_fn_visitor(args...));
                                     return batt::OkStatus();
                                   });
-                              BATT_UNTESTED_COND(!slots_read.ok());
+
                               BATT_REQUIRE_OK(slots_read);
 
                               return log_reader.slot_offset();
                             }));
 
-  // The amount to allocate to the trimmer to refresh all metadata we append to the log below.
+  // Create a slot writer to complete recovery.
   //
-  usize trimmer_grant_size = 0;
+  auto slot_writer = std::make_unique<TypedSlotWriter<VolumeEventVariant>>(*root_log);
 
-  // Put the main log in a clean state.  This means all configuration data must
-  // be recorded, device attachments created, and pending jobs resolved.
+  // If no uuids were found while opening the log, create them now.
+  //
+  if (!metadata.ids) {
+    LLFS_VLOG(1) << "Initializing Volume uuids for the first time";
+
+    metadata.ids.emplace(PackedVolumeIds{
+        .main_uuid = volume_options.uuid.value_or(boost::uuids::random_generator{}()),
+        .recycler_uuid = recycler->uuid(),
+        .trimmer_uuid = boost::uuids::random_generator{}(),
+    });
+  }
+
+  // Make sure all Volume metadata is up-to-date.
+  //
+  auto metadata_refresher =
+      std::make_unique<VolumeMetadataRefresher>(*slot_writer, batt::make_copy(metadata));
   {
-    TypedSlotWriter<VolumeEventVariant> slot_writer{*root_log};
-    batt::Grant grant = BATT_OK_RESULT_OR_PANIC(
-        slot_writer.reserve(slot_writer.pool_size(), batt::WaitForResource::kFalse));
+    for (const boost::uuids::uuid& uuid : {
+             metadata.ids->main_uuid,
+             metadata.ids->recycler_uuid,
+             metadata.ids->trimmer_uuid,
+         }) {
+      for (const PageArena& arena : cache->all_arenas()) {
+        Optional<PageAllocatorAttachmentStatus> attachment =
+            arena.allocator().get_client_attachment_status(uuid);
 
-    // If no uuids were found while opening the log, create them now.
-    //
-    if (!visitor.ids) {
-      LLFS_VLOG(1) << "Initializing Volume uuids for the first time";
+        // If already attached, then nothing to do; continue.
+        //
+        if (attachment) {
+          continue;
+        }
 
-      visitor.ids.emplace(SlotWithPayload<PackedVolumeIds>{
-          .slot_range = {0, 1},
-          .payload =
-              {
-                  .main_uuid = volume_options.uuid.value_or(boost::uuids::random_generator{}()),
-                  .recycler_uuid = recycler->uuid(),
-                  .trimmer_uuid = boost::uuids::random_generator{}(),
-              },
-      });
-
-      StatusOr<SlotRange> ids_slot = slot_writer.append(grant, visitor.ids->payload);
-
-      BATT_UNTESTED_COND(!ids_slot.ok());
-      BATT_REQUIRE_OK(ids_slot);
-
-      Status flush_status =
-          slot_writer.sync(LogReadMode::kDurable, SlotUpperBoundAt{ids_slot->upper_bound});
-
-      BATT_UNTESTED_COND(!flush_status.ok());
-      BATT_REQUIRE_OK(flush_status);
-    }
-    LLFS_VLOG(1) << BATT_INSPECT(visitor.ids->payload);
-
-    // Attach the main uuid, recycler uuid, and trimmer uuid to each device in
-    // the cache storage pool.
-    //
-    {
-      // Loop through all combinations of uuid, device_id.
-      //
-      LLFS_VLOG(1) << "Recovered attachments: " << batt::dump_range(visitor.device_attachments);
-
-      for (const auto& uuid : {
-               visitor.ids->payload.main_uuid,
-               visitor.ids->payload.recycler_uuid,
-               visitor.ids->payload.trimmer_uuid,
-           }) {
-        for (const PageArena& arena : cache->all_arenas()) {
-          Optional<PageAllocatorAttachmentStatus> attachment =
-              arena.allocator().get_client_attachment_status(uuid);
-
-          // Find the lowest available slot offset for the log associated with `uuid`.
-          //
-          const slot_offset_type next_available_slot_offset = [&] {
-            if (uuid == visitor.ids->payload.recycler_uuid) {
-              return recycler->slot_upper_bound(LogReadMode::kDurable);
-            } else {
-              // Both the volume (main) and trimmer share the same WAL (the main log).
-              //
-              return slot_writer.slot_offset();
-            }
-          }();
-
-          auto attach_event = PackedVolumeAttachEvent{{
-              .id =
-                  VolumeAttachmentId{
-                      .client = uuid,
-                      .device = arena.device().get_id(),
-                  },
-              .user_slot_offset = next_available_slot_offset,
-          }};
-
-          trimmer_grant_size += packed_sizeof_slot(attach_event);
-
-          // If already attached, then nothing to do; continue.
-          //
-          if (attachment || visitor.device_attachments.count(attach_event.id)) {
-            continue;
+        // Find the lowest available slot offset for the log associated with `uuid`.
+        //
+        const slot_offset_type next_available_slot_offset = [&] {
+          if (uuid == metadata.ids->recycler_uuid) {
+            return recycler->slot_upper_bound(LogReadMode::kDurable);
+          } else {
+            // Both the volume (main) and trimmer share the same WAL (the main log).
+            //
+            return slot_writer->slot_offset();
           }
+        }();
 
+        //----- --- -- -  -  -   -
+        // Attach to this arena's PageAllocator.
+        {
           LLFS_VLOG(1) << "[Volume::recover] attaching client " << uuid << " to device "
                        << arena.device().get_id() << BATT_INSPECT(next_available_slot_offset);
 
@@ -224,29 +185,68 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
           Status sync_status = arena.allocator().sync(*sync_slot);
 
           BATT_UNTESTED_COND(!sync_status.ok());
-          BATT_REQUIRE_OK(sync_status);
-
-          StatusOr<SlotRange> ids_slot = slot_writer.append(grant, attach_event);
-
-          BATT_UNTESTED_COND(!ids_slot.ok());
-          BATT_REQUIRE_OK(ids_slot);
-
-          Status flush_status =
-              slot_writer.sync(LogReadMode::kDurable, SlotUpperBoundAt{ids_slot->upper_bound});
-
-          BATT_UNTESTED_COND(!flush_status.ok());
-          BATT_REQUIRE_OK(flush_status);
         }
-      }
+        //----- --- -- -  -  -   -
 
-      LLFS_VLOG(1) << "Page devices attached";
+        // Add the attachment to the metadata refresher; we will append a new slot when we call
+        // flush below.
+        //
+        BATT_ASSIGN_OK_RESULT(batt::Grant attach_grant,
+                              slot_writer->reserve(VolumeMetadataRefresher::kAttachmentGrantSize,
+                                                   batt::WaitForResource::kFalse));
+
+        BATT_REQUIRE_OK(metadata_refresher->add_attachment(
+            VolumeAttachmentId{
+                .client = uuid,
+                .device = arena.device().get_id(),
+            },
+            next_available_slot_offset, attach_grant));
+      }
     }
 
+    //----- --- -- -  -  -   -
+    // Flush any non-durable metadata to the log.
+    //
+    if (metadata_refresher->needs_flush()) {
+      batt::Grant initial_metadata_flush_grant = BATT_OK_RESULT_OR_PANIC(slot_writer->reserve(
+          metadata_refresher->flush_grant_size(), batt::WaitForResource::kFalse));
+
+      BATT_REQUIRE_OK(metadata_refresher->update_grant_partial(initial_metadata_flush_grant));
+      BATT_REQUIRE_OK(metadata_refresher->flush());
+    }
+
+    {
+      const usize reclaimable_size = metadata_visitor.grant_byte_size_reclaimable_on_trim();
+
+      const usize initial_refresh_grant_size = [&]() -> usize {
+        if (metadata_refresher->grant_required() < reclaimable_size) {
+          return 0;
+        }
+        return metadata_refresher->grant_required() - reclaimable_size;
+      }();
+
+      LLFS_VLOG(1) << "Reserving grant for metadata refresher;"
+                   << BATT_INSPECT(initial_refresh_grant_size)
+                   << BATT_INSPECT(metadata_refresher->grant_target())
+                   << BATT_INSPECT(metadata_refresher->grant_size())
+                   << BATT_INSPECT(metadata_refresher->grant_required())
+                   << BATT_INSPECT(VolumeMetadata::kVolumeIdsGrantSize)
+                   << BATT_INSPECT(VolumeMetadata::kAttachmentGrantSize)
+                   << BATT_INSPECT(reclaimable_size);
+
+      batt::Grant initial_metadata_refresh_grant = BATT_OK_RESULT_OR_PANIC(
+          slot_writer->reserve(initial_refresh_grant_size, batt::WaitForResource::kFalse));
+
+      BATT_REQUIRE_OK(metadata_refresher->update_grant_partial(initial_metadata_refresh_grant));
+    }
+  }
+
+  {
     // Resolve any jobs with a PrepareJob slot but no CommitJob or RollbackJob.
     //
     LLFS_VLOG(1) << "Resolving pending jobs...";
-    Status jobs_resolved = visitor.resolve_pending_jobs(
-        *cache, *recycler, /*volume_uuid=*/visitor.ids->payload.main_uuid, slot_writer, grant);
+    Status jobs_resolved = job_visitor.resolve_pending_jobs(
+        *cache, *recycler, /*volume_uuid=*/metadata.ids->main_uuid, *slot_writer);
 
     BATT_REQUIRE_OK(jobs_resolved);
 
@@ -254,10 +254,10 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
 
     // Notify all PageAllocators that we are done with recovery.
     //
-    for (const auto& uuid : {
-             visitor.ids->payload.main_uuid,
-             visitor.ids->payload.recycler_uuid,
-             visitor.ids->payload.trimmer_uuid,
+    for (const boost::uuids::uuid& uuid : {
+             metadata.ids->main_uuid,
+             metadata.ids->recycler_uuid,
+             metadata.ids->trimmer_uuid,
          }) {
       for (const PageArena& arena : cache->all_arenas()) {
         BATT_REQUIRE_OK(arena.allocator().notify_user_recovered(uuid));
@@ -265,20 +265,35 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
     }
   }
 
+  // Recover the VolumeTrimmer state, resolving any pending log trim.
+  //
+  BATT_ASSIGN_OK_RESULT(std::unique_ptr<VolumeTrimmer> trimmer,
+                        VolumeTrimmer::recover(                                            //
+                            metadata.ids->trimmer_uuid,                                    //
+                            batt::to_string(params.options.name, "_Trimmer"),              //
+                            params.options.trim_delay_byte_count,                          //
+                            *root_log,                                                     //
+                            *slot_writer,                                                  //
+                            VolumeTrimmer::make_default_drop_roots_fn(*cache, *recycler),  //
+                            *params.trim_control,                                          //
+                            *metadata_refresher                                            //
+                            ));
+
   // Create the Volume object.
   //
-  std::unique_ptr<Volume> volume{
-      new Volume{scheduler, params.options, visitor.ids->payload.main_uuid, std::move(cache),
-                 std::move(params.trim_control), std::move(page_deleter), std::move(root_log),
-                 std::move(recycler), visitor.ids->payload.trimmer_uuid, *trimmer_visitor}};
-
-  {
-    batt::StatusOr<batt::Grant> trimmer_grant =
-        volume->slot_writer_.reserve(trimmer_grant_size, batt::WaitForResource::kFalse);
-    BATT_REQUIRE_OK(trimmer_grant);
-
-    volume->trimmer_.push_grant(std::move(*trimmer_grant));
-  }
+  std::unique_ptr<Volume> volume{new Volume{
+      scheduler,
+      params.options,
+      metadata.ids->main_uuid,
+      std::move(cache),
+      std::move(params.trim_control),
+      std::move(page_deleter),
+      std::move(root_log),
+      std::move(recycler),
+      std::move(slot_writer),
+      std::move(metadata_refresher),
+      std::move(trimmer),
+  }};
 
   volume->start();
 
@@ -287,15 +302,17 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*explicit*/ Volume::Volume(batt::TaskScheduler& task_scheduler, const VolumeOptions& options,
-                            const boost::uuids::uuid& volume_uuid,
-                            batt::SharedPtr<PageCache>&& page_cache,
-                            std::shared_ptr<SlotLockManager>&& trim_control,
-                            std::unique_ptr<PageCache::PageDeleterImpl>&& page_deleter,
-                            std::unique_ptr<LogDevice>&& root_log,
-                            std::unique_ptr<PageRecycler>&& recycler,
-                            const boost::uuids::uuid& trimmer_uuid,
-                            const VolumeTrimmer::RecoveryVisitor& trimmer_recovery_visitor) noexcept
+/*explicit*/ Volume::Volume(batt::TaskScheduler& task_scheduler,                                 //
+                            const VolumeOptions& options,                                        //
+                            const boost::uuids::uuid& volume_uuid,                               //
+                            batt::SharedPtr<PageCache>&& page_cache,                             //
+                            std::shared_ptr<SlotLockManager>&& trim_control,                     //
+                            std::unique_ptr<PageCache::PageDeleterImpl>&& page_deleter,          //
+                            std::unique_ptr<LogDevice>&& root_log,                               //
+                            std::unique_ptr<PageRecycler>&& recycler,                            //
+                            std::unique_ptr<TypedSlotWriter<VolumeEventVariant>>&& slot_writer,  //
+                            std::unique_ptr<VolumeMetadataRefresher>&& metadata_refresher,       //
+                            std::unique_ptr<VolumeTrimmer>&& trimmer) noexcept
     : task_scheduler_{task_scheduler}
     , options_{options}
     , volume_uuid_{volume_uuid}
@@ -306,16 +323,9 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
     , trim_lock_{BATT_OK_RESULT_OR_PANIC(this->trim_control_->lock_slots(
           this->root_log_->slot_range(LogReadMode::kDurable), "Volume::(ctor)"))}
     , recycler_{std::move(recycler)}
-    , slot_writer_{*this->root_log_}
-    , trimmer_{
-          trimmer_uuid,
-          batt::to_string(this->options_.name, "_Trimmer"),
-          *this->trim_control_,
-          this->options_.trim_delay_byte_count,
-          this->root_log_->new_reader(/*slot_lower_bound=*/None, LogReadMode::kDurable),
-          this->slot_writer_,
-          VolumeTrimmer::make_default_drop_roots_fn(this->cache(), *this->recycler_, trimmer_uuid),
-          trimmer_recovery_visitor}
+    , slot_writer_{std::move(slot_writer)}
+    , metadata_refresher_{std::move(metadata_refresher)}
+    , trimmer_{std::move(trimmer)}
 {
 }
 
@@ -340,7 +350,7 @@ void Volume::start()
     this->trimmer_task_.emplace(
         /*executor=*/this->task_scheduler_.schedule_task(),
         [this] {
-          Status result = this->trimmer_.run();
+          Status result = this->trimmer_->run();
           LLFS_VLOG(1) << "Volume::trimmer_task_ exited with status=" << result;
         },
         "Volume::trimmer_task_");
@@ -351,9 +361,9 @@ void Volume::start()
 //
 void Volume::halt()
 {
-  this->slot_writer_.halt();
+  this->slot_writer_->halt();
   this->trim_control_->halt();
-  this->trimmer_.halt();
+  this->trimmer_->halt();
   this->root_log_->close().IgnoreError();
   if (this->recycler_) {
     this->recycler_->halt();
@@ -428,7 +438,7 @@ StatusOr<SlotReadLock> Volume::lock_slots(const SlotRange& slot_range, LogReadMo
 //
 StatusOr<batt::Grant> Volume::reserve(u64 size, batt::WaitForResource wait_for_log_space)
 {
-  return this->slot_writer_.reserve(size, wait_for_log_space);
+  return this->slot_writer_->reserve(size, wait_for_log_space);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -478,8 +488,8 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
       //
       BATT_DEBUG_INFO("awaiting flush of previous slot: " << *prev_slot);
 
-      Status sync_prev = this->slot_writer_.sync(LogReadMode::kSpeculative,
-                                                 SlotUpperBoundAt{prev_slot->upper_bound});
+      Status sync_prev = this->slot_writer_->sync(LogReadMode::kSpeculative,
+                                                  SlotUpperBoundAt{prev_slot->upper_bound});
       if (!sync_prev.ok()) {
         sequencer->set_error(sync_prev);
       }
@@ -492,34 +502,37 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
     //
     BATT_DEBUG_INFO("appending PrepareJob slot to the WAL");
 
-    auto prepared_job = prepare(appendable);
+    PrepareJob prepared_job = prepare(appendable);
     const u64 prepared_job_size = packed_sizeof_slot(prepared_job);
-    {
-      StatusOr<batt::Grant> trim_refresh_grant =
-          grant.spend(prepared_job_size + packed_sizeof_slot(batt::StaticType<PackedCommitJob>{}));
-
-      if (sequencer && !trim_refresh_grant.ok()) {
-        sequencer->set_error(trim_refresh_grant.status());
-      }
-      BATT_REQUIRE_OK(trim_refresh_grant);
-
-      this->trimmer_.push_grant(std::move(*trim_refresh_grant));
-    }
 
     Optional<slot_offset_type> prev_user_slot;
 
     const auto grant_size_before_prepare = grant.size();
 
-    StatusOr<SlotRange> prepare_slot = LLFS_COLLECT_LATENCY(
+    // Acquired in the post-commit-fn of the prepare slot; prevents the trimmer from having to
+    // deal with unresolved jobs.
+    //
+    Optional<SlotReadLock> trim_lock;
+
+    // Append the prepare!
+    //
+    StatusOr<SlotParseWithPayload<const PackedPrepareJob*>> prepare_slot = LLFS_COLLECT_LATENCY(
         this->metrics_.prepare_slot_append_latency,
-        this->slot_writer_.append(grant, std::move(prepared_job),
-                                  [this, &prev_user_slot](StatusOr<SlotRange> slot_range) {
-                                    if (slot_range.ok()) {
-                                      prev_user_slot =
-                                          this->latest_user_slot_.exchange(slot_range->lower_bound);
-                                    }
-                                    return slot_range;
-                                  }));
+        this->slot_writer_->typed_append(
+            grant, std::move(prepared_job),
+            [this, &prev_user_slot, &trim_lock](StatusOr<SlotRange> slot_range) {
+              if (slot_range.ok()) {
+                // Set the prev_user_slot.
+                //
+                trim_lock.emplace(BATT_OK_RESULT_OR_PANIC(
+                    this->trim_control_->lock_slots(*slot_range, "Volume::append(job)")));
+
+                // Acquire a read lock to prevent premature trimming.
+                //
+                prev_user_slot = this->latest_user_slot_.exchange(slot_range->lower_bound);
+              }
+              return slot_range;
+            }));
 
     const auto grant_size_after_prepare = grant.size();
 
@@ -530,23 +543,26 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
         BATT_CHECK(sequencer->set_error(prepare_slot.status()))
             << "each slot within a sequence may only be set once!";
       } else {
-        BATT_CHECK(sequencer->set_current(*prepare_slot))
+        BATT_CHECK(sequencer->set_current(prepare_slot->slot.offset))
             << "each slot within a sequence may only be set once!";
       }
     }
 
     BATT_REQUIRE_OK(prepare_slot);
 
+    const slot_offset_type prepare_slot_offset = prepare_slot->slot.offset.lower_bound;
+
+    BATT_CHECK(trim_lock);
     BATT_CHECK(prev_user_slot);
-    BATT_CHECK(slot_at_most(*prev_user_slot, prepare_slot->lower_bound))
+    BATT_CHECK(slot_at_most(*prev_user_slot, prepare_slot_offset))
         << BATT_INSPECT(prev_user_slot) << BATT_INSPECT(prepare_slot);
 
     BATT_DEBUG_INFO("flushing PrepareJob slot to storage");
 
-    Status sync_prepare =
-        LLFS_COLLECT_LATENCY(this->metrics_.prepare_slot_sync_latency,
-                             this->slot_writer_.sync(LogReadMode::kDurable,
-                                                     SlotUpperBoundAt{prepare_slot->upper_bound}));
+    Status sync_prepare = LLFS_COLLECT_LATENCY(
+        this->metrics_.prepare_slot_sync_latency,
+        this->slot_writer_->sync(LogReadMode::kDurable,
+                                 SlotUpperBoundAt{prepare_slot->slot.offset.upper_bound}));
 
     BATT_REQUIRE_OK(sync_prepare);
 
@@ -558,7 +574,7 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
 
     const JobCommitParams params{
         .caller_uuid = &this->get_volume_uuid(),
-        .caller_slot = prepare_slot->lower_bound,
+        .caller_slot = prepare_slot_offset,
         .recycler = as_ref(*this->recycler_),
         .recycle_grant = nullptr,
         .recycle_depth = -1,
@@ -575,15 +591,15 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
     BATT_DEBUG_INFO("writing commit slot");
 
     StatusOr<SlotRange> commit_slot =
-        this->slot_writer_.append(grant, PackedCommitJob{
-                                             .reserved_ = {},
-                                             .prepare_slot = prepare_slot->lower_bound,
-                                         });
+        this->slot_writer_->append(grant, CommitJob{
+                                              .prepare_slot_offset = prepare_slot_offset,
+                                              .packed_prepare = prepare_slot->payload,
+                                          });
 
     BATT_REQUIRE_OK(commit_slot);
 
     return SlotRange{
-        .lower_bound = prepare_slot->lower_bound,
+        .lower_bound = prepare_slot->slot.offset.lower_bound,
         .upper_bound = commit_slot->upper_bound,
     };
   }();
@@ -644,14 +660,14 @@ struct PrepareJob_must_be_passed_to_Volume_append_by_move* Volume::append(const 
 //
 Status Volume::await_trim(slot_offset_type slot_lower_bound)
 {
-  return this->slot_writer_.await_trim(slot_lower_bound);
+  return this->slot_writer_->await_trim(slot_lower_bound);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 slot_offset_type Volume::get_trim_pos() const noexcept
 {
-  return this->slot_writer_.get_trim_pos();
+  return this->slot_writer_->get_trim_pos();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

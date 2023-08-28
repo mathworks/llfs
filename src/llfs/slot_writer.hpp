@@ -14,6 +14,7 @@
 
 #include <llfs/data_layout.hpp>
 #include <llfs/data_packer.hpp>
+#include <llfs/slot_parse.hpp>
 
 #include <batteries/async/grant.hpp>
 #include <batteries/async/mutex.hpp>
@@ -188,7 +189,7 @@ class SlotWriter::Append
   DataPacker packer_;
 };
 
-inline usize packed_sizeof_slot_with_payload_size(usize payload_size)
+inline constexpr usize packed_sizeof_slot_with_payload_size(usize payload_size)
 {
   const usize slot_body_size = sizeof(PackedVariant<>) + payload_size;
   const usize slot_header_size = packed_sizeof_varint(slot_body_size);
@@ -233,34 +234,64 @@ class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
    *                       mutex; must return the passed slot_range (which is the interval where
    *                       `payload` was written)
    *
-   * \return The slot offset range where `payload` was appended in the log
+   * \return The SlotParse and pointer to packed variant case.
    */
-  template <typename T, typename PostCommitFn = NullPostCommitFn>
-  StatusOr<SlotRange> append(batt::Grant& caller_grant, T&& payload,
-                             PostCommitFn&& post_commit_fn = {})
+  template <typename T, typename PackedT = PackedTypeFor<T>,
+            typename PostCommitFn = NullPostCommitFn>
+  StatusOr<SlotParseWithPayload<const PackedT*>> typed_append(batt::Grant& caller_grant,
+                                                              T&& payload,
+                                                              PostCommitFn&& post_commit_fn = {})
   {
     const usize slot_body_size = sizeof(PackedVariant<Ts...>) + packed_sizeof(payload);
     BATT_CHECK_NE(slot_body_size, 0u);
 
-    // lock the writer in SlotWriter::prepare
+    // Lock the writer in SlotWriter::prepare.
+    //
     StatusOr<Append> op = this->SlotWriter::prepare(caller_grant, slot_body_size);
     BATT_REQUIRE_OK(op);
 
-    // Do allocation for the buffer to write the variant-ID
+    // Do allocation for the buffer to write the variant-ID.
+    //
     PackedVariant<Ts...>* variant_head =
         op->packer().pack_record(batt::StaticType<PackedVariant<Ts...>>{});
     if (!variant_head) {
       return ::llfs::make_status(StatusCode::kFailedToPackSlotVarHead);
     }
 
-    // Get variant-ID ('which') for this entry
-    variant_head->init(batt::StaticType<PackedTypeFor<T>>{});
+    // Get variant-ID ('which') for this entry.
+    //
+    variant_head->init(batt::StaticType<PackedT>{});
 
     if (!pack_object(BATT_FORWARD(payload), &(op->packer()))) {
       return ::llfs::make_status(StatusCode::kFailedToPackSlotVarTail);
     }
 
-    return post_commit_fn(op->commit());
+    StatusOr<SlotRange> slot_range = post_commit_fn(op->commit());
+    BATT_REQUIRE_OK(slot_range);
+
+    auto* slot_body_start = reinterpret_cast<const char*>(variant_head);
+
+    return SlotParseWithPayload<const PackedT*>{
+        .slot =
+            SlotParse{
+                .offset = *slot_range,
+                .body = std::string_view{slot_body_start, slot_body_size},
+                .total_grant_spent = slot_body_size,
+            },
+        .payload = variant_head->as(batt::StaticType<PackedT>{}),
+    };
+  }
+
+  template <typename T, typename PostCommitFn = NullPostCommitFn>
+  StatusOr<SlotRange> append(batt::Grant& caller_grant, T&& payload,
+                             PostCommitFn&& post_commit_fn = {})
+  {
+    StatusOr<SlotParseWithPayload<const PackedTypeFor<T>*>> packed =
+        this->typed_append(caller_grant, BATT_FORWARD(payload), BATT_FORWARD(post_commit_fn));
+
+    BATT_REQUIRE_OK(packed);
+
+    return {packed->slot.offset};
   }
 };
 

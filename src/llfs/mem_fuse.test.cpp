@@ -165,14 +165,19 @@ class MemFuseTest : public ::testing::Test
       io.run();
     });
 
+    const auto try_umount = [&] {
+      LLFS_LOG_INFO() << "Attempting to umount " << this->mountpoint_;
+      int retval = umount2(this->mountpoint_str_.c_str(), MNT_FORCE);
+      LLFS_LOG_INFO() << BATT_INSPECT(batt::status_from_retval(retval));
+    };
+
     // Create a fresh mount point directory.
     //
     for (int retry = 0; retry < 2; ++retry) {
       std::error_code ec;
       bool mountpoint_exists = std::filesystem::exists(this->mountpoint_, ec);
       if (ec && retry == 0) {
-        LLFS_LOG_INFO() << "Attempting to umount " << this->mountpoint_;
-        umount(this->mountpoint_str_.c_str());
+        try_umount();
         continue;
       }
 
@@ -182,7 +187,13 @@ class MemFuseTest : public ::testing::Test
       }
 
       std::filesystem::create_directories(this->mountpoint_, ec);
-      ASSERT_FALSE(ec) << "Failed to initialize mountpoint";
+      if (ec && retry == 0) {
+        try_umount();
+        continue;
+      }
+      ASSERT_FALSE(ec) << "Failed to initialize mountpoint:"
+                       << BATT_INSPECT_STR(this->mountpoint_.string()) << BATT_INSPECT(ec.value())
+                       << BATT_INSPECT(ec.message());
     }
 
     // Start FUSE session on a background thread.

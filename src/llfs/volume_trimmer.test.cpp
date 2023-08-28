@@ -23,6 +23,7 @@
 #include <batteries/async/fake_execution_context.hpp>
 #include <batteries/async/fake_executor.hpp>
 #include <batteries/env.hpp>
+#include <batteries/small_vec.hpp>
 
 #include <fstream>
 #include <random>
@@ -59,10 +60,12 @@ using llfs::testing::FakeLogDevice;
 constexpr usize kNumPages = 4;
 constexpr usize kLogSize = 4 * kKiB;
 constexpr usize kMinTTF = 5;
-constexpr usize kMaxTTF = 30;  //10 * kLogSize;  //500;
+constexpr usize kMaxTTF = 30;
 constexpr usize kMinOpaqueDataSize = 1;
 constexpr usize kMaxOpaqueDataSize = 100;
 constexpr usize kMaxSlotOverhead = 32;
+constexpr int kStepLimit = 100 * 1000;
+constexpr usize kDefaultPageIdsVecSize = 16;
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
@@ -78,7 +81,7 @@ class VolumeTrimmerTest : public ::testing::Test
   };
 
   struct JobInfo {
-    std::vector<llfs::PageId> page_ids;
+    batt::SmallVec<llfs::PageId, kDefaultPageIdsVecSize> page_ids;
 
     llfs::slot_offset_type prepare_slot_offset;
 
@@ -520,7 +523,7 @@ void VolumeTrimmerTest::LogSession::append_opaque_data_slot()
   ASSERT_TRUE(this->trim_control);
 
   const usize data_size = this->sim->pick_usize(kMinOpaqueDataSize, kMaxOpaqueDataSize);
-  std::vector<char> buffer(data_size, 'a');
+  batt::SmallVec<char, kMaxOpaqueDataSize> buffer(data_size, 'a');
   std::string_view data_str{buffer.data(), buffer.size()};
 
   llfs::PackAsRawData to_pack_as_raw{data_str};
@@ -575,7 +578,7 @@ void VolumeTrimmerTest::LogSession::prepare_one_job()
 
   LLFS_VLOG(1) << "Generating prepare job";
 
-  std::vector<llfs::PageId> page_ids;
+  batt::SmallVec<llfs::PageId, kDefaultPageIdsVecSize> page_ids;
 
   const usize n_pages = this->sim->pick_usize(1, kNumPages * 2);
   for (usize i = 0; i < n_pages; ++i) {
@@ -878,7 +881,8 @@ batt::Status VolumeTrimmerTest::TrimmerSession::handle_drop_roots(
     return llfs::make_status(llfs::StatusCode::kFakeLogDeviceExpectedFailure);
   }
 
-  std::vector<llfs::PageId> actual_page_ids(page_ids.begin(), page_ids.end());
+  batt::SmallVec<llfs::PageId, kDefaultPageIdsVecSize> actual_page_ids(page_ids.begin(),
+                                                                       page_ids.end());
   std::sort(actual_page_ids.begin(), actual_page_ids.end());
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -924,7 +928,7 @@ batt::Status VolumeTrimmerTest::TrimmerSession::handle_drop_roots(
   //+++++++++++-+-+--+----- --- -- -  -  -   -
   // Build the list of expected page ids and compare it to actual.
   //
-  std::vector<llfs::PageId> expected_page_ids;
+  batt::SmallVec<llfs::PageId, kDefaultPageIdsVecSize> expected_page_ids;
   if (next_trim_event) {
     const llfs::VolumeTrimEvent& trim_event = next_trim_event->payload;
 
@@ -1030,7 +1034,7 @@ TEST_F(VolumeTrimmerTest, RandomizedTest)
 
   static const usize kNumSeeds =                   //
       batt::getenv_as<int>("LLFS_TEST_NUM_SEEDS")  //
-          .value_or(kExtraTesting ? (10 * 1000 * 1000) : (1000 * 1000));
+          .value_or(kExtraTesting ? (1000 * 1000 * 1000) : (1000 * 1000));
 
   static const int kLogEveryN =                      //
       batt::getenv_as<int>("LLFS_TEST_LOG_EVERY_N")  //
@@ -1041,7 +1045,7 @@ TEST_F(VolumeTrimmerTest, RandomizedTest)
           .value_or(0);
 
   static const usize kNumThreads = batt::getenv_as<int>("LLFS_TEST_NUM_THREADS")  //
-                                       .value_or(std::thread::hardware_concurrency() / 4);
+                                       .value_or(std::thread::hardware_concurrency());
 
   LLFS_LOG_INFO() << BATT_INSPECT(kExtraTesting) << BATT_INSPECT(kNumSeeds)
                   << BATT_INSPECT(kLogEveryN) << BATT_INSPECT(kInitialSeed)
@@ -1053,9 +1057,11 @@ TEST_F(VolumeTrimmerTest, RandomizedTest)
   Config config;
 
   std::vector<std::thread> threads;
+  std::atomic<usize> running_count{0};
 
   for (usize thread_i = 0; thread_i < kNumThreads; ++thread_i) {
-    threads.emplace_back([&crash_count, &config, thread_i] {
+    running_count.fetch_add(1);
+    threads.emplace_back([&running_count, &crash_count, &config, thread_i] {
       usize local_crash_count = 0;
       for (usize seed_i = kInitialSeed + thread_i; seed_i < kInitialSeed + kNumSeeds;
            seed_i += kNumThreads) {
@@ -1088,7 +1094,7 @@ TEST_F(VolumeTrimmerTest, RandomizedTest)
         //
         LLFS_VLOG(1) << "Entering test loop";
 
-        for (int step_i = 0; !log.fake_log_has_failed(); ++step_i) {
+        for (int step_i = 0; !log.fake_log_has_failed() && step_i < kStepLimit; ++step_i) {
           LLFS_VLOG(1) << "Step " << step_i;
           ASSERT_NO_FATAL_FAILURE(trimmer.check_invariants());
 
@@ -1161,6 +1167,10 @@ TEST_F(VolumeTrimmerTest, RandomizedTest)
       }
 
       crash_count.fetch_add(local_crash_count);
+
+      const usize n_threads_remaining = running_count.fetch_sub(1);
+      LLFS_LOG_INFO() << "Test thread " << thread_i << " finished (" << n_threads_remaining
+                      << " still running)";
     });
   }
 

@@ -211,13 +211,34 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
       batt::Grant initial_metadata_flush_grant = BATT_OK_RESULT_OR_PANIC(slot_writer->reserve(
           metadata_refresher->flush_grant_size(), batt::WaitForResource::kFalse));
 
+      BATT_REQUIRE_OK(metadata_refresher->update_grant_partial(initial_metadata_flush_grant));
       BATT_REQUIRE_OK(metadata_refresher->flush());
     }
 
-    batt::Grant initial_metadata_refresh_grant = BATT_OK_RESULT_OR_PANIC(slot_writer->reserve(
-        metadata_visitor.calculate_initial_refresh_grant(), batt::WaitForResource::kFalse));
+    {
+      const usize reclaimable_size = metadata_visitor.grant_byte_size_reclaimable_on_trim();
 
-    BATT_REQUIRE_OK(metadata_refresher->update_grant(initial_metadata_refresh_grant));
+      const usize initial_refresh_grant_size = [&]() -> usize {
+        if (metadata_refresher->grant_required() < reclaimable_size) {
+          return 0;
+        }
+        return metadata_refresher->grant_required() - reclaimable_size;
+      }();
+
+      LLFS_VLOG(1) << "Reserving grant for metadata refresher;"
+                   << BATT_INSPECT(initial_refresh_grant_size)
+                   << BATT_INSPECT(metadata_refresher->grant_target())
+                   << BATT_INSPECT(metadata_refresher->grant_size())
+                   << BATT_INSPECT(metadata_refresher->grant_required())
+                   << BATT_INSPECT(VolumeMetadata::kVolumeIdsGrantSize)
+                   << BATT_INSPECT(VolumeMetadata::kAttachmentGrantSize)
+                   << BATT_INSPECT(reclaimable_size);
+
+      batt::Grant initial_metadata_refresh_grant = BATT_OK_RESULT_OR_PANIC(
+          slot_writer->reserve(initial_refresh_grant_size, batt::WaitForResource::kFalse));
+
+      BATT_REQUIRE_OK(metadata_refresher->update_grant_partial(initial_metadata_refresh_grant));
+    }
   }
 
   {

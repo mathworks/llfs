@@ -63,18 +63,10 @@ Status VolumeMetadataRecoveryVisitor::on_volume_detach(
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-usize VolumeMetadataRecoveryVisitor::calculate_initial_refresh_grant() const noexcept
+usize VolumeMetadataRecoveryVisitor::grant_byte_size_reclaimable_on_trim() const noexcept
 {
-  const usize grant_size = this->metadata_.grant_target();
-
-  const usize will_be_reclaimed_via_trim =
-      (this->ids_duplicated_ ? VolumeMetadata::kVolumeIdsGrantSize : 0) +
-      (this->attachment_duplicated_.size() * VolumeMetadata::kAttachmentGrantSize);
-
-  if (will_be_reclaimed_via_trim < grant_size) {
-    return grant_size - will_be_reclaimed_via_trim;
-  }
-  return 0;
+  return (this->ids_duplicated_ ? VolumeMetadata::kVolumeIdsGrantSize : 0) +
+         (this->attachment_duplicated_.size() * VolumeMetadata::kAttachmentGrantSize);
 }
 
 }  //namespace llfs

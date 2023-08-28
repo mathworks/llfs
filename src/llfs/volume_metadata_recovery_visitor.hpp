@@ -34,7 +34,7 @@ class VolumeMetadataRecoveryVisitor : public VolumeEventVisitor<Status>::NullImp
   //
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  usize calculate_initial_refresh_grant() const noexcept;
+  usize grant_byte_size_reclaimable_on_trim() const noexcept;
 
  private:
   VolumeMetadata& metadata_;

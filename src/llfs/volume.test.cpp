@@ -150,7 +150,7 @@ class VolumeTest : public ::testing::Test
         },  //
         BATT_FORWARD(slot_visitor_fn));
 
-    BATT_CHECK(test_volume_recovered.ok());
+    BATT_CHECK(test_volume_recovered.ok()) << BATT_INSPECT(test_volume_recovered.status());
 
     return std::move(*test_volume_recovered);
   }

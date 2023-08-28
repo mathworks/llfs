@@ -239,7 +239,7 @@ Status VolumeMetadataRefresher::State::add_attachment(VolumeAttachmentId attach_
 
   this->attachments_needing_refresh_.emplace_back(attach_id);
 
-  BATT_CHECK_OK(this->update_grant(attachment_grant));
+  BATT_CHECK_OK(this->update_grant_partial(attachment_grant));
 
   return OkStatus();
 }

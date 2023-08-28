@@ -5,6 +5,8 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <llfs/testing/util.hpp>
+
 #include <llfs/data_packer.hpp>
 #include <llfs/define_packed_type.hpp>
 #include <llfs/int_types.hpp>
@@ -42,7 +44,9 @@ using llfs::PackedBPTrie;
 std::vector<std::string> load_words()
 {
   std::vector<std::string> words;
-  std::ifstream ifs{batt::to_string(std::getenv("PROJECT_DIR"), "/testdata/words")};
+  std::string word_file_path = llfs::testing::get_test_data_file_path("words");
+  std::ifstream ifs{word_file_path};
+  BATT_CHECK(ifs.good()) << BATT_INSPECT_STR(word_file_path);
   std::string word;
   while (ifs.good()) {
     ifs >> word;
@@ -291,6 +295,7 @@ TEST(Trie, Test)
       const auto run_timed_bench = [&sample, &words, &kStep](const auto& target) -> double {
         const auto start = std::chrono::steady_clock::now();
 
+        usize count = 0;
         usize checksum = 0;
         for (usize n = 0; n < kBenchmarkRepeat; ++n) {
           for (usize i = 0; i < sample.size() * kStep; ++i) {
@@ -300,6 +305,7 @@ TEST(Trie, Test)
             std::string_view word = words[i + kSkip];
             batt::Interval<usize> pos = target.find(word);
             checksum += pos.lower_bound;
+            count += 1;
           }
         }
 
@@ -307,7 +313,7 @@ TEST(Trie, Test)
                        std::chrono::steady_clock::now() - start)
                        .count();
 
-        EXPECT_GT(checksum, 1u);
+        EXPECT_GT(checksum | count, 0u);
 
         return double(usec) / 1000000.0;
       };

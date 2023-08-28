@@ -44,7 +44,7 @@ Status status_from_uring_retval(int retval)
   {
     BATT_CHECK_EQ(impl->event_fd_, -1);
 
-    impl->event_fd_ = eventfd(0, /*flags=*/EFD_SEMAPHORE);
+    impl->event_fd_.store(eventfd(0, /*flags=*/EFD_SEMAPHORE));
     if (impl->event_fd_ < 0) {
       LLFS_LOG_ERROR() << "failed to create eventfd: " << std::strerror(errno);
       return batt::status_from_retval(impl->event_fd_.load());
@@ -58,10 +58,10 @@ Status status_from_uring_retval(int retval)
     BATT_CHECK(!impl->ring_init_);
 
     const int retval = io_uring_queue_init(entries, &impl->ring_, /*flags=*/0);
-    if (retval != 0) {
-      LLFS_LOG_ERROR() << "failed io_uring_queue_init: " << std::strerror(-retval);
-      return batt::status_from_retval(retval);
-    }
+
+    BATT_REQUIRE_OK(status_from_uring_retval(retval))
+        << batt::LogLevel::kError << "failed io_uring_queue_init: " << std::strerror(-retval);
+
     impl->ring_init_ = true;
   }
 
@@ -70,10 +70,9 @@ Status status_from_uring_retval(int retval)
     BATT_CHECK_NE(impl->event_fd_, -1);
 
     const int retval = io_uring_register_eventfd(&impl->ring_, impl->event_fd_);
-    if (retval != 0) {
-      LLFS_LOG_ERROR() << "failed io_uring_register_eventfd: " << std::strerror(-retval);
-      return batt::status_from_errno(-retval);
-    }
+
+    BATT_REQUIRE_OK(status_from_uring_retval(retval))
+        << batt::LogLevel::kError << "failed io_uring_register_eventfd: " << std::strerror(-retval);
   }
 
   return {std::move(impl)};
@@ -328,7 +327,7 @@ auto IoRingImpl::completion_from_cqe(struct io_uring_cqe* cqe) -> CompletionHand
   BATT_CHECK_NOT_NULLPTR(handler);
 
   if (cqe->res < 0) {
-    handler->result.emplace(status_from_errno(-cqe->res));
+    handler->result.emplace(status_from_uring_retval(cqe->res));
   } else {
     handler->result.emplace(cqe->res);
   }
@@ -388,15 +387,11 @@ StatusOr<usize> IoRingImpl::transfer_completions(CompletionHandler** handler_out
       LLFS_DVLOG(1) << "IoRingImpl::run() io_uring_peek_cqe: EAGAIN";
       break;
     }
-    if (retval < 0) {
-      LLFS_LOG_ERROR() << "IoRingImpl::run() io_uring_peek_cqe: fail, retval=" << retval << ";"
-                       << BATT_INSPECT(EAGAIN);
-      //
-      Status status = status_from_retval(retval);
-      //
-      LLFS_LOG_WARNING() << "io_uring_wait_cqe failed: " << status;
-      return status;
-    }
+
+    BATT_REQUIRE_OK(status_from_uring_retval(retval))
+        << batt::LogLevel::kError << "IoRingImpl::run() io_uring_peek_cqe: fail, retval=" << retval
+        << ";" << BATT_INSPECT(EAGAIN);
+
     BATT_CHECK_NOT_NULLPTR(p_cqe);
 
     // Copy the completion event data to the stack so we can signal the ring ASAP
@@ -512,6 +507,12 @@ StatusOr<usize> IoRingImpl::register_buffers(BoxedSeq<MutableBuffer>&& buffers,
     return v;
   }) | seq::emplace_back(&this->registered_buffers_);
 
+  LLFS_VLOG(1) << BATT_INSPECT(this->registered_buffers_.size());
+
+  if (this->registered_buffers_.empty()) {
+    LLFS_LOG_ERROR() << "Attempted to register a list of 0 buffers! (Must be at least 1)";
+  }
+
   // Register the buffers!
   //
   const int retval = io_uring_register_buffers(&this->ring_, this->registered_buffers_.data(),
@@ -519,7 +520,7 @@ StatusOr<usize> IoRingImpl::register_buffers(BoxedSeq<MutableBuffer>&& buffers,
   if (retval < 0) {
     this->registered_buffers_.clear();
   }
-  BATT_REQUIRE_OK(status_from_retval(retval));
+  BATT_REQUIRE_OK(status_from_uring_retval(retval));
 
   this->buffers_registered_ = true;
 
@@ -541,7 +542,7 @@ Status IoRingImpl::unregister_buffers_with_lock(const std::unique_lock<std::mute
 {
   if (this->buffers_registered_) {
     const int retval = io_uring_unregister_buffers(&this->ring_);
-    BATT_REQUIRE_OK(status_from_retval(retval));
+    BATT_REQUIRE_OK(status_from_uring_retval(retval));
 
     this->buffers_registered_ = false;
     this->registered_buffers_.clear();

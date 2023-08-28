@@ -15,226 +15,314 @@
 
 #include <llfs/testing/packed_type_test_fixture.hpp>
 
+#include <boost/range/irange.hpp>
+
 namespace {
 
 using namespace llfs::int_types;
 
-class VolumeEventsTest : public llfs::testing::PackedTypeTestFixture
-{
- public:
-  llfs::TrimmedPrepareJob make_trimmed_prepare_job(llfs::slot_offset_type prepare_slot,
-                                                   usize n_pages)
-  {
-    llfs::TrimmedPrepareJob object;
-    object.prepare_slot = prepare_slot;
-    object.page_ids = batt::as_seq(this->page_ids) | batt::seq::take_n(n_pages) |
-                      batt::seq::decayed() | batt::seq::boxed();
-
-    return object;
-  }
-
-  std::vector<llfs::PageId> page_ids{
-      llfs::PageId{1}, llfs::PageId{2},  llfs::PageId{3},  llfs::PageId{4},
-      llfs::PageId{5}, llfs::PageId{6},  llfs::PageId{7},  llfs::PageId{8},
-      llfs::PageId{9}, llfs::PageId{10}, llfs::PageId{11}, llfs::PageId{12},
-  };
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+/** \brief Fake user data, for testing only.
+ */
+struct FakeUserData {
+  std::string str;
 };
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-// Test plan:
-//  - do all of:
-//    1. serialize using pack_object
-//    2. unpack via unpack_object
-//       1. success
-//       2. failure - buffer truncated
-//    3. unpack via unpack_cast
-//  - for each of:
-//    a. page_ids empty
-//    b. 1 page_ids
-//    c. >1 page_ids
 //
-TEST_F(VolumeEventsTest, TrimmedPrepareJobPackUnpackNoPages)
+usize packed_sizeof(const FakeUserData& obj)
 {
-  llfs::TrimmedPrepareJob object;
-  object.prepare_slot = 1996;
-  object.page_ids = batt::seq::Empty<llfs::PageId>{} | batt::seq::boxed();
-
-  ASSERT_NE(this->pack_into_buffer(object), nullptr);
-
-  {
-    batt::StatusOr<const llfs::PackedTrimmedPrepareJob&> packed =
-        llfs::unpack_cast<llfs::PackedTrimmedPrepareJob>(this->const_buffer());
-
-    ASSERT_TRUE(packed.ok()) << BATT_INSPECT(packed.status());
-    EXPECT_EQ(packed->prepare_slot, object.prepare_slot);
-    EXPECT_EQ(packed->page_ids.size(), 0u);
-
-    batt::StatusOr<llfs::TrimmedPrepareJob> unpacked = this->unpack_from_buffer(*packed);
-
-    ASSERT_TRUE(unpacked.ok()) << BATT_INSPECT(packed.status());
-    EXPECT_EQ(unpacked->prepare_slot, object.prepare_slot);
-    EXPECT_EQ((batt::make_copy(unpacked->page_ids) | batt::seq::collect_vec()),
-              (batt::make_copy(object.page_ids) | batt::seq::collect_vec()));
-  }
-  {
-    batt::StatusOr<const llfs::PackedTrimmedPrepareJob&> packed =
-        llfs::unpack_cast<llfs::PackedTrimmedPrepareJob>(this->const_buffer(1));
-
-    ASSERT_FALSE(packed.ok()) << BATT_INSPECT(packed.status());
-    EXPECT_EQ(packed.status(), llfs::StatusCode::kUnpackCastStructOver);
-  }
+  return obj.str.size();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-TEST_F(VolumeEventsTest, TrimmedPrepareJobPackUnpackSinglePage)
+llfs::PackedRawData* pack_object(const FakeUserData& obj, llfs::DataPacker* dst)
 {
-  llfs::TrimmedPrepareJob object;
-  object.prepare_slot = 2001;
-  object.page_ids = batt::seq::single_item(llfs::PageId{0x2468}) | batt::seq::boxed();
-
-  ASSERT_NE(this->pack_into_buffer(object), nullptr);
-
-  {
-    batt::StatusOr<const llfs::PackedTrimmedPrepareJob&> packed =
-        llfs::unpack_cast<llfs::PackedTrimmedPrepareJob>(this->const_buffer());
-
-    ASSERT_TRUE(packed.ok()) << BATT_INSPECT(packed.status());
-    EXPECT_EQ(packed->prepare_slot, object.prepare_slot);
-    EXPECT_EQ(packed->page_ids.size(), 1u);
-
-    batt::StatusOr<llfs::TrimmedPrepareJob> unpacked = this->unpack_from_buffer(*packed);
-
-    ASSERT_TRUE(unpacked.ok()) << BATT_INSPECT(packed.status());
-    EXPECT_EQ(unpacked->prepare_slot, object.prepare_slot);
-    EXPECT_EQ((batt::make_copy(unpacked->page_ids) | batt::seq::collect_vec()),
-              (batt::make_copy(object.page_ids) | batt::seq::collect_vec()));
+  llfs::Optional<std::string_view> packed = dst->pack_raw_data(obj.str.data(), obj.str.size());
+  if (!packed) {
+    return nullptr;
   }
-  {
-    batt::StatusOr<const llfs::PackedTrimmedPrepareJob&> packed =
-        llfs::unpack_cast<llfs::PackedTrimmedPrepareJob>(this->const_buffer(1));
-
-    ASSERT_FALSE(packed.ok()) << BATT_INSPECT(packed.status());
-    EXPECT_EQ(packed.status(), llfs::StatusCode::kUnpackCastStructOver);
-  }
+  return (llfs::PackedRawData*)packed->data();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-TEST_F(VolumeEventsTest, TrimmedPrepareJobPackUnpackMultiPage)
+llfs::BoxedSeq<llfs::PageId> trace_refs(const FakeUserData& obj)
 {
-  llfs::TrimmedPrepareJob object = this->make_trimmed_prepare_job(40000, 12);
+  const llfs::PackedPageId* packed_ids = (const llfs::PackedPageId*)obj.str.data();
+  usize count = obj.str.size() / sizeof(llfs::PackedPageId);
 
-  ASSERT_NE(this->pack_into_buffer(object), nullptr);
-
-  {
-    batt::StatusOr<const llfs::PackedTrimmedPrepareJob&> packed =
-        llfs::unpack_cast<llfs::PackedTrimmedPrepareJob>(this->const_buffer());
-
-    ASSERT_TRUE(packed.ok()) << BATT_INSPECT(packed.status());
-    EXPECT_EQ(packed->prepare_slot, object.prepare_slot);
-    EXPECT_EQ(packed->page_ids.size(), 12u);
-
-    batt::StatusOr<llfs::TrimmedPrepareJob> unpacked = this->unpack_from_buffer(*packed);
-
-    ASSERT_TRUE(unpacked.ok()) << BATT_INSPECT(unpacked.status());
-    EXPECT_EQ(unpacked->prepare_slot, object.prepare_slot);
-    EXPECT_EQ((batt::make_copy(unpacked->page_ids) | batt::seq::collect_vec()),
-              (batt::make_copy(object.page_ids) | batt::seq::collect_vec()));
-  }
-  {
-    batt::StatusOr<const llfs::PackedTrimmedPrepareJob&> packed =
-        llfs::unpack_cast<llfs::PackedTrimmedPrepareJob>(this->const_buffer(1));
-
-    ASSERT_FALSE(packed.ok()) << BATT_INSPECT(packed.status());
-    EXPECT_EQ(packed.status(), llfs::StatusCode::kUnpackCastStructOver);
-  }
+  return batt::as_seq(boost::irange(usize{0}, count))  //
+         | batt::seq::map([packed_ids](usize i) -> llfs::PageId {
+             return packed_ids[i].unpack();
+           })  //
+         | batt::seq::boxed();
 }
 
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-TEST_F(VolumeEventsTest, TrimEventPackUnpack)
+class VolumeJobEventsTest : public ::testing::Test
 {
-  usize prev_packed_size = 0;
+ public:
+  template <typename T>
+  void pack_test_object(const T& obj, std::vector<char>& storage)
+  {
+    usize size = packed_sizeof(obj);
 
-  for (usize n_trimmed_jobs = 0; n_trimmed_jobs < 10; ++n_trimmed_jobs) {
-    std::vector<llfs::TrimmedPrepareJob> jobs;
-    for (usize i = 0; i < n_trimmed_jobs; ++i) {
-      jobs.emplace_back(this->make_trimmed_prepare_job(/*prepare_slot=*/i, /*n_pages=*/i));
-    }
+    storage.clear();
+    storage.resize(size);
 
-    std::vector<llfs::slot_offset_type> commits;
-    for (usize i = 1; i < n_trimmed_jobs; ++i) {
-      commits.emplace_back(/*prepare_slot=*/i - 1);
-    }
+    llfs::MutableBuffer buffer{storage.data(), storage.size()};
+    llfs::DataPacker packer{buffer};
 
-    llfs::VolumeTrimEvent trim_event;
-    trim_event.old_trim_pos = n_trimmed_jobs;
-    trim_event.new_trim_pos = (n_trimmed_jobs + 1) * 1917;
+    ASSERT_TRUE(pack_object(obj, &packer));
+    EXPECT_EQ(packer.space(), 0u)
+        << "packed_sizeof did not report the actual size used by pack_object!";
+  }
 
-    trim_event.committed_jobs =  //
-        batt::as_seq(commits)    //
-        | batt::seq::decayed()   //
-        | batt::seq::boxed();
+  void init_user_data(usize user_data_size) noexcept
+  {
+    this->user_data_.str.clear();
+    this->root_refs_.clear();
 
-    trim_event.trimmed_prepare_jobs =  //
-        batt::as_seq(jobs)             //
-        | batt::seq::decayed()         //
-        | batt::seq::boxed();
+    if (user_data_size < sizeof(llfs::PackedPageId)) {
+      this->user_data_.str = std::string(user_data_size, 'a');
 
-    EXPECT_GT(llfs::packed_sizeof(trim_event), prev_packed_size);
-    prev_packed_size = llfs::packed_sizeof(trim_event);
-
-    ASSERT_NE(this->pack_into_buffer(trim_event), nullptr);
-
-    {
-      batt::StatusOr<const llfs::PackedVolumeTrimEvent&> packed =
-          llfs::unpack_cast<llfs::PackedVolumeTrimEvent>(this->const_buffer());
-
-      ASSERT_TRUE(packed.ok()) << BATT_INSPECT(packed.status());
-      EXPECT_EQ(packed->old_trim_pos, trim_event.old_trim_pos);
-      EXPECT_EQ(packed->new_trim_pos, trim_event.new_trim_pos);
-      if (n_trimmed_jobs > 1) {
-        ASSERT_TRUE(packed->committed_jobs);
-        ASSERT_EQ(packed->committed_jobs->size(), n_trimmed_jobs - 1);
-      } else {
-        EXPECT_FALSE(packed->committed_jobs);
+    } else {
+      this->root_refs_.resize(user_data_size / sizeof(llfs::PackedPageId));
+      for (usize i = 0; i < this->root_refs_.size(); ++i) {
+        this->root_refs_[i] = llfs::PackedPageId{
+            .id_val = i,
+        };
       }
-      ASSERT_EQ(packed->trimmed_prepare_jobs.size(), n_trimmed_jobs);
+      this->user_data_.str = std::string_view{(const char*)this->root_refs_.data(),
+                                              this->root_refs_.size() * sizeof(llfs::PackedPageId)};
+    }
+    EXPECT_EQ(this->user_data_.str.size(), user_data_size);
+  }
 
-      for (usize i = 0; i < n_trimmed_jobs; ++i) {
-        const auto& job = packed->trimmed_prepare_jobs[i];
+  void init_new_page_ids(usize new_page_count) noexcept
+  {
+    this->new_page_ids_.clear();
+    for (usize i = 0; i < new_page_count; ++i) {
+      this->new_page_ids_.emplace_back(llfs::PageId{i});
+    }
+  }
 
-        ASSERT_TRUE(job);
-        EXPECT_EQ(job->prepare_slot, i);
-        EXPECT_EQ(job->page_ids.size(), i);
+  void init_deleted_page_ids(usize deleted_page_count) noexcept
+  {
+    this->deleted_page_ids_.clear();
+    for (usize i = 0; i < deleted_page_count; ++i) {
+      this->deleted_page_ids_.emplace_back(llfs::PageId{i + 1000});
+    }
+  }
 
-        for (usize j = 0; j < i; ++j) {
-          EXPECT_EQ(this->page_ids[j], job->page_ids[j].unpack())
-              << BATT_INSPECT(i) << BATT_INSPECT(j);
+  void init_page_device_ids(usize page_device_count) noexcept
+  {
+    this->page_device_ids_.clear();
+    for (usize i = 0; i < page_device_count; ++i) {
+      this->page_device_ids_.emplace_back(i);
+    }
+  }
+
+  void pack_prepare_job(std::vector<char>& storage) noexcept
+  {
+    this->pack_test_object(
+        llfs::PrepareJob{
+            .new_page_ids = (batt::as_seq(this->new_page_ids_)  //
+                             | batt::seq::decayed()             //
+                             | batt::seq::boxed()),
+
+            .deleted_page_ids = (batt::as_seq(this->deleted_page_ids_) |  //
+                                 batt::seq::decayed() |                   //
+                                 batt::seq::boxed()),
+
+            .page_device_ids = (batt::as_seq(this->page_device_ids_) |  //
+                                batt::seq::decayed() |                  //
+                                batt::seq::boxed()),
+
+            .user_data = llfs::PackableRef{this->user_data_},
+        },
+        storage);
+  }
+
+  void verify_page_ids(const llfs::PackedArray<llfs::PackedPageId>& actual_ids,
+                       const std::vector<llfs::PageId>& expected_ids, const char* file, int line)
+  {
+    EXPECT_EQ((as_seq(actual_ids)  //
+               | batt::seq::map([](const llfs::PackedPageId& id) {
+                   return id.unpack();
+                 })  //
+               | batt::seq::collect_vec()),
+              expected_ids)
+        << BATT_INSPECT(file) << BATT_INSPECT(line);
+  }
+
+  void verify_page_ids(const llfs::PackedArray<llfs::PackedPageId>& actual_ids,
+                       const std::vector<llfs::PackedPageId>& expected_ids, const char* file,
+                       int line)
+  {
+    EXPECT_EQ((as_seq(actual_ids)      //
+               | batt::seq::decayed()  //
+               | batt::seq::collect_vec()),
+              expected_ids)
+        << BATT_INSPECT(file) << BATT_INSPECT(line);
+  }
+
+  void verify_prepare_job(const llfs::PackedPrepareJob& unpacked) noexcept
+  {
+    ASSERT_TRUE(unpacked.root_page_ids);
+    ASSERT_TRUE(unpacked.new_page_ids);
+    ASSERT_TRUE(unpacked.deleted_page_ids);
+    ASSERT_TRUE(unpacked.page_device_ids);
+
+    EXPECT_THAT(unpacked.user_data(), ::testing::StrEq(this->user_data_.str));
+
+    this->verify_page_ids(  //
+        *unpacked.root_page_ids, this->root_refs_, __FILE__, __LINE__);
+
+    this->verify_page_ids(  //
+        *unpacked.new_page_ids, this->new_page_ids_, __FILE__, __LINE__);
+
+    this->verify_page_ids(  //
+        *unpacked.deleted_page_ids, this->deleted_page_ids_, __FILE__, __LINE__);
+
+    EXPECT_EQ((as_seq(*unpacked.page_device_ids)  //
+               | batt::seq::map([](const auto& id) {
+                   return id.value();
+                 })  //
+               | batt::seq::collect_vec()),
+              this->page_device_ids_);
+  }
+
+  void verify_commit_job(const llfs::PackedCommitJob& unpacked) noexcept
+  {
+    ASSERT_TRUE(unpacked.root_page_ids);
+
+    EXPECT_THAT(unpacked.user_data(), ::testing::StrEq(this->user_data_.str));
+
+    this->verify_page_ids(  //
+        *unpacked.root_page_ids, this->root_refs_, __FILE__, __LINE__);
+  }
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  FakeUserData user_data_;
+  std::vector<llfs::PackedPageId> root_refs_;
+  std::vector<llfs::PageId> new_page_ids_;
+  std::vector<llfs::PageId> deleted_page_ids_;
+  std::vector<llfs::page_device_id_int> page_device_ids_;
+};
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+// PrepareJob Test Plan
+// --------------------
+//  1. Minimal event, pack/unpack
+//     - zero size user data
+//     - no root page ids, new page ids, deleted page ids, or page device ids
+//  2. Test all combinations of zero size, size=1, and size > 1 for each field.
+//
+TEST_F(VolumeJobEventsTest, PrepareJobTest)
+{
+  for (usize user_data_size : {usize{0}, usize{1}, usize{sizeof(llfs::PackedPageId) * 1},
+                               usize{sizeof(llfs::PackedPageId) * 17}}) {
+    for (usize new_page_count : {0, 1, 101}) {
+      for (usize deleted_page_count : {0, 1, 102}) {
+        for (usize page_device_count : {0, 1, 7}) {
+          std::vector<char> storage;
+
+          this->init_user_data(user_data_size);
+          this->init_new_page_ids(new_page_count);
+          this->init_deleted_page_ids(deleted_page_count);
+          this->init_page_device_ids(page_device_count);
+
+          ASSERT_NO_FATAL_FAILURE(this->pack_prepare_job(storage));
+
+          llfs::StatusOr<const llfs::PackedPrepareJob&> unpacked =
+              llfs::unpack_cast(storage, batt::StaticType<llfs::PackedPrepareJob>{});
+
+          ASSERT_TRUE(unpacked.ok()) << BATT_INSPECT(unpacked.status());
+          EXPECT_EQ(llfs::packed_sizeof(*unpacked), storage.size());
+
+          llfs::StatusOr<llfs::Ref<const llfs::PackedPrepareJob>> legacy_unpacked =
+              llfs::unpack_object(*unpacked, nullptr);
+
+          ASSERT_TRUE(legacy_unpacked.ok()) << BATT_INSPECT(legacy_unpacked.status());
+          EXPECT_EQ(legacy_unpacked->pointer(), std::addressof(*unpacked));
+
+          this->verify_prepare_job(*unpacked);
         }
       }
-
-      batt::StatusOr<llfs::VolumeTrimEvent> unpacked = this->unpack_from_buffer(*packed);
-
-      ASSERT_TRUE(unpacked.ok()) << BATT_INSPECT(unpacked.status());
-      EXPECT_EQ(unpacked->old_trim_pos, trim_event.old_trim_pos);
-      EXPECT_EQ(unpacked->new_trim_pos, trim_event.new_trim_pos);
-      EXPECT_EQ((batt::make_copy(unpacked->committed_jobs) |
-                 batt::seq::map([](llfs::PackedSlotOffset offset) -> llfs::slot_offset_type {
-                   return offset.value();
-                 }) |
-                 batt::seq::collect_vec()),
-                commits);
-      EXPECT_EQ((batt::make_copy(unpacked->trimmed_prepare_jobs) | batt::seq::collect_vec()).size(),
-                n_trimmed_jobs);
     }
+  }
+}
 
-    {
-      batt::StatusOr<const llfs::PackedVolumeTrimEvent&> packed =
-          llfs::unpack_cast<llfs::PackedVolumeTrimEvent>(this->const_buffer(1));
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+// CommitJob Test Plan
+// --------------------
+//  Repeat the PrepareJob cases, and follow up with a CommitJob; verify user_data and root_page_ids.
+//
+TEST_F(VolumeJobEventsTest, CommitJobTest)
+{
+  for (usize user_data_size : {usize{0}, usize{1}, usize{sizeof(llfs::PackedPageId) * 1},
+                               usize{sizeof(llfs::PackedPageId) * 17}}) {
+    for (usize new_page_count : {0, 1, 101}) {
+      for (usize deleted_page_count : {0, 1, 102}) {
+        for (usize page_device_count : {0, 1, 7}) {
+          std::vector<char> prepare_storage;
 
-      EXPECT_EQ(packed.status(), llfs::StatusCode::kUnpackCastStructOver);
+          llfs::slot_offset_type fake_prepare_slot = 0xf00dabcde8765;
+
+          this->init_user_data(user_data_size);
+          this->init_new_page_ids(new_page_count);
+          this->init_deleted_page_ids(deleted_page_count);
+          this->init_page_device_ids(page_device_count);
+
+          ASSERT_NO_FATAL_FAILURE(this->pack_prepare_job(prepare_storage));
+
+          llfs::StatusOr<const llfs::PackedPrepareJob&> unpacked_prepare =
+              llfs::unpack_cast(prepare_storage, batt::StaticType<llfs::PackedPrepareJob>{});
+
+          ASSERT_TRUE(unpacked_prepare.ok()) << BATT_INSPECT(unpacked_prepare.status());
+
+          this->verify_prepare_job(*unpacked_prepare);
+
+          std::vector<char> commit_storage;
+
+          ASSERT_NO_FATAL_FAILURE(this->pack_test_object(
+              llfs::CommitJob{
+                  .prepare_slot_offset = fake_prepare_slot,
+                  .packed_prepare = std::addressof(*unpacked_prepare),
+              },
+              commit_storage));
+
+          llfs::StatusOr<const llfs::PackedCommitJob&> unpacked_commit =
+              llfs::unpack_cast(commit_storage, batt::StaticType<llfs::PackedCommitJob>{});
+
+          ASSERT_TRUE(unpacked_commit.ok()) << BATT_INSPECT(unpacked_commit.status());
+          EXPECT_EQ(llfs::packed_sizeof(*unpacked_commit), commit_storage.size());
+          EXPECT_EQ(unpacked_commit->prepare_slot_offset, fake_prepare_slot);
+          EXPECT_EQ(unpacked_commit->prepare_slot_size,
+                    llfs::packed_sizeof_slot_with_payload_size(prepare_storage.size()));
+
+          llfs::StatusOr<llfs::Ref<const llfs::PackedCommitJob>> legacy_unpacked =
+              llfs::unpack_object(*unpacked_commit, nullptr);
+
+          ASSERT_TRUE(legacy_unpacked.ok()) << BATT_INSPECT(legacy_unpacked.status());
+          EXPECT_EQ(legacy_unpacked->pointer(), std::addressof(*unpacked_commit));
+
+          this->verify_commit_job(*unpacked_commit);
+
+          // Simulate a trim of the prepare slot and re-verify the commit (which should be
+          // independent).
+          //
+          std::memset(prepare_storage.data(), 0xab, prepare_storage.size());
+          prepare_storage.clear();
+
+          this->verify_commit_job(*unpacked_commit);
+        }
+      }
     }
   }
 }

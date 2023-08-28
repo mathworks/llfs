@@ -77,6 +77,16 @@ inline constexpr usize packed_sizeof(const PackedPageId&)
   return sizeof(PackedPageId);
 }
 
+inline bool operator==(const PackedPageId& l, const PackedPageId& r)
+{
+  return l.id_val == r.id_val;
+}
+
+inline bool operator!=(const PackedPageId& l, const PackedPageId& r)
+{
+  return !(l == r);
+}
+
 BoxedSeq<PageId> trace_refs(const PackedArray<PackedPageId>& packed);
 
 BoxedSeq<PageId> trace_refs(const BoxedSeq<PageId>& page_ids);

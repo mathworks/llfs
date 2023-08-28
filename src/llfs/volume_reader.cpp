@@ -29,7 +29,6 @@ namespace {
                                                       mode)}
     , slot_reader_{*this->log_reader_}
     , paused_{true}
-    , pending_jobs_{}
     , trim_lock_update_lower_bound_{this->log_reader_->slot_offset() +
                                     this->volume_.options().trim_lock_update_interval}
 {

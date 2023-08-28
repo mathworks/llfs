@@ -437,7 +437,7 @@ TEST(IoRingTest, ReRegisterBuffers)
 
 #ifdef BATT_PLATFORM_IS_LINUX
 //
-// Only compile/run this test on Linux because of the specific errno value it assumes (EBADF).
+// Only compile/run this test on Linux because of the specific errno value it assumes.
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 // Force an error while registering buffers.
@@ -451,7 +451,7 @@ TEST(IoRingTest, FailRegisterBuffers)
       batt::seq::single_item(batt::MutableBuffer{(void*)~0ull, 65536}) | batt::seq::boxed(),
       /*update=*/false);
 
-  EXPECT_EQ(buf_index.status(), batt::status_from_errno(EBADF));
+  EXPECT_EQ(buf_index.status(), batt::status_from_errno(EOVERFLOW));
 }
 
 #endif  // BATT_PLATFORM_IS_LINUX

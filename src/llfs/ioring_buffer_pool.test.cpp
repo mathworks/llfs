@@ -40,6 +40,8 @@ const std::string_view kExpectHeader = R"cpp(
 )cpp";
 // clang-format on
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 TEST(IoRingBufferPoolTest, Test)
 {
   batt::SimpleExecutionContext ctx;
@@ -149,5 +151,121 @@ TEST(IoRingBufferPoolTest, Test)
 
   task.join();
 }
+
+class MockBufferHandler
+{
+ public:
+  MOCK_METHOD(void, invoke, (batt::StatusOr<llfs::IoRingBufferPool::Buffer>), ());
+
+  void operator()(batt::StatusOr<llfs::IoRingBufferPool::Buffer> buffer)
+  {
+    this->invoke(buffer);
+  }
+};
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST(IoRingBufferPoolTest, DeallocateUnblocksWaiter)
+{
+  batt::SimpleExecutionContext ctx;
+
+  batt::Task task{
+      ctx.get_executor(),
+      [&] {
+        const usize pool_size = 1;
+        const usize buffer_size = llfs::IoRingBufferPool::kMemoryUnitSize;
+
+        llfs::StatusOr<llfs::ScopedIoRing> io =
+            llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{16}, llfs::ThreadPoolSize{1});
+
+        ASSERT_TRUE(io.ok()) << BATT_INSPECT(io.status());
+
+        LLFS_VLOG(1) << "making pool";
+
+        llfs::StatusOr<std::unique_ptr<llfs::IoRingBufferPool>> pool_status =
+            llfs::IoRingBufferPool::make_new(io->get_io_ring(), llfs::BufferCount{pool_size},
+                                             llfs::BufferSize{buffer_size});
+
+        ASSERT_TRUE(pool_status.ok()) << BATT_INSPECT(pool_status.status());
+
+        auto& pool = **pool_status;
+
+        EXPECT_EQ(pool.in_use(), 0u);
+        EXPECT_EQ(pool.available(), 1u);
+
+        llfs::StatusOr<llfs::IoRingBufferPool::Buffer> buf = pool.try_allocate();
+
+        ASSERT_TRUE(buf.ok()) << BATT_INSPECT(buf.status());
+        EXPECT_EQ(pool.in_use(), 1u);
+        EXPECT_EQ(pool.available(), 0u);
+
+        ::testing::StrictMock<MockBufferHandler> mock_handler;
+
+        pool.async_allocate(std::ref(mock_handler));
+
+        llfs::StatusOr<llfs::IoRingBufferPool::Buffer> buf2;
+
+        EXPECT_CALL(mock_handler, invoke(::testing::_))  //
+            .WillOnce(::testing::DoAll(::testing::SaveArg<0>(&buf2), ::testing::Return()));
+
+        void* const buf_ptr = buf->data();
+
+        ASSERT_NE(buf_ptr, nullptr);
+
+        *buf = {};
+
+        EXPECT_FALSE(buf->is_valid());
+        ASSERT_TRUE(buf2.ok()) << BATT_INSPECT(buf2.status());
+        EXPECT_EQ(buf2->data(), buf_ptr);
+      },
+      "IoRingBufferPoolTest.DeallocateUnblocksWaiter"};
+
+  ctx.run();
+
+  task.join();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST(IoRingBufferPoolTest, FailedInitialize)
+{
+  llfs::StatusOr<llfs::ScopedIoRing> io =
+      llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{16}, llfs::ThreadPoolSize{1});
+
+  ASSERT_TRUE(io.ok()) << BATT_INSPECT(io.status());
+
+  LLFS_VLOG(1) << "making pool";
+
+  llfs::StatusOr<std::unique_ptr<llfs::IoRingBufferPool>> pool_status =
+      llfs::IoRingBufferPool::make_new(
+          io->get_io_ring(), llfs::BufferCount{1},
+          llfs::BufferSize{llfs::IoRingBufferPool::kMemoryUnitSize * 2});
+
+  EXPECT_EQ(pool_status.status(), batt::StatusCode::kInvalidArgument);
+}
+
+#ifdef BATT_PLATFORM_IS_LINUX
+//
+// Only compile/run this test on Linux because of the specific errno value it assumes (EFAULT).
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST(IoRingBufferPoolTest, EmptyPool)
+{
+  llfs::StatusOr<llfs::ScopedIoRing> io =
+      llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{16}, llfs::ThreadPoolSize{1});
+
+  ASSERT_TRUE(io.ok()) << BATT_INSPECT(io.status());
+
+  LLFS_VLOG(1) << "making pool";
+
+  llfs::StatusOr<std::unique_ptr<llfs::IoRingBufferPool>> pool_status =
+      llfs::IoRingBufferPool::make_new(io->get_io_ring(), llfs::BufferCount{0},
+                                       llfs::BufferSize{llfs::IoRingBufferPool::kMemoryUnitSize});
+
+  EXPECT_EQ(pool_status.status(), batt::status_from_errno(EFAULT));
+}
+
+#endif  // BATT_PLATFORM_IS_LINUX
 
 }  // namespace

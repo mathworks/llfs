@@ -67,4 +67,11 @@ std::string_view raw_data_from_slot(const SlotParse& slot, const PackedRawData* 
   return std::string_view{slot.body.data() + offset, slot.body.size() - offset};
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+std::ostream& operator<<(std::ostream& out, const PackAsRawData& t)
+{
+  return out << "PackAsRawData{.bytes=" << batt::c_str_literal(t.bytes) << ",}";
+}
+
 }  // namespace llfs

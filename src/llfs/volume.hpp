@@ -44,6 +44,8 @@ struct VolumeRecoverParams {
   std::shared_ptr<SlotLockManager> trim_control;
 };
 
+class VolumeJobRecoveryVisitor;
+
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 class Volume
@@ -196,53 +198,32 @@ class Volume
   //
   u64 root_log_capacity() const;
 
-  /*! \brief The current total number of log bytes available to reserve.
+  /** \brief The current total number of log bytes available to reserve.
    *
    * This number goes down when Volume::reserve is called, and goes up with either the Grant objects
    * returned by reserve are spent/destructed, or when the log is trimmed.
    */
   u64 available_to_reserve() const noexcept
   {
-    return this->slot_writer_.pool_size();
+    return this->slot_writer_->pool_size();
   }
 
-  /*! \brief The amount of reserved log space currently held by the VolumeTrimmer for its own
+  /** \brief The amount of reserved log space currently held by the VolumeTrimmer for its own
    * internal use.
    *
    * This is exposed for debugging/tuning purposes only (e.g., to detect possible leaks)
    */
   u64 trimmer_grant_size() const noexcept
   {
-    return this->trimmer_.grant_pool_size();
+    return this->trimmer_->grant_pool_size();
   }
 
-  /*! \brief The number of successful log trims that have completed since this Volume object was
+  /** \brief The number of successful log trims that have completed since this Volume object was
    * created.
    */
   u64 trim_count() const noexcept
   {
-    return this->trimmer_.trim_count();
-  }
-
-  /*! \brief The number of grant bytes that have been passed on to the VolumeTrimmer inside job
-   * append.
-   */
-  u64 trimmer_grant_pushed_size() const noexcept
-  {
-    return this->trimmer_.pushed_grant_size();
-  }
-
-  /*! \brief The number of grant bytes that have been consumed by the VolumeTrimmer, which were
-   * earlier counted in this->trimmer_grant_pushed_size().
-   *
-   * This acts as a cross check to make sure all the grant size calculations are correct from append
-   * to trim.  The expression `(this->trimmer_grant_pushed_size() -
-   * this->trimmer_grant_popped_size()` is the current amount of the VolumeTrimmer grant that was
-   * contributed via Volume::append.
-   */
-  u64 trimmer_grant_popped_size() const noexcept
-  {
-    return this->trimmer_.popped_grant_size();
+    return this->trimmer_->trim_count();
   }
 
   // Returns the current valid slot offset range for the root log at the specified durability level.
@@ -271,14 +252,19 @@ class Volume
     return *(this->root_log_);
   }
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
-  explicit Volume(batt::TaskScheduler& task_scheduler, const VolumeOptions& options,
-                  const boost::uuids::uuid& volume_uuid, batt::SharedPtr<PageCache>&& page_cache,
-                  std::shared_ptr<SlotLockManager>&& trim_control,
-                  std::unique_ptr<PageCache::PageDeleterImpl>&& page_deleter,
-                  std::unique_ptr<LogDevice>&& root_log, std::unique_ptr<PageRecycler>&& recycler,
-                  const boost::uuids::uuid& trimmer_uuid,
-                  const VolumeTrimmer::RecoveryVisitor& trimmer_recovery_visitor) noexcept;
+  explicit Volume(batt::TaskScheduler& task_scheduler,                                 //
+                  const VolumeOptions& options,                                        //
+                  const boost::uuids::uuid& volume_uuid,                               //
+                  batt::SharedPtr<PageCache>&& page_cache,                             //
+                  std::shared_ptr<SlotLockManager>&& trim_control,                     //
+                  std::unique_ptr<PageCache::PageDeleterImpl>&& page_deleter,          //
+                  std::unique_ptr<LogDevice>&& root_log,                               //
+                  std::unique_ptr<PageRecycler>&& recycler,                            //
+                  std::unique_ptr<TypedSlotWriter<VolumeEventVariant>>&& slot_writer,  //
+                  std::unique_ptr<VolumeMetadataRefresher>&& metadata_refresher,       //
+                  std::unique_ptr<VolumeTrimmer>&& trimmer) noexcept;
 
   // Launch background tasks associated with this Volume.
   //
@@ -328,11 +314,16 @@ class Volume
 
   // Appends new slots to the root log.
   //
-  TypedSlotWriter<VolumeEventVariant> slot_writer_;
+  std::unique_ptr<TypedSlotWriter<VolumeEventVariant>> slot_writer_;
+
+  // Used by the VolumeTrimmer to refresh Volume metadata (ids and attachments) when the log is
+  // trimmed.
+  //
+  std::unique_ptr<VolumeMetadataRefresher> metadata_refresher_;
 
   // Refreshes volume config slots and trims the root log.
   //
-  VolumeTrimmer trimmer_;
+  std::unique_ptr<VolumeTrimmer> trimmer_;
 
   // Task that runs `trimmer_` continuously in the background.
   //

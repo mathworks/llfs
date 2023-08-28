@@ -6,7 +6,7 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-#include <llfs/volume_recovery_visitor.hpp>
+#include <llfs/volume_job_recovery_visitor.hpp>
 //
 
 #include <map>
@@ -15,50 +15,51 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*explicit*/ VolumeRecoveryVisitor::VolumeRecoveryVisitor(
-    VolumeReader::SlotVisitorFn&& slot_recovery_fn, VolumePendingJobsMap& pending_jobs) noexcept
-    : VolumeSlotDemuxer<NoneType>{std::move(slot_recovery_fn), pending_jobs}
+/*explicit*/ VolumeJobRecoveryVisitor::VolumeJobRecoveryVisitor() noexcept
 {
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<NoneType> VolumeRecoveryVisitor::on_volume_attach(const SlotParse& /*slot*/,
-                                                           const PackedVolumeAttachEvent& attach)
+Status VolumeJobRecoveryVisitor::on_prepare_job(
+    const SlotParse& slot, const Ref<const PackedPrepareJob>& prepare) /*override*/
 {
-  this->device_attachments.emplace(attach.id);
-  return None;
+  const auto [iter, inserted] = this->pending_jobs_.emplace(
+      slot.offset.lower_bound, SlotParseWithPayload<Ref<const PackedPrepareJob>>{
+                                   slot,
+                                   prepare,
+                               });
+
+  BATT_CHECK(inserted) << "Duplicate prepare job!" << BATT_INSPECT(slot);
+
+  return OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<NoneType> VolumeRecoveryVisitor::on_volume_detach(const SlotParse& /*slot*/,
-                                                           const PackedVolumeDetachEvent& detach)
+Status VolumeJobRecoveryVisitor::on_commit_job(
+    const SlotParse& /*slot*/, const Ref<const PackedCommitJob>& commit) /*override*/
 {
-  this->device_attachments.erase(detach.id);
-  return None;
+  this->pending_jobs_.erase(commit.get().prepare_slot_offset);
+
+  return OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<NoneType> VolumeRecoveryVisitor::on_volume_ids(const SlotParse& slot,
-                                                        const PackedVolumeIds& ids)
+Status VolumeJobRecoveryVisitor::on_rollback_job(const SlotParse& /*slot*/,
+                                                 const PackedRollbackJob& rollback) /*override*/
 {
-  this->ids = SlotWithPayload<PackedVolumeIds>{
-      .slot_range = slot.offset,
-      .payload = ids,
-  };
-  return None;
-}
+  this->pending_jobs_.erase(rollback.prepare_slot);
 
-// TODO[tastolfi 2022-11-18] on_volume_trim;
+  return OkStatus();
+}
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status VolumeRecoveryVisitor::resolve_pending_jobs(PageCache& cache, PageRecycler& recycler,
-                                                   const boost::uuids::uuid& volume_uuid,
-                                                   TypedSlotWriter<VolumeEventVariant>& slot_writer,
-                                                   batt::Grant& grant)
+Status VolumeJobRecoveryVisitor::resolve_pending_jobs(
+    PageCache& cache, PageRecycler& recycler, const boost::uuids::uuid& volume_uuid,
+    TypedSlotWriter<VolumeEventVariant>& slot_writer)
 {
   Optional<slot_offset_type> slot_upper_bound;
 
@@ -115,11 +116,15 @@ Status VolumeRecoveryVisitor::resolve_pending_jobs(PageCache& cache, PageRecycle
 
       BATT_REQUIRE_OK(drop_status);
 
-      StatusOr<SlotRange> rollback_slot =
-          slot_writer.append(grant, PackedRollbackJob{
-                                        .prepare_slot = prepare_slot,
-                                    });
+      const auto rollback_event = PackedRollbackJob{
+          .prepare_slot = prepare_slot,
+      };
 
+      BATT_ASSIGN_OK_RESULT(
+          batt::Grant grant,
+          slot_writer.reserve(packed_sizeof_slot(rollback_event), batt::WaitForResource::kFalse));
+
+      StatusOr<SlotRange> rollback_slot = slot_writer.append(grant, rollback_event);
       BATT_REQUIRE_OK(rollback_slot);
 
       clamp_min_slot(&slot_upper_bound, rollback_slot->upper_bound);
@@ -165,13 +170,17 @@ Status VolumeRecoveryVisitor::resolve_pending_jobs(PageCache& cache, PageRecycle
 
       BATT_REQUIRE_OK(commit_status);
 
+      const auto commit_event = CommitJob{
+          .prepare_slot_offset = prepare_slot,
+          .packed_prepare = packed_prepare_job.pointer(),
+      };
+
+      BATT_ASSIGN_OK_RESULT(batt::Grant grant, slot_writer.reserve(packed_sizeof_slot(commit_event),
+                                                                   batt::WaitForResource::kFalse));
+
       // Now we can write the commit slot.
       //
-      StatusOr<SlotRange> commit_slot = slot_writer.append(grant, PackedCommitJob{
-                                                                      .reserved_ = {},
-                                                                      .prepare_slot = prepare_slot,
-                                                                  });
-
+      StatusOr<SlotRange> commit_slot = slot_writer.append(grant, commit_event);
       BATT_REQUIRE_OK(commit_slot);
 
       clamp_min_slot(&slot_upper_bound, commit_slot->upper_bound);

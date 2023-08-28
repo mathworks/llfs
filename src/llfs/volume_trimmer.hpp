@@ -17,7 +17,6 @@
 #include <llfs/slot_lock_manager.hpp>
 #include <llfs/slot_writer.hpp>
 #include <llfs/status.hpp>
-#include <llfs/volume_cancelled_job_tracker.hpp>
 #include <llfs/volume_event_visitor.hpp>
 #include <llfs/volume_events.hpp>
 #include <llfs/volume_metadata_refresher.hpp>

@@ -295,7 +295,6 @@ TEST(Trie, Test)
       const auto run_timed_bench = [&sample, &words, &kStep](const auto& target) -> double {
         const auto start = std::chrono::steady_clock::now();
 
-        usize count = 0;
         usize checksum = 0;
         for (usize n = 0; n < kBenchmarkRepeat; ++n) {
           for (usize i = 0; i < sample.size() * kStep; ++i) {
@@ -305,7 +304,6 @@ TEST(Trie, Test)
             std::string_view word = words[i + kSkip];
             batt::Interval<usize> pos = target.find(word);
             checksum += pos.lower_bound;
-            count += 1;
           }
         }
 
@@ -313,7 +311,7 @@ TEST(Trie, Test)
                        std::chrono::steady_clock::now() - start)
                        .count();
 
-        EXPECT_GT(checksum | count, 0u);
+        EXPECT_GT(checksum, 1u);
 
         return double(usec) / 1000000.0;
       };

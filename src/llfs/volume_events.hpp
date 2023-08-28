@@ -194,8 +194,8 @@ Status validate_packed_value(const PackedPrepareJob& packed, const void* buffer_
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 struct CommitJob {
-  slot_offset_type prepare_slot;
-  const PackedPrepareJob* prepare_job;
+  slot_offset_type prepare_slot_offset;
+  const PackedPrepareJob* packed_prepare;
 };
 
 usize packed_sizeof(const CommitJob& obj);
@@ -210,7 +210,7 @@ struct PackedCommitJob {
   PackedCommitJob(const PackedCommitJob&) = delete;
   PackedCommitJob& operator=(const PackedCommitJob&) = delete;
 
-  PackedSlotOffset prepare_slot;
+  PackedSlotOffset prepare_slot_offset;
   little_u32 prepare_slot_size;
   PackedPointer<PackedArray<PackedPageId>> root_page_ids;
 

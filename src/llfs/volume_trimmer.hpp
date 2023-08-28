@@ -22,7 +22,6 @@
 #include <llfs/volume_events.hpp>
 #include <llfs/volume_metadata_refresher.hpp>
 #include <llfs/volume_trimmed_region_info.hpp>
-#include <llfs/volume_trimmer_metrics.hpp>
 
 #include <atomic>
 #include <unordered_map>
@@ -77,14 +76,6 @@ class VolumeTrimmer
 {
  public:
   //+++++++++++-+-+--+----- --- -- -  -  -   -
-
-  using Metrics = VolumeTrimmerMetrics;
-
-  static Metrics& metrics() noexcept
-  {
-    static Metrics metrics_;
-    return metrics_;
-  }
 
   /** \brief Creates and returns a function to drop trimmed page root refs.
    */

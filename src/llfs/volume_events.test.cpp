@@ -292,8 +292,8 @@ TEST_F(VolumeJobEventsTest, CommitJobTest)
 
           ASSERT_NO_FATAL_FAILURE(this->pack_test_object(
               llfs::CommitJob{
-                  .prepare_slot = fake_prepare_slot,
-                  .prepare_job = std::addressof(*unpacked_prepare),
+                  .prepare_slot_offset = fake_prepare_slot,
+                  .packed_prepare = std::addressof(*unpacked_prepare),
               },
               commit_storage));
 
@@ -302,7 +302,7 @@ TEST_F(VolumeJobEventsTest, CommitJobTest)
 
           ASSERT_TRUE(unpacked_commit.ok()) << BATT_INSPECT(unpacked_commit.status());
           EXPECT_EQ(llfs::packed_sizeof(*unpacked_commit), commit_storage.size());
-          EXPECT_EQ(unpacked_commit->prepare_slot, fake_prepare_slot);
+          EXPECT_EQ(unpacked_commit->prepare_slot_offset, fake_prepare_slot);
           EXPECT_EQ(unpacked_commit->prepare_slot_size,
                     llfs::packed_sizeof_slot_with_payload_size(prepare_storage.size()));
 

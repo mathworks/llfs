@@ -592,8 +592,8 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
 
     StatusOr<SlotRange> commit_slot =
         this->slot_writer_->append(grant, CommitJob{
-                                              .prepare_slot = prepare_slot_offset,
-                                              .prepare_job = prepare_slot->payload,
+                                              .prepare_slot_offset = prepare_slot_offset,
+                                              .packed_prepare = prepare_slot->payload,
                                           });
 
     BATT_REQUIRE_OK(commit_slot);

@@ -502,7 +502,7 @@ void VolumeTrimmerTest::LogSession::handle_recovered_slot(
 
   LLFS_VLOG(1) << BATT_INSPECT(slot.offset) << BATT_INSPECT(batt::name_of<T>());
 
-  this->prepare_job_ptr.erase(commit.get().prepare_slot);
+  this->prepare_job_ptr.erase(commit.get().prepare_slot_offset);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -663,16 +663,16 @@ void VolumeTrimmerTest::LogSession::commit_one_job()
   JobInfo& job_info = iter->second;
 
   const llfs::CommitJob commit{
-      .prepare_slot = prepare_slot_offset,
-      .prepare_job = this->prepare_job_ptr[prepare_slot_offset],
+      .prepare_slot_offset = prepare_slot_offset,
+      .packed_prepare = this->prepare_job_ptr[prepare_slot_offset],
   };
 
-  BATT_CHECK_NOT_NULLPTR(commit.prepare_job);
+  BATT_CHECK_NOT_NULLPTR(commit.packed_prepare);
 
   const llfs::slot_offset_type log_upper_bound =
       this->mem_device->slot_range(llfs::LogReadMode::kSpeculative).upper_bound;
 
-  ASSERT_LT(commit.prepare_slot, log_upper_bound)
+  ASSERT_LT(commit.prepare_slot_offset, log_upper_bound)
       << BATT_INSPECT(job_i) << BATT_INSPECT(this->sim->pending_jobs.size());
 
   const usize commit_slot_size = llfs::packed_sizeof_slot(commit);
@@ -690,7 +690,7 @@ void VolumeTrimmerTest::LogSession::commit_one_job()
 
   if (commit_slot.ok()) {
     LLFS_VLOG(1) << "Wrote commit slot at " << *commit_slot
-                 << " (prepare_slot=" << commit.prepare_slot << ")";
+                 << " (prepare_slot=" << commit.prepare_slot_offset << ")";
 
     job_info.commit_slot_offset = commit_slot->lower_bound;
 

@@ -40,7 +40,7 @@ Status VolumeJobRecoveryVisitor::on_prepare_job(
 Status VolumeJobRecoveryVisitor::on_commit_job(
     const SlotParse& /*slot*/, const Ref<const PackedCommitJob>& commit) /*override*/
 {
-  this->pending_jobs_.erase(commit.get().prepare_slot);
+  this->pending_jobs_.erase(commit.get().prepare_slot_offset);
 
   return OkStatus();
 }
@@ -171,8 +171,8 @@ Status VolumeJobRecoveryVisitor::resolve_pending_jobs(
       BATT_REQUIRE_OK(commit_status);
 
       const auto commit_event = CommitJob{
-          .prepare_slot = prepare_slot,
-          .prepare_job = packed_prepare_job.pointer(),
+          .prepare_slot_offset = prepare_slot,
+          .packed_prepare = packed_prepare_job.pointer(),
       };
 
       BATT_ASSIGN_OK_RESULT(batt::Grant grant, slot_writer.reserve(packed_sizeof_slot(commit_event),

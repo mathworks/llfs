@@ -162,11 +162,11 @@ usize packed_sizeof_commit_slot(const PrepareJob& obj)
 //
 usize packed_sizeof(const CommitJob& obj)
 {
-  BATT_CHECK_NOT_NULLPTR(obj.prepare_job);
-  BATT_CHECK_NOT_NULLPTR(obj.prepare_job->root_page_ids.get());
+  BATT_CHECK_NOT_NULLPTR(obj.packed_prepare);
+  BATT_CHECK_NOT_NULLPTR(obj.packed_prepare->root_page_ids.get());
 
-  return sizeof(PackedCommitJob) + packed_sizeof(*obj.prepare_job->root_page_ids) +
-         obj.prepare_job->user_data().size();
+  return sizeof(PackedCommitJob) + packed_sizeof(*obj.packed_prepare->root_page_ids) +
+         obj.packed_prepare->user_data().size();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -180,12 +180,12 @@ usize packed_sizeof(const PackedCommitJob& obj)
 //
 PackedCommitJob* pack_object_to(const CommitJob& obj, PackedCommitJob* packed, DataPacker* dst)
 {
-  packed->prepare_slot = obj.prepare_slot;
-  packed->prepare_slot_size = packed_sizeof_slot(*obj.prepare_job);
+  packed->prepare_slot_offset = obj.prepare_slot_offset;
+  packed->prepare_slot_size = packed_sizeof_slot(*obj.packed_prepare);
 
   // Byte-wise copy the user data from the prepare job directly after the PackedCommitJob struct.
   //
-  std::string_view user_data = obj.prepare_job->user_data();
+  std::string_view user_data = obj.packed_prepare->user_data();
   Optional<std::string_view> packed_user_data =
       dst->pack_raw_data(user_data.data(), user_data.size());
   if (!packed_user_data) {
@@ -204,9 +204,9 @@ PackedCommitJob* pack_object_to(const CommitJob& obj, PackedCommitJob* packed, D
 
   // Initialize the array and copy any page ids.
   //
-  const usize id_count = obj.prepare_job->root_page_ids->size();
+  const usize id_count = obj.packed_prepare->root_page_ids->size();
   if (id_count != 0) {
-    if (!dst->pack_raw_data(obj.prepare_job->root_page_ids->data(),
+    if (!dst->pack_raw_data(obj.packed_prepare->root_page_ids->data(),
                             sizeof(PackedPageId) * id_count)) {
       return nullptr;
     }

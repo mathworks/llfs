@@ -234,7 +234,7 @@ class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
    *                       mutex; must return the passed slot_range (which is the interval where
    *                       `payload` was written)
    *
-   * \return The slot offset range where `payload` was appended in the log
+   * \return The SlotParse and pointer to packed variant case.
    */
   template <typename T, typename PackedT = PackedTypeFor<T>,
             typename PostCommitFn = NullPostCommitFn>
@@ -245,18 +245,21 @@ class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
     const usize slot_body_size = sizeof(PackedVariant<Ts...>) + packed_sizeof(payload);
     BATT_CHECK_NE(slot_body_size, 0u);
 
-    // lock the writer in SlotWriter::prepare
+    // Lock the writer in SlotWriter::prepare.
+    //
     StatusOr<Append> op = this->SlotWriter::prepare(caller_grant, slot_body_size);
     BATT_REQUIRE_OK(op);
 
-    // Do allocation for the buffer to write the variant-ID
+    // Do allocation for the buffer to write the variant-ID.
+    //
     PackedVariant<Ts...>* variant_head =
         op->packer().pack_record(batt::StaticType<PackedVariant<Ts...>>{});
     if (!variant_head) {
       return ::llfs::make_status(StatusCode::kFailedToPackSlotVarHead);
     }
 
-    // Get variant-ID ('which') for this entry
+    // Get variant-ID ('which') for this entry.
+    //
     variant_head->init(batt::StaticType<PackedT>{});
 
     if (!pack_object(BATT_FORWARD(payload), &(op->packer()))) {
@@ -266,12 +269,13 @@ class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
     StatusOr<SlotRange> slot_range = post_commit_fn(op->commit());
     BATT_REQUIRE_OK(slot_range);
 
+    auto* slot_body_start = reinterpret_cast<const char*>(variant_head);
+
     return SlotParseWithPayload<const PackedT*>{
         .slot =
             SlotParse{
                 .offset = *slot_range,
-                .body =
-                    std::string_view{reinterpret_cast<const char*>(variant_head), slot_body_size},
+                .body = std::string_view{slot_body_start, slot_body_size},
                 .total_grant_spent = slot_body_size,
             },
         .payload = variant_head->as(batt::StaticType<PackedT>{}),

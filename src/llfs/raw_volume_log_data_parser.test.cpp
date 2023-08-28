@@ -246,14 +246,14 @@ TEST_F(RawVolumeLogDataParserTest, Test)
     EXPECT_EQ(fourth_slot_begin, third_slot_end);
 
     llfs::CommitJob commit_job_event{
-        .prepare_slot = third_slot_begin,
-        .prepare_job = packed_prepare.payload,
+        .prepare_slot_offset = third_slot_begin,
+        .packed_prepare = packed_prepare.payload,
     };
 
     std::array<char, sizeof(llfs::PackedCommitJob)> commit_buffer;
     auto& expected_commit = reinterpret_cast<llfs::PackedCommitJob&>((commit_buffer));
     {
-      expected_commit.prepare_slot = third_slot_begin;
+      expected_commit.prepare_slot_offset = third_slot_begin;
       expected_commit.prepare_slot_size = (u32)packed_prepare.slot.offset.size();
       expected_commit.root_page_ids.offset =
           sizeof(llfs::PackedPointer<llfs::PackedArray<llfs::PackedPageId>>) +

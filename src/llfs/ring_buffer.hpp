@@ -55,8 +55,9 @@ class RingBuffer
   };
 
   struct FileDescriptor {
-    int fd;
-    u64 byte_size;
+    int fd = -1;
+    FILE* fp = nullptr;
+    u64 byte_size = 0;
     i64 byte_offset = 0;
     bool truncate = true;
     bool close = false;
@@ -168,6 +169,10 @@ class RingBuffer
     /** \brief The file descriptor of the file backing the mapped regions.
      */
     int fd_ = -1;
+
+    /** \brief The FILE* for the file, if fopen (or similar) was used. (OPTIONAL)
+     */
+    FILE* fp_ = nullptr;
 
     /** \brief The starting offset within the file to place the mapped region.
      */

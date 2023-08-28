@@ -21,6 +21,7 @@
 namespace {
 
 using namespace llfs::int_types;
+using namespace llfs::constants;
 
 using llfs::MockSlotVisitorFn;
 
@@ -41,6 +42,7 @@ class RawVolumeLogDataParserTest : public ::testing::Test
  public:
   void SetUp() override
   {
+    this->log_buffer.reserve(1 * kMiB);
     this->reset_parser();
   }
 
@@ -52,10 +54,20 @@ class RawVolumeLogDataParserTest : public ::testing::Test
   // Packs the event as a VolumeEventVariant slot at the end of `this->log_buffer`.
   //
   template <typename T>
-  void append_event(T&& event)
+  llfs::SlotParseWithPayload<const llfs::PackedTypeFor<T>*> append_event(T&& event)
   {
-    const usize slot_body_size = sizeof(llfs::VolumeEventVariant) + packed_sizeof(event);
-    const usize slot_size = llfs::packed_sizeof_slot(event);
+    const usize event_size = packed_sizeof(event);
+    const usize slot_body_size = sizeof(llfs::VolumeEventVariant) + event_size;
+    const usize slot_size = llfs::packed_sizeof_slot_with_payload_size(event_size);
+
+    LLFS_VLOG(1) << "append_event: " << BATT_INSPECT(batt::name_of<T>())
+                 << BATT_INSPECT(slot_body_size) << BATT_INSPECT(slot_size)
+                 << BATT_INSPECT(batt::make_printable(event));
+
+    llfs::SlotRange slot_range{
+        .lower_bound = this->log_buffer.size(),
+        .upper_bound = this->log_buffer.size() + slot_size,
+    };
 
     this->log_buffer.resize(this->log_buffer.size() + slot_size);
 
@@ -65,12 +77,25 @@ class RawVolumeLogDataParserTest : public ::testing::Test
     BATT_CHECK_GE(slot_begin, this->log_buffer.data());
 
     {
-      llfs::MutableBuffer slot_buffer{slot_begin, slot_size};
+      const llfs::MutableBuffer slot_buffer{slot_begin, slot_size};
       llfs::DataPacker packer{slot_buffer};
 
       BATT_CHECK_NOT_NULLPTR(packer.pack_varint(slot_body_size));
-      BATT_CHECK_NOT_NULLPTR(llfs::pack_object(
-          llfs::pack_as_variant<llfs::VolumeEventVariant>(BATT_FORWARD(event)), &packer));
+
+      const llfs::VolumeEventVariant* packed_event = llfs::pack_object(
+          llfs::pack_as_variant<llfs::VolumeEventVariant>(BATT_FORWARD(event)), &packer);
+
+      BATT_CHECK_NOT_NULLPTR(packed_event);
+
+      return llfs::SlotParseWithPayload<const llfs::PackedTypeFor<T>*>{
+          .slot =
+              llfs::SlotParse{
+                  .offset = slot_range,
+                  .body = std::string_view{(const char*)slot_buffer.data(), slot_buffer.size()},
+                  .total_grant_spent = slot_size,
+              },
+          .payload = packed_event->as(batt::StaticType<llfs::PackedTypeFor<T>>{}),
+      };
     }
   }
 
@@ -159,7 +184,6 @@ TEST_F(RawVolumeLogDataParserTest, Test)
                 .upper_bound = second_slot_end,
             },
         .body = user_event_1_packed_variant,
-        .depends_on_offset = batt::None,
         .total_grant_spent = second_slot_end - second_slot_begin,
     };
 
@@ -187,12 +211,15 @@ TEST_F(RawVolumeLogDataParserTest, Test)
 
     EXPECT_EQ(third_slot_begin, second_slot_end);
 
-    this->append_event(llfs::PrepareJob{
-        .new_page_ids = batt::seq::Empty<llfs::PageId>{} | batt::seq::boxed(),
-        .deleted_page_ids = batt::seq::Empty<llfs::PageId>{} | batt::seq::boxed(),
-        .page_device_ids = batt::seq::Empty<llfs::page_device_id_int>{} | batt::seq::boxed(),
-        .user_data = llfs::PackableRef{third_slot_user_data},
-    });
+    llfs::SlotParseWithPayload<const llfs::PackedPrepareJob*> packed_prepare =
+        this->append_event(llfs::PrepareJob{
+            .new_page_ids = batt::seq::Empty<llfs::PageId>{} | batt::seq::boxed(),
+            .deleted_page_ids = batt::seq::Empty<llfs::PageId>{} | batt::seq::boxed(),
+            .page_device_ids = batt::seq::Empty<llfs::page_device_id_int>{} | batt::seq::boxed(),
+            .user_data = llfs::PackableRef{third_slot_user_data},
+        });
+
+    EXPECT_EQ(packed_prepare.slot.offset.lower_bound, third_slot_begin);
 
     const usize third_slot_end = this->log_buffer.size();
 
@@ -218,17 +245,33 @@ TEST_F(RawVolumeLogDataParserTest, Test)
 
     EXPECT_EQ(fourth_slot_begin, third_slot_end);
 
-    llfs::PackedCommitJob packed_commit_job_event{
-        .reserved_ = {0},
-        .prepare_slot = third_slot_begin,
+    llfs::CommitJob commit_job_event{
+        .prepare_slot_offset = third_slot_begin,
+        .packed_prepare = packed_prepare.payload,
     };
+
+    std::array<char, sizeof(llfs::PackedCommitJob)> commit_buffer;
+    auto& expected_commit = reinterpret_cast<llfs::PackedCommitJob&>((commit_buffer));
+    {
+      expected_commit.prepare_slot_offset = third_slot_begin;
+      expected_commit.prepare_slot_size = (u32)packed_prepare.slot.offset.size();
+      expected_commit.root_page_ids.offset =
+          sizeof(llfs::PackedPointer<llfs::PackedArray<llfs::PackedPageId>>) +
+          this->user_event_2.size();
+    }
+    std::array<char, sizeof(llfs::PackedArray<llfs::PackedPageId>)> root_page_ids_buffer;
+    auto& expected_root_page_ids =
+        reinterpret_cast<llfs::PackedArray<llfs::PackedPageId>&>((root_page_ids_buffer));
+    expected_root_page_ids.initialize(0);
 
     const std::string user_event_2_packed_variant = batt::to_string(
         llfs::index_of_type_within_packed_variant<llfs::VolumeEventVariant,
                                                   llfs::PackedCommitJob>(),
-        std::string_view{(const char*)&packed_commit_job_event, sizeof(llfs::PackedCommitJob)});
+        std::string_view{(const char*)&expected_commit, sizeof(expected_commit)},
+        this->user_event_2,
+        std::string_view{(const char*)&expected_root_page_ids, sizeof(expected_root_page_ids)});
 
-    this->append_event(packed_commit_job_event);
+    this->append_event(commit_job_event);
 
     const usize fourth_slot_end = this->log_buffer.size();
 
@@ -241,14 +284,8 @@ TEST_F(RawVolumeLogDataParserTest, Test)
                 .upper_bound = fourth_slot_end,
             },
         .body = user_event_2_packed_variant,
-        .depends_on_offset =
-            llfs::SlotRange{
-                .lower_bound = third_slot_begin,
-                .upper_bound = third_slot_end,
-            },
         .total_grant_spent = ((third_slot_end - third_slot_begin)  //
-                              + (fourth_slot_end - fourth_slot_begin)) *
-                             2,
+                              + (fourth_slot_end - fourth_slot_begin)),
     };
 
     {

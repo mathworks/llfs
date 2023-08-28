@@ -50,8 +50,7 @@ inline StatusOr<slot_offset_type> RawVolumeLogDataParser::parse_chunk(
 
   // Create a demuxer to filter out all Volume Events from the user events.
   //
-  VolumeSlotDemuxer<NoneType, decltype(wrapped_visitor_fn)> demuxer{wrapped_visitor_fn,
-                                                                    this->pending_jobs_};
+  VolumeSlotDemuxer<NoneType, decltype(wrapped_visitor_fn)> demuxer{wrapped_visitor_fn};
 
   // Create a LogDevice::Reader for the current chunk data.
   //

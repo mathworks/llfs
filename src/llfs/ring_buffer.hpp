@@ -20,6 +20,7 @@
 #include <batteries/assert.hpp>
 #include <batteries/case_of.hpp>
 #include <batteries/interval.hpp>
+#include <batteries/math.hpp>
 #include <batteries/small_vec.hpp>
 
 #include <boost/intrusive/options.hpp>
@@ -72,6 +73,8 @@ class RingBuffer
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  static constexpr usize kNumSubpools = 1024;
+
   /** \brief Accesses the global atomic bool flag that controls whether buffer pooling is enabled.
    */
   static std::atomic<bool>& pool_enabled();
@@ -79,6 +82,10 @@ class RingBuffer
   /** \brief Clears the cached buffer pool.
    */
   static void reset_pool();
+
+  static constexpr u16 pool_index_from_buffer_size(u64 size);
+
+  static constexpr u64 buffer_size_from_pool_index(u16 index);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -174,6 +181,10 @@ class RingBuffer
      */
     FILE* fp_ = nullptr;
 
+    /** \brief The process-unique identifier used to generate a memfd file name.
+     */
+    i64 id_ = -1;
+
     /** \brief The starting offset within the file to place the mapped region.
      */
     i64 offset_within_file_ = 0;
@@ -193,6 +204,10 @@ class RingBuffer
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+    static std::string memfd_name_from_id(i64 id) noexcept;
+
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+
     //----- --- -- -  -  -   -
     /** \brief Impl is a move-only type.
      */
@@ -209,7 +224,7 @@ class RingBuffer
 
     /** \brief Creates a double-mapped ring buffer from the file described in `params`.
      */
-    explicit Impl(const FileDescriptor& params) noexcept;
+    explicit Impl(const FileDescriptor& params, i64 id) noexcept;
 
     /** \brief Moves other to a new Impl instance.  This will invalidate `other`.
      */
@@ -229,6 +244,8 @@ class RingBuffer
     Impl& operator=(Impl&& other) noexcept;
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+    std::string memfd_name() const noexcept;
 
     void resize(usize new_size) noexcept;
 
@@ -293,7 +310,7 @@ class RingBuffer
 
    private:
     std::mutex mutex_;
-    std::unordered_map<usize, ImplNodeList> pool_;
+    std::array<ImplNodeList, kNumSubpools> pool_;
   };
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -308,6 +325,37 @@ class RingBuffer
    */
   Impl impl_;
 };
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+inline /*static*/ constexpr u16 RingBuffer::pool_index_from_buffer_size(u64 size)
+{
+  const i32 lz = (i32)__builtin_clzll(size);
+  const u64 all_bits = size << (lz - 1);
+  constexpr u64 mask = ((u64{1} << 59) - 1);
+  const u64 all_bits2 = (all_bits + mask) & ~mask;
+  const i32 lz2 = (i32)__builtin_clzll(all_bits2);
+  const u64 all_bits3 = all_bits2 << lz2;
+
+  const u16 bits = (all_bits3 >> 60) & 0xf;
+  const u16 shift = (lz - 1 + lz2) & 0x3f;
+
+  const u16 index = (shift << 4) | bits;
+
+  return index;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+inline /*static*/ constexpr u64 RingBuffer::buffer_size_from_pool_index(u16 index)
+{
+  const i32 shift = (index >> 4) & 0x3f;
+  const u64 bits = u64(index & 0xf);
+
+  return (bits << 60) >> shift;
+}
 
 }  // namespace llfs
 

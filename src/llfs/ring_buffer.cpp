@@ -134,7 +134,7 @@ auto RingBuffer::ImplPool::deallocate(Impl&& impl) noexcept -> void
   BATT_CHECK_GE(impl.size_, sizeof(ImplNode));
   BATT_CHECK(impl.cache_on_deallocate_);
 
-  std::memset(impl.memory_, 0, impl.size_ * 2);
+  std::memset(impl.memory_, 0, impl.size_);
 
   ImplNode* node = new (impl.memory_) ImplNode{};
   node->impl = std::move(impl);

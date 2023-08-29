@@ -57,11 +57,15 @@ auto RingBuffer::ImplPool::allocate(const Params& params) noexcept -> Impl
       // Create a new temporary file and map it into our address space.
       //
       [this](const TempFile& p) -> Impl {
+        usize page_aligned_size = round_up_to_page_size_multiple(p.byte_size);
+        const u16 index = RingBuffer::pool_index_from_buffer_size(page_aligned_size);
+
         // ---- begin pool lock
         if (RingBuffer::pool_enabled()) {
           std::unique_lock<std::mutex> lock{this->mutex_};
 
-          ImplNodeList& subpool = this->pool_[p.byte_size];
+          BATT_CHECK_LT(index, this->pool_.size());
+          ImplNodeList& subpool = this->pool_[index];
           if (!subpool.empty()) {
             BATT_CHECK_NE(subpool.size(), 0u);
 
@@ -77,23 +81,32 @@ auto RingBuffer::ImplPool::allocate(const Params& params) noexcept -> Impl
             BATT_CHECK_EQ((const void*)impl.memory_, (const void*)std::addressof(node));
             std::memset(impl.memory_, 0, sizeof(ImplNode));
 
+            impl.resize(p.byte_size);
+
             return impl;
           }
           // else - there is no buffer of the required size in the pool; fall-through...
         }
         // ---- end pool lock
 
-        FILE* fp = tmpfile();
+        static std::atomic<i64> counter{0};
+
+        const i64 id = counter.fetch_add(1);
+
+        FILE* const fp = nullptr;
+
+        const int fd = memfd_create(Impl::memfd_name_from_id(id).c_str(), MFD_CLOEXEC);
 
         return Impl{FileDescriptor{
-            .fd = fileno(fp),
-            .fp = fp,
-            .byte_size = p.byte_size,
-            .byte_offset = 0,
-            .truncate = true,
-            .close = true,
-            .cache_on_deallocate = true,
-        }};
+                        .fd = fd,
+                        .fp = fp,
+                        .byte_size = p.byte_size,
+                        .byte_offset = 0,
+                        .truncate = true,
+                        .close = true,
+                        .cache_on_deallocate = true,
+                    },
+                    /*id=*/id};
       },
 
       //----- --- -- -  -  -   -
@@ -108,21 +121,22 @@ auto RingBuffer::ImplPool::allocate(const Params& params) noexcept -> Impl
           flags |= O_TRUNC;
         }
         return Impl{FileDescriptor{
-            .fd = ::open(p.file_name.c_str(), flags, S_IRWXU),
-            .fp = nullptr,
-            .byte_size = p.byte_size,
-            .byte_offset = p.byte_offset,
-            .truncate = p.truncate,
-            .close = true,
-            .cache_on_deallocate = false,
-        }};
+                        .fd = ::open(p.file_name.c_str(), flags, S_IRWXU),
+                        .fp = nullptr,
+                        .byte_size = p.byte_size,
+                        .byte_offset = p.byte_offset,
+                        .truncate = p.truncate,
+                        .close = true,
+                        .cache_on_deallocate = false,
+                    },
+                    /*id=*/-1};
       },
 
       //----- --- -- -  -  -   -
       // Create an Impl from a pre-existing file descriptor.
       //
       [](const FileDescriptor& p) -> Impl {
-        return Impl{p};
+        return Impl{p, /*id=*/-1};
       });
 }
 
@@ -138,9 +152,12 @@ auto RingBuffer::ImplPool::deallocate(Impl&& impl) noexcept -> void
 
   ImplNode* node = new (impl.memory_) ImplNode{};
   node->impl = std::move(impl);
+
+  const u16 index = RingBuffer::pool_index_from_buffer_size(node->impl.capacity_);
   {
     std::unique_lock<std::mutex> lock{this->mutex_};
-    this->pool_[node->impl.size_].push_front(*node);
+    BATT_CHECK_LT(index, this->pool_.size());
+    this->pool_[index].push_front(*node);
   }
 }
 
@@ -149,16 +166,32 @@ auto RingBuffer::ImplPool::deallocate(Impl&& impl) noexcept -> void
 void RingBuffer::ImplPool::reset() noexcept
 {
   std::unique_lock<std::mutex> lock{this->mutex_};
-  this->pool_.clear();
+  for (auto& subpool : this->pool_) {
+    while (!subpool.empty()) {
+      ImplNode& node = subpool.front();
+      subpool.pop_front();
+      Impl impl = std::move(node.impl);
+      node.~ImplNode();
+    }
+  }
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*explicit*/ RingBuffer::Impl::Impl(const FileDescriptor& desc) noexcept
+/*static*/ std::string RingBuffer::Impl::memfd_name_from_id(i64 id) noexcept
+{
+  return batt::to_string("llfs_RingBuffer_Impl_", id);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*explicit*/ RingBuffer::Impl::Impl(const FileDescriptor& desc, i64 id) noexcept
     : size_{round_up_to_page_size_multiple(desc.byte_size)}
-    , capacity_{this->size_}
+    , capacity_{RingBuffer::buffer_size_from_pool_index(
+          RingBuffer::pool_index_from_buffer_size(this->size_))}
     , fd_{desc.fd}
     , fp_{desc.fp}
+    , id_{id}
     , offset_within_file_{desc.byte_offset}
     , close_fd_{desc.close}
     , cache_on_deallocate_{desc.cache_on_deallocate}
@@ -174,7 +207,7 @@ void RingBuffer::ImplPool::reset() noexcept
   // Size it as desired.
   //
   if (desc.truncate) {
-    BATT_CHECK_NE(ftruncate(this->fd_, this->size_), -1);
+    BATT_CHECK_NE(ftruncate(this->fd_, this->capacity_), -1);
   } else {
     BATT_CHECK_EQ(this->size_, desc.byte_size);
   }
@@ -182,7 +215,7 @@ void RingBuffer::ImplPool::reset() noexcept
   // Map a region of size_*2 into the virtual memory table.
   //
   this->memory_ = reinterpret_cast<char*>(
-      mmap(NULL, this->size_ * 2, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+      mmap(NULL, this->capacity_ * 2, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
 
   BATT_CHECK_NOT_NULLPTR((void*)this->memory_);
 
@@ -264,14 +297,23 @@ auto RingBuffer::Impl::operator=(Impl&& other) noexcept -> Impl&
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+std::string RingBuffer::Impl::memfd_name() const noexcept
+{
+  return Impl::memfd_name_from_id(this->id_);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void RingBuffer::Impl::resize(usize new_size) noexcept
 {
   new_size = round_up_to_page_size_multiple(new_size);
 
   BATT_CHECK_LE(new_size, this->capacity_);
 
-  this->size_ = new_size;
-  this->update_mapped_regions();
+  if (this->size_ != new_size) {
+    this->size_ = new_size;
+    this->update_mapped_regions();
+  }
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

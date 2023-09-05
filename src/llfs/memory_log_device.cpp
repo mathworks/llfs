@@ -100,6 +100,15 @@ slot_offset_type MemoryLogStorageDriver::flush_up_to_offset(slot_offset_type off
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+/*explicit*/ MemoryLogDevice::MemoryLogDevice(usize size, const LogDeviceSnapshot& snapshot,
+                                              LogReadMode mode) noexcept
+    : BasicRingBufferLogDevice<MemoryLogStorageDriver>{RingBuffer::TempFile{size}}
+{
+  this->restore_snapshot(snapshot, mode);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void MemoryLogDevice::restore_snapshot(const LogDeviceSnapshot& snapshot, LogReadMode mode)
 {
   RingBuffer& ring_buffer = this->LogStorageDriverContext::buffer_;

@@ -13,7 +13,6 @@
 #include <llfs/slot.hpp>
 #include <llfs/slot_reader.hpp>
 #include <llfs/volume_event_visitor.hpp>
-#include <llfs/volume_pending_jobs_map.hpp>
 #include <llfs/volume_reader.hpp>
 
 namespace llfs {
@@ -33,20 +32,10 @@ class VolumeSlotDemuxer : public VolumeEventVisitor<StatusOr<R>>
  public:
   template <typename FnArg>
   explicit VolumeSlotDemuxer(
-      FnArg&& slot_visitor_fn, VolumePendingJobsMap& pending_jobs,
+      FnArg&& slot_visitor_fn,
       VolumeEventVisitor<R>& base = VolumeEventVisitor<R>::null_impl()) noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
-
-  void reset_pending_jobs()
-  {
-    this->pending_jobs_.clear();
-  }
-
-  const VolumePendingJobsMap& get_pending_jobs() const noexcept
-  {
-    return this->pending_jobs_;
-  }
 
   // Tracks the pending jobs to make sure that no prepare slots are trimmed before the commit slot.
   //
@@ -67,7 +56,7 @@ class VolumeSlotDemuxer : public VolumeEventVisitor<StatusOr<R>>
 
   StatusOr<R> on_prepare_job(const SlotParse&, const Ref<const PackedPrepareJob>&) override;
 
-  StatusOr<R> on_commit_job(const SlotParse&, const PackedCommitJob&) override;
+  StatusOr<R> on_commit_job(const SlotParse&, const Ref<const PackedCommitJob>&) override;
 
   StatusOr<R> on_rollback_job(const SlotParse&, const PackedRollbackJob&) override;
 
@@ -99,10 +88,6 @@ class VolumeSlotDemuxer : public VolumeEventVisitor<StatusOr<R>>
   // The next event visitor in the chain.
   //
   VolumeEventVisitor<R>& base_;
-
-  // The pending jobs for this volume.
-  //
-  VolumePendingJobsMap& pending_jobs_;
 
   // The upper bound offset of the last visited slot.
   //

@@ -15,19 +15,44 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-PageLayoutId OpaquePageView::get_page_layout_id() const /*override*/
+/*static*/ const PageLayoutId& OpaquePageView::page_layout_id() noexcept
 {
-  const static PageLayoutId rec_ = [] {
-    llfs::PageLayoutId rec;
+  const static PageLayoutId id_ = [] {
+    llfs::PageLayoutId id;
 
-    const char tag[sizeof(rec.value) + 1] = "(opaque)";
+    const char tag[sizeof(id.value) + 1] = "(opaque)";
 
-    std::memcpy(&rec.value, tag, sizeof(rec.value));
+    std::memcpy(&id.value, tag, sizeof(id.value));
 
-    return rec;
+    return id;
   }();
 
-  return rec_;
+  return id_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*static*/ PageReader OpaquePageView::page_reader() noexcept
+{
+  return [](std::shared_ptr<const PageBuffer> page_buffer)
+             -> StatusOr<std::shared_ptr<const PageView>> {
+    return {std::make_shared<OpaquePageView>(std::move(page_buffer))};
+  };
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*static*/ Status OpaquePageView::register_layout(PageCache& cache) noexcept
+{
+  return cache.register_page_reader(OpaquePageView::page_layout_id(), __FILE__, __LINE__,
+                                    OpaquePageView::page_reader());
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+PageLayoutId OpaquePageView::get_page_layout_id() const /*override*/
+{
+  return OpaquePageView::page_layout_id();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

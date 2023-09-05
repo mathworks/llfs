@@ -57,7 +57,7 @@ class DataPacker
   struct AllocFrontPolicy;
   struct AllocBackPolicy;
 
-  /*! \brief Allocates from Arena in front-to-back order.
+  /** \brief Allocates from Arena in front-to-back order.
    */
   struct AllocFrontPolicy {
     static Optional<MutableBuffer> allocate_buffer(Arena* arena, usize size)
@@ -71,7 +71,7 @@ class DataPacker
     }
   };
 
-  /*! \brief Allocates from Arena in back-to-front order.
+  /** \brief Allocates from Arena in back-to-front order.
    */
   struct AllocBackPolicy {
     static Optional<MutableBuffer> allocate_buffer(Arena* arena, usize size)
@@ -137,7 +137,7 @@ class DataPacker
            (rec_end <= this->buffer_end());
   }
 
-  /*! \brief Allocate buffer from Data-packer's arena for the passed in Type.
+  /** \brief Allocate buffer from Data-packer's arena for the passed in Type.
    *
    * \param count It's specifying number of elements of type 'T' for which memory allocation is
    *              requested. By default it is going to allocate space for 'one' element.
@@ -154,12 +154,16 @@ class DataPacker
     return reinterpret_cast<T*>(buf->data());
   }
 
-  /*! \brief Reserve space at the end of the buffer for later allocation.
+  /** \brief Reserve space at the end of the buffer for later allocation.
    *
    * DataPacker functions that allocate trailing buffer space (pack_data, pack_string, etc.) can be
    * passed a DataPacker::Arena to allocate portions of the reserved space later.
    */
   [[nodiscard]] Optional<Arena> reserve_arena(usize size);
+
+  /** \brief Reserve `byte_size` bytes of space at the beginning of the available region.
+   */
+  [[nodiscard]] Optional<MutableBuffer> reserve_front(usize byte_size) noexcept;
 
   [[nodiscard]] const void* pack_data(const void* data, usize size);
   [[nodiscard]] const void* pack_data(const void* data, usize size, Arena* arena);

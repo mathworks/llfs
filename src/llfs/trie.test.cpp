@@ -5,6 +5,8 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <llfs/testing/util.hpp>
+
 #include <llfs/data_packer.hpp>
 #include <llfs/define_packed_type.hpp>
 #include <llfs/int_types.hpp>
@@ -42,7 +44,9 @@ using llfs::PackedBPTrie;
 std::vector<std::string> load_words()
 {
   std::vector<std::string> words;
-  std::ifstream ifs{batt::to_string(std::getenv("PROJECT_DIR"), "/testdata/words")};
+  std::string word_file_path = llfs::testing::get_test_data_file_path("words");
+  std::ifstream ifs{word_file_path};
+  BATT_CHECK(ifs.good()) << BATT_INSPECT_STR(word_file_path);
   std::string word;
   while (ifs.good()) {
     ifs >> word;

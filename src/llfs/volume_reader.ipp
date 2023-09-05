@@ -39,7 +39,6 @@ class VolumeReader::Impl
   std::unique_ptr<LogDevice::Reader> log_reader_;
   TypedSlotReader<VolumeEventVariant> slot_reader_;
   bool paused_;
-  VolumePendingJobsMap pending_jobs_;
   slot_offset_type trim_lock_update_lower_bound_;
 };
 
@@ -68,8 +67,7 @@ inline StatusOr<usize> VolumeReader::visit_next(batt::WaitForResource wait_for_c
     return visitor_fn(slot, user_data);
   };
 
-  VolumeSlotDemuxer<NoneType, decltype(wrapped_visitor_fn)&> demuxer{wrapped_visitor_fn,
-                                                                     this->impl_->pending_jobs_};
+  VolumeSlotDemuxer<NoneType, decltype(wrapped_visitor_fn)&> demuxer{wrapped_visitor_fn};
 
   StatusOr<usize> visited =
       this->impl_->slot_reader_.run(wait_for_commit, [&demuxer](auto&&... args) -> Status {
@@ -101,8 +99,7 @@ inline StatusOr<usize> VolumeReader::consume_slots(batt::WaitForResource wait_fo
     return visitor_fn(BATT_FORWARD(args)...);
   };
 
-  VolumeSlotDemuxer<NoneType, decltype(wrapped_visitor_fn)&> demuxer{wrapped_visitor_fn,
-                                                                     this->impl_->pending_jobs_};
+  VolumeSlotDemuxer<NoneType, decltype(wrapped_visitor_fn)&> demuxer{wrapped_visitor_fn};
 
   // SlotReader::run will block for as long as it can unpack and visit new slots from the log.
   //

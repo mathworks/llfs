@@ -9,6 +9,7 @@
 #include <llfs/page_cache.hpp>
 //
 
+#include <llfs/committable_page_cache_job.hpp>
 #include <llfs/memory_log_device.hpp>
 #include <llfs/metrics.hpp>
 #include <llfs/page_cache_job.hpp>
@@ -37,6 +38,8 @@ Status PageCache::PageDeleterImpl::delete_pages(const Slice<const PageToRecycle>
   if (to_delete.empty()) {
     return OkStatus();
   }
+  BATT_DEBUG_INFO("delete_pages()" << BATT_INSPECT_RANGE(to_delete) << BATT_INSPECT(recycle_depth));
+
   const boost::uuids::uuid& caller_uuid = recycler.uuid();
 
   JobCommitParams params{
@@ -94,8 +97,7 @@ PageCache::PageCache(std::vector<PageArena>&& storage_pool,
     , arenas_by_size_log2_{}
     , arenas_by_device_id_{}
     , impl_for_size_log2_{}
-    , page_readers_{std::make_shared<
-          batt::Mutex<std::unordered_map<PageLayoutId, PageReader, PageLayoutId::Hash>>>()}
+    , page_readers_{std::make_shared<batt::Mutex<PageLayoutReaderMap>>()}
 {
   // Sort the storage pool by page size (MUST be first).
   //
@@ -177,7 +179,39 @@ const PageCacheOptions& PageCache::options() const
 //
 bool PageCache::register_page_layout(const PageLayoutId& layout_id, const PageReader& reader)
 {
-  return this->page_readers_->lock()->emplace(layout_id, reader).second;
+  LLFS_LOG_WARNING() << "PageCache::register_page_layout is DEPRECATED; please use "
+                        "PageCache::register_page_reader";
+
+  return this->page_readers_->lock()
+      ->emplace(layout_id,
+                PageReaderFromFile{
+                    .page_reader = reader,
+                    .file = __FILE__,
+                    .line = __LINE__,
+                })
+      .second;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+batt::Status PageCache::register_page_reader(const PageLayoutId& layout_id, const char* file,
+                                             int line, const PageReader& reader)
+{
+  auto locked = this->page_readers_->lock();
+  const auto [iter, was_inserted] = locked->emplace(layout_id, PageReaderFromFile{
+                                                                   .page_reader = reader,
+                                                                   .file = file,
+                                                                   .line = line,
+                                                               });
+
+  if (!was_inserted && (iter->second.file != file || iter->second.line != line)) {
+    return ::llfs::make_status(StatusCode::kPageReaderConflict);
+  }
+
+  BATT_CHECK_EQ(iter->second.file, file);
+  BATT_CHECK_EQ(iter->second.line, line);
+
+  return batt::OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -208,19 +242,22 @@ std::unique_ptr<PageCacheJob> PageCache::new_job()
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<std::shared_ptr<PageBuffer>> PageCache::allocate_page_of_size(
-    PageSize size, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id)
+    PageSize size, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id,
+    const batt::CancelToken& cancel_token)
 {
   const PageSizeLog2 size_log2 = log2_ceil(size);
   BATT_CHECK_EQ(usize{1} << size_log2, size) << "size must be a power of 2";
 
-  return this->allocate_page_of_size_log2(
-      size_log2, wait_for_resource, callers | Caller::PageCache_allocate_page_of_size, job_id);
+  return this->allocate_page_of_size_log2(size_log2, wait_for_resource,
+                                          callers | Caller::PageCache_allocate_page_of_size, job_id,
+                                          std::move(cancel_token));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<std::shared_ptr<PageBuffer>> PageCache::allocate_page_of_size_log2(
-    PageSizeLog2 size_log2, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id)
+    PageSizeLog2 size_log2, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id,
+    const batt::CancelToken& cancel_token)
 {
   BATT_CHECK_LT(size_log2, kMaxPageSizeLog2);
 
@@ -233,8 +270,12 @@ StatusOr<std::shared_ptr<PageBuffer>> PageCache::allocate_page_of_size_log2(
   //
   for (auto wait_arg : {batt::WaitForResource::kFalse, batt::WaitForResource::kTrue}) {
     for (const PageArena& arena : arenas) {
-      StatusOr<PageId> page_id = arena.allocator().allocate_page(wait_arg);
+      StatusOr<PageId> page_id = arena.allocator().allocate_page(wait_arg, cancel_token);
       if (!page_id.ok()) {
+        if (page_id.status() == batt::StatusCode::kResourceExhausted) {
+          const u64 page_size = u64{1} << size_log2;
+          LLFS_LOG_INFO_FIRST_N(1) << "Failed to allocate page (pool is empty): " << BATT_INSPECT(page_size);
+        }
         continue;
       }
 
@@ -385,6 +426,14 @@ StatusOr<PinnedPage> PageCache::put_view(std::shared_ptr<const PageView>&& view,
                                          u64 job_id)
 {
   BATT_CHECK_NOT_NULLPTR(view);
+
+  if (view->get_page_layout_id() != view->header().layout_id) {
+    return {::llfs::make_status(StatusCode::kPageHeaderBadLayoutId)};
+  }
+
+  if (this->page_readers_->lock()->count(view->get_page_layout_id()) == 0) {
+    return {::llfs::make_status(StatusCode::kPutViewUnknownLayoutId)};
+  }
 
   const page_id_int id_val = view->page_id().int_value();
   BATT_CHECK_NE(id_val, kInvalidPageId);
@@ -561,10 +610,14 @@ auto PageCache::find_page_in_cache(PageId page_id, const Optional<PageLayoutId>&
             auto locked = page_readers->lock();
             auto iter = locked->find(layout_id);
             if (iter == locked->end()) {
+              LLFS_LOG_ERROR() << "Unknown page layout: "
+                               << batt::c_str_literal(
+                                      std::string_view{(const char*)&layout_id, sizeof(layout_id)})
+                               << BATT_INSPECT(page_id);
               latch->set_value(make_status(StatusCode::kNoReaderForPageViewType));
               return;
             }
-            reader_for_layout = iter->second;
+            reader_for_layout = iter->second.page_reader;
           }
           // ^^ Release the page_readers mutex ASAP
 

@@ -104,9 +104,9 @@ StatusOr<PinnedPage> PageGraphNodeBuilder::build(PageCacheJob& job) &&
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*static*/ bool PageGraphNodeView::register_layout(PageCache& cache)
+/*static*/ batt::Status PageGraphNodeView::register_layout(PageCache& cache)
 {
-  return cache.register_page_layout(PageGraphNodeView::page_layout_id(),
+  return cache.register_page_reader(PageGraphNodeView::page_layout_id(), __FILE__, __LINE__,
                                     PageGraphNodeView::page_reader());
 }
 

@@ -19,7 +19,7 @@ std::ostream& operator<<(std::ostream& out, const SlotParse& t)
 {
   return out << "SlotParse{.offset=" << t.offset << ", .slot_size=" << t.offset.size()
              << ", .body=" << batt::c_str_literal(t.body) << ", .body_size=" << t.body.size()
-             << ", .depends_on=" << t.depends_on_offset << ",}";
+             << ", .total_grant_spent=" << t.total_grant_spent << ",}";
 }
 
 }  // namespace llfs

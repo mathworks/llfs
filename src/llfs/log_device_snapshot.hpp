@@ -110,6 +110,11 @@ class LogDeviceSnapshot : public boost::equality_comparable<LogDeviceSnapshot>
     return ConstBuffer{this->bytes(), this->size()};
   }
 
+  explicit operator bool() const noexcept
+  {
+    return this->byte_storage_ != nullptr;
+  }
+
  private:
   usize compute_hash_value() const;
 

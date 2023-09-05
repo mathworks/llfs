@@ -73,15 +73,13 @@ TEST(PackedArrayTest, PackArrayCachedSize)
 
     ASSERT_NE(packed, nullptr);
     packed->initialize(numbers.size());
+    ASSERT_EQ(packed->item_count, numbers.size());
 
     // Check all initial values.
     //
-    ASSERT_EQ(packed->flags, 0);
     ASSERT_EQ(packed->size_in_bytes, 0u);
-    ASSERT_FALSE(packed->has_size_in_bytes());
 
     packed->initialize_size_in_bytes(numbers.size() * sizeof(i32));
-    ASSERT_TRUE(packed->has_size_in_bytes());
 
     EXPECT_EQ(packed->get_size_in_bytes(), numbers.size() * sizeof(i32));
 

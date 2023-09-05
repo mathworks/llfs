@@ -105,7 +105,6 @@ Status VolumeReader::trim(slot_offset_type trim_upper_bound)
 {
   BATT_CHECK(this->impl_->read_lock_);
 
-  // BATT_UNTESTED_LINE();
   const SlotRange& old_slot_range = this->impl_->read_lock_.slot_range();
 
   const slot_offset_type new_lower_bound = slot_max(old_slot_range.lower_bound, trim_upper_bound);

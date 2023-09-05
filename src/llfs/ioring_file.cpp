@@ -64,8 +64,10 @@ IoRing::File::~File() noexcept
 Status IoRing::File::write_all(i64 offset, ConstBuffer buffer)
 {
   while (buffer.size() != 0) {
-    BATT_CHECK_EQ(batt::round_down_bits(Self::kBlockAlignmentLog2, offset), offset);
-    BATT_CHECK_EQ(batt::round_down_bits(Self::kBlockAlignmentLog2, buffer.size()), buffer.size());
+    if (this->raw_io_) {
+      BATT_CHECK_EQ(batt::round_down_bits(Self::kBlockAlignmentLog2, offset), offset);
+      BATT_CHECK_EQ(batt::round_down_bits(Self::kBlockAlignmentLog2, buffer.size()), buffer.size());
+    }
     StatusOr<i32> n_written = batt::Task::await<StatusOr<i32>>([&](auto&& handler) {
       this->async_write_some(offset, buffer, BATT_FORWARD(handler));
     });
@@ -102,6 +104,24 @@ Status IoRing::File::read_all(i64 offset, MutableBuffer buffer)
                   << BATT_INSPECT((void*)buffer.data()) << BATT_INSPECT(buffer.size());
     StatusOr<i32> n_read = batt::Task::await<StatusOr<i32>>([&](auto&& handler) {
       this->async_read_some(offset, buffer, BATT_FORWARD(handler));
+    });
+    LLFS_DVLOG(1) << BATT_INSPECT(n_read);
+    BATT_REQUIRE_OK(n_read);
+    offset += *n_read;
+    buffer += *n_read;
+  }
+  return batt::OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status IoRing::File::read_all_fixed(i64 offset, MutableBuffer buffer, int buf_index)
+{
+  while (buffer.size() != 0) {
+    LLFS_DVLOG(1) << "IoRing::File::read_all about to async_read_some; " << BATT_INSPECT(offset)
+                  << BATT_INSPECT((void*)buffer.data()) << BATT_INSPECT(buffer.size());
+    StatusOr<i32> n_read = batt::Task::await<StatusOr<i32>>([&](auto&& handler) {
+      this->async_read_some_fixed(offset, buffer, buf_index, BATT_FORWARD(handler));
     });
     LLFS_DVLOG(1) << BATT_INSPECT(n_read);
     BATT_REQUIRE_OK(n_read);

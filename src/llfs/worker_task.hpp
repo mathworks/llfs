@@ -153,7 +153,7 @@ class WorkerTask
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   template <typename... TaskArgs>
-  explicit WorkerTask(std::shared_ptr<WorkQueue>&& work_queue,
+  explicit WorkerTask(batt::SharedPtr<WorkQueue>&& work_queue,
                       const boost::asio::any_io_executor& ex, TaskArgs&&... task_args) noexcept
       : work_queue_{std::move(work_queue)}
       , task_{ex,
@@ -168,7 +168,17 @@ class WorkerTask
 
   batt::Status dispatch_job(WorkQueue::Job&& job);
 
+  void pre_halt()
+  {
+    this->halt_requested_.store(true);
+  }
+
   void halt();
+
+  void join()
+  {
+    this->task_.join();
+  }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
@@ -176,7 +186,7 @@ class WorkerTask
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  std::shared_ptr<WorkQueue> work_queue_;
+  batt::SharedPtr<WorkQueue> work_queue_;
   batt::Task task_;
   batt::Optional<WorkQueue::Job> job_;
   batt::Watch<u32> state_;

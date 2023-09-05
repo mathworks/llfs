@@ -45,6 +45,11 @@ class PageView
 
   virtual ~PageView() = default;
 
+  const PackedPageHeader& header() const
+  {
+    return ::llfs::get_page_header(*this->data_);
+  }
+
   PageId page_id() const noexcept
   {
     return this->data_->page_id();

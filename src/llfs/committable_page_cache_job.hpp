@@ -136,9 +136,12 @@ class CommittablePageCacheJob
     return this->job_ && this->tracker_;
   }
 
- private:
-  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+  /** \brief Cancels this job, reporting batt::StatusCode::kCancelled to any status listeners.
+   */
+  void cancel();
 
+  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+ private:
   struct DeviceUpdateState {
     std::vector<PageRefCount> ref_count_updates;
     const PageArena* p_arena = nullptr;

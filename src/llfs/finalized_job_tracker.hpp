@@ -49,6 +49,9 @@ class FinalizedJobTracker : public boost::intrusive_ref_counter<FinalizedJobTrac
 
   PageCacheJobProgress get_progress() const;
 
+  void cancel();
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
   std::weak_ptr<const PageCacheJob> job_;
   batt::Watch<PageCacheJobProgress> progress_;

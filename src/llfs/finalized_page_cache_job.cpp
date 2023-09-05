@@ -115,7 +115,7 @@ StatusOr<PinnedPage> FinalizedPageCacheJob::finalized_get(
 {
   const std::shared_ptr<const PageCacheJob> job = lock_job(this->tracker_.get());
   if (job == nullptr) {
-    if (this->tracker_ && this->tracker_->get_progress() == PageCacheJobProgress::kAborted) {
+    if (this->tracker_ && this->tracker_->get_progress() == PageCacheJobProgress::kCancelled) {
       return Status{batt::StatusCode::kCancelled};
     }
     return Status{batt::StatusCode::kUnavailable};

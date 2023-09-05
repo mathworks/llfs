@@ -90,7 +90,7 @@ class PageGraphNodeView : public PageView
   /** \brief Registers this page layout with the passed cache, so that pages using the layout can be
    * correctly loaded and parsed by the PageCache.
    */
-  static bool register_layout(PageCache& cache);
+  static batt::Status register_layout(PageCache& cache);
 
   /** \brief Returns a shared instance of PageGraphNodeView for the given page data.
    * \return error status if the page is ill-formed

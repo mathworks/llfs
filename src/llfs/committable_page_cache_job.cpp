@@ -55,7 +55,7 @@ CommittablePageCacheJob::~CommittablePageCacheJob() noexcept
       if (is_terminal_state(old)) {
         return old;
       }
-      return PageCacheJobProgress::kAborted;
+      return PageCacheJobProgress::kCancelled;
     });
   }
 }
@@ -154,6 +154,17 @@ usize CommittablePageCacheJob::page_device_count() const noexcept
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+void CommittablePageCacheJob::cancel()
+{
+  if (!this->tracker_) {
+    return;
+  }
+
+  this->tracker_->cancel();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 FinalizedPageCacheJob CommittablePageCacheJob::finalized_job() const
 {
   return FinalizedPageCacheJob{batt::make_copy(this->tracker_)};
@@ -193,7 +204,7 @@ Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 c
         if (p == PageCacheJobProgress::kDurable) {
           return p;
         }
-        return PageCacheJobProgress::kAborted;
+        return PageCacheJobProgress::kCancelled;
       });
     }
   });

@@ -35,7 +35,7 @@ Status FinalizedJobTracker::await_durable()
       BATT_PANIC() << "Pending is not a terminal state!";
       BATT_UNREACHABLE();
 
-    case PageCacheJobProgress::kAborted:
+    case PageCacheJobProgress::kCancelled:
       return batt::StatusCode::kCancelled;
 
     case PageCacheJobProgress::kDurable:
@@ -50,6 +50,13 @@ Status FinalizedJobTracker::await_durable()
 PageCacheJobProgress FinalizedJobTracker::get_progress() const
 {
   return this->progress_.get_value();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void FinalizedJobTracker::cancel()
+{
+  this->progress_.set_value(PageCacheJobProgress::kCancelled);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

@@ -23,6 +23,7 @@
 #include <llfs/slot_reader.hpp>
 #include <llfs/slot_writer.hpp>
 
+#include <batteries/async/cancel_token.hpp>
 #include <batteries/async/mutex.hpp>
 #include <batteries/async/runtime.hpp>
 #include <batteries/async/task_scheduler.hpp>
@@ -88,7 +89,8 @@ class PageAllocator
 
   // Remove a page from the free pool but don't increment its refcount yet.
   //
-  StatusOr<PageId> allocate_page(batt::WaitForResource wait_for_resource);
+  StatusOr<PageId> allocate_page(batt::WaitForResource wait_for_resource,
+                                 const batt::CancelToken& cancel_token = batt::CancelToken::none());
 
   // Return the given page to the free pool without updating its refcount.
   //

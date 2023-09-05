@@ -25,13 +25,9 @@ namespace llfs {
 //
 template <typename T>
 struct PackedArray {
-  enum Flags : u8 {
-    kSizeInBytesSet = 0x01,
-  };
-
   little_u24 item_count;
-  Flags flags;
-  little_u32 size_in_bytes;
+  u8 pad;
+  little_u32 size_in_bytes{0};
   T items[0];
 
   // This struct must never be copied since that would invalidate `items`.
@@ -127,20 +123,11 @@ struct PackedArray {
   void initialize_size_in_bytes(usize size_in_bytes)
   {
     this->size_in_bytes = size_in_bytes;
-    this->flags = static_cast<Flags>(this->flags | kSizeInBytesSet);
-  }
-
-  bool has_size_in_bytes() const
-  {
-    return (this->flags & kSizeInBytesSet);
   }
 
   Optional<usize> get_size_in_bytes() const
   {
-    if (this->has_size_in_bytes()) {
-      return this->size_in_bytes;
-    }
-    return 0;
+    return this->size_in_bytes;
   }
 };
 

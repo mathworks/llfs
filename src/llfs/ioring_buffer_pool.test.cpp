@@ -246,7 +246,7 @@ TEST(IoRingBufferPoolTest, FailedInitialize)
 
 #ifdef BATT_PLATFORM_IS_LINUX
 //
-// Only compile/run this test on Linux because of the specific errno value it assumes (EFAULT).
+// Only compile/run this test on Linux because of the specific errno value it assumes (EINVAL).
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
@@ -263,7 +263,7 @@ TEST(IoRingBufferPoolTest, EmptyPool)
       llfs::IoRingBufferPool::make_new(io->get_io_ring(), llfs::BufferCount{0},
                                        llfs::BufferSize{llfs::IoRingBufferPool::kMemoryUnitSize});
 
-  EXPECT_EQ(pool_status.status(), batt::status_from_errno(EFAULT));
+  EXPECT_EQ(pool_status.status(), batt::status_from_errno(EINVAL));
 }
 
 #endif  // BATT_PLATFORM_IS_LINUX

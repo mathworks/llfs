@@ -26,9 +26,20 @@ namespace {
 Status status_from_uring_retval(int retval)
 {
   if (retval != 0) {
+    BATT_CHECK_LT(retval, 0);
     return batt::status_from_errno(-retval);
   }
   return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<i32> status_or_i32_from_uring_retval(int retval)
+{
+  if (retval < 0) {
+    return batt::status_from_errno(-retval);
+  }
+  return {retval};
 }
 
 }  //namespace
@@ -590,9 +601,12 @@ StatusOr<i32> IoRingImpl::register_fd(i32 system_fd) noexcept
                << BATT_INSPECT(user_fd) << "; update=" << (this->fds_registered_);
 
   if (this->fds_registered_) {
-    BATT_REQUIRE_OK(status_from_uring_retval(
-        io_uring_register_files_update(&this->ring_, /*off=*/user_fd, /*files=*/&system_fd,
-                                       /*nr_files=*/1)));
+    BATT_ASSIGN_OK_RESULT(i32 n_files_updated,
+                          status_or_i32_from_uring_retval(io_uring_register_files_update(
+                              &this->ring_, /*off=*/user_fd, /*files=*/&system_fd,
+                              /*nr_files=*/1)));
+
+    BATT_CHECK_EQ(n_files_updated, 1);
 
   } else {
     BATT_REQUIRE_OK(status_from_uring_retval(
@@ -626,10 +640,13 @@ Status IoRingImpl::unregister_fd(i32 user_fd) noexcept
 
   i32 invalid_fd = -1;
 
-  BATT_REQUIRE_OK(
-      status_from_uring_retval(io_uring_register_files_update(&this->ring_, /*off=*/user_fd,
-                                                              /*files=*/&invalid_fd,  //
-                                                              /*nr_files=*/1)));
+  BATT_ASSIGN_OK_RESULT(
+      i32 n_files_updated,
+      status_or_i32_from_uring_retval(io_uring_register_files_update(&this->ring_, /*off=*/user_fd,
+                                                                     /*files=*/&invalid_fd,  //
+                                                                     /*nr_files=*/1)));
+
+  BATT_CHECK_EQ(n_files_updated, 1);
 
   this->registered_fds_[user_fd] = -1;
   this->free_fds_.push_back(user_fd);

@@ -226,6 +226,14 @@ Status VolumeTrimmer::run()
 
     BATT_REQUIRE_OK(trim_upper_bound);
 
+    // Whenever we get a new trim_upper_bound, always check first to see if we are shutting down. If
+    // so, don't start a new trim, as this creates race conditions with the current/former holders
+    // of trim locks.
+    //
+    if (this->trim_control_.is_closed()) {
+      return OkStatus();
+    }
+
     // The next time we wait for a new trim target, it should be at least one past the previously
     // observed offset.
     //

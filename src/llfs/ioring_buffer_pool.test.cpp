@@ -246,7 +246,7 @@ TEST(IoRingBufferPoolTest, FailedInitialize)
 
 #ifdef BATT_PLATFORM_IS_LINUX
 //
-// Only compile/run this test on Linux because of the specific errno value it assumes (EINVAL).
+// Only compile/run this test on Linux because of the specific errno value(s) it assumes.
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //

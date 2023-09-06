@@ -52,6 +52,11 @@ class PackableRef
     {
       return seq::Empty<PageId>{} | seq::boxed();
     }
+
+    virtual const char* name_of_type() const
+    {
+      return "?";
+    }
   };
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -70,6 +75,11 @@ class PackableRef
       return reinterpret_cast<PackedRawData*>(
           pack_object(*reinterpret_cast<const T*>(ptr), packer));
     }
+
+    const char* name_of_type() const override
+    {
+      return batt::name_of<T>();
+    }
   };
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -83,6 +93,11 @@ class PackableRef
     BoxedSeq<PageId> trace_refs_impl(const void* ptr) const override
     {
       return trace_refs(*reinterpret_cast<const T*>(ptr));
+    }
+
+    const char* name_of_type() const override
+    {
+      return batt::name_of<T>();
     }
   };
 
@@ -143,6 +158,11 @@ class PackableRef
   BoxedSeq<PageId> trace_refs_impl() const
   {
     return this->impl_->trace_refs_impl(this->ptr_);
+  }
+
+  const char* name_of_type() const
+  {
+    return this->impl_->name_of_type();
   }
 
  private:

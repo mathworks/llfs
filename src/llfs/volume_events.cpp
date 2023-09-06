@@ -44,13 +44,37 @@ std::ostream& operator<<(std::ostream& out, const VolumeAttachmentId& id)
 //
 usize packed_sizeof(const PrepareJob& obj)
 {
-  return sizeof(PackedPrepareJob) +                                                               //
-         packed_sizeof(obj.user_data) +                                                           //
-         packed_array_size<PackedPageId>(trace_refs(obj.user_data) | seq::count()) +              //
-         packed_array_size<PackedPageId>(batt::make_copy(obj.new_page_ids) | seq::count()) +      //
-         packed_array_size<PackedPageId>(batt::make_copy(obj.deleted_page_ids) | seq::count()) +  //
-         packed_array_size<little_page_device_id_int>(batt::make_copy(obj.page_device_ids) |
-                                                      seq::count());
+  const usize prepare_job_size = sizeof(PackedPrepareJob);
+
+  const usize new_ids_size =
+      packed_array_size<PackedPageId>(batt::make_copy(obj.new_page_ids) | seq::count());
+
+  const usize deleted_ids_size =
+      packed_array_size<PackedPageId>(batt::make_copy(obj.deleted_page_ids) | seq::count());
+
+  const usize root_ids_size =
+      packed_array_size<PackedPageId>(trace_refs(obj.user_data)  //
+                                      | seq::filter([](const PageId& page_id) {
+                                          return page_id.is_valid();
+                                        })  //
+                                      | seq::count());
+
+  const usize device_ids_size = packed_array_size<little_page_device_id_int>(
+      batt::make_copy(obj.page_device_ids) | seq::count());
+
+  const usize user_data_size = packed_sizeof(obj.user_data);
+
+  LLFS_DVLOG(1) << BATT_INSPECT(prepare_job_size) << BATT_INSPECT(new_ids_size)
+                << BATT_INSPECT(deleted_ids_size) << BATT_INSPECT(root_ids_size)
+                << BATT_INSPECT(device_ids_size) << BATT_INSPECT(user_data_size)
+                << BATT_INSPECT(obj.user_data.name_of_type());
+
+  return prepare_job_size +  //
+         new_ids_size +      //
+         deleted_ids_size +  //
+         root_ids_size +     //
+         device_ids_size +   //
+         user_data_size;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -73,7 +97,12 @@ PackedPrepareJob* pack_object_to(const PrepareJob& obj, PackedPrepareJob* packed
 
   // IMPORTANT: root_page_ids must be first (after user data)!
   {
-    PackedArray<PackedPageId>* packed_root_page_ids = pack_object(trace_refs(obj.user_data), dst);
+    PackedArray<PackedPageId>* packed_root_page_ids =
+        pack_object(pack_seq_as_array(trace_refs(obj.user_data)  //
+                                      | seq::filter([](const PageId& page_id) {
+                                          return page_id.is_valid();
+                                        })),
+                    dst);
     if (!packed_root_page_ids) {
       return nullptr;
     }
@@ -135,12 +164,23 @@ Status validate_packed_value(const PackedPrepareJob& packed, const void* buffer_
 //
 usize packed_sizeof(const PackedPrepareJob& obj)
 {
-  return sizeof(PackedPrepareJob) +              //
-         packed_sizeof(*obj.new_page_ids) +      //
-         packed_sizeof(*obj.deleted_page_ids) +  //
-         packed_sizeof(*obj.root_page_ids) +     //
-         packed_sizeof(*obj.page_device_ids) +   //
-         obj.user_data().size();
+  const usize prepare_job_size = sizeof(PackedPrepareJob);
+  const usize new_ids_size = packed_sizeof(*obj.new_page_ids);
+  const usize deleted_ids_size = packed_sizeof(*obj.deleted_page_ids);
+  const usize root_ids_size = packed_sizeof(*obj.root_page_ids);
+  const usize device_ids_size = packed_sizeof(*obj.page_device_ids);
+  const usize user_data_size = obj.user_data().size();
+
+  LLFS_DVLOG(1) << BATT_INSPECT(prepare_job_size) << BATT_INSPECT(new_ids_size)
+                << BATT_INSPECT(deleted_ids_size) << BATT_INSPECT(root_ids_size)
+                << BATT_INSPECT(device_ids_size) << BATT_INSPECT(user_data_size);
+
+  return prepare_job_size +  //
+         new_ids_size +      //
+         deleted_ids_size +  //
+         root_ids_size +     //
+         device_ids_size +   //
+         user_data_size;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -148,7 +188,11 @@ usize packed_sizeof(const PackedPrepareJob& obj)
 usize packed_sizeof_commit(const PrepareJob& obj)
 {
   return sizeof(PackedCommitJob) + packed_sizeof(obj.user_data) +
-         packed_array_size<PackedPageId>(trace_refs(obj.user_data) | seq::count());
+         packed_array_size<PackedPageId>(trace_refs(obj.user_data) |
+                                         seq::filter([](const PageId& page_id) {
+                                           return page_id.is_valid();
+                                         })  //
+                                         | seq::count());
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -165,15 +209,28 @@ usize packed_sizeof(const CommitJob& obj)
   BATT_CHECK_NOT_NULLPTR(obj.packed_prepare);
   BATT_CHECK_NOT_NULLPTR(obj.packed_prepare->root_page_ids.get());
 
-  return sizeof(PackedCommitJob) + packed_sizeof(*obj.packed_prepare->root_page_ids) +
-         obj.packed_prepare->user_data().size();
+  const usize commit_job_size = sizeof(PackedCommitJob);
+  const usize root_ids_size = packed_sizeof(*obj.packed_prepare->root_page_ids);
+  const usize user_data_size = obj.packed_prepare->user_data().size();
+
+  LLFS_DVLOG(1) << BATT_INSPECT(commit_job_size) << BATT_INSPECT(root_ids_size)
+                << BATT_INSPECT(user_data_size);
+
+  return commit_job_size + root_ids_size + user_data_size;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 usize packed_sizeof(const PackedCommitJob& obj)
 {
-  return sizeof(PackedCommitJob) + packed_sizeof(*obj.root_page_ids) + obj.user_data().size();
+  const usize commit_job_size = sizeof(PackedCommitJob);
+  const usize root_ids_size = packed_sizeof(*obj.root_page_ids);
+  const usize user_data_size = obj.user_data().size();
+
+  LLFS_DVLOG(1) << BATT_INSPECT(commit_job_size) << BATT_INSPECT(root_ids_size)
+                << BATT_INSPECT(user_data_size);
+
+  return commit_job_size + root_ids_size + user_data_size;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

@@ -28,17 +28,42 @@ usize packed_sizeof(BoxedSeqT&& seq)
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+/** \brief Wraps a sequence or (lvalue) reference to a sequence, causing it to be packed as a
+ * PackedArray<T> (where T is the SeqItem type).
+ */
+template <typename SeqT>
+struct PackSeqAsArray {
+  SeqT seq;
+};
+
+template <typename SeqT>
+inline auto llfs_packed_type_for  //
+    (batt::StaticType<PackSeqAsArray<SeqT>>)
+        -> batt::StaticType<PackedArray<PackedTypeFor<SeqItem<SeqT>>>>
+{
+  return {};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-template <typename BoxedSeqT, typename Dst,
-          typename = std::enable_if_t<batt::IsBoxedSeq<std::decay_t<BoxedSeqT>>::value>>
-PackedArray<PackedTypeFor<SeqItem<BoxedSeqT>>>* pack_object_to(
-    BoxedSeqT&& obj, PackedArray<PackedTypeFor<SeqItem<BoxedSeqT>>>* packed, Dst* dst)
+template <typename SeqT>
+auto pack_seq_as_array(SeqT&& seq) -> PackSeqAsArray<SeqT>
+{
+  return {BATT_FORWARD(seq)};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename SeqT, typename Dst>
+auto pack_object_to(PackSeqAsArray<SeqT>&& obj, PackedArray<PackedTypeFor<SeqItem<SeqT>>>* packed,
+                    Dst* dst)  //
+    -> PackedArray<PackedTypeFor<SeqItem<SeqT>>>*
 {
   bool ok = true;
 
   packed->item_count = 0;
 
-  BATT_SINK(obj) | seq::for_each([&](auto&& item) {
+  BATT_SINK(obj.seq) | seq::for_each([&](auto&& item) {
     auto* packed_item = pack_object(BATT_FORWARD(item), dst);
     if (!packed_item) {
       ok = false;
@@ -53,6 +78,17 @@ PackedArray<PackedTypeFor<SeqItem<BoxedSeqT>>>* pack_object_to(
   }
 
   return packed;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+/** \brief Pack BoxedSeq<T> as PackedArray<T>.
+ */
+template <typename BoxedSeqT, typename Dst,
+          typename = std::enable_if_t<batt::IsBoxedSeq<std::decay_t<BoxedSeqT>>::value>>
+PackedArray<PackedTypeFor<SeqItem<BoxedSeqT>>>* pack_object_to(
+    BoxedSeqT&& obj, PackedArray<PackedTypeFor<SeqItem<BoxedSeqT>>>* packed, Dst* dst)
+{
+  return pack_object_to(pack_seq_as_array(BATT_FORWARD(obj)), packed, dst);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

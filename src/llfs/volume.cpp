@@ -504,6 +504,7 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
 
     PrepareJob prepared_job = prepare(appendable);
     const u64 prepared_job_size = packed_sizeof_slot(prepared_job);
+    LLFS_VLOG(1) << BATT_INSPECT(prepared_job_size);
 
     Optional<slot_offset_type> prev_user_slot;
 
@@ -590,11 +591,13 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
     //
     BATT_DEBUG_INFO("writing commit slot");
 
-    StatusOr<SlotRange> commit_slot =
-        this->slot_writer_->append(grant, CommitJob{
-                                              .prepare_slot_offset = prepare_slot_offset,
-                                              .packed_prepare = prepare_slot->payload,
-                                          });
+    CommitJob commit_job{
+        .prepare_slot_offset = prepare_slot_offset,
+        .packed_prepare = prepare_slot->payload,
+    };
+    LLFS_VLOG(1) << BATT_INSPECT(packed_sizeof_slot(commit_job));
+
+    StatusOr<SlotRange> commit_slot = this->slot_writer_->append(grant, std::move(commit_job));
 
     BATT_REQUIRE_OK(commit_slot);
 

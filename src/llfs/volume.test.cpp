@@ -1957,4 +1957,84 @@ batt::StatusOr<llfs::SlotRange> VolumeSimTest::commit_job_to_root_log(
   return volume.append(std::move(appendable_job), slot_grant);
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(VolumeTest, AppendableJobGrantSize)
+{
+  auto fake_root_log = llfs::testing::make_fake_log_device_factory(*this->root_log);
+  auto fake_recycler_log = llfs::testing::make_fake_log_device_factory(*this->recycler_log);
+
+  std::unique_ptr<llfs::Volume> test_volume = this->open_volume_or_die(
+      fake_root_log, fake_recycler_log,
+      /*slot_visitor_fn=*/[](const llfs::SlotParse&, const std::string_view& /*user_data*/) {
+        return llfs::OkStatus();
+      });
+
+  ASSERT_NE(test_volume, nullptr);
+
+  std::unique_ptr<llfs::PageCacheJob> job = test_volume->new_job();
+
+  ASSERT_NE(job, nullptr);
+
+  auto user_data_null_page = batt::seq::single_item(llfs::PageId{})  //
+                             | batt::seq::boxed();
+
+  llfs::StatusOr<llfs::AppendableJob> appendable_job =
+      llfs::make_appendable_job(std::move(job), llfs::PackableRef{user_data_null_page});
+
+  ASSERT_TRUE(appendable_job.ok()) << BATT_INSPECT(appendable_job.status());
+
+  const usize size_from_job = appendable_job->calculate_grant_size();
+
+  const usize size_from_volume = test_volume->calculate_grant_size(*appendable_job);
+
+  EXPECT_EQ(size_from_job, size_from_volume);
+
+  llfs::PrepareJob prepare_job = llfs::prepare(*appendable_job);
+  const usize prepare_slot_size = llfs::packed_sizeof_slot(prepare_job);
+  const usize commit_size_from_prepare = llfs::packed_sizeof_commit(prepare_job);
+
+  std::vector<char> prepare_job_storage(llfs::packed_sizeof(prepare_job) * 2);
+
+  llfs::PackedPrepareJob* packed_prepare_job = [&] {
+    batt::MutableBuffer prepare_job_buffer{prepare_job_storage.data(), prepare_job_storage.size()};
+    llfs::DataPacker packer{prepare_job_buffer};
+    llfs::PackedPrepareJob* result = llfs::pack_object(prepare_job, &packer);
+
+    EXPECT_EQ(packer.space(), llfs::packed_sizeof(prepare_job));
+
+    return result;
+  }();
+
+  ASSERT_NE(packed_prepare_job, nullptr);
+  EXPECT_EQ(llfs::packed_sizeof_slot(*packed_prepare_job), prepare_slot_size);
+
+  llfs::CommitJob commit_job{
+      .prepare_slot_offset = 0,
+      .packed_prepare = packed_prepare_job,
+  };
+
+  EXPECT_EQ(commit_size_from_prepare, llfs::packed_sizeof(commit_job));
+
+  const usize commit_slot_size = llfs::packed_sizeof_slot(commit_job);
+  const usize size_from_events = prepare_slot_size + commit_slot_size;
+
+  EXPECT_EQ(size_from_events, size_from_job);
+
+  std::vector<char> commit_job_storage(llfs::packed_sizeof(commit_job) * 2);
+
+  llfs::PackedCommitJob* packed_commit_job = [&] {
+    batt::MutableBuffer commit_job_buffer{commit_job_storage.data(), commit_job_storage.size()};
+    llfs::DataPacker packer{commit_job_buffer};
+    llfs::PackedCommitJob* result = llfs::pack_object(commit_job, &packer);
+
+    EXPECT_EQ(packer.space(), llfs::packed_sizeof(commit_job));
+
+    return result;
+  }();
+
+  ASSERT_NE(packed_commit_job, nullptr);
+  EXPECT_EQ(llfs::packed_sizeof_slot(*packed_commit_job), commit_slot_size);
+}
+
 }  // namespace

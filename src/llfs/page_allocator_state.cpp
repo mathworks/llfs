@@ -553,13 +553,16 @@ void PageAllocatorState::process_txn(
 //
 namespace {
 
-void run_ref_count_update_sanity_checks(const PackedPageRefCount& delta,
+void run_ref_count_update_sanity_checks(const PageIdFactory& id_factory,
+                                        const PackedPageRefCount& delta,
                                         const PageAllocatorRefCount& obj, i32 old_count,
                                         i32 new_count)
 {
   const auto debug_info = [&](std::ostream& out) {
+    const page_generation_int delta_generation = id_factory.get_generation(delta.page_id.unpack());
+
     out << "(" << BATT_INSPECT(delta) << BATT_INSPECT(obj) << BATT_INSPECT(old_count)
-        << BATT_INSPECT(new_count) << ")";
+        << BATT_INSPECT(new_count) << ")" << BATT_INSPECT(delta_generation);
   };
 
   LLFS_VLOG(2) << debug_info;
@@ -659,7 +662,7 @@ i32 PageAllocatorState::calculate_new_ref_count(const PackedPageRefCount& delta)
     new_count = old_count + delta.ref_count;
   }
 
-  run_ref_count_update_sanity_checks(delta, obj, old_count, new_count);
+  run_ref_count_update_sanity_checks(this->page_ids_, delta, obj, old_count, new_count);
 
   return new_count;
 }

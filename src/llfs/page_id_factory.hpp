@@ -55,13 +55,22 @@ constexpr page_id_int kPageDeviceIdMask = ((page_id_int{1} << kPageDeviceIdBits)
 class PageIdFactory : public boost::equality_comparable<PageIdFactory>
 {
  public:
+  static constexpr usize kMinGenerationBits = 18;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   explicit PageIdFactory(PageCount device_capacity, page_device_id_int page_device_id) noexcept
       : capacity_{BATT_CHECKED_CAST(page_id_int, device_capacity.value())}
       , device_id_{page_device_id}
       , device_id_prefix_{(this->device_id_ << kPageDeviceIdShift) & kPageDeviceIdMask}
   {
+    BATT_CHECK_GE(sizeof(page_device_id_int) * 8 - (kPageDeviceIdBits - this->capacity_bits_),
+                  kMinGenerationBits);
+
     BATT_CHECK_GE(this->physical_page_mask_ + 1, this->capacity_);
   }
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   PageCount get_physical_page_count() const
   {
@@ -120,11 +129,21 @@ class PageIdFactory : public boost::equality_comparable<PageIdFactory>
            l.get_device_id() == r.get_device_id();
   }
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
   page_id_int capacity_;
   page_device_id_int device_id_;
   page_id_int device_id_prefix_;
-  u8 capacity_bits_ = batt::round_up_bits(2, batt::log2_ceil(this->capacity_));
+
+  // We round the capacity up by two bits and then add four so that the hex representation of a
+  // page_id will always have a zero digit in between the generation and the physical page number.
+  //
+  static constexpr i32 kHexDigitBits = 4;
+  static constexpr i32 kHexDigitBitsLog2 = 2;
+  //
+  u8 capacity_bits_ =
+      batt::round_up_bits(kHexDigitBitsLog2, batt::log2_ceil(this->capacity_)) + kHexDigitBits;
+
   u64 physical_page_mask_ = (u64{1} << this->capacity_bits_) - 1;
   u64 generation_mask_ = ~(kPageDeviceIdMask | this->physical_page_mask_);
 };

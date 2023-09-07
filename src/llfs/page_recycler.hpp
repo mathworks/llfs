@@ -220,6 +220,8 @@ class PageRecycler
 
   PageDeleter& page_deleter_;
 
+  std::atomic<bool> start_requested_{false};
+
   std::atomic<bool> stop_requested_{false};
 
   std::unique_ptr<LogDevice> wal_device_;

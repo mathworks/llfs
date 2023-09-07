@@ -267,7 +267,7 @@ Status IoRingImpl::wait_for_ring_event()
   eventfd_t v;
   int retval = eventfd_read(this->event_fd_, &v);
   if (retval != 0) {
-    return status_from_retval(retval);
+    return batt::status_from_retval(retval);
   }
 
   // If we are stopping, then write to the eventfd to wake up any other threads which might be

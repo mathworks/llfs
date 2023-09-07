@@ -274,7 +274,8 @@ StatusOr<std::shared_ptr<PageBuffer>> PageCache::allocate_page_of_size_log2(
       if (!page_id.ok()) {
         if (page_id.status() == batt::StatusCode::kResourceExhausted) {
           const u64 page_size = u64{1} << size_log2;
-          LLFS_LOG_INFO_FIRST_N(1) << "Failed to allocate page (pool is empty): " << BATT_INSPECT(page_size);
+          LLFS_LOG_INFO_FIRST_N(1)  //
+              << "Failed to allocate page (pool is empty): " << BATT_INSPECT(page_size);
         }
         continue;
       }

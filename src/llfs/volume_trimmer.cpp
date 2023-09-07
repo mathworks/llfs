@@ -170,6 +170,8 @@ const usize kTrimEventGrantSize =
           this->slot_writer_.reserve(0, batt::WaitForResource::kFalse))}
     , metadata_refresher_{metadata_refresher}
 {
+  LLFS_VLOG(1) << "VolumeTrimmer::VolumeTrimmer" << BATT_INSPECT_STR(this->name_);
+
   StatusOr<batt::Grant> init_grant = this->slot_writer_.reserve(
       std::min<usize>(this->slot_writer_.pool_size(), kTrimEventGrantSize),
       batt::WaitForResource::kFalse);
@@ -225,6 +227,9 @@ Status VolumeTrimmer::run()
     StatusOr<slot_offset_type> trim_upper_bound = this->await_trim_target(least_upper_bound);
 
     BATT_REQUIRE_OK(trim_upper_bound);
+
+    LLFS_VLOG(1) << BATT_INSPECT(trim_upper_bound) << BATT_INSPECT(this->trim_control_.is_closed())
+                 << BATT_INSPECT_STR(this->name_);
 
     // Whenever we get a new trim_upper_bound, always check first to see if we are shutting down. If
     // so, don't start a new trim, as this creates race conditions with the current/former holders

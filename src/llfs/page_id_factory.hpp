@@ -124,7 +124,16 @@ class PageIdFactory : public boost::equality_comparable<PageIdFactory>
   page_id_int capacity_;
   page_device_id_int device_id_;
   page_id_int device_id_prefix_;
-  u8 capacity_bits_ = batt::round_up_bits(2, batt::log2_ceil(this->capacity_));
+
+  // We round the capacity up by two bits and then add four so that the hex representation of a
+  // page_id will always have a zero digit in between the generation and the physical page number.
+  //
+  static constexpr int kHexDigitBits = 4;
+  static constexpr int kHexDigitBitsLog2 = 2;
+  //
+  u8 capacity_bits_ =
+      batt::round_up_bits(kHexDigitBitsLog2, batt::log2_ceil(this->capacity_)) + kHexDigitBits;
+
   u64 physical_page_mask_ = (u64{1} << this->capacity_bits_) - 1;
   u64 generation_mask_ = ~(kPageDeviceIdMask | this->physical_page_mask_);
 };

@@ -229,9 +229,12 @@ const boost::uuids::uuid& PageRecycler::uuid() const
 //
 void PageRecycler::start()
 {
-  if (!this->recycle_task_) {
-    this->refresh_grants();
-    this->start_recycle_task();
+  const bool previously_started = this->start_requested_.exchange(true);
+  if (!previously_started) {
+    if (!this->recycle_task_) {
+      this->refresh_grants();
+      this->start_recycle_task();
+    }
   }
 }
 
@@ -482,6 +485,8 @@ void PageRecycler::refresh_grants()
 //
 void PageRecycler::recycle_task_main()
 {
+  BATT_DEBUG_INFO("PageRecycler::recycle_task_main" << BATT_INSPECT_STR(this->name_));
+
   const auto on_return = batt::finally([this] {
     // Stop the slot writer to unblock any threads that might be waiting on WAL space to write a
     // slot.  Since this is the task that drains the WAL, freeing up more space, these requests

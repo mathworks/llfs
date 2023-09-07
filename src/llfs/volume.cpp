@@ -265,6 +265,12 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
     }
   }
 
+  // The recycler must be started before the trimmer is recovered, in case the trimmer needs to
+  // recycle some pages and the recycler log is full.
+  //
+  BATT_CHECK_NOT_NULLPTR(recycler);
+  recycler->start();
+
   // Recover the VolumeTrimmer state, resolving any pending log trim.
   //
   BATT_ASSIGN_OK_RESULT(std::unique_ptr<VolumeTrimmer> trimmer,

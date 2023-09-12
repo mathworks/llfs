@@ -365,6 +365,15 @@ void Volume::start()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+void Volume::pre_halt()
+{
+  if (this->recycler_) {
+    this->recycler_->pre_halt();
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void Volume::halt()
 {
   this->slot_writer_->halt();

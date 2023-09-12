@@ -88,6 +88,10 @@ class PageRecycler
 
   void start();
 
+  // Suppress spurious shutdown-related warnings.
+  //
+  void pre_halt();
+
   // Request shutdown.
   //
   void halt();
@@ -221,6 +225,8 @@ class PageRecycler
   PageDeleter& page_deleter_;
 
   std::atomic<bool> start_requested_{false};
+
+  std::atomic<bool> pre_halt_{false};
 
   std::atomic<bool> stop_requested_{false};
 

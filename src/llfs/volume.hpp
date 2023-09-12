@@ -65,6 +65,10 @@ class Volume
 
   ~Volume() noexcept;
 
+  // Suppress spurious shutdown-related warnings.
+  //
+  void pre_halt();
+
   // Initiates an asynchronous shutdown of the Volume and all associated background Tasks.
   //
   void halt();

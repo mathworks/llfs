@@ -208,6 +208,7 @@ PageRecycler::~PageRecycler() noexcept
 {
   LLFS_VLOG(1) << "PageRecycler::~PageRecycler() ENTERED";
 
+  this->pre_halt();
   this->halt();
   this->join();
 
@@ -236,6 +237,13 @@ void PageRecycler::start()
       this->start_recycle_task();
     }
   }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void PageRecycler::pre_halt()
+{
+  this->pre_halt_.store(true);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -548,7 +556,7 @@ void PageRecycler::recycle_task_main()
     }
   }();
 
-  if (this->stop_requested_.load()) {
+  if (this->stop_requested_.load() || this->pre_halt_.load()) {
     LLFS_VLOG(1) << "[PageRecycler::recycle_task] exited with status code= "
                  << this->recycle_task_status_;
   } else {

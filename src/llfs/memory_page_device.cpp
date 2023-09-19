@@ -57,6 +57,9 @@ void MemoryPageDevice::write(std::shared_ptr<const PageBuffer>&& buffer, WriteHa
 
     auto locked = state_.lock();
 
+    LLFS_VLOG(1) << "write " << BATT_INSPECT(physical_page) << BATT_INSPECT(generation)
+                 << BATT_INSPECT(buffer->page_id());
+
     BATT_CHECK_LT(physical_page, batt::checked_cast<i64>(locked->page_recs.size()));
     BATT_CHECK(this->page_ids_.generation_less_than(locked->page_recs[physical_page].generation,
                                                     generation))
@@ -79,6 +82,9 @@ void MemoryPageDevice::read(PageId page_id, ReadHandler&& handler)
   auto result = [&]() -> StatusOr<std::shared_ptr<const PageBuffer>> {
     const auto physical_page = this->page_ids_.get_physical_page(page_id);
     const auto requested_generation = this->page_ids_.get_generation(page_id);
+
+    LLFS_VLOG(1) << "read " << BATT_INSPECT(physical_page) << BATT_INSPECT(requested_generation)
+                 << BATT_INSPECT(page_id);
 
     auto locked = this->state_.lock();
 
@@ -132,6 +138,9 @@ void MemoryPageDevice::drop(PageId page_id, WriteHandler&& handler)
   auto result = [&]() -> Status {
     const auto physical_page = this->page_ids_.get_physical_page(page_id);
     const auto generation_to_drop = this->page_ids_.get_generation(page_id);
+
+    LLFS_VLOG(1) << "drop " << BATT_INSPECT(physical_page) << BATT_INSPECT(generation_to_drop)
+                 << BATT_INSPECT(page_id);
 
     auto locked = state_.lock();
 

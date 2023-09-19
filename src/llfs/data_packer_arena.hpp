@@ -34,6 +34,8 @@ class DataPackerArena
   friend class DataPacker;
 
  public:
+  explicit DataPackerArena(DataPacker* packer, boost::iterator_range<u8*> avail) noexcept;
+
   //----- --- -- -  -  -   -
   DataPackerArena(const DataPackerArena&) = delete;
   DataPackerArena& operator=(const DataPackerArena&) = delete;
@@ -91,8 +93,6 @@ class DataPackerArena
   u8* pack_varint(u64 n);
 
  private:
-  explicit DataPackerArena(DataPacker* packer, boost::iterator_range<u8*> avail) noexcept;
-
   /*! \brief The DataPacker object with which this DataPackerArena is associated, for sanity
    * checking.
    */

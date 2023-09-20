@@ -49,12 +49,32 @@ PrepareJob prepare(const AppendableJob& appendable)
 //
 u64 AppendableJob::calculate_grant_size() const noexcept
 {
-  const usize user_data_size = packed_sizeof(this->user_data);
-  const usize root_ids_size = packed_array_size<PackedPageId>(this->job.root_count());
-  const usize new_ids_size = packed_array_size<PackedPageId>(this->job.new_page_count());
-  const usize deleted_ids_size = packed_array_size<PackedPageId>(this->job.deleted_page_count());
+  return JobSizeSpec::from_job(*this).calculate_grant_size();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*static*/ auto JobSizeSpec::from_job(const AppendableJob& appendable) noexcept -> Self
+{
+  return JobSizeSpec{
+      .user_data_size = packed_sizeof(appendable.user_data),
+      .root_page_ref_count = appendable.job.root_count(),
+      .new_page_count = appendable.job.new_page_count(),
+      .deleted_page_count = appendable.job.deleted_page_count(),
+      .page_device_count = appendable.job.page_device_count(),
+  };
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+usize JobSizeSpec::calculate_grant_size() const noexcept
+{
+  const usize user_data_size = this->user_data_size;
+  const usize root_ids_size = packed_array_size<PackedPageId>(this->root_page_ref_count);
+  const usize new_ids_size = packed_array_size<PackedPageId>(this->new_page_count);
+  const usize deleted_ids_size = packed_array_size<PackedPageId>(this->deleted_page_count);
   const usize device_ids_size =
-      packed_array_size<little_page_device_id_int>(this->job.page_device_count());
+      packed_array_size<little_page_device_id_int>(this->page_device_count);
 
   const usize prepare_slot_size = packed_sizeof_slot_with_payload_size(  //
       sizeof(PackedPrepareJob)                                           //

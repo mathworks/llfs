@@ -16,6 +16,7 @@
 #include <llfs/int_types.hpp>
 #include <llfs/job_commit_params.hpp>
 #include <llfs/page_cache_job.hpp>
+#include <llfs/page_write_op.hpp>
 #include <llfs/seq.hpp>
 #include <llfs/slot.hpp>
 
@@ -140,6 +141,10 @@ class CommittablePageCacheJob
    */
   void cancel();
 
+  /** \brief Starts writing new page data to storage device(s).
+   */
+  Status start_writing_new_pages();
+
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
   struct DeviceUpdateState {
@@ -157,6 +162,28 @@ class CommittablePageCacheJob
     std::vector<PageId> ids;
   };
 
+  struct WriteNewPagesContext {
+    CommittablePageCacheJob* const that;
+    const PageCacheJob* const job;
+    u64 op_count;
+    u64 used_byte_count;
+    u64 total_byte_count;
+    batt::Watch<i64> done_counter;
+    usize n_ops;
+    std::unique_ptr<PageWriteOp[]> ops;
+
+    //----- --- -- -  -  -   -
+
+    explicit WriteNewPagesContext(CommittablePageCacheJob* that) noexcept;
+
+    WriteNewPagesContext(const WriteNewPagesContext&) = delete;
+    WriteNewPagesContext& operator=(const WriteNewPagesContext&) = delete;
+
+    Status start();
+
+    Status await_finish();
+  };
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   explicit CommittablePageCacheJob(std::unique_ptr<PageCacheJob> finalized_job) noexcept;
@@ -164,7 +191,7 @@ class CommittablePageCacheJob
   Status commit_impl(const JobCommitParams& params, u64 callers, slot_offset_type prev_caller_slot,
                      batt::Watch<slot_offset_type>* durable_caller_slot);
 
-  Status write_new_pages(const JobCommitParams& params, u64 callers);
+  Status write_new_pages();
 
   StatusOr<PageRefCountUpdates> get_page_ref_count_updates(u64 callers) const;
 
@@ -184,6 +211,7 @@ class CommittablePageCacheJob
   std::shared_ptr<const PageCacheJob> job_;
   boost::intrusive_ptr<FinalizedJobTracker> tracker_;
   PageRefCountUpdates ref_count_updates_;
+  std::unique_ptr<WriteNewPagesContext> write_new_pages_context_;
 };
 
 /** \brief Write all changes in `job` to durable storage.  This is guaranteed to be atomic.

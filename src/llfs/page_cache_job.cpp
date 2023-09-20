@@ -327,19 +327,14 @@ void PageCacheJob::const_prefetch_hint(PageId page_id) const
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status PageCacheJob::recover_page(PageId page_id, const boost::uuids::uuid& caller_uuid,
-                                  slot_offset_type caller_slot)
+Status PageCacheJob::recover_page(PageId page_id,
+                                  const boost::uuids::uuid& caller_uuid [[maybe_unused]],
+                                  slot_offset_type caller_slot [[maybe_unused]])
 {
   StatusOr<PinnedPage> pinned_page = this->get_page_with_layout_in_job(
       page_id, /*required_layout=*/None, PinPageToJob::kTrue, OkIfNotFound{false});
 
   BATT_REQUIRE_OK(pinned_page);
-
-  const PackedPageHeader& page_header = get_page_header(*pinned_page->get_page_buffer());
-  if (page_header.user_slot.user_id != caller_uuid ||
-      page_header.user_slot.slot_offset != caller_slot) {
-    return ::llfs::make_status(StatusCode::kRecoverFailedPageReallocated);
-  }
 
   const auto& [iter, inserted] = this->new_pages_.emplace(page_id, NewPage{/*buffer=*/nullptr});
   if (inserted) {

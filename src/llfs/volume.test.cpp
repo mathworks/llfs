@@ -1884,16 +1884,20 @@ void VolumeSimTest::verify_post_recovery_expectations(RecoverySimState& state,
         EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device);
         if (state.second_root_page_id.is_valid()) {
           EXPECT_EQ(arena.allocator().get_ref_count(state.second_root_page_id).first, 0);
-          ASSERT_TRUE(sim.has_data_for_page_id(state.second_root_page_id).ok());
-          EXPECT_FALSE(*sim.has_data_for_page_id(state.second_root_page_id));
+          if (!llfs::Volume::write_new_pages_asap()) {
+            ASSERT_TRUE(sim.has_data_for_page_id(state.second_root_page_id).ok());
+            EXPECT_FALSE(*sim.has_data_for_page_id(state.second_root_page_id));
+          }
         }
       }
       for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(4 * kKiB)) {
         EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device);
         if (state.third_page_id.is_valid()) {
           EXPECT_EQ(arena.allocator().get_ref_count(state.third_page_id).first, 0);
-          ASSERT_TRUE(sim.has_data_for_page_id(state.third_page_id).ok());
-          EXPECT_FALSE(*sim.has_data_for_page_id(state.third_page_id));
+          if (!llfs::Volume::write_new_pages_asap()) {
+            ASSERT_TRUE(sim.has_data_for_page_id(state.third_page_id).ok());
+            EXPECT_FALSE(*sim.has_data_for_page_id(state.third_page_id));
+          }
         }
       }
     }

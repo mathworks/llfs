@@ -9,7 +9,6 @@
 #include <llfs/committable_page_cache_job.hpp>
 //
 
-#include <llfs/page_write_op.hpp>
 #include <llfs/trace_refs_recursive.hpp>
 
 namespace llfs {
@@ -220,8 +219,8 @@ Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 c
 
   // Write new pages.
   //
-  Status write_status = LLFS_COLLECT_LATENCY(job->cache().metrics().page_write_latency,
-                                             this->write_new_pages(params, callers));
+  Status write_status = LLFS_COLLECT_LATENCY(job->cache().metrics().page_write_latency,  //
+                                             this->write_new_pages());
   BATT_REQUIRE_OK(write_status);
 
   // Make sure the ref_count_updates_ is initialized!
@@ -290,37 +289,71 @@ Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 c
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status CommittablePageCacheJob::write_new_pages(const JobCommitParams& params, u64 callers)
+Status CommittablePageCacheJob::write_new_pages()
+{
+  BATT_REQUIRE_OK(this->start_writing_new_pages());
+  BATT_REQUIRE_OK(this->write_new_pages_context_->await_finish());
+
+  return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status CommittablePageCacheJob::start_writing_new_pages()
+{
+  if (!this->write_new_pages_context_) {
+    BATT_CHECK(this->job_->is_pruned());
+
+    this->write_new_pages_context_ = std::make_unique<WriteNewPagesContext>(this);
+    BATT_REQUIRE_OK(this->write_new_pages_context_->start());
+  }
+  return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*explicit*/ CommittablePageCacheJob::WriteNewPagesContext::WriteNewPagesContext(
+    CommittablePageCacheJob* that) noexcept
+    : that{that}
+    , caller_uuid{nullptr}
+    , caller_slot{0}
+    , job{that->job_.get()}
+    , op_count{0}
+    , used_byte_count{0}
+    , total_byte_count{0}
+    , done_counter{0}
+    , n_ops{0}
+    , ops{nullptr}
+{
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status CommittablePageCacheJob::WriteNewPagesContext::start()
 {
   LLFS_VLOG(1) << "commit(PageCacheJob): writing new pages";
 
-  if (this->job_->get_new_pages().empty()) {
+  if (this->that->job_->get_new_pages().empty()) {
     return OkStatus();
   }
 
-  const PageCacheJob* const job = this->job_.get();
-  BATT_CHECK_NOT_NULLPTR(job);
-
-  u64 op_count = 0;
-  u64 used_byte_count = 0;
-  u64 total_byte_count = 0;
+  BATT_CHECK_NOT_NULLPTR(this->job);
 
   // Write the pages to their respective PageDevice asynchronously/concurrently to maximize
   // throughput.
   //
-  batt::Watch<i64> done_counter{0};
-  const usize n_ops = job->get_new_pages().size();
-  auto ops = PageWriteOp::allocate_array(n_ops, done_counter);
+  this->n_ops = this->job->get_new_pages().size();
+  this->ops = PageWriteOp::allocate_array(this->n_ops, this->done_counter);
   LLFS_VLOG(1) << "commit(PageCacheJob): writing new pages";
   {
     usize i = 0;
-    for (auto& p : job->get_new_pages()) {
+    for (auto& p : this->job->get_new_pages()) {
       const PageId page_id = p.first;
 
       // There's no need to write recovered pages, since they are already durable; skip.
       //
-      if (job->is_recovered_page(page_id)) {
-        ops[i].get_handler()(batt::OkStatus());
+      if (this->job->is_recovered_page(page_id)) {
+        this->ops[i].get_handler()(batt::OkStatus());
         continue;
       }
 
@@ -328,21 +361,13 @@ Status CommittablePageCacheJob::write_new_pages(const JobCommitParams& params, u
       std::shared_ptr<const PageView> new_page_view = new_page.view();
       BATT_CHECK_NOT_NULLPTR(new_page_view);
       BATT_CHECK_EQ(page_id, new_page_view->page_id());
-      BATT_CHECK(job->get_already_pinned(page_id) != None) << BATT_INSPECT(page_id);
+      BATT_CHECK(this->job->get_already_pinned(page_id) != None) << BATT_INSPECT(page_id);
 
       // Finalize the client uuid and slot that uniquely identifies this transaction, so we can
       // guarantee exactly-once side effects in the presence of crashes.
       {
         std::shared_ptr<PageBuffer> mutable_page_buffer = new_page.buffer();
         BATT_CHECK_NOT_NULLPTR(mutable_page_buffer);
-
-        PackedPageUserSlot& user_slot = mutable_page_header(mutable_page_buffer.get())->user_slot;
-        if (params.caller_uuid) {
-          user_slot.user_id = *params.caller_uuid;
-        } else {
-          std::memset(&user_slot.user_id, 0, sizeof(user_slot.user_id));
-        }
-        user_slot.slot_offset = params.caller_slot;
       }
 
       // We will need this information to update the metrics below.
@@ -351,34 +376,41 @@ Status CommittablePageCacheJob::write_new_pages(const JobCommitParams& params, u
       const usize page_size = page_header.size;
       const usize used_size = page_header.used_size();
 
-      ops[i].page_id = page_id;
+      this->ops[i].page_id = page_id;
 
-      job->cache().arena_for_page_id(page_id).device().write(new_page.const_buffer(),
-                                                             ops[i].get_handler());
+      this->job->cache().arena_for_page_id(page_id).device().write(new_page.const_buffer(),
+                                                                   this->ops[i].get_handler());
 
-      total_byte_count += page_size;
-      used_byte_count += used_size;
-      op_count += page_size / 4096;
+      this->total_byte_count += page_size;
+      this->used_byte_count += used_size;
+      this->op_count += page_size / 4096;
       ++i;
     }
   }
 
+  return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status CommittablePageCacheJob::WriteNewPagesContext::await_finish()
+{
   // Wait for all concurrent page writes to finish.
   //
-  auto final_count = done_counter.await_true([&](i64 n) {
-    return n == (i64)n_ops;
+  auto final_count = this->done_counter.await_true([&](i64 n) {
+    return n == (i64)this->n_ops;
   });
   BATT_REQUIRE_OK(final_count);
 
   // Only proceed if all writes succeeded.
   //
   Status all_ops_status = OkStatus();
-  for (auto& op : as_slice(ops.get(), n_ops)) {
-    job->cache().track_new_page_event(NewPageTracker{
+  for (auto& op : as_slice(this->ops.get(), this->n_ops)) {
+    this->job->cache().track_new_page_event(NewPageTracker{
         .ts = 0,
-        .job_id = job->job_id,
+        .job_id = this->job->job_id,
         .page_id = op.page_id,
-        .callers = callers | Caller::PageCacheJob_commit_0,
+        .callers = Caller::PageCacheJob_commit_0,
         .event_id = op.result.ok() ? (int)NewPageTracker::Event::kWrite_Ok
                                    : (int)NewPageTracker::Event::kWrite_Fail,
     });
@@ -386,9 +418,9 @@ Status CommittablePageCacheJob::write_new_pages(const JobCommitParams& params, u
   }
   BATT_REQUIRE_OK(all_ops_status);
 
-  job->cache().metrics().total_bytes_written += total_byte_count;
-  job->cache().metrics().used_bytes_written += used_byte_count;
-  job->cache().metrics().total_write_ops += op_count;
+  this->job->cache().metrics().total_bytes_written += this->total_byte_count;
+  this->job->cache().metrics().used_bytes_written += this->used_byte_count;
+  this->job->cache().metrics().total_write_ops += this->op_count;
 
   return OkStatus();
 }

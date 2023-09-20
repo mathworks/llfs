@@ -61,6 +61,8 @@ class Volume
   static StatusOr<std::unique_ptr<Volume>> recover(
       VolumeRecoverParams&& params, const VolumeReader::SlotVisitorFn& slot_visitor_fn);
 
+  static bool write_new_pages_asap();
+
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
   ~Volume() noexcept;

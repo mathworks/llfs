@@ -315,8 +315,6 @@ Status CommittablePageCacheJob::start_writing_new_pages()
 /*explicit*/ CommittablePageCacheJob::WriteNewPagesContext::WriteNewPagesContext(
     CommittablePageCacheJob* that) noexcept
     : that{that}
-    , caller_uuid{nullptr}
-    , caller_slot{0}
     , job{that->job_.get()}
     , op_count{0}
     , used_byte_count{0}

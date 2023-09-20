@@ -47,6 +47,28 @@ StatusOr<AppendableJob> make_appendable_job(std::unique_ptr<PageCacheJob>&& job,
 //
 PrepareJob prepare(const AppendableJob& appendable);
 
+/** \brief Used to compute grant required for a hypothetical job.
+ */
+struct JobSizeSpec {
+  using Self = JobSizeSpec;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  static Self from_job(const AppendableJob& job) noexcept;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  usize user_data_size;
+  usize root_page_ref_count;
+  usize new_page_count;
+  usize deleted_page_count;
+  usize page_device_count;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  usize calculate_grant_size() const noexcept;
+};
+
 }  // namespace llfs
 
 #endif  // LLFS_APPENDABLE_JOB_HPP

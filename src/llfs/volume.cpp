@@ -21,6 +21,19 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+/*static*/ bool Volume::write_new_pages_asap()
+{
+  static const bool value = [] {
+    bool b = (batt::getenv_as<int>("LLFS_WRITE_NEW_PAGES_ASAP").value_or(1) == 1);
+    LLFS_LOG_INFO() << "LLFS_WRITE_NEW_PAGES_ASAP=" << b;
+    return b;
+  }();
+
+  return value;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 const VolumeOptions& Volume::options() const
 {
   return this->options_;
@@ -472,6 +485,10 @@ StatusOr<SlotRange> Volume::append(const std::string_view& payload, batt::Grant&
 StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& grant,
                                    Optional<SlotSequencer>&& sequencer)
 {
+  if (write_new_pages_asap()) {
+    BATT_REQUIRE_OK(appendable.job.start_writing_new_pages());
+  }
+
   StatusOr<SlotRange> result;
 
   const auto check_sequencer_is_resolved = batt::finally([&sequencer, &result] {

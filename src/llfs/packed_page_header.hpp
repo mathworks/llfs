@@ -53,7 +53,7 @@ struct PackedPageHeader {
   little_u32 crc32;
   little_u32 unused_begin;
   little_u32 unused_end;
-  PackedPageUserSlot user_slot;
+  PackedPageUserSlot user_slot_DEPRECATED;
   little_u32 size;
 };
 

@@ -72,7 +72,7 @@ std::ostream& operator<<(std::ostream& out, const PackedPageHeader& t)
              << ", .page_id=" << t.page_id.unpack() << ", .layout_id=" << t.layout_id
              << ", .crc32=" << t.crc32.value() << ", .unused_begin=" << std::dec
              << t.unused_begin.value() << ", .unused_end=" << t.unused_end.value()
-             << ", .user_slot=" << t.user_slot << ", .size=" << t.size << ",}";
+             << ", .size=" << t.size << ",}";
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

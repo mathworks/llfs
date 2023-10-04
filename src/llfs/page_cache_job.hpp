@@ -18,6 +18,8 @@
 #include <llfs/page_size.hpp>
 #include <llfs/pinned_page.hpp>
 
+#include <batteries/async/backoff.hpp>
+
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -133,6 +135,30 @@ class PageCacheJob : public PageLoader
   // PageBuffer returned by `new_page` for this job, or we will panic.
   //
   StatusOr<PinnedPage> pin_new(std::shared_ptr<PageView>&& page_view, u64 callers);
+
+  StatusOr<PinnedPage> pin_new_impl(
+      std::shared_ptr<PageView>&& page_view, u64 callers,
+      std::function<StatusOr<PinnedPage>(const std::function<StatusOr<PinnedPage>()>&)>&&
+          put_with_retry);
+
+  /** \brief Inserts a new page into the cache, retrying according to the passed policy if there are
+   * no free cache slots.
+   */
+  template <typename RetryPolicy>
+  StatusOr<PinnedPage> pin_new_with_retry(std::shared_ptr<PageView>&& page_view, u64 callers,
+                                          RetryPolicy&& retry_policy)
+  {
+    return this->pin_new_impl(
+        std::move(page_view), callers, [&retry_policy](const auto& op) -> StatusOr<PinnedPage> {
+          return batt::with_retry_policy(
+              retry_policy, /*op_name=*/"PageCacheJob::pin_new() - Cache::put_view", op,
+              batt::TaskSleepImpl{},
+              /*is_retryable_status=*/[](const batt::Status& status) {
+                return batt::status_is_retryable(status) ||
+                       (status == ::llfs::make_status(StatusCode::kCacheSlotsFull));
+              });
+        });
+  }
 
   // Register a previously allocated page (returned by `this->new_page`) to be pinned the first time
   // it is requested.

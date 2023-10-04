@@ -138,6 +138,23 @@ void PageCacheJob::pin(PinnedPage&& pinned_page)
 //
 StatusOr<PinnedPage> PageCacheJob::pin_new(std::shared_ptr<PageView>&& page_view, u64 callers)
 {
+  return this->pin_new_with_retry(std::move(page_view), callers, /*retry_policy=*/
+                                  batt::ExponentialBackoff{
+                                      .max_attempts = 1000,
+                                      .initial_delay_usec = 100,
+                                      .backoff_factor = 2,
+                                      .backoff_divisor = 1,
+                                      .max_delay_usec = 100 * 1000,
+                                  });
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<PinnedPage> PageCacheJob::pin_new_impl(
+    std::shared_ptr<PageView>&& page_view, u64 callers,
+    std::function<StatusOr<PinnedPage>(const std::function<StatusOr<PinnedPage>()>&)>&&
+        put_with_retry)
+{
   BATT_CHECK_NOT_NULLPTR(page_view);
 
   const PageId id = page_view->page_id();
@@ -161,24 +178,10 @@ StatusOr<PinnedPage> PageCacheJob::pin_new(std::shared_ptr<PageView>&& page_view
   // TODO [tastolfi 2022-09-19] once WaitForResource param is added to Cache<T>::find_or_insert,
   // remove this backoff polling loop.
   //
-  StatusOr<PinnedPage> pinned_page = batt::with_retry_policy(
-      batt::ExponentialBackoff{
-          .max_attempts = 1000,
-          .initial_delay_usec = 100,
-          .backoff_factor = 2,
-          .backoff_divisor = 1,
-          .max_delay_usec = 10 * 1000,
-      },
-      "PageCacheJob::pin_new() - Cache::put_view",
-      [&] {
-        return this->cache_->put_view(batt::make_copy(page_view),
-                                      callers | Caller::PageCacheJob_pin_new, this->job_id);
-      },
-      batt::TaskSleepImpl{},
-      [](const batt::Status& status) {
-        return batt::status_is_retryable(status) ||
-               (status == ::llfs::make_status(StatusCode::kCacheSlotsFull));
-      });
+  StatusOr<PinnedPage> pinned_page = put_with_retry([&] {
+    return this->cache_->put_view(batt::make_copy(page_view),
+                                  callers | Caller::PageCacheJob_pin_new, this->job_id);
+  });
 
   BATT_REQUIRE_OK(pinned_page) << batt::LogLevel::kInfo << "Failed to pin page " << id
                                << ", reason: " << pinned_page.status()

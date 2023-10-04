@@ -25,6 +25,14 @@ class IoRing::File
  public:
   using Self = File;
 
+  static StatusOr<File> open(const IoRing& io_ring, StatusOr<int> fd)
+  {
+    BATT_REQUIRE_OK(fd);
+    return {File{io_ring, *fd}};
+  }
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   // All offsets and buffers sizes must be aligned to 2^(this value).
   //
   static constexpr i32 kBlockAlignmentLog2 = 12;

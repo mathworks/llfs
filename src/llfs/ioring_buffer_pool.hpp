@@ -233,6 +233,16 @@ class IoRingBufferPool
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  const IoRing& get_io_ring() const noexcept
+  {
+    return this->io_ring_;
+  }
+
+  BufferSize buffer_size() const noexcept
+  {
+    return this->buffer_size_;
+  }
+
   /** \brief Asynchronously allocate a new buffer.  Waits until a buffer becomes available and then
    * invokes the passed handler.
    *
@@ -344,6 +354,15 @@ class IoRingBufferPool
   batt::HandlerList<batt::StatusOr<Buffer>> waiters_;
 };
 
+inline bool operator==(const IoRingBufferPool::Buffer& l, const IoRingBufferPool::Buffer& r)
+{
+  return l.data() == r.data();
+}
+
+inline bool operator!=(const IoRingBufferPool::Buffer& l, const IoRingBufferPool::Buffer& r)
+{
+  return !(l == r);
+}
 }  //namespace llfs
 
 #endif  // LLFS_IORING_BUFFER_POOL_HPP

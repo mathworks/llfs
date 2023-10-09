@@ -11,6 +11,7 @@
 #define LLFS_MEM_INODE_HPP
 
 #include <llfs/fuse.hpp>
+#include <llfs/mem_inode_base.hpp>
 
 #include <batteries/async/mutex.hpp>
 #include <batteries/async/watch.hpp>
@@ -30,58 +31,13 @@ class MemFileHandle;
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-class MemInode : public batt::RefCounted<MemInode>
+class MemInode : public MemInodeBase<MemInode>
 {
  public:
-  using FuseReadDirData = FuseImplBase::FuseReadDirData;
-
   static constexpr i32 kBlockBufferSizeLog2 = 12;
   static constexpr usize kBlockBufferSize = usize{1} << kBlockBufferSizeLog2;
 
   using BlockBuffer = std::array<char, kBlockBufferSize>;
-
-  BATT_STRONG_TYPEDEF(bool, RequireEmpty);
-  BATT_STRONG_TYPEDEF(bool, IsDead);
-  BATT_STRONG_TYPEDEF(bool, IsDir);
-
-  enum struct Category : mode_t {
-    kBlockSpecial = S_IFBLK,
-    kCharSpecial = S_IFCHR,
-    kFifoSpecial = S_IFIFO,
-    kRegularFile = S_IFREG,
-    kDirectory = S_IFDIR,
-    kSymbolicLink = S_IFLNK,
-  };
-
-  static constexpr u64 kLookupCountShift = 0;
-  static constexpr u64 kLinkCountShift = 40;
-  static constexpr u64 kLockFlag = u64{1} << 63;
-  static constexpr u64 kDeadFlag = u64{1} << 62;
-  //
-  static_assert(kLinkCountShift > kLookupCountShift);
-  static_assert(kLookupCountShift == 0);
-  //
-  static constexpr u64 kLookupCountIncrement = u64{1} << kLookupCountShift;
-  static constexpr u64 kLinkCountIncrement = u64{1} << kLinkCountShift;
-  static constexpr u64 kMaxLookupCount = (u64{1} << kLinkCountShift) - 1;
-  static constexpr u64 kMaxLinkCount = (u64{1} << (62 - kLinkCountShift)) - 1;
-  static constexpr u64 kLookupCountMask = kMaxLookupCount;
-  static constexpr u64 kLinkCountMask = kMaxLinkCount;
-
-  static u64 get_lookup_count(u64 count) noexcept
-  {
-    return (count >> MemInode::kLookupCountShift) & MemInode::kLookupCountMask;
-  }
-
-  static u64 get_link_count(u64 count) noexcept
-  {
-    return (count >> MemInode::kLinkCountShift) & MemInode::kLinkCountMask;
-  }
-
-  static IsDead is_dead_state(u64 count) noexcept
-  {
-    return IsDead{(count & MemInode::kDeadFlag) != 0};
-  }
 
   //----- --- -- -  -  -   -
 
@@ -109,20 +65,11 @@ class MemInode : public batt::RefCounted<MemInode>
 
   batt::StatusOr<const fuse_entry_param*> lookup_child(const std::string& name);
 
-  void add_lookup(usize count) noexcept;
-
-  IsDead forget(u64 count);
-
   IsDir is_dir() const noexcept;
 
   bool is_empty() const noexcept
   {
     return this->state_.lock()->children_by_offset_.empty();
-  }
-
-  IsDead is_dead() const noexcept
-  {
-    return MemInode::is_dead_state(this->count_.get_value());
   }
 
   //----- --- -- -  -  -   -
@@ -140,17 +87,7 @@ class MemInode : public batt::RefCounted<MemInode>
 
   //----- --- -- -  -  -   -
  private:
-  IsDead remove_lookup(usize count) noexcept;
-
-  batt::Status increment_link_refs(usize count) noexcept;
-
-  batt::StatusOr<IsDead> decrement_link_refs(usize count, RequireEmpty require_empty) noexcept;
-
   void init_directory();
-
-  batt::Status acquire_count_lock() noexcept;
-
-  void release_count_lock() noexcept;
 
   //----- --- -- -  -  -   -
   struct State {

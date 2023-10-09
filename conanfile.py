@@ -49,10 +49,10 @@ class LlfsConan(ConanFile):
     def requirements(self):
         deps = [
             "libbacktrace/cci.20210118",
-            "gtest/1.13.0",
-            "boost/1.82.0",
+            "gtest/1.14.0",
+            "boost/1.83.0",
             "glog/0.6.0",
-            "batteries/0.45.2",
+            "batteries/0.46.0",
             "cli11/2.3.2",
         ]
 
@@ -63,11 +63,17 @@ class LlfsConan(ConanFile):
 
         platform_deps = {
             "Linux": [
-                "libunwind/1.6.2",
                 "liburing/2.4",
                 "libfuse/3.10.5",
             ]
         }
+
+        if platform.system() == 'Linux':
+            self.requires("libunwind/1.7.2",
+                          override=True,
+                          visible=True,
+                          transitive_headers=True,
+                          transitive_libs=True)
 
         import batt
         batt.conanfile_requirements(self, deps, override_deps, platform_deps)

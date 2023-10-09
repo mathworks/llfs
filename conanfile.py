@@ -57,18 +57,23 @@ class LlfsConan(ConanFile):
         ]
 
         override_deps = [
-            "libunwind/1.7.2",
             "openssl/3.1.1",
             "zlib/1.2.13",
         ]
 
         platform_deps = {
             "Linux": [
-                "libunwind/1.7.2",
                 "liburing/2.4",
                 "libfuse/3.10.5",
             ]
         }
+
+        if platform.system() == 'Linux':
+            self.requires("libunwind/1.7.2",
+                          override=True,
+                          visible=True,
+                          transitive_headers=True,
+                          transitive_libs=True)
 
         import batt
         batt.conanfile_requirements(self, deps, override_deps, platform_deps)

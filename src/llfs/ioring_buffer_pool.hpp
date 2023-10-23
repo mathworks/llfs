@@ -143,6 +143,10 @@ class IoRingBufferPool
   class Buffer
   {
    public:
+    friend class Allocated;
+
+    //----- --- -- -  -  -   -
+
     /** \brief Constructs an invalid (empty) Buffer.
      */
     Buffer() noexcept;
@@ -217,6 +221,25 @@ class IoRingBufferPool
    */
   using ObjectStorage = std::aligned_storage_t<std::max(sizeof(Allocated), sizeof(Deallocated))>;
 
+  //----- --- -- -  -  -   -
+
+  struct HandlerBase : batt::DefaultHandlerBase {
+    BufferCount required_count;
+  };
+
+  using BufferVec = batt::SmallVec<Buffer, 2>;
+
+  using AbstractHandler = batt::BasicAbstractHandler<HandlerBase, batt::StatusOr<BufferVec>&&>;
+
+  template <typename Fn>
+  using HandlerImpl = batt::BasicHandlerImpl<Fn, HandlerBase, batt::StatusOr<BufferVec>&&>;
+
+  using HandlerList = batt::BasicHandlerList<HandlerBase, batt::StatusOr<BufferVec>&&>;
+
+  using BufferFreePoolList = boost::intrusive::slist<Deallocated,                         //
+                                                     boost::intrusive::cache_last<true>,  //
+                                                     boost::intrusive::constant_time_size<true>>;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   /** \brief Constructs, initializes, and returns a new IoRingBufferPool.
@@ -228,6 +251,10 @@ class IoRingBufferPool
       BufferSize size = BufferSize{Self::kMemoryUnitSize}) noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief Constructs a private sub-pool of buffers borrowed from another pool.
+   */
+  explicit IoRingBufferPool(BufferVec&& borrowed_buffers) noexcept;
 
   ~IoRingBufferPool() noexcept;
 
@@ -253,16 +280,38 @@ class IoRingBufferPool
    *
    * The signature of the handler is: `void (batt::StatusOr<llfs::IoRingBufferPool::Buffer>)`.
    */
-  template <typename Handler = void(batt::StatusOr<Buffer>)>
+  template <typename Handler = void(batt::StatusOr<Buffer>&&)>
   void async_allocate(Handler&& handler)
   {
-    this->async_allocate_impl(
-        batt::HandlerImpl<Handler, batt::StatusOr<Buffer>>::make_new(BATT_FORWARD(handler)));
+    this->async_allocate(
+        BufferCount{1},
+        batt::bind_handler(
+            BATT_FORWARD(handler), [](Handler&& handler, batt::StatusOr<BufferVec>&& buffers) {
+              if (!buffers.ok()) {
+                BATT_FORWARD(handler)(batt::StatusOr<Buffer>{buffers.status()});
+                return;
+              }
+              BATT_CHECK_EQ(buffers->size(), 1u);
+              BATT_FORWARD(handler)(batt::StatusOr<Buffer>{std::move(buffers->front())});
+            }));
+  }
+
+  /** \brief Asynchronously allocate the specified number of buffers.  Waits until enough buffers
+   * become available and then invokes the passed handler.
+   *
+   * The signature of the handler is: `void (batt::StatusOr<llfs::IoRingBufferPool::Buffer>)`.
+   */
+  template <typename Fn = void(batt::StatusOr<BufferVec>&&)>
+  void async_allocate(BufferCount count, Fn&& fn)
+  {
+    AbstractHandler* handler = HandlerImpl<Fn>::make_new(BATT_FORWARD(fn));
+    handler->required_count = count;
+    this->async_allocate_impl(handler);
   }
 
   /** \brief Asynchronous allocate with pre-allocated handler.  See async_allocate.
    */
-  void async_allocate_impl(batt::AbstractHandler<batt::StatusOr<Buffer>>* handler);
+  void async_allocate_impl(AbstractHandler* handler);
 
   /** \brief Blocks the current Task until a buffer becomes available, then allocates and returns
    * it.
@@ -302,6 +351,10 @@ class IoRingBufferPool
    */
   batt::Status initialize() noexcept;
 
+  void initialize_objects() noexcept;
+
+  batt::Status initialize_registered(std::vector<std::unique_ptr<Registered>>& registered) noexcept;
+
   /** \brief Constructs and returns an Allocated object at the given memory address.
    *
    * `ptr` MUST be in the `this->objects_` array, or behavior is undefined!
@@ -314,6 +367,8 @@ class IoRingBufferPool
    * `ptr` MUST be in the `this->objects_` array, or behavior is undefined!
    */
   void deallocate(void* a) noexcept;
+
+  void transfer_one(BufferFreePoolList& from, BufferVec& to);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -334,9 +389,9 @@ class IoRingBufferPool
    */
   const usize buffers_per_memory_unit_ = Self::kMemoryUnitSize / this->buffer_size_;
 
-  /** \brief The registered memory units.
+  /** \brief The registered/borrowed memory units.
    */
-  std::vector<std::unique_ptr<Registered>> registered_;
+  std::variant<std::vector<std::unique_ptr<Registered>>, BufferVec> storage_;
 
   /** \brief Memory for the per-buffer tracking objects; each `ObjectStorage` can be constructed as
    * an instance of either the `Deallocated` or `Allocated` class.
@@ -349,14 +404,11 @@ class IoRingBufferPool
 
   /** \brief A linked list of buffers available for allocation.
    */
-  boost::intrusive::slist<Deallocated,                         //
-                          boost::intrusive::cache_last<true>,  //
-                          boost::intrusive::constant_time_size<true>>
-      free_pool_;
+  BufferFreePoolList free_pool_;
 
   /** \brief A linked list of waiters blocked until a buffer becomes available.
    */
-  batt::HandlerList<batt::StatusOr<Buffer>> waiters_;
+  HandlerList waiters_;
 };
 
 inline bool operator==(const IoRingBufferPool::Buffer& l, const IoRingBufferPool::Buffer& r)

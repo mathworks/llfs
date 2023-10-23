@@ -318,6 +318,11 @@ class IoRingBufferPool
    */
   auto await_allocate() -> batt::StatusOr<Buffer>;
 
+  /** \brief Blocks the current Task until a buffer becomes available, then allocates and returns
+   * it.
+   */
+  auto await_allocate(BufferCount count) -> batt::StatusOr<BufferVec>;
+
   /** \brief Attempts to allocate a buffer without blocking; if successful, returns the buffer; else
    * returns batt::StatusCode::kResourceExhausted.
    */

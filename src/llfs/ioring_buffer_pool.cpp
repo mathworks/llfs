@@ -256,6 +256,15 @@ auto IoRingBufferPool::await_allocate() -> batt::StatusOr<Buffer>
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+auto IoRingBufferPool::await_allocate(BufferCount count) -> batt::StatusOr<BufferVec>
+{
+  return batt::Task::await<batt::StatusOr<BufferVec>>([this, count](auto&& handler) {
+    this->async_allocate(count, BATT_FORWARD(handler));
+  });
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 auto IoRingBufferPool::try_allocate() -> batt::StatusOr<Buffer>
 {
   Deallocated* deallocated = nullptr;

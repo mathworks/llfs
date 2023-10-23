@@ -243,6 +243,11 @@ class IoRingBufferPool
     return this->buffer_size_;
   }
 
+  BufferCount buffer_count() const noexcept
+  {
+    return this->buffer_count_;
+  }
+
   /** \brief Asynchronously allocate a new buffer.  Waits until a buffer becomes available and then
    * invokes the passed handler.
    *

@@ -147,6 +147,18 @@ class FuseImplBase
     const fuse_file_info* fi;
   };
 
+  struct FuseIoctlResult {
+    int value;
+    batt::SmallVec<batt::ConstBuffer, 1> buffers;
+  };
+
+  struct FuseIoctlRetry {
+    batt::SmallVec<batt::ConstBuffer, 1> in;
+    batt::SmallVec<batt::ConstBuffer, 1> out;
+  };
+
+  using FuseIoctlReply = std::variant<FuseIoctlResult, FuseIoctlRetry>;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   /** \brief
@@ -382,6 +394,35 @@ class FuseImplBase
   {
     return [req]() {
       fuse_reply_none(req);
+    };
+  }
+
+  /** \brief
+   */
+  auto make_ioctl_handler(fuse_req_t req)
+  {
+    return [req](const batt::StatusOr<FuseIoctlReply>& reply) {
+      if (!reply.ok()) {
+        fuse_reply_err(req, FuseImplBase::errno_from_status(reply.status()));
+      } else {
+        batt::case_of(  //
+            *reply,     //
+
+            //----- --- -- -  -  -   -
+            [&req](const FuseIoctlResult& result) {
+              BATT_CHECK_EQ(result.buffers.size(), 1u)
+                  << "TODO [tastolfi 2023-10-25] Support iovec here!";
+
+              fuse_reply_ioctl(req, result.value,         //
+                               result.buffers[0].data(),  //
+                               result.buffers[0].size());
+            },
+
+            //----- --- -- -  -  -   -
+            [&req](const auto& /*other*/) {
+              BATT_PANIC() << "TODO [tastolfi 2023-10-25] Not Implemented!";
+            });
+      }
     };
   }
 

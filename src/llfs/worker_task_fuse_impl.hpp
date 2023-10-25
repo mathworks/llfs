@@ -630,6 +630,36 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
   }
 
   /** \brief
+   */ // 35/44
+  template <typename Handler>
+  void async_ioctl(fuse_req_t req, fuse_ino_t ino, unsigned int cmd, void* arg,
+                   struct fuse_file_info* fi, unsigned flags, const batt::ConstBuffer& in_buf,
+                   size_t out_bufsz, Handler&& handler)
+  {
+    LLFS_VLOG(1) << BATT_THIS_FUNCTION           //
+                 << BATT_INSPECT(req)            //
+                 << BATT_INSPECT(ino)            //
+                 << BATT_INSPECT(cmd)            //
+                 << BATT_INSPECT(arg)            //
+                 << BATT_INSPECT(fi)             //
+                 << BATT_INSPECT(flags)          //
+                 << BATT_INSPECT(in_buf.size())  //
+                 << BATT_INSPECT(out_bufsz);
+
+    BATT_CHECK_NOT_NULLPTR(fi);
+
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, cmd, arg, fi, flags, in_buf, out_bufsz, handler = BATT_FORWARD(handler)] {
+          BATT_FORWARD(handler)
+          (this->derived_this()->ioctl(req, ino, cmd, arg, fi, flags, in_buf, out_bufsz));
+        });
+
+    if (!push_status.ok()) {
+      BATT_FORWARD(handler)(batt::StatusOr<FuseImplBase::FuseIoctlReply>{push_status});
+    }
+  }
+
+  /** \brief
    */ // 37/44
   template <typename Handler>
   void async_write_buf(fuse_req_t req, fuse_ino_t ino, const FuseImplBase::ConstBufferVec& bufv,

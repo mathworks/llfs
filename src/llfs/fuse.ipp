@@ -967,8 +967,11 @@ template <typename Derived>
   (void)ino;
   (void)size;
 
-  LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+  LLFS_LOG_WARNING_FIRST_N(1) << "Not Implemented: " << BATT_THIS_FUNCTION;
   // TODO [tastolfi 2023-06-28]
+
+  fuse_reply_err(req,
+                 FuseImplBase::errno_from_status(batt::Status{batt::StatusCode::kUnimplemented}));
 }
 
 /**
@@ -1090,6 +1093,9 @@ template <typename Derived>
 
   LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
   // TODO [tastolfi 2023-06-28]
+
+  fuse_reply_err(req,
+                 FuseImplBase::errno_from_status(batt::Status{batt::StatusCode::kUnimplemented}));
 }
 
 /**
@@ -1129,6 +1135,9 @@ template <typename Derived>
 
   LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
   // TODO [tastolfi 2023-06-28]
+
+  fuse_reply_err(req,
+                 FuseImplBase::errno_from_status(batt::Status{batt::StatusCode::kUnimplemented}));
 }
 
 /**
@@ -1164,6 +1173,9 @@ template <typename Derived>
 
   LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
   // TODO [tastolfi 2023-06-28]
+
+  fuse_reply_err(req,
+                 FuseImplBase::errno_from_status(batt::Status{batt::StatusCode::kUnimplemented}));
 }
 
 /**
@@ -1204,17 +1216,9 @@ template <typename Derived>
   void* userdata = fuse_req_userdata(req);
   [[maybe_unused]] auto* impl = static_cast<FuseImpl<Derived>*>(userdata);
 
-  (void)ino;
-  (void)cmd;
-  (void)arg;
-  (void)fi;
-  (void)flags;
-  (void)in_buf;
-  (void)in_bufsz;
-  (void)out_bufsz;
-
-  LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
-  // TODO [tastolfi 2023-06-28]
+  impl->derived_this()->async_ioctl(req, ino, cmd, arg, fi, flags,
+                                    /*in_buf=*/batt::ConstBuffer{in_buf, in_bufsz}, out_bufsz,
+                                    impl->make_ioctl_handler(req));
 }
 
 /**
@@ -1260,6 +1264,9 @@ template <typename Derived>
 
   LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
   // TODO [tastolfi 2023-06-28]
+
+  fuse_reply_err(req,
+                 FuseImplBase::errno_from_status(batt::Status{batt::StatusCode::kUnimplemented}));
 }
 
 /**
@@ -1388,6 +1395,9 @@ template <typename Derived>
 
   LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
   // TODO [tastolfi 2023-06-28] unpack what kind of request this is and call the appropriate method.
+
+  fuse_reply_err(req,
+                 FuseImplBase::errno_from_status(batt::Status{batt::StatusCode::kUnimplemented}));
 }
 
 /**
@@ -1512,6 +1522,9 @@ template <typename Derived>
 
   LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
   // TODO [tastolfi 2023-06-28]
+
+  fuse_reply_err(req,
+                 FuseImplBase::errno_from_status(batt::Status{batt::StatusCode::kUnimplemented}));
 }
 
 /**
@@ -1547,6 +1560,9 @@ template <typename Derived>
 
   LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
   // TODO [tastolfi 2023-06-28]
+
+  fuse_reply_err(req,
+                 FuseImplBase::errno_from_status(batt::Status{batt::StatusCode::kUnimplemented}));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

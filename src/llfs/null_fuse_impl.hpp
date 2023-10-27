@@ -485,6 +485,28 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
   }
 
   /** \brief
+   */ // 35/44
+  template <typename Handler>
+  void async_ioctl(fuse_req_t req, fuse_ino_t ino, unsigned int cmd, void* arg,
+                   struct fuse_file_info* fi, unsigned flags, const batt::ConstBuffer& in_buf,
+                   size_t out_bufsz, Handler&& handler)
+  {
+    LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+
+    (void)req;
+    (void)ino;
+    (void)cmd;
+    (void)arg;
+    (void)fi;
+    (void)flags;
+    (void)in_buf;
+    (void)out_bufsz;
+
+    BATT_FORWARD(handler)
+    (batt::StatusOr<FuseImplBase::FuseIoctlReply>{batt::Status{batt::StatusCode::kUnimplemented}});
+  }
+
+  /** \brief
    */ // 37/44
   template <typename Handler>
   void async_write_buf(fuse_req_t req, fuse_ino_t ino, const FuseImplBase::ConstBufferVec& bufv,

@@ -528,6 +528,27 @@ class MemoryFuseImpl : public WorkerTaskFuseImpl<MemoryFuseImpl>
   }
 
   /** \brief
+   */ // 35/44
+  batt::StatusOr<FuseImplBase::FuseIoctlReply> ioctl(fuse_req_t req, fuse_ino_t ino,
+                                                     unsigned int cmd, void* arg,
+                                                     struct fuse_file_info* fi, unsigned flags,
+                                                     const batt::ConstBuffer& in_buf,
+                                                     size_t out_bufsz)
+  {
+    LLFS_LOG_ERROR() << BATT_THIS_FUNCTION           //
+                     << BATT_INSPECT(req)            //
+                     << BATT_INSPECT(ino)            //
+                     << BATT_INSPECT(cmd)            //
+                     << BATT_INSPECT(arg)            //
+                     << BATT_INSPECT(fi)             //
+                     << BATT_INSPECT(flags)          //
+                     << BATT_INSPECT(in_buf.size())  //
+                     << BATT_INSPECT(out_bufsz);
+
+    return {batt::StatusCode::kUnimplemented};
+  }
+
+  /** \brief
    */ // 38/44
   void retrieve_reply(fuse_req_t req, void* cookie, fuse_ino_t ino, off_t offset,
                       struct fuse_bufvec* bufv)

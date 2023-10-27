@@ -78,8 +78,9 @@ class MemInode : public MemInodeBase<MemInode>
 
   batt::StatusOr<FuseImplBase::Attributes> set_attributes(const struct stat* attr, int to_set);
 
-  batt::StatusOr<FuseReadDirData> readdir(fuse_req_t req, MemFileHandle& dh, size_t size,
-                                          DirentOffset offset, PlusApi plus_api);
+  batt::StatusOr<FuseImplBase::FuseReadDirData> readdir(fuse_req_t req, MemFileHandle& dh,
+                                                        size_t size, DirentOffset offset,
+                                                        PlusApi plus_api);
 
   usize write(u64 offset, const batt::Slice<const batt::ConstBuffer>& buffers);
 

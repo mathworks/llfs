@@ -967,7 +967,7 @@ template <typename Derived>
   (void)ino;
   (void)size;
 
-  LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
+  LLFS_LOG_WARNING_FIRST_N(1) << "Not Implemented: " << BATT_THIS_FUNCTION;
   // TODO [tastolfi 2023-06-28]
 
   fuse_reply_err(req,

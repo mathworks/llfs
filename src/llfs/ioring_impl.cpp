@@ -49,12 +49,14 @@ StatusOr<i32> status_or_i32_from_uring_retval(int retval)
 /*static*/ auto IoRingImpl::make_new(MaxQueueDepth entries) noexcept
     -> StatusOr<std::unique_ptr<IoRingImpl>>
 {
+  LLFS_VLOG(1) << "Creating new IoRingImpl";
   std::unique_ptr<IoRingImpl> impl{new IoRingImpl};
 
   // Create the event_fd so we can wake the ioring completion event loop.
   {
     BATT_CHECK_EQ(impl->event_fd_, -1);
 
+    LLFS_VLOG(1) << "Creating eventfd";
     impl->event_fd_.store(eventfd(0, /*flags=*/EFD_SEMAPHORE));
     if (impl->event_fd_ < 0) {
       LLFS_LOG_ERROR() << "failed to create eventfd: " << std::strerror(errno);
@@ -68,6 +70,7 @@ StatusOr<i32> status_or_i32_from_uring_retval(int retval)
   {
     BATT_CHECK(!impl->ring_init_);
 
+    LLFS_VLOG(1) << "Calling io_uring_queue_init(entries=" << entries << ")";
     const int retval = io_uring_queue_init(entries, &impl->ring_, /*flags=*/0);
 
     BATT_REQUIRE_OK(status_from_uring_retval(retval))
@@ -80,11 +83,14 @@ StatusOr<i32> status_or_i32_from_uring_retval(int retval)
   {
     BATT_CHECK_NE(impl->event_fd_, -1);
 
+    LLFS_VLOG(1) << "Calling io_uring_register_eventfd";
     const int retval = io_uring_register_eventfd(&impl->ring_, impl->event_fd_);
 
     BATT_REQUIRE_OK(status_from_uring_retval(retval))
         << batt::LogLevel::kError << "failed io_uring_register_eventfd: " << std::strerror(-retval);
   }
+
+  LLFS_VLOG(1) << "IoRingImpl created";
 
   return {std::move(impl)};
 }

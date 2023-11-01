@@ -126,12 +126,12 @@ macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
   add_executable(${TARGET_NAME}_Test ${${TARGET_NAME}_TestSources} ./common/test_environment.cpp)
   target_link_libraries(
     ${TARGET_NAME}_Test
+    ${TARGET_NAME}
+    ${TARGET_DEPS}
     GTest::gtest
     GTest::gtest_main
     GTest::gmock
     GTest::gmock_main
-    ${TARGET_NAME}
-    ${TARGET_DEPS}
     libfuse::libfuse
     Boost::context
     Boost::stacktrace_backtrace

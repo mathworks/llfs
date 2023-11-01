@@ -905,7 +905,10 @@ batt::Status VolumeTrimmerTest::TrimmerSession::handle_drop_roots(
         batt::WaitForResource::kFalse,
         batt::make_case_of_visitor(
             [&](const llfs::SlotParse& slot, const llfs::VolumeTrimEvent& trim_event) {
-              next_trim_event.emplace(slot, trim_event);
+              next_trim_event.emplace(llfs::SlotParseWithPayload<llfs::VolumeTrimEvent>{
+                  .slot = slot,
+                  .payload = trim_event,
+              });
               return llfs::make_status(llfs::StatusCode::kBreakSlotReaderLoop);
             },
             [&](const llfs::SlotParse& slot, const auto& payload) {

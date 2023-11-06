@@ -475,6 +475,10 @@ class PageAllocatorModel
       return;
     }
 
+    static std::atomic<usize> step_count{0};
+    ++step_count;
+    LLFS_LOG_INFO_EVERY_N(25000) << BATT_INSPECT(step_count);
+
     LLFS_VLOG(2) << "Entered PageAllocatorModel::step()";
 
     this->state_.crash_count += 1;
@@ -564,7 +568,12 @@ class PageAllocatorModel
 
   usize max_concurrency() const override
   {
-    static const int n = batt::getenv_as<int>("MODEL_CHECK_THREADS").value_or(4);
+    static const int n = [] {
+      int n_model_check_threads = batt::getenv_as<int>("MODEL_CHECK_THREADS").value_or(4);
+      LLFS_LOG_INFO() << BATT_INSPECT(n_model_check_threads);
+      return n_model_check_threads;
+    }();
+
     return n;
   }
 

@@ -128,6 +128,37 @@ inline usize packed_sizeof(const PackedBytes& rec)
   return packed_sizeof_str(rec.size());
 }
 
+/** \brief Initializes a PackedBytes record without copying data if it is too big to fit in the
+ struct itself, in order to pack the struct + data into non-contiguous memory.
+ *
+ * WARNING: Be *very* careful using this function; the resulting `rec` is generally _not_ safe to
+ * read from, except to serialize over a stream.
+ *
+ * \return true if an extra fragment is required; false if the string fit inside of `rec`.
+*/
+inline bool pack_as_fragments(const std::string_view& src, PackedBytes* rec, u32 offset)
+{
+  if (src.size() <= 4) {
+    rec->data_offset = sizeof(PackedBytes) - src.size();
+
+    u8* rec_end = reinterpret_cast<u8*>(rec + 1);
+    u8* zero_begin = reinterpret_cast<u8*>(rec->unused_);
+    u8* zero_end = rec_end - src.size();
+
+    std::memset(zero_begin, 0, zero_end - zero_begin);
+    std::memcpy(zero_end, src.data(), src.size());
+
+    return false;
+  }
+
+  rec->data_offset = offset;
+  rec->unused_[0] = 0;
+  rec->data_size = src.size();
+  rec->reserved_[0] = 0;
+
+  return true;
+}
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
 class DataPacker;

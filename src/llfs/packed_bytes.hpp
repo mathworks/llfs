@@ -159,6 +159,18 @@ inline bool pack_as_fragments(const std::string_view& src, PackedBytes* rec, u32
   return true;
 }
 
+/** \brief Convenience overload; calls the `std::string_view` overload of `pack_as_fragments`.
+ */
+inline bool pack_as_fragments(const ConstBuffer& src, PackedBytes* rec, u32 offset)
+{
+  return pack_as_fragments(
+      std::string_view{
+          static_cast<const char*>(src.data()),
+          src.size(),
+      },
+      rec, offset);
+}
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
 class DataPacker;

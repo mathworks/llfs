@@ -106,65 +106,80 @@ TEST(PackedBytesTest, Clear)
 
 TEST(PackedBytesTest, PackAsFragments)
 {
-  std::array<char, 100> fragment_1;
-  std::array<char, sizeof(llfs::PackedBytes)> fragment_0;
+  for (bool use_string_view : {false, true}) {
+    std::array<char, 100> fragment_1;
+    std::array<char, sizeof(llfs::PackedBytes)> fragment_0;
 
-  auto* rec = reinterpret_cast<llfs::PackedBytes*>(fragment_0.data());
+    auto* rec = reinterpret_cast<llfs::PackedBytes*>(fragment_0.data());
 
-  std::string_view s1 = "abc";
-  std::string_view s2 = "hello, big wide world!";
+    std::string_view s1 = "abc";
+    std::string_view s2 = "hello, big wide world!";
 
-  //+++++++++++-+-+--+----- --- -- -  -  -   -
-  // Pack s1.
-  //
-  const bool s1_uses_extra_fragment = llfs::pack_as_fragments(
-      s1, rec, /*offset=*/BATT_CHECKED_CAST(u32, sizeof(llfs::PackedBytes)));
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+    // Pack s1.
+    //
+    const bool s1_uses_extra_fragment = [&] {
+      if (use_string_view) {
+        return llfs::pack_as_fragments(
+            s1, rec,
+            /*offset=*/BATT_CHECKED_CAST(u32, sizeof(llfs::PackedBytes)));
+      }
+      return llfs::pack_as_fragments(llfs::ConstBuffer{s1.data(), s1.size()}, rec,
+                                     /*offset=*/BATT_CHECKED_CAST(u32, sizeof(llfs::PackedBytes)));
+    }();
 
-  //+++++++++++-+-+--+----- --- -- -  -  -   -
-  // Verify packed s1.
-  //
-  EXPECT_FALSE(s1_uses_extra_fragment);
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+    // Verify packed s1.
+    //
+    EXPECT_FALSE(s1_uses_extra_fragment);
 
-  std::vector s1_buffer_sequence{llfs::ConstBuffer{fragment_0.data(), fragment_0.size()}};
+    std::vector s1_buffer_sequence{llfs::ConstBuffer{fragment_0.data(), fragment_0.size()}};
 
-  std::array<char, 100 + sizeof(llfs::PackedBytes)> all_fragments_copy;
+    std::array<char, 100 + sizeof(llfs::PackedBytes)> all_fragments_copy;
 
-  std::memset(all_fragments_copy.data(), '\0', all_fragments_copy.size());
+    std::memset(all_fragments_copy.data(), '\0', all_fragments_copy.size());
 
-  boost::asio::buffer_copy(
-      llfs::MutableBuffer{all_fragments_copy.data(), all_fragments_copy.size()},
-      s1_buffer_sequence);
+    boost::asio::buffer_copy(
+        llfs::MutableBuffer{all_fragments_copy.data(), all_fragments_copy.size()},
+        s1_buffer_sequence);
 
-  const auto* rec_copy = reinterpret_cast<const llfs::PackedBytes*>(all_fragments_copy.data());
+    const auto* rec_copy = reinterpret_cast<const llfs::PackedBytes*>(all_fragments_copy.data());
 
-  EXPECT_EQ(rec_copy->size(), s1.size());
-  EXPECT_THAT(rec_copy->as_str(), ::testing::StrEq(s1));
+    EXPECT_EQ(rec_copy->size(), s1.size());
+    EXPECT_THAT(rec_copy->as_str(), ::testing::StrEq(s1));
 
-  //+++++++++++-+-+--+----- --- -- -  -  -   -
-  // Pack s2.
-  //
-  const bool s2_uses_extra_fragment = llfs::pack_as_fragments(
-      s2, rec, /*offset=*/BATT_CHECKED_CAST(u32, sizeof(llfs::PackedBytes)));
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+    // Pack s2.
+    //
+    const bool s2_uses_extra_fragment = [&] {
+      if (use_string_view) {
+        return llfs::pack_as_fragments(
+            s2, rec, /*offset=*/BATT_CHECKED_CAST(u32, sizeof(llfs::PackedBytes)));
+      }
+      return llfs::pack_as_fragments(llfs::ConstBuffer{s2.data(), s2.size()}, rec,
+                                     /*offset=*/BATT_CHECKED_CAST(u32, sizeof(llfs::PackedBytes)));
+    }();
 
-  std::memcpy(fragment_1.data(), s2.data(), s2.size());
+    std::memcpy(fragment_1.data(), s2.data(), s2.size());
 
-  //+++++++++++-+-+--+----- --- -- -  -  -   -
-  // Verify packed s2.
-  //
-  EXPECT_TRUE(s2_uses_extra_fragment);
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+    // Verify packed s2.
+    //
+    EXPECT_TRUE(s2_uses_extra_fragment);
 
-  std::vector s2_buffer_sequence{
-      llfs::ConstBuffer{fragment_0.data(), fragment_0.size()},
-      llfs::ConstBuffer{fragment_1.data(), fragment_1.size()},
-  };
-  std::memset(all_fragments_copy.data(), '\0', all_fragments_copy.size());
+    std::vector s2_buffer_sequence{
+        llfs::ConstBuffer{fragment_0.data(), fragment_0.size()},
+        llfs::ConstBuffer{fragment_1.data(), fragment_1.size()},
+    };
+    std::memset(all_fragments_copy.data(), '\0', all_fragments_copy.size());
 
-  boost::asio::buffer_copy(
-      llfs::MutableBuffer{all_fragments_copy.data(), all_fragments_copy.size()},
-      s2_buffer_sequence);
+    boost::asio::buffer_copy(
+        llfs::MutableBuffer{all_fragments_copy.data(), all_fragments_copy.size()},
+        s2_buffer_sequence);
 
-  EXPECT_EQ(rec_copy->size(), s2.size());
-  EXPECT_THAT(rec_copy->as_str(), ::testing::StrEq(s2));
+    EXPECT_EQ(rec_copy->size(), s2.size());
+    EXPECT_THAT(rec_copy->as_str(), ::testing::StrEq(s2));
+  }
 }
 
 }  // namespace

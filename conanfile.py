@@ -14,9 +14,6 @@ import os, sys, platform
 
 VERBOSE = os.getenv('VERBOSE') and True or False
 
-script_dir = os.path.join(os.path.dirname(__file__), 'script')
-sys.path.append(script_dir)
-
 
 class LlfsConan(ConanFile):
     name = "llfs"
@@ -39,7 +36,20 @@ class LlfsConan(ConanFile):
         "script/*.sh",
     ]
 
+    #+++++++++++-+-+--+----- --- -- -  -  -   -
+    def _append_script_dir(self):
+        script_dir1 = os.path.join(os.path.dirname(__file__), 'script')
+        sys.path.append(script_dir1)
+
+        try:
+            script_dir2 = os.path.join(os.path.split(self.source_folder)[0], 'script')
+            sys.path.append(script_dir2)
+        except:
+            pass
+    #+++++++++++-+-+--+----- --- -- -  -  -   -
+
     def set_version(self):
+        self._append_script_dir()
         import batt
         batt.VERBOSE = VERBOSE
         self.version = batt.get_version(no_check_conan=True)
@@ -75,6 +85,7 @@ class LlfsConan(ConanFile):
                           transitive_headers=True,
                           transitive_libs=True)
 
+        self._append_script_dir()
         import batt
         batt.conanfile_requirements(self, deps, override_deps, platform_deps)
 
@@ -90,6 +101,7 @@ class LlfsConan(ConanFile):
         deps = CMakeDeps(self)
         deps.generate()
 
+        self._append_script_dir()
         import batt
         batt.VERBOSE = VERBOSE
         batt.generate_conan_find_requirements(self)

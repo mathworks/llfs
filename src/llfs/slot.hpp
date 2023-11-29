@@ -125,11 +125,14 @@ inline slot_offset_type clamp_min_slot(batt::Watch<slot_offset_type>& active_off
                                        slot_offset_type min_offset)
 {
   slot_offset_type delta = 0;
-  active_offset.modify([min_offset, &delta](slot_offset_type current_offset) {
-    const slot_offset_type new_offset = slot_max(min_offset, current_offset);
-    delta = slot_distance(current_offset, new_offset);
-    return new_offset;
-  });
+  active_offset.modify_if(
+      [min_offset, &delta](slot_offset_type current_offset) -> Optional<slot_offset_type> {
+        delta = slot_distance(current_offset, new_offset);
+        if (slot_less_than(current_offset, min_offset)) {
+          return min_offset;
+        }
+        return None;
+      });
   return delta;
 }
 

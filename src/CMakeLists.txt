@@ -133,6 +133,7 @@ macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
     GTest::gmock
     GTest::gmock_main
     libfuse::libfuse
+    OpenSSL::Crypto
     Boost::context
     Boost::stacktrace_backtrace
     libbacktrace::libbacktrace

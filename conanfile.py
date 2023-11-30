@@ -58,16 +58,16 @@ class LlfsConan(ConanFile):
 
     def requirements(self):
         deps = [
-            "libbacktrace/cci.20210118",
-            "gtest/1.14.0",
-            "boost/1.83.0",
-            "glog/0.6.0",
             "batteries/0.49.1",
+            "boost/1.83.0",
             "cli11/2.3.2",
+            "glog/0.6.0",
+            "gtest/1.14.0",
+            "libbacktrace/cci.20210118",
+            "openssl/3.1.3",
         ]
 
         override_deps = [
-            "openssl/3.1.1",
             "zlib/1.2.13",
         ]
 

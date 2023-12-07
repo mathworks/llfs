@@ -12,7 +12,14 @@ from conan.tools.files import copy
 
 import os, sys, platform
 
-VERBOSE = os.getenv('VERBOSE') and True or False
+
+#==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+# Import batt helper utilities module.
+#
+sys.path.append(os.path.join(os.path.dirname(__file__), 'script'))
+import batt
+#
+#+++++++++++-+-+--+----- --- -- -  -  -   -
 
 
 class LlfsConan(ConanFile):
@@ -27,31 +34,20 @@ class LlfsConan(ConanFile):
     default_options = {"shared": False}
     build_policy = "missing"
 
+    exports = [
+        "script/*.py",
+        "script/*.sh",
+    ]
     exports_sources = [
         "src/CMakeLists.txt",
         "src/**/*.hpp",
         "src/**/*.ipp",
         "src/**/*.cpp",
-        "script/*.py",
-        "script/*.sh",
     ]
-
-    #+++++++++++-+-+--+----- --- -- -  -  -   -
-    def _append_script_dir(self):
-        script_dir1 = os.path.join(os.path.dirname(__file__), 'script')
-        sys.path.append(script_dir1)
-
-        try:
-            script_dir2 = os.path.join(os.path.split(self.source_folder)[0], 'script')
-            sys.path.append(script_dir2)
-        except:
-            pass
+            
     #+++++++++++-+-+--+----- --- -- -  -  -   -
 
     def set_version(self):
-        self._append_script_dir()
-        import batt
-        batt.VERBOSE = VERBOSE
         self.version = batt.get_version(no_check_conan=True)
         batt.verbose(f'VERSION={self.version}')
 
@@ -85,8 +81,6 @@ class LlfsConan(ConanFile):
                           transitive_headers=True,
                           transitive_libs=True)
 
-        self._append_script_dir()
-        import batt
         batt.conanfile_requirements(self, deps, override_deps, platform_deps)
 
 
@@ -97,13 +91,8 @@ class LlfsConan(ConanFile):
     def generate(self):
         tc = CMakeToolchain(self)
         tc.generate()
-
         deps = CMakeDeps(self)
         deps.generate()
-
-        self._append_script_dir()
-        import batt
-        batt.VERBOSE = VERBOSE
         batt.generate_conan_find_requirements(self)
 
 
@@ -117,7 +106,7 @@ class LlfsConan(ConanFile):
 
     def build(self):
         cmake = CMake(self)
-        cmake.verbose = VERBOSE
+        cmake.verbose = batt.VERBOSE
         cmake.configure()
         cmake.build()
 

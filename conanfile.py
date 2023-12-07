@@ -40,7 +40,7 @@ class LlfsConan(ConanFile):
     def _append_script_dir(self):
         try:
             print(f'BEFORE modifying sys.path; cwd={os.getcwd()}, sys.path={sys.path}, source_folder={self.source_folder}, __file__={__file__}, stack=')
-            traceback.print_stack()
+            #traceback.print_stack()
         
             script_dir1 = os.path.join(os.path.dirname(__file__), 'script')
             sys.path.append(script_dir1)

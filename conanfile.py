@@ -10,7 +10,7 @@ from conan import ConanFile
 from conan.tools.cmake import CMakeToolchain, CMake, cmake_layout, CMakeDeps
 from conan.tools.files import copy
 
-import os, sys, platform
+import os, sys, platform, traceback
 
 VERBOSE = os.getenv('VERBOSE') and True or False
 
@@ -38,14 +38,22 @@ class LlfsConan(ConanFile):
 
     #+++++++++++-+-+--+----- --- -- -  -  -   -
     def _append_script_dir(self):
-        script_dir1 = os.path.join(os.path.dirname(__file__), 'script')
-        sys.path.append(script_dir1)
-
         try:
-            script_dir2 = os.path.join(os.path.split(self.source_folder)[0], 'script')
-            sys.path.append(script_dir2)
-        except:
-            pass
+            print(f'BEFORE modifying sys.path; cwd={os.getcwd()}, sys.path={sys.path}, source_folder={self.source_folder}, __file__={__file__}, stack=')
+            traceback.print_stack()
+        
+            script_dir1 = os.path.join(os.path.dirname(__file__), 'script')
+            sys.path.append(script_dir1)
+
+            try:
+                script_dir2 = os.path.join(os.path.split(self.source_folder)[0], 'script')
+                sys.path.append(script_dir2)
+            except:
+                pass
+            
+        finally:
+            print(f'AFTER modifying sys.path; cwd={os.getcwd()}, sys.path={sys.path}')
+            
     #+++++++++++-+-+--+----- --- -- -  -  -   -
 
     def set_version(self):

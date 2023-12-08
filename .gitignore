@@ -6,3 +6,4 @@ build/
 .vscode/
 a8/
 src/CMakeUserPresets.json
+__pycache__/

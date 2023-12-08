@@ -44,57 +44,8 @@ class LlfsConan(ConanFile):
         "src/**/*.ipp",
         "src/**/*.cpp",
     ]
-            
+
     #+++++++++++-+-+--+----- --- -- -  -  -   -
-
-    def set_version(self):
-        self.version = batt.get_version(no_check_conan=True)
-        batt.verbose(f'VERSION={self.version}')
-
-
-    def requirements(self):
-        deps = [
-            "batteries/0.49.1",
-            "boost/1.83.0",
-            "cli11/2.3.2",
-            "glog/0.6.0",
-            "gtest/1.14.0",
-            "libbacktrace/cci.20210118",
-            "openssl/3.1.3",
-        ]
-
-        override_deps = [
-            "zlib/1.2.13",
-        ]
-
-        platform_deps = {
-            "Linux": [
-                "liburing/2.4",
-                "libfuse/3.10.5",
-            ]
-        }
-
-        if platform.system() == 'Linux':
-            self.requires("libunwind/1.7.2",
-                          override=True,
-                          visible=True,
-                          transitive_headers=True,
-                          transitive_libs=True)
-
-        batt.conanfile_requirements(self, deps, override_deps, platform_deps)
-
-
-    def layout(self):
-        cmake_layout(self, src_folder="src")
-
-
-    def generate(self):
-        tc = CMakeToolchain(self)
-        tc.generate()
-        deps = CMakeDeps(self)
-        deps.generate()
-        batt.generate_conan_find_requirements(self)
-
 
     def configure(self):
         self.options["gtest"].shared = False
@@ -104,26 +55,32 @@ class LlfsConan(ConanFile):
         self.options["batteries"].header_only = False
 
 
-    def build(self):
-        cmake = CMake(self)
-        cmake.verbose = batt.VERBOSE
-        cmake.configure()
-        cmake.build()
+    def requirements(self):
+        from batt import VISIBLE, OVERRIDE
 
+        self.requires("batteries/0.49.3", **VISIBLE)
+        self.requires("boost/1.83.0", **VISIBLE)
+        self.requires("cli11/2.3.2", **VISIBLE)
+        self.requires("glog/0.6.0", **VISIBLE)
+        self.requires("gtest/1.14.0", **VISIBLE)
+        self.requires("libbacktrace/cci.20210118", **VISIBLE)
+        self.requires("openssl/3.1.3", **VISIBLE)
 
-    def package(self):
-        src_include = os.path.join(self.source_folder, ".")
-        dst_include = os.path.join(self.package_folder, "include")
+        self.requires("zlib/1.2.13", **OVERRIDE)
 
-        copy(self, "*.hpp", dst=dst_include, src=src_include)
-        copy(self, "*.ipp", dst=dst_include, src=src_include)
+        if platform.system() == "Linux":
+            self.requires("liburing/2.4", **VISIBLE)
+            self.requires("libfuse/3.10.5", **VISIBLE)
+            self.requires("libunwind/1.7.2", **VISIBLE, **OVERRIDE)
 
-        cmake = CMake(self)
-        cmake.configure()
-        cmake.install()
+    #+++++++++++-+-+--+----- --- -- -  -  -   -
 
+    from batt import set_version_from_git_tags as set_version
+    from batt import cmake_in_src_layout       as layout
+    from batt import default_cmake_generate    as generate
+    from batt import default_cmake_build       as build
+    from batt import default_cmake_lib_package as package
+    from batt import default_lib_package_info  as package_info
+    from batt import default_lib_package_id    as package_id
 
-    def package_info(self):
-        self.cpp_info.cxxflags = ["-D_GNU_SOURCE", "-D_BITS_UIO_EXT_H=1"]
-        self.cpp_info.system_libs = ["dl"]
-        self.cpp_info.libs = ["llfs"]
+    #+++++++++++-+-+--+----- --- -- -  -  -   -

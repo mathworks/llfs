@@ -64,7 +64,7 @@ class LlfsConan(ConanFile):
         self.requires("glog/0.6.0", **VISIBLE)
         self.requires("gtest/1.14.0", **VISIBLE)
         self.requires("libbacktrace/cci.20210118", **VISIBLE)
-        self.requires("openssl/3.1.3", **VISIBLE)
+        self.requires("openssl/3.2.0", **VISIBLE)
 
         self.requires("zlib/1.2.13", **OVERRIDE)
 

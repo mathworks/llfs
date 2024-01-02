@@ -128,6 +128,8 @@ class IoRingStreamBuffer
 
   /** \brief Allocate from the pool a buffer that will later be inserted into the stream via
    * IoRingStreamBuffer::commit.
+   *
+   * NOT SAFE to invoke concurrently on the same object.
    */
   StatusOr<IoRingBufferPool::Buffer> prepare();
 
@@ -154,9 +156,9 @@ class IoRingStreamBuffer
  private:
   /** \brief Checks to see if the stream has been closed for write _and_ all data has been drained;
    * if both of these conditions are met, then all waiting consumers are unblocked (with kClosed
-   * status code) and this function returns true.  Otherwise, returns false.
+   * status code).
    */
-  bool check_for_end_of_stream(batt::ScopedLock<Fragment>& locked);
+  void check_for_end_of_stream(batt::ScopedLock<Fragment>& locked);
 
   /** \brief Performs one-time initialization of this->private_buffer_pool_.
    */
@@ -189,10 +191,6 @@ class IoRingStreamBuffer
    * to this->commit.
    */
   batt::Watch<i64> commit_pos_;
-
-  /** \brief The number of available buffer slices that can be committed/pushed to `this->queue_`.
-   */
-  batt::Watch<usize> queue_space_{this->queue_capacity_};
 
   /** \brief Set to true when `this->close()` is called.  Used by `this->check_for_end_of_stream()`
    * to detect when we are transitioning from "normal" (open) to "draining"

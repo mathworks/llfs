@@ -10,6 +10,8 @@
 //
 #include <llfs/logging.hpp>
 
+#include <batteries/hint.hpp>
+
 namespace llfs {
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
@@ -51,9 +53,11 @@ void IoRingStreamBuffer::close()
 //
 StatusOr<IoRingBufferPool::Buffer> IoRingStreamBuffer::prepare()
 {
-  BATT_REQUIRE_OK(this->queue_space_.await_not_equal(0));
-
   LLFS_VLOG(1) << "minimum consume pos reached; allocating buffer...";
+
+  if (this->end_of_stream_.load()) {
+    return {batt::StatusCode::kClosed};
+  }
 
   // Allocate a buffer from the pool.
   //
@@ -77,7 +81,6 @@ void IoRingStreamBuffer::commit(BufferView&& view)
     locked->push(std::move(view));
 
     BATT_CHECK_LE(locked->view_count(), this->queue_capacity_);
-    this->queue_space_.set_value(this->queue_capacity_ - locked->view_count());
   }
   this->commit_pos_.fetch_add(byte_count);
 }
@@ -89,16 +92,19 @@ auto IoRingStreamBuffer::consume(i64 start, i64 end) -> StatusOr<Fragment>
   LLFS_VLOG(1) << "IoRingStreamBuffer::consume(" << start << ", " << end << ")"
                << BATT_INSPECT(this->commit_pos_.get_value());
 
+  // Wait for the target range to be committed (i.e., wait for the commit pos to be >= end).
+  //
   StatusOr<i64> final_commit_pos = this->commit_pos_.await_true([&](i64 observed_commit_pos) {
-    return observed_commit_pos >= end;
+    return observed_commit_pos - end >= 0;
   });
-
   BATT_REQUIRE_OK(final_commit_pos);
 
   LLFS_VLOG(1)
       << "IoRingStreamBuffer::consume() commit_pos reached; waiting for all prev consumers to "
          "finish...";
 
+  // Wait for all consumers of lower ranges to update the consume pos.
+  //
   Status consume_pos_reached = this->consume_pos_.await_equal(start);
   BATT_REQUIRE_OK(consume_pos_reached);
 
@@ -113,11 +119,7 @@ auto IoRingStreamBuffer::consume(i64 start, i64 end) -> StatusOr<Fragment>
     const usize n_to_pop = end - start;
 
     result = locked->pop(n_to_pop);
-
-    if (!this->check_for_end_of_stream(locked)) {
-      BATT_CHECK_LE(locked->view_count(), this->queue_capacity_);
-      this->queue_space_.set_value(this->queue_capacity_ - locked->view_count());
-    }
+    this->check_for_end_of_stream(locked);
   }
   this->consume_pos_.set_value(end);
 
@@ -128,7 +130,22 @@ auto IoRingStreamBuffer::consume(i64 start, i64 end) -> StatusOr<Fragment>
 //
 auto IoRingStreamBuffer::consume_some() -> StatusOr<Fragment>
 {
-  BATT_REQUIRE_OK(this->queue_space_.await_not_equal(this->queue_capacity_));
+  const i64 observed_consume_pos = this->consume_pos_.get_value();
+
+  // Wait for the commit pos to advance past the consume pos.
+  //
+  StatusOr<i64> final_commit_pos =
+      this->commit_pos_.await_true([&observed_consume_pos](i64 observed_commit_pos) {
+        return observed_commit_pos - observed_consume_pos > 0;
+      });
+
+  if (BATT_HINT_FALSE(final_commit_pos.status() == batt::StatusCode::kClosed)) {
+    const i64 observed_commit_pos = this->commit_pos_.get_value();
+    if (observed_commit_pos - observed_consume_pos > 0) {
+      final_commit_pos = observed_commit_pos;
+    }
+  }
+  BATT_REQUIRE_OK(final_commit_pos);
 
   Fragment result;
   {
@@ -136,8 +153,14 @@ auto IoRingStreamBuffer::consume_some() -> StatusOr<Fragment>
 
     std::swap(result, *locked);
     this->consume_pos_.fetch_add(BATT_CHECKED_CAST(i64, result.byte_size()));
-    if (!this->check_for_end_of_stream(locked)) {
-      this->queue_space_.set_value(this->queue_capacity_);
+    // ^^
+    //  We must check for end-of-stream *after* updating consume_pos to make sure no data is dropped
+    //  at the end of the stream.
+    //   vv
+    this->check_for_end_of_stream(locked);
+
+    if (BATT_HINT_FALSE(result.empty() && this->commit_pos_.is_closed())) {
+      return {batt::StatusCode::kClosed};
     }
   }
 
@@ -153,16 +176,12 @@ usize IoRingStreamBuffer::buffer_size() const noexcept
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-bool IoRingStreamBuffer::check_for_end_of_stream(batt::ScopedLock<Fragment>& locked)
+void IoRingStreamBuffer::check_for_end_of_stream(batt::ScopedLock<Fragment>& locked)
 {
   if (this->end_of_stream_.load() && locked->empty()) {
-    this->queue_space_.set_value(0);
-    this->queue_space_.close();
     this->commit_pos_.close();
     this->consume_pos_.close();
-    return true;
   }
-  return false;
 }
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

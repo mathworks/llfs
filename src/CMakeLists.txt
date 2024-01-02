@@ -170,6 +170,7 @@ endmacro()
 LLFS_DefineLibrary(llfs ./llfs
   batteries::batteries
   liburing::liburing
+    OpenSSL::Crypto
   )
 
 #=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
@@ -219,6 +220,7 @@ target_link_libraries(llfs_fuse
   Boost::context
   Boost::stacktrace_backtrace
   libbacktrace::libbacktrace
+  OpenSSL::Crypto
   CLI11::CLI11
   dl
   stdc++fs)

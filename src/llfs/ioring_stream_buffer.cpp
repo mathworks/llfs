@@ -28,7 +28,6 @@ namespace llfs {
 //
 Status IoRingStreamBuffer::initialize() noexcept
 {
-  BATT_UNTESTED_COND(this->private_buffer_pool_);
   if (!this->private_buffer_pool_) {
     BATT_ASSIGN_OK_RESULT(
         IoRingBufferPool::BufferVec buffers,
@@ -61,7 +60,6 @@ usize IoRingStreamBuffer::size() const noexcept
 //
 void IoRingStreamBuffer::close()
 {
-  BATT_UNTESTED_LINE();
   {
     batt::ScopedLock<Fragment> locked{this->queue_};
     this->end_of_stream_.store(true);
@@ -76,7 +74,6 @@ StatusOr<IoRingMutableBufferView> IoRingStreamBuffer::prepare()
   LLFS_VLOG(1) << "minimum consume pos reached; allocating buffer...";
 
   if (this->end_of_stream_.load()) {
-    BATT_UNTESTED_LINE();
     return {batt::StatusCode::kClosed};
   }
 
@@ -116,8 +113,6 @@ void IoRingStreamBuffer::commit(BufferView&& view)
 //
 auto IoRingStreamBuffer::consume(i64 start, i64 end) -> StatusOr<Fragment>
 {
-  BATT_UNTESTED_LINE();
-
   LLFS_VLOG(1) << "IoRingStreamBuffer::consume(" << start << ", " << end << ")"
                << BATT_INSPECT(this->commit_pos_.get_value());
 
@@ -169,9 +164,9 @@ auto IoRingStreamBuffer::consume_some() -> StatusOr<Fragment>
       });
 
   if (BATT_HINT_FALSE(final_commit_pos.status() == batt::StatusCode::kClosed)) {
-    BATT_UNTESTED_LINE();
     const i64 observed_commit_pos = this->commit_pos_.get_value();
     if (observed_commit_pos - observed_consume_pos > 0) {
+      BATT_UNTESTED_LINE();
       final_commit_pos = observed_commit_pos;
     }
   }
@@ -210,7 +205,6 @@ usize IoRingStreamBuffer::buffer_size() const noexcept
 void IoRingStreamBuffer::check_for_end_of_stream(batt::ScopedLock<Fragment>& locked)
 {
   if (this->end_of_stream_.load() && locked->empty()) {
-    BATT_UNTESTED_LINE();
     this->commit_pos_.close();
     this->consume_pos_.close();
   }
@@ -238,7 +232,6 @@ usize IoRingStreamBuffer::Fragment::view_count() const noexcept
 void IoRingStreamBuffer::Fragment::push(BufferView&& view)
 {
   if (!this->views_.empty() && this->views_.back().merge_with(view)) {
-    BATT_UNTESTED_LINE();
     return;
   }
   this->views_.emplace_back(std::move(view));
@@ -248,15 +241,10 @@ void IoRingStreamBuffer::Fragment::push(BufferView&& view)
 //
 auto IoRingStreamBuffer::Fragment::pop(usize max_byte_count) -> Fragment
 {
-  BATT_UNTESTED_LINE();
   usize bytes_popped = 0;
   Fragment result;
 
-  BATT_UNTESTED_COND((!this->views_.empty() && bytes_popped < max_byte_count));
-  BATT_UNTESTED_COND(!(!this->views_.empty() && bytes_popped < max_byte_count));
-
   while (!this->views_.empty() && bytes_popped < max_byte_count) {
-    BATT_UNTESTED_LINE();
     BufferView& this_view = this->views_.front();
 
     const usize bytes_this_view = std::min(this_view.slice.size(), max_byte_count - bytes_popped);
@@ -273,10 +261,7 @@ auto IoRingStreamBuffer::Fragment::pop(usize max_byte_count) -> Fragment
     this_view.slice += bytes_this_view;
 
     if (this_view.slice.size() == 0) {
-      BATT_UNTESTED_LINE();
       this->views_.erase(this->views_.begin());
-    } else {
-      BATT_UNTESTED_LINE();
     }
   }
 
@@ -298,12 +283,8 @@ usize IoRingStreamBuffer::Fragment::byte_size() const noexcept
 //
 ConstBuffer IoRingStreamBuffer::Fragment::gather_impl(MutableBuffer dst) const noexcept
 {
-  BATT_UNTESTED_LINE();
   const void* dst_begin = dst.data();
   usize n_copied = 0;
-
-  BATT_UNTESTED_COND(this->views_.empty());
-  BATT_UNTESTED_COND(!this->views_.empty());
 
   for (const BufferView& view : this->views_) {
     const usize n_to_copy = std::min(view.slice.size(), dst.size());

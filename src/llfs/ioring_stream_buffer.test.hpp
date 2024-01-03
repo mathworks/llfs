@@ -265,7 +265,11 @@ class IoringStreamBufferNotEmptyTest : public IoringStreamBufferEmptyTest
   {
     ASSERT_NO_FATAL_FAILURE(Super::SetUp());
 
-    this->commit_test_data(this->buffer_size_);
+    // Commit the test data in two steps, to exercise code paths that merge buffer views inside a
+    // fragment.
+    //
+    this->commit_test_data(this->buffer_size_ - 1);
+    this->commit_test_data(1);
 
     EXPECT_EQ(this->stream_buffer_->size(), this->buffer_size_);
   }

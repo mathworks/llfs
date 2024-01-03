@@ -22,73 +22,6 @@ namespace {
 
 using namespace llfs::int_types;
 
-// Test Plan:
-//  Sizes:
-//   1. Empty
-//   2. Full
-//   3. Low (contains <=1 buffer worth, >0 bytes)
-//   4. High (contains >1 buffer worth, not full)
-//  States:
-//   a. open
-//   b. closed
-//   c. other task waiting on prepare
-//   d. other task waiting on consume_some
-//   e. other task waiting on consume(start, end)
-//  Actions:
-//   i. close
-//   ii. prepare
-//   iii. commit
-//   iv. consume(start, end)
-//   v. consume_some
-//  Results:
-//   (w. blocking until resolved into one of the following...)
-//   x. success, no blocking
-//   y. fail, error
-//   z. fail, panic
-//
-
-// 1.a.i.w. invalid (close never blocks)
-// 1.a.i.x.
-// 1.a.i.y. invalid
-// 1.a.i.z. invalid
-// 1.a.ii.w.
-// 1.a.ii.x.
-// 1.a.ii.y. invalid
-// 1.a.ii.z. invalid
-// 1.a.iii.w. invalid (commit never blocks)
-// 1.a.iii.x.
-// 1.a.iii.y. invalid
-// 1.a.iii.z.
-// 1.a.iv.w.
-// 1.a.iv.x. (end == start)
-// 1.a.iv.y.
-// 1.a.iv.z.
-// 1.a.v.w.
-// 1.a.v.x. (end == start)
-// 1.a.v.y.
-// 1.a.v.z. invalid
-
-// 1.b.i.w. invalid (close never blocks)
-// 1.b.i.x. invalid
-// 1.b.i.y.
-// 1.b.i.z. invalid
-// 1.b.ii.w.
-// 1.b.ii.x.
-// 1.b.ii.y. invalid
-// 1.b.ii.z. invalid
-// 1.b.iii.w. invalid (commit never blocks)
-// 1.b.iii.x.
-// 1.b.iii.y. invalid
-// 1.b.iii.z.
-// 1.b.iv.w.
-// 1.b.iv.x. (end == start)
-// 1.b.iv.y.
-// 1.b.iv.z.
-// 1.b.v.w.
-// 1.b.v.x. (end == start)
-// 1.b.v.y.
-// 1.b.v.z. invalid
-
 using llfs::testing::IoringStreamBufferClosedEmptyTest;
 using llfs::testing::IoringStreamBufferEmptyTest;
 using llfs::testing::IoringStreamBufferFullTest;
@@ -118,6 +51,15 @@ TEST_F(IoringStreamBufferTest, EmptyFragment)
   llfs::ConstBuffer gathered = fragment.gather(storage);
 
   EXPECT_EQ(gathered.size(), 0u);
+
+  llfs::IoRingStreamBuffer::Fragment fragment2 = fragment.pop(1);
+
+  EXPECT_TRUE(fragment.empty());
+  EXPECT_EQ(fragment.view_count(), 0u);
+  EXPECT_EQ(fragment.byte_size(), 0u);
+  EXPECT_TRUE(fragment2.empty());
+  EXPECT_EQ(fragment2.view_count(), 0u);
+  EXPECT_EQ(fragment2.byte_size(), 0u);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -369,6 +311,17 @@ TEST_F(IoringStreamBufferNotEmptyTest, ConsumeRangeWaitClosed)
       });
 
   EXPECT_EQ(fragment2.status(), batt::StatusCode::kClosed);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(IoringStreamBufferNotEmptyTest, PrepareAfterClose)
+{
+  this->stream_buffer_->close();
+
+  batt::StatusOr<llfs::IoRingStreamBuffer::PreparedView> view = this->stream_buffer_->prepare();
+
+  EXPECT_EQ(view.status(), batt::StatusCode::kClosed);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

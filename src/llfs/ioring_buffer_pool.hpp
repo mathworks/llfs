@@ -294,15 +294,15 @@ class IoRingBufferPool
   {
     this->async_allocate(
         BufferCount{1},
-        batt::bind_handler(BATT_FORWARD(handler),
-                           [](Handler&& handler, StatusOr<BufferVec>&& buffers) {
-                             if (!buffers.ok()) {
-                               BATT_FORWARD(handler)(StatusOr<Buffer>{buffers.status()});
-                               return;
-                             }
-                             BATT_CHECK_EQ(buffers->size(), 1u);
-                             BATT_FORWARD(handler)(StatusOr<Buffer>{std::move(buffers->front())});
-                           }));
+        batt::bind_handler(  //
+            BATT_FORWARD(handler), [](Handler&& handler, StatusOr<BufferVec>&& buffers) {
+              if (!buffers.ok()) {
+                BATT_FORWARD(handler)(StatusOr<Buffer>{buffers.status()});
+                return;
+              }
+              BATT_CHECK_EQ(buffers->size(), 1u);
+              BATT_FORWARD(handler)(StatusOr<Buffer>{std::move(buffers->front())});
+            }));
   }
 
   /** \brief Asynchronously allocate the specified number of buffers.  Waits until enough buffers

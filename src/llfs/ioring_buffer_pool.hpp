@@ -15,6 +15,7 @@
 #include <llfs/api_types.hpp>
 #include <llfs/constants.hpp>
 #include <llfs/ioring.hpp>
+#include <llfs/status.hpp>
 
 #include <batteries/async/mutex.hpp>
 #include <batteries/async/watch.hpp>
@@ -229,12 +230,12 @@ class IoRingBufferPool
 
   using BufferVec = batt::SmallVec<Buffer, 2>;
 
-  using AbstractHandler = batt::BasicAbstractHandler<HandlerBase, batt::StatusOr<BufferVec>&&>;
+  using AbstractHandler = batt::BasicAbstractHandler<HandlerBase, StatusOr<BufferVec>&&>;
 
   template <typename Fn>
-  using HandlerImpl = batt::BasicHandlerImpl<Fn, HandlerBase, batt::StatusOr<BufferVec>&&>;
+  using HandlerImpl = batt::BasicHandlerImpl<Fn, HandlerBase, StatusOr<BufferVec>&&>;
 
-  using HandlerList = batt::BasicHandlerList<HandlerBase, batt::StatusOr<BufferVec>&&>;
+  using HandlerList = batt::BasicHandlerList<HandlerBase, StatusOr<BufferVec>&&>;
 
   using BufferFreePoolList = boost::intrusive::slist<Deallocated,                         //
                                                      boost::intrusive::cache_last<true>,  //
@@ -246,9 +247,10 @@ class IoRingBufferPool
    *
    * Automatically registers the buffers in the pool with the passed IoRing context.
    */
-  static batt::StatusOr<std::unique_ptr<IoRingBufferPool>> make_new(
-      const IoRing& io_ring, BufferCount count,
-      BufferSize size = BufferSize{Self::kMemoryUnitSize}) noexcept;
+  static StatusOr<std::unique_ptr<IoRingBufferPool>> make_new(const IoRing& io_ring,
+                                                              BufferCount count,
+                                                              BufferSize size = BufferSize{
+                                                                  Self::kMemoryUnitSize}) noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -278,30 +280,30 @@ class IoRingBufferPool
   /** \brief Asynchronously allocate a new buffer.  Waits until a buffer becomes available and then
    * invokes the passed handler.
    *
-   * The signature of the handler is: `void (batt::StatusOr<llfs::IoRingBufferPool::Buffer>)`.
+   * The signature of the handler is: `void (StatusOr<llfs::IoRingBufferPool::Buffer>)`.
    */
-  template <typename Handler = void(batt::StatusOr<Buffer>&&)>
+  template <typename Handler = void(StatusOr<Buffer>&&)>
   void async_allocate(Handler&& handler)
   {
     this->async_allocate(
         BufferCount{1},
-        batt::bind_handler(
-            BATT_FORWARD(handler), [](Handler&& handler, batt::StatusOr<BufferVec>&& buffers) {
-              if (!buffers.ok()) {
-                BATT_FORWARD(handler)(batt::StatusOr<Buffer>{buffers.status()});
-                return;
-              }
-              BATT_CHECK_EQ(buffers->size(), 1u);
-              BATT_FORWARD(handler)(batt::StatusOr<Buffer>{std::move(buffers->front())});
-            }));
+        batt::bind_handler(BATT_FORWARD(handler),
+                           [](Handler&& handler, StatusOr<BufferVec>&& buffers) {
+                             if (!buffers.ok()) {
+                               BATT_FORWARD(handler)(StatusOr<Buffer>{buffers.status()});
+                               return;
+                             }
+                             BATT_CHECK_EQ(buffers->size(), 1u);
+                             BATT_FORWARD(handler)(StatusOr<Buffer>{std::move(buffers->front())});
+                           }));
   }
 
   /** \brief Asynchronously allocate the specified number of buffers.  Waits until enough buffers
    * become available and then invokes the passed handler.
    *
-   * The signature of the handler is: `void (batt::StatusOr<llfs::IoRingBufferPool::Buffer>)`.
+   * The signature of the handler is: `void (StatusOr<llfs::IoRingBufferPool::Buffer>)`.
    */
-  template <typename Fn = void(batt::StatusOr<BufferVec>&&)>
+  template <typename Fn = void(StatusOr<BufferVec>&&)>
   void async_allocate(BufferCount count, Fn&& fn)
   {
     AbstractHandler* handler = HandlerImpl<Fn>::make_new(BATT_FORWARD(fn));
@@ -316,17 +318,17 @@ class IoRingBufferPool
   /** \brief Blocks the current Task until a buffer becomes available, then allocates and returns
    * it.
    */
-  auto await_allocate() -> batt::StatusOr<Buffer>;
+  auto await_allocate() -> StatusOr<Buffer>;
 
   /** \brief Blocks the current Task until a buffer becomes available, then allocates and returns
    * it.
    */
-  auto await_allocate(BufferCount count) -> batt::StatusOr<BufferVec>;
+  auto await_allocate(BufferCount count) -> StatusOr<BufferVec>;
 
   /** \brief Attempts to allocate a buffer without blocking; if successful, returns the buffer; else
    * returns batt::StatusCode::kResourceExhausted.
    */
-  auto try_allocate() -> batt::StatusOr<Buffer>;
+  auto try_allocate() -> StatusOr<Buffer>;
 
   /** \brief Returns the number of buffers in the pool which are currently in use (allocated).
    */

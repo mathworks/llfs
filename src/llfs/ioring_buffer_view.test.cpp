@@ -87,6 +87,9 @@ TEST_F(IoringBufferViewTest, ConstructEmpty)
 
   EXPECT_EQ(view.slice.data(), nullptr);
   EXPECT_EQ(view.slice.size(), 0u);
+  EXPECT_EQ(view.data(), nullptr);
+  EXPECT_EQ(view.size(), 0u);
+
   EXPECT_FALSE(view.buffer);
 }
 
@@ -103,6 +106,9 @@ TEST_F(IoringBufferViewTest, ConstructNonEmpty)
   EXPECT_NE(view.slice.data(), nullptr);
   EXPECT_EQ(view.slice.data(), this->buffer_1->data());
   EXPECT_EQ(view.slice.size(), kTestBufferSize);
+  EXPECT_EQ(view.data(), this->buffer_1->data());
+  EXPECT_EQ(view.size(), kTestBufferSize);
+
   EXPECT_TRUE(view.buffer);
 }
 
@@ -123,8 +129,11 @@ TEST_F(IoringBufferViewTest, MergeEmptyWithEmptyTrue)
 
   EXPECT_TRUE(view_1.can_merge_with(view_2));
   EXPECT_TRUE(view_1.merge_with(view_2));
+
   EXPECT_EQ(view_1.slice.data(), this->buffer_1->data());
   EXPECT_EQ(view_1.slice.size(), 0u);
+  EXPECT_EQ(view_1.data(), this->buffer_1->data());
+  EXPECT_EQ(view_1.size(), 0u);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -147,10 +156,14 @@ TEST_F(IoringBufferViewTest, MergeEmptyWithNonEmptyTrue)
   };
 
   EXPECT_EQ(view_1.slice.size(), 0u);
+
   EXPECT_TRUE(view_1.can_merge_with(view_2));
   EXPECT_TRUE(view_1.merge_with(view_2));
+
   EXPECT_EQ(view_1.slice.data(), this->buffer_1->data());
   EXPECT_EQ(view_1.slice.size(), 100u);
+  EXPECT_EQ(view_1.data(), this->buffer_1->data());
+  EXPECT_EQ(view_1.size(), 100u);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -173,10 +186,16 @@ TEST_F(IoringBufferViewTest, MergeNonEmptyWithEmptyTrue)
 
   EXPECT_EQ(view_1.slice.size(), 100u);
   EXPECT_EQ(view_2.slice.size(), 0u);
+  EXPECT_EQ(view_1.size(), 100u);
+  EXPECT_EQ(view_2.size(), 0u);
+
   EXPECT_TRUE(view_1.can_merge_with(view_2));
   EXPECT_TRUE(view_1.merge_with(view_2));
+
   EXPECT_EQ(view_1.slice.data(), this->buffer_1->data());
   EXPECT_EQ(view_1.slice.size(), 100u);
+  EXPECT_EQ(view_1.data(), this->buffer_1->data());
+  EXPECT_EQ(view_1.size(), 100u);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -198,10 +217,15 @@ TEST_F(IoringBufferViewTest, MergeNonEmptyWithNonEmptyTrue)
   };
 
   EXPECT_EQ(view_1.slice.size(), 100u);
+  EXPECT_EQ(view_1.size(), 100u);
+
   EXPECT_TRUE(view_1.can_merge_with(view_2));
   EXPECT_TRUE(view_1.merge_with(view_2));
+
   EXPECT_EQ(view_1.slice.data(), this->buffer_1->data());
   EXPECT_EQ(view_1.slice.size(), 200u);
+  EXPECT_EQ(view_1.data(), this->buffer_1->data());
+  EXPECT_EQ(view_1.size(), 200u);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -226,6 +250,10 @@ TEST_F(IoringBufferViewTest, MergeEmptyWithEmptyFalse)
   EXPECT_EQ(view_1.slice.size(), 0u);
   EXPECT_EQ(view_2.slice.data(), llfs::advance_pointer(this->buffer_1->data(), 200));
   EXPECT_EQ(view_2.slice.size(), 0u);
+  EXPECT_EQ(view_1.data(), llfs::advance_pointer(this->buffer_1->data(), 100));
+  EXPECT_EQ(view_1.size(), 0u);
+  EXPECT_EQ(view_2.data(), llfs::advance_pointer(this->buffer_1->data(), 200));
+  EXPECT_EQ(view_2.size(), 0u);
 
   EXPECT_FALSE(view_1.can_merge_with(view_2));
   EXPECT_FALSE(view_1.merge_with(view_2));
@@ -234,6 +262,10 @@ TEST_F(IoringBufferViewTest, MergeEmptyWithEmptyFalse)
   EXPECT_EQ(view_1.slice.size(), 0u);
   EXPECT_EQ(view_2.slice.data(), llfs::advance_pointer(this->buffer_1->data(), 200));
   EXPECT_EQ(view_2.slice.size(), 0u);
+  EXPECT_EQ(view_1.data(), llfs::advance_pointer(this->buffer_1->data(), 100));
+  EXPECT_EQ(view_1.size(), 0u);
+  EXPECT_EQ(view_2.data(), llfs::advance_pointer(this->buffer_1->data(), 200));
+  EXPECT_EQ(view_2.size(), 0u);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -258,6 +290,10 @@ TEST_F(IoringBufferViewTest, MergeEmptyWithNonEmptyFalse)
   EXPECT_EQ(view_1.slice.size(), 0u);
   EXPECT_EQ(view_2.slice.data(), llfs::advance_pointer(this->buffer_1->data(), 150));
   EXPECT_EQ(view_2.slice.size(), 50u);
+  EXPECT_EQ(view_1.data(), llfs::advance_pointer(this->buffer_1->data(), 100));
+  EXPECT_EQ(view_1.size(), 0u);
+  EXPECT_EQ(view_2.data(), llfs::advance_pointer(this->buffer_1->data(), 150));
+  EXPECT_EQ(view_2.size(), 50u);
 
   EXPECT_FALSE(view_1.can_merge_with(view_2));
   EXPECT_FALSE(view_1.merge_with(view_2));
@@ -266,6 +302,10 @@ TEST_F(IoringBufferViewTest, MergeEmptyWithNonEmptyFalse)
   EXPECT_EQ(view_1.slice.size(), 0u);
   EXPECT_EQ(view_2.slice.data(), llfs::advance_pointer(this->buffer_1->data(), 150));
   EXPECT_EQ(view_2.slice.size(), 50u);
+  EXPECT_EQ(view_1.data(), llfs::advance_pointer(this->buffer_1->data(), 100));
+  EXPECT_EQ(view_1.size(), 0u);
+  EXPECT_EQ(view_2.data(), llfs::advance_pointer(this->buffer_1->data(), 150));
+  EXPECT_EQ(view_2.size(), 50u);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -290,6 +330,10 @@ TEST_F(IoringBufferViewTest, MergeNonEmptyWithEmptyFalse)
   EXPECT_EQ(view_1.slice.size(), 50u);
   EXPECT_EQ(view_2.slice.data(), llfs::advance_pointer(this->buffer_1->data(), 200));
   EXPECT_EQ(view_2.slice.size(), 0u);
+  EXPECT_EQ(view_1.data(), llfs::advance_pointer(this->buffer_1->data(), 50));
+  EXPECT_EQ(view_1.size(), 50u);
+  EXPECT_EQ(view_2.data(), llfs::advance_pointer(this->buffer_1->data(), 200));
+  EXPECT_EQ(view_2.size(), 0u);
 
   EXPECT_FALSE(view_1.can_merge_with(view_2));
   EXPECT_FALSE(view_1.merge_with(view_2));
@@ -298,6 +342,10 @@ TEST_F(IoringBufferViewTest, MergeNonEmptyWithEmptyFalse)
   EXPECT_EQ(view_1.slice.size(), 50u);
   EXPECT_EQ(view_2.slice.data(), llfs::advance_pointer(this->buffer_1->data(), 200));
   EXPECT_EQ(view_2.slice.size(), 0u);
+  EXPECT_EQ(view_1.data(), llfs::advance_pointer(this->buffer_1->data(), 50));
+  EXPECT_EQ(view_1.size(), 50u);
+  EXPECT_EQ(view_2.data(), llfs::advance_pointer(this->buffer_1->data(), 200));
+  EXPECT_EQ(view_2.size(), 0u);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -322,6 +370,10 @@ TEST_F(IoringBufferViewTest, MergeNonEmptyWithNonEmptyFalse)
   EXPECT_EQ(view_1.slice.size(), 50u);
   EXPECT_EQ(view_2.slice.data(), llfs::advance_pointer(this->buffer_1->data(), 150));
   EXPECT_EQ(view_2.slice.size(), 50u);
+  EXPECT_EQ(view_1.data(), llfs::advance_pointer(this->buffer_1->data(), 50));
+  EXPECT_EQ(view_1.size(), 50u);
+  EXPECT_EQ(view_2.data(), llfs::advance_pointer(this->buffer_1->data(), 150));
+  EXPECT_EQ(view_2.size(), 50u);
 
   EXPECT_FALSE(view_1.can_merge_with(view_2));
   EXPECT_FALSE(view_1.merge_with(view_2));
@@ -330,6 +382,91 @@ TEST_F(IoringBufferViewTest, MergeNonEmptyWithNonEmptyFalse)
   EXPECT_EQ(view_1.slice.size(), 50u);
   EXPECT_EQ(view_2.slice.data(), llfs::advance_pointer(this->buffer_1->data(), 150));
   EXPECT_EQ(view_2.slice.size(), 50u);
+  EXPECT_EQ(view_1.data(), llfs::advance_pointer(this->buffer_1->data(), 50));
+  EXPECT_EQ(view_1.size(), 50u);
+  EXPECT_EQ(view_2.data(), llfs::advance_pointer(this->buffer_1->data(), 150));
+  EXPECT_EQ(view_2.size(), 50u);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(IoringBufferViewTest, Split)
+{
+  const llfs::IoRingBufferView non_empty_view{
+      .buffer = *this->buffer_1,
+      .slice = batt::ConstBuffer{this->buffer_1->data(), 100} + 50,
+  };
+
+  const llfs::IoRingBufferView empty_view{
+      .buffer = *this->buffer_1,
+      .slice = batt::ConstBuffer{this->buffer_1->data(), 0},
+  };
+
+  // split: empty -> at 0
+  {
+    llfs::IoRingBufferView view = empty_view;
+    llfs::IoRingBufferView prefix = view.split(0);
+
+    EXPECT_EQ(prefix.data(), this->buffer_1->data());
+    EXPECT_EQ(prefix.size(), 0u);
+    EXPECT_EQ(view.data(), this->buffer_1->data());
+    EXPECT_EQ(view.size(), 0u);
+  }
+
+  // split: empty -> past 0
+  {
+    llfs::IoRingBufferView view = empty_view;
+    llfs::IoRingBufferView prefix = view.split(1);
+
+    EXPECT_EQ(prefix.data(), this->buffer_1->data());
+    EXPECT_EQ(prefix.size(), 0u);
+    EXPECT_EQ(view.data(), this->buffer_1->data());
+    EXPECT_EQ(view.size(), 0u);
+  }
+
+  // split: non-empty -> at 0
+  {
+    llfs::IoRingBufferView view = non_empty_view;
+    llfs::IoRingBufferView prefix = view.split(0);
+
+    EXPECT_EQ(prefix.data(), llfs::advance_pointer(this->buffer_1->data(), 50));
+    EXPECT_EQ(prefix.size(), 0u);
+    EXPECT_EQ(view.data(), llfs::advance_pointer(this->buffer_1->data(), 50));
+    EXPECT_EQ(view.size(), 50u);
+  }
+
+  // split: non-empty -> >0 <end
+  {
+    llfs::IoRingBufferView view = non_empty_view;
+    llfs::IoRingBufferView prefix = view.split(10);
+
+    EXPECT_EQ(prefix.data(), llfs::advance_pointer(this->buffer_1->data(), 50));
+    EXPECT_EQ(prefix.size(), 10u);
+    EXPECT_EQ(view.data(), llfs::advance_pointer(this->buffer_1->data(), 60));
+    EXPECT_EQ(view.size(), 40u);
+  }
+
+  // split: non-empty -> at end
+  {
+    llfs::IoRingBufferView view = non_empty_view;
+    llfs::IoRingBufferView prefix = view.split(50);
+
+    EXPECT_EQ(prefix.data(), llfs::advance_pointer(this->buffer_1->data(), 50));
+    EXPECT_EQ(prefix.size(), 50u);
+    EXPECT_EQ(view.data(), llfs::advance_pointer(this->buffer_1->data(), 100));
+    EXPECT_EQ(view.size(), 0u);
+  }
+
+  // split: non-empty -> past end
+  {
+    llfs::IoRingBufferView view = non_empty_view;
+    llfs::IoRingBufferView prefix = view.split(51);
+
+    EXPECT_EQ(prefix.data(), llfs::advance_pointer(this->buffer_1->data(), 50));
+    EXPECT_EQ(prefix.size(), 50u);
+    EXPECT_EQ(view.data(), llfs::advance_pointer(this->buffer_1->data(), 100));
+    EXPECT_EQ(view.size(), 0u);
+  }
 }
 
 }  // namespace

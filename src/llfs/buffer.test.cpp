@@ -19,7 +19,7 @@ using namespace llfs::int_types;
 
 TEST(BufferTest, ResizeBufferStorage)
 {
-  std::unique_ptr<u8> storage;
+  std::unique_ptr<u8[]> storage;
   llfs::MutableBuffer buffer = resize_buffer_storage(storage, 1977);
 
   EXPECT_NE(buffer.data(), nullptr);

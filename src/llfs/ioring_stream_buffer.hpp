@@ -42,7 +42,8 @@ class IoRingStreamBuffer
    */
   static constexpr usize kMaxBuffersCapacity = 2;
 
-  using BufferView = IoRingBufferView;
+  using BufferView = IoRingConstBufferView;
+  using PreparedView = IoRingMutableBufferView;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
   //
@@ -89,7 +90,7 @@ class IoRingStreamBuffer
       }
 
       if (this->views_.size() == 1) {
-        storage.emplace(this->views_.front().buffer);
+        storage.template emplace<IoRingBufferPool::Buffer>(this->views_.front().buffer);
         return this->views_.front().slice;
       }
 
@@ -104,7 +105,7 @@ class IoRingStreamBuffer
 
     //----- --- -- -  -  -   -
 
-    batt::SmallVec<BufferView, 2> views_;
+    batt::SmallVec<BufferView, kMaxBuffersCapacity> views_;
   };
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -121,6 +122,17 @@ class IoRingStreamBuffer
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  /** \brief Returns the maximum size (in bytes) that the stream buffer can hold.
+   */
+  usize max_size() const noexcept
+  {
+    return this->queue_capacity_ * this->buffer_size();
+  }
+
+  /** \brief Returns the current size (in bytes) of the buffered data available in this stream.
+   */
+  usize size() const noexcept;
+
   /** \brief Closes the stream for writing.  If there is data in the stream, it is still consumable;
    * the stream is now in "draining" mode.
    */
@@ -131,7 +143,7 @@ class IoRingStreamBuffer
    *
    * NOT SAFE to invoke concurrently on the same object.
    */
-  StatusOr<IoRingBufferPool::Buffer> prepare();
+  StatusOr<PreparedView> prepare();
 
   /** \brief Inserts part of all of a previously allocated IoRingBufferPool::Buffer into the stream.
    * BufferView objects committed to the stream using this function must be adjacent,

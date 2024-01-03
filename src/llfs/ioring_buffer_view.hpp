@@ -18,19 +18,59 @@
 
 namespace llfs {
 
-//+++++++++++-+-+--+----- --- -- -  -  -   -
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 /** \brief A read-only view (slice) of a pooled buffer.
  */
-struct IoRingBufferView {
-  IoRingBufferPool::Buffer buffer;
-  ConstBuffer slice;
+template <typename SliceT>
+struct BasicIoRingBufferView {
+  using Self = BasicIoRingBufferView;
 
-  //----- --- -- -  -  -   -
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  IoRingBufferPool::Buffer buffer;
+  SliceT slice;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  BasicIoRingBufferView() = default;
+
+  explicit BasicIoRingBufferView(IoRingBufferPool::Buffer&& buffer, const SliceT& slice) noexcept
+      : buffer{std::move(buffer)}
+      , slice{slice}
+  {
+  }
+
+  explicit BasicIoRingBufferView(const IoRingBufferPool::Buffer& buffer,
+                                 const SliceT& slice) noexcept
+      : buffer{buffer}
+      , slice{slice}
+  {
+  }
+
+  template <typename SliceU, typename = std::enable_if_t<!std::is_same_v<SliceU, SliceT>>>
+  /*implicit*/ BasicIoRingBufferView(const BasicIoRingBufferView<SliceU>& other) noexcept
+      : buffer{other.buffer}
+      , slice{other.slice}
+  {
+  }
+
+  template <typename SliceU, typename = std::enable_if_t<!std::is_same_v<SliceU, SliceT>>,
+            typename = void>
+  /*implicit*/ BasicIoRingBufferView(BasicIoRingBufferView<SliceU>&& other) noexcept
+      : buffer{std::move(other.buffer)}
+      , slice{other.slice}
+  {
+  }
+
+  BasicIoRingBufferView(const Self&) = default;
+  BasicIoRingBufferView& operator=(const Self&) = default;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   /** \brief Returns a pointer to the start of the viewed data (`this->slice.data()`).
    */
-  const void* data() const noexcept
+  auto* data() const noexcept
   {
     return this->slice.data();
   }
@@ -42,24 +82,35 @@ struct IoRingBufferView {
     return this->slice.size();
   }
 
-  /** \brief Returns a new buffer view containing the prefix of `this` ending at `byte_offset`;
-   * `this` is adjusted to start at `byte_offset` (immediately after the returned prefix).
+  /** \brief Returns true iff this->size() is 0.
+   */
+  bool empty() const noexcept
+  {
+    return this->size() == 0;
+  }
+
+  /** \brief Returns a new buffer view containing the prefix of `this` ending at
+   * `byte_offset`; `this` is adjusted to start at `byte_offset` (immediately after the
+   * returned prefix).
    *
    * If byte_offset is after the end of `this->slice`, then it is automatically truncated to
    * `this->slice.size()`, a copy of `this` is returned, and `this` becomes empty.
    */
-  IoRingBufferView split(usize byte_offset) noexcept;
+  Self split(usize byte_offset) noexcept;
 
-  /** \brief Returns true iff other is a view of the same Buffer as this, and other.slice comes
-   * immediately after this->slice.
+  /** \brief Returns true iff other is a view of the same Buffer as this, and other.slice
+   * comes immediately after this->slice.
    */
-  bool can_merge_with(const IoRingBufferView& other) const noexcept;
+  bool can_merge_with(const Self& other) const noexcept;
 
-  /** \brief If this->can_merge_with(other) would return true, then this view's slice is extended
-   * to include other.slice and true is returned.  Otherwise returns false.
+  /** \brief If this->can_merge_with(other) would return true, then this view's slice is
+   * extended to include other.slice and true is returned.  Otherwise returns false.
    */
-  bool merge_with(const IoRingBufferView& other) noexcept;
+  bool merge_with(const Self& other) noexcept;
 };
+
+using IoRingConstBufferView = BasicIoRingBufferView<ConstBuffer>;
+using IoRingMutableBufferView = BasicIoRingBufferView<MutableBuffer>;
 
 }  //namespace llfs
 

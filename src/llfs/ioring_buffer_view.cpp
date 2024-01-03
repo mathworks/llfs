@@ -11,18 +11,16 @@
 
 namespace llfs {
 
-//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-// class IoRingStreamBuffer::BufferView
-
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-IoRingBufferView IoRingBufferView::split(usize byte_offset) noexcept
+template <typename SliceT>
+auto BasicIoRingBufferView<SliceT>::split(usize byte_offset) noexcept -> Self
 {
   byte_offset = std::min(byte_offset, this->slice.size());
 
-  IoRingBufferView prefix{
-      .buffer = this->buffer,
-      .slice = ConstBuffer{this->slice.data(), byte_offset},
+  Self prefix{
+      this->buffer,
+      SliceT{this->slice.data(), byte_offset},
   };
 
   this->slice += byte_offset;
@@ -32,7 +30,8 @@ IoRingBufferView IoRingBufferView::split(usize byte_offset) noexcept
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-bool IoRingBufferView::can_merge_with(const IoRingBufferView& other) const noexcept
+template <typename SliceT>
+bool BasicIoRingBufferView<SliceT>::can_merge_with(const Self& other) const noexcept
 {
   return this->buffer == other.buffer  //
          && get_buffer_end(this->slice) == other.slice.data();
@@ -40,16 +39,23 @@ bool IoRingBufferView::can_merge_with(const IoRingBufferView& other) const noexc
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-bool IoRingBufferView::merge_with(const IoRingBufferView& other) noexcept
+template <typename SliceT>
+bool BasicIoRingBufferView<SliceT>::merge_with(const Self& other) noexcept
 {
   if (!this->can_merge_with(other)) {
     return false;
   }
-  this->slice = ConstBuffer{
+  this->slice = SliceT{
       this->slice.data(),
       this->slice.size() + other.slice.size(),
   };
   return true;
 }
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+// Explicitly specialize for MutableBuffer and ConstBuffer only.
+
+template class BasicIoRingBufferView<ConstBuffer>;
+template class BasicIoRingBufferView<MutableBuffer>;
 
 }  //namespace llfs

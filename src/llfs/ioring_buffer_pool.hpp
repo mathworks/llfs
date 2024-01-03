@@ -161,6 +161,13 @@ class IoRingBufferPool
      */
     Buffer(const Buffer&) = default;
 
+    /** \brief Destroys this Buffer object, decrementing the ref count on the underlying memory by
+     * one.
+     */
+    ~Buffer() noexcept;
+
+    //----- --- -- -  -  -   -
+
     /** This class is copyable; all copies share the same underlying buffer memory.  When the last
      * copy is destroyed, the buffer is returned to the pool.
      */

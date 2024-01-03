@@ -83,7 +83,7 @@ class IoringBufferViewTest : public ::testing::Test
 //
 TEST_F(IoringBufferViewTest, ConstructEmpty)
 {
-  llfs::IoRingBufferView view;
+  llfs::IoRingConstBufferView view;
 
   EXPECT_EQ(view.slice.data(), nullptr);
   EXPECT_EQ(view.slice.size(), 0u);
@@ -98,9 +98,9 @@ TEST_F(IoringBufferViewTest, ConstructEmpty)
 //
 TEST_F(IoringBufferViewTest, ConstructNonEmpty)
 {
-  llfs::IoRingBufferView view{
-      .buffer = *this->buffer_1,
-      .slice = this->buffer_1->get(),
+  llfs::IoRingConstBufferView view{
+      *this->buffer_1,
+      this->buffer_1->get(),
   };
 
   EXPECT_NE(view.slice.data(), nullptr);
@@ -120,12 +120,12 @@ TEST_F(IoringBufferViewTest, ConstructNonEmpty)
 //
 TEST_F(IoringBufferViewTest, MergeEmptyWithEmptyTrue)
 {
-  llfs::IoRingBufferView view_1{
-      .buffer = *this->buffer_1,
-      .slice = batt::ConstBuffer{this->buffer_1->data(), 0},
+  llfs::IoRingConstBufferView view_1{
+      *this->buffer_1,
+      batt::ConstBuffer{this->buffer_1->data(), 0},
   };
 
-  llfs::IoRingBufferView view_2 = view_1;
+  llfs::IoRingConstBufferView view_2 = view_1;
 
   EXPECT_TRUE(view_1.can_merge_with(view_2));
   EXPECT_TRUE(view_1.merge_with(view_2));
@@ -145,14 +145,14 @@ TEST_F(IoringBufferViewTest, MergeEmptyWithEmptyTrue)
 //
 TEST_F(IoringBufferViewTest, MergeEmptyWithNonEmptyTrue)
 {
-  llfs::IoRingBufferView view_1{
-      .buffer = *this->buffer_1,
-      .slice = batt::ConstBuffer{this->buffer_1->data(), 0},
+  llfs::IoRingConstBufferView view_1{
+      *this->buffer_1,
+      batt::ConstBuffer{this->buffer_1->data(), 0},
   };
 
-  llfs::IoRingBufferView view_2 = {
-      .buffer = *this->buffer_1,
-      .slice = batt::ConstBuffer{this->buffer_1->data(), 100},
+  llfs::IoRingConstBufferView view_2{
+      *this->buffer_1,
+      batt::ConstBuffer{this->buffer_1->data(), 100},
   };
 
   EXPECT_EQ(view_1.slice.size(), 0u);
@@ -174,14 +174,14 @@ TEST_F(IoringBufferViewTest, MergeEmptyWithNonEmptyTrue)
 //
 TEST_F(IoringBufferViewTest, MergeNonEmptyWithEmptyTrue)
 {
-  llfs::IoRingBufferView view_1{
-      .buffer = *this->buffer_1,
-      .slice = batt::ConstBuffer{this->buffer_1->data(), 100},
+  llfs::IoRingConstBufferView view_1{
+      *this->buffer_1,
+      batt::ConstBuffer{this->buffer_1->data(), 100},
   };
 
-  llfs::IoRingBufferView view_2 = {
-      .buffer = *this->buffer_1,
-      .slice = batt::ConstBuffer{this->buffer_1->data(), 100} + 100,
+  llfs::IoRingConstBufferView view_2{
+      *this->buffer_1,
+      batt::ConstBuffer{this->buffer_1->data(), 100} + 100,
   };
 
   EXPECT_EQ(view_1.slice.size(), 100u);
@@ -206,14 +206,14 @@ TEST_F(IoringBufferViewTest, MergeNonEmptyWithEmptyTrue)
 //
 TEST_F(IoringBufferViewTest, MergeNonEmptyWithNonEmptyTrue)
 {
-  llfs::IoRingBufferView view_1{
-      .buffer = *this->buffer_1,
-      .slice = batt::ConstBuffer{this->buffer_1->data(), 100},
+  llfs::IoRingConstBufferView view_1{
+      *this->buffer_1,
+      batt::ConstBuffer{this->buffer_1->data(), 100},
   };
 
-  llfs::IoRingBufferView view_2 = {
-      .buffer = *this->buffer_1,
-      .slice = batt::ConstBuffer{this->buffer_1->data(), 200} + 100,
+  llfs::IoRingConstBufferView view_2{
+      *this->buffer_1,
+      batt::ConstBuffer{this->buffer_1->data(), 200} + 100,
   };
 
   EXPECT_EQ(view_1.slice.size(), 100u);
@@ -236,14 +236,14 @@ TEST_F(IoringBufferViewTest, MergeNonEmptyWithNonEmptyTrue)
 //
 TEST_F(IoringBufferViewTest, MergeEmptyWithEmptyFalse)
 {
-  llfs::IoRingBufferView view_1{
-      .buffer = *this->buffer_1,
-      .slice = batt::ConstBuffer{this->buffer_1->data(), 100} + 100,
+  llfs::IoRingConstBufferView view_1{
+      *this->buffer_1,
+      batt::ConstBuffer{this->buffer_1->data(), 100} + 100,
   };
 
-  llfs::IoRingBufferView view_2 = {
-      .buffer = *this->buffer_1,
-      .slice = batt::ConstBuffer{this->buffer_1->data(), 200} + 200,
+  llfs::IoRingConstBufferView view_2{
+      *this->buffer_1,
+      batt::ConstBuffer{this->buffer_1->data(), 200} + 200,
   };
 
   EXPECT_EQ(view_1.slice.data(), llfs::advance_pointer(this->buffer_1->data(), 100));
@@ -276,14 +276,14 @@ TEST_F(IoringBufferViewTest, MergeEmptyWithEmptyFalse)
 //
 TEST_F(IoringBufferViewTest, MergeEmptyWithNonEmptyFalse)
 {
-  llfs::IoRingBufferView view_1{
-      .buffer = *this->buffer_1,
-      .slice = batt::ConstBuffer{this->buffer_1->data(), 100} + 100,
+  llfs::IoRingConstBufferView view_1{
+      *this->buffer_1,
+      batt::ConstBuffer{this->buffer_1->data(), 100} + 100,
   };
 
-  llfs::IoRingBufferView view_2 = {
-      .buffer = *this->buffer_1,
-      .slice = batt::ConstBuffer{this->buffer_1->data(), 200} + 150,
+  llfs::IoRingConstBufferView view_2{
+      *this->buffer_1,
+      batt::ConstBuffer{this->buffer_1->data(), 200} + 150,
   };
 
   EXPECT_EQ(view_1.slice.data(), llfs::advance_pointer(this->buffer_1->data(), 100));
@@ -316,14 +316,14 @@ TEST_F(IoringBufferViewTest, MergeEmptyWithNonEmptyFalse)
 //
 TEST_F(IoringBufferViewTest, MergeNonEmptyWithEmptyFalse)
 {
-  llfs::IoRingBufferView view_1{
-      .buffer = *this->buffer_1,
-      .slice = batt::ConstBuffer{this->buffer_1->data(), 100} + 50,
+  llfs::IoRingConstBufferView view_1{
+      *this->buffer_1,
+      batt::ConstBuffer{this->buffer_1->data(), 100} + 50,
   };
 
-  llfs::IoRingBufferView view_2 = {
-      .buffer = *this->buffer_1,
-      .slice = batt::ConstBuffer{this->buffer_1->data(), 200} + 200,
+  llfs::IoRingConstBufferView view_2{
+      *this->buffer_1,
+      batt::ConstBuffer{this->buffer_1->data(), 200} + 200,
   };
 
   EXPECT_EQ(view_1.slice.data(), llfs::advance_pointer(this->buffer_1->data(), 50));
@@ -356,14 +356,14 @@ TEST_F(IoringBufferViewTest, MergeNonEmptyWithEmptyFalse)
 //
 TEST_F(IoringBufferViewTest, MergeNonEmptyWithNonEmptyFalse)
 {
-  llfs::IoRingBufferView view_1{
-      .buffer = *this->buffer_1,
-      .slice = batt::ConstBuffer{this->buffer_1->data(), 100} + 50,
+  llfs::IoRingConstBufferView view_1{
+      *this->buffer_1,
+      batt::ConstBuffer{this->buffer_1->data(), 100} + 50,
   };
 
-  llfs::IoRingBufferView view_2 = {
-      .buffer = *this->buffer_1,
-      .slice = batt::ConstBuffer{this->buffer_1->data(), 200} + 150,
+  llfs::IoRingConstBufferView view_2{
+      *this->buffer_1,
+      batt::ConstBuffer{this->buffer_1->data(), 200} + 150,
   };
 
   EXPECT_EQ(view_1.slice.data(), llfs::advance_pointer(this->buffer_1->data(), 50));
@@ -389,23 +389,58 @@ TEST_F(IoringBufferViewTest, MergeNonEmptyWithNonEmptyFalse)
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+// IoRingMutableBufferView => IoRingConstBufferView.
+//
+TEST_F(IoringBufferViewTest, ConstFromMutable)
+{
+  const llfs::IoRingMutableBufferView mutable_view{
+      *this->buffer_1,
+      batt::MutableBuffer{this->buffer_1->data(), 100},
+  };
+
+  EXPECT_NE(mutable_view.data(), nullptr);
+  EXPECT_EQ(mutable_view.data(), this->buffer_1->data());
+  EXPECT_EQ(mutable_view.size(), 100u);
+  EXPECT_EQ(mutable_view.slice.data(), this->buffer_1->data());
+  EXPECT_EQ(mutable_view.slice.size(), 100u);
+
+  static_assert(std::is_same_v<decltype(mutable_view.data()), void*>);
+
+  {
+    const llfs::IoRingConstBufferView const_view = mutable_view;
+
+    static_assert(std::is_same_v<decltype(const_view.data()), const void*>);
+
+    EXPECT_EQ(const_view.data(), this->buffer_1->data());
+    EXPECT_EQ(const_view.size(), 100u);
+  }
+  {
+    llfs::IoRingConstBufferView const_view;
+    const_view = mutable_view;
+
+    EXPECT_EQ(const_view.data(), this->buffer_1->data());
+    EXPECT_EQ(const_view.size(), 100u);
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 TEST_F(IoringBufferViewTest, Split)
 {
-  const llfs::IoRingBufferView non_empty_view{
-      .buffer = *this->buffer_1,
-      .slice = batt::ConstBuffer{this->buffer_1->data(), 100} + 50,
+  const llfs::IoRingConstBufferView non_empty_view{
+      *this->buffer_1,
+      batt::ConstBuffer{this->buffer_1->data(), 100} + 50,
   };
 
-  const llfs::IoRingBufferView empty_view{
-      .buffer = *this->buffer_1,
-      .slice = batt::ConstBuffer{this->buffer_1->data(), 0},
+  const llfs::IoRingConstBufferView empty_view{
+      *this->buffer_1,
+      batt::ConstBuffer{this->buffer_1->data(), 0},
   };
 
   // split: empty -> at 0
   {
-    llfs::IoRingBufferView view = empty_view;
-    llfs::IoRingBufferView prefix = view.split(0);
+    llfs::IoRingConstBufferView view = empty_view;
+    llfs::IoRingConstBufferView prefix = view.split(0);
 
     EXPECT_EQ(prefix.data(), this->buffer_1->data());
     EXPECT_EQ(prefix.size(), 0u);
@@ -415,8 +450,8 @@ TEST_F(IoringBufferViewTest, Split)
 
   // split: empty -> past 0
   {
-    llfs::IoRingBufferView view = empty_view;
-    llfs::IoRingBufferView prefix = view.split(1);
+    llfs::IoRingConstBufferView view = empty_view;
+    llfs::IoRingConstBufferView prefix = view.split(1);
 
     EXPECT_EQ(prefix.data(), this->buffer_1->data());
     EXPECT_EQ(prefix.size(), 0u);
@@ -426,8 +461,8 @@ TEST_F(IoringBufferViewTest, Split)
 
   // split: non-empty -> at 0
   {
-    llfs::IoRingBufferView view = non_empty_view;
-    llfs::IoRingBufferView prefix = view.split(0);
+    llfs::IoRingConstBufferView view = non_empty_view;
+    llfs::IoRingConstBufferView prefix = view.split(0);
 
     EXPECT_EQ(prefix.data(), llfs::advance_pointer(this->buffer_1->data(), 50));
     EXPECT_EQ(prefix.size(), 0u);
@@ -437,8 +472,8 @@ TEST_F(IoringBufferViewTest, Split)
 
   // split: non-empty -> >0 <end
   {
-    llfs::IoRingBufferView view = non_empty_view;
-    llfs::IoRingBufferView prefix = view.split(10);
+    llfs::IoRingConstBufferView view = non_empty_view;
+    llfs::IoRingConstBufferView prefix = view.split(10);
 
     EXPECT_EQ(prefix.data(), llfs::advance_pointer(this->buffer_1->data(), 50));
     EXPECT_EQ(prefix.size(), 10u);
@@ -448,8 +483,8 @@ TEST_F(IoringBufferViewTest, Split)
 
   // split: non-empty -> at end
   {
-    llfs::IoRingBufferView view = non_empty_view;
-    llfs::IoRingBufferView prefix = view.split(50);
+    llfs::IoRingConstBufferView view = non_empty_view;
+    llfs::IoRingConstBufferView prefix = view.split(50);
 
     EXPECT_EQ(prefix.data(), llfs::advance_pointer(this->buffer_1->data(), 50));
     EXPECT_EQ(prefix.size(), 50u);
@@ -459,8 +494,8 @@ TEST_F(IoringBufferViewTest, Split)
 
   // split: non-empty -> past end
   {
-    llfs::IoRingBufferView view = non_empty_view;
-    llfs::IoRingBufferView prefix = view.split(51);
+    llfs::IoRingConstBufferView view = non_empty_view;
+    llfs::IoRingConstBufferView prefix = view.split(51);
 
     EXPECT_EQ(prefix.data(), llfs::advance_pointer(this->buffer_1->data(), 50));
     EXPECT_EQ(prefix.size(), 50u);

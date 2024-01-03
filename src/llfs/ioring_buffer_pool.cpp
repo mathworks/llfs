@@ -402,6 +402,16 @@ IoRingBufferPool::Buffer::Buffer() noexcept : allocated_{nullptr}
 /*explicit*/ IoRingBufferPool::Buffer::Buffer(batt::SharedPtr<const Allocated>&& allocated) noexcept
     : allocated_{std::move(allocated)}
 {
+  LLFS_VLOG_IF(1, this->allocated_)
+      << BATT_INSPECT(this->allocated_->use_count()) << "->" << (this->allocated_->use_count() + 1);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+IoRingBufferPool::Buffer::~Buffer() noexcept
+{
+  LLFS_VLOG_IF(1, this->allocated_)
+      << BATT_INSPECT(this->allocated_->use_count()) << "->" << (this->allocated_->use_count() - 1);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

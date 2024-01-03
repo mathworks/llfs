@@ -75,7 +75,7 @@ namespace std {
 //
 /** \brief Resizes the given buffer storage object and returns a MutableBuffer of the same size.
  */
-inline llfs::MutableBuffer resize_buffer_storage(std::unique_ptr<llfs::u8>& p_storage,
+inline llfs::MutableBuffer resize_buffer_storage(std::unique_ptr<llfs::u8[]>& p_storage,
                                                  llfs::usize size)
 {
   p_storage.reset(new llfs::u8[size]);

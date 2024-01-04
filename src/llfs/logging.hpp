@@ -94,6 +94,7 @@ struct NullStream {
 #define LLFS_LOG_WARNING_FIRST_N(n) LLFS_LOG_NO_OUTPUT()
 #define LLFS_LOG_INFO_FIRST_N(n) LLFS_LOG_NO_OUTPUT()
 #define LLFS_VLOG_EVERY_N(verbosity, n) LLFS_LOG_NO_OUTPUT()
+#define LLFS_VLOG_IF(verbosity, condition) LLFS_LOG_NO_OUTPUT()
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 #elif defined(LLFS_USE_GLOG)
@@ -110,6 +111,7 @@ struct NullStream {
 #define LLFS_LOG_WARNING_FIRST_N(n) LOG_FIRST_N(WARNING, (n))
 #define LLFS_LOG_INFO_FIRST_N(n) LOG_FIRST_N(INFO, (n))
 #define LLFS_VLOG_EVERY_N(verbosity, n) VLOG_EVERY_N((verbosity), (n))
+#define LLFS_VLOG_IF(verbosity, condition) VLOG_IF((verbosity), (condition))
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 #elif defined(LLFS_USE_BOOST_LOG)

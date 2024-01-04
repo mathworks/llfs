@@ -7,8 +7,6 @@
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 
 from conan import ConanFile
-from conan.tools.cmake import CMakeToolchain, CMake, cmake_layout, CMakeDeps
-from conan.tools.files import copy
 
 import os, sys, platform
 
@@ -16,22 +14,37 @@ import os, sys, platform
 #==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 # Import batt helper utilities module.
 #
-sys.path.append(os.path.join(os.path.dirname(__file__), 'script'))
-import batt
+import script.batt as batt
+from script.batt import VISIBLE, OVERRIDE
 #
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 
 
 class LlfsConan(ConanFile):
     name = "llfs"
+
+    #----- --- -- -  -  -   -
     # version is set automatically from Git tags - DO NOT SET IT HERE
+    #----- --- -- -  -  -   -
+
     license = "Apache Public License 2.0"
+
     author = "The MathWorks, Inc."
+
     url = "https://github.com/mathworks/llfs"
+
     description = "Low-Level File System Utilities (C++)"
+
     settings = "os", "compiler", "build_type", "arch"
-    options = {"shared": [True, False]}
-    default_options = {"shared": False}
+
+    options = {
+        "shared": [True, False],
+    }
+
+    default_options = {
+        "shared": False,
+    }
+
     build_policy = "missing"
 
     exports = [
@@ -56,9 +69,7 @@ class LlfsConan(ConanFile):
 
 
     def requirements(self):
-        from batt import VISIBLE, OVERRIDE
-
-        self.requires("batteries/0.49.6", **VISIBLE)
+        self.requires("batteries/0.50.2", **VISIBLE)
         self.requires("boost/1.83.0", **VISIBLE)
         self.requires("cli11/2.3.2", **VISIBLE)
         self.requires("glog/0.6.0", **VISIBLE)
@@ -75,12 +86,12 @@ class LlfsConan(ConanFile):
 
     #+++++++++++-+-+--+----- --- -- -  -  -   -
 
-    from batt import set_version_from_git_tags as set_version
-    from batt import cmake_in_src_layout       as layout
-    from batt import default_cmake_generate    as generate
-    from batt import default_cmake_build       as build
-    from batt import default_cmake_lib_package as package
-    from batt import default_lib_package_info  as package_info
-    from batt import default_lib_package_id    as package_id
+    from script.batt import set_version_from_git_tags as set_version
+    from script.batt import cmake_in_src_layout       as layout
+    from script.batt import default_cmake_generate    as generate
+    from script.batt import default_cmake_build       as build
+    from script.batt import default_cmake_lib_package as package
+    from script.batt import default_lib_package_info  as package_info
+    from script.batt import default_lib_package_id    as package_id
 
     #+++++++++++-+-+--+----- --- -- -  -  -   -

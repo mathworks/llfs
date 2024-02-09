@@ -131,6 +131,8 @@ bool initialize_status_codes()
           "PackedPageHeader::layout_id does not match PageView::get_page_layout_id()"),  // 61,
       CODE_WITH_MSG_(StatusCode::kPutViewUnknownLayoutId,
                      "PageCache::put_view failed; page layout id is not registered"),  // 62,
+      CODE_WITH_MSG_(StatusCode::kPageCacheSlotNotInitialized,
+                     "The page cache slot for this PageId is not initialized"),  // 63,
   });
   return initialized;
 }

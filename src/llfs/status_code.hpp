@@ -78,6 +78,7 @@ enum struct StatusCode {
   kPageReaderConflict = 60,
   kPageHeaderBadLayoutId = 61,
   kPutViewUnknownLayoutId = 62,
+  kPageCacheSlotNotInitialized = 63,
 };
 
 bool initialize_status_codes();

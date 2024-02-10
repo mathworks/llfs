@@ -10,8 +10,8 @@
 #ifndef LLFS_PAGE_ID_HPP
 #define LLFS_PAGE_ID_HPP
 
-#include <llfs/cache.hpp>
 #include <llfs/int_types.hpp>
+#include <llfs/optional.hpp>
 
 #include <iomanip>
 #include <memory>

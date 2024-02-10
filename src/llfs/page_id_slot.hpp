@@ -11,7 +11,7 @@
 #define LLFS_PAGE_ID_SLOT_HPP
 
 #include <llfs/api_types.hpp>
-#include <llfs/cache.hpp>
+#include <llfs/page_cache_slot.hpp>
 #include <llfs/page_id.hpp>
 #include <llfs/page_layout_id.hpp>
 
@@ -44,8 +44,7 @@ bool bool_from(PinPageToJob pin_page, bool default_value);
 struct PageIdSlot {
   using Self = PageIdSlot;
 
-  using AtomicCacheSlotRefT =
-      AtomicCacheSlotRef<page_id_int, batt::Latch<std::shared_ptr<const PageView>>>;
+  using AtomicCacheSlotRefT = PageCacheSlot::AtomicRef;
 
   struct Metrics {
     CountMetric<usize> load_total_count;

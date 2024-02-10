@@ -10,7 +10,7 @@
 #ifndef LLFS_PINNED_PAGE_HPP
 #define LLFS_PINNED_PAGE_HPP
 
-#include <llfs/cache.hpp>
+#include <llfs/page_cache_slot.hpp>
 #include <llfs/page_id.hpp>
 #include <llfs/page_view.hpp>
 
@@ -28,8 +28,7 @@ class PageView;
 //
 class PinnedPage
 {
-  using PinnedCacheSlotT =
-      PinnedCacheSlot<page_id_int, batt::Latch<std::shared_ptr<const PageView>>>;
+  using PinnedCacheSlotT = PageCacheSlot::PinnedRef;
 
  public:
   PinnedPage() = default;
@@ -65,7 +64,7 @@ class PinnedPage
   void hint_obsolete() const
   {
     if (this->pinned_cache_slot_) {
-      this->pinned_cache_slot_.slot()->set_obsolete_hint(true);
+      this->pinned_cache_slot_.slot()->set_obsolete_hint();
     }
   }
 

@@ -31,9 +31,11 @@ LRUClock::LocalCounter::~LocalCounter() noexcept
 //
 /*static*/ auto LRUClock::instance() noexcept -> Self&
 {
-  static Self instance_;
+  // Leak instance_ to avoid shutdown destructor ordering issues.
+  //
+  static Self* instance_ = new Self;
 
-  return instance_;
+  return *instance_;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

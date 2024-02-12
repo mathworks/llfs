@@ -1,4 +1,3 @@
-#if 0
 //#=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
 //
 // Part of the LLFS Project, under Apache License v2.0.
@@ -216,4 +215,3 @@ TEST(CacheTest, Basic)
 }
 
 }  // namespace
-#endif

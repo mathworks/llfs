@@ -39,7 +39,7 @@ class PageCacheSlot::Pool : public boost::intrusive_ref_counter<Pool>
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  explicit Pool(usize n_slots,
+  explicit Pool(usize n_slots, std::string&& name,
                 usize eviction_candidates = Self::kDefaultEvictionCandidates) noexcept;
 
   ~Pool() noexcept;
@@ -51,6 +51,11 @@ class PageCacheSlot::Pool : public boost::intrusive_ref_counter<Pool>
   PageCacheSlot* allocate() noexcept;
 
   usize index_of(const PageCacheSlot* slot) noexcept;
+
+  const Metrics& metrics() const
+  {
+    return this->metrics_;
+  }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:

@@ -18,6 +18,7 @@
 #include <llfs/int_types.hpp>
 #include <llfs/ioring.hpp>
 #include <llfs/log_block_calculator.hpp>
+#include <llfs/metrics.hpp>
 #include <llfs/packed_log_page_buffer.hpp>
 #include <llfs/packed_log_page_header.hpp>
 #include <llfs/page_buffer.hpp>

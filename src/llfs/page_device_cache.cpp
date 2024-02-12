@@ -9,6 +9,8 @@
 #include <llfs/page_device_cache.hpp>
 //
 
+#include <llfs/optional.hpp>
+
 namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -34,26 +36,33 @@ const PageIdFactory& PageDeviceCache::page_ids() const noexcept
   return this->page_ids_;
 }
 
+namespace {
+
+struct NewSlot {
+  PageCacheSlot* p_slot = nullptr;
+  boost::intrusive_ptr<batt::Latch<std::shared_ptr<const PageView>>> p_value = nullptr;
+  PageCacheSlot::PinnedRef pinned_ref;
+  usize slot_index = PageDeviceCache::kInvalidIndex;
+};
+
+}  //namespace
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 batt::StatusOr<PageCacheSlot::PinnedRef> PageDeviceCache::find_or_insert(
-    PageId key,
-    const std::function<void(PageId, batt::Latch<std::shared_ptr<const PageView>>*)>& initialize)
+    PageId key, const std::function<void(const PageCacheSlot::PinnedRef&)>& initialize)
 {
   BATT_CHECK_EQ(PageIdFactory::get_device_id(key), this->page_ids_.get_device_id());
 
   // Lookup the cache table entry for the given page id.
   //
   const i64 physical_page = this->page_ids_.get_physical_page(key);
-  std::atomic<usize>& slot_index_ref = this->atomic_index(physical_page);
+  std::atomic<usize>& slot_index_ref = this->get_slot_index_ref(physical_page);
 
-  // new_slot et al. are initialized lazily (at most once) below, only when we discover we might
+  // Initialized lazily (at most once) below, only when we discover we might
   // need them.
   //
-  PageCacheSlot* new_slot = nullptr;
-  boost::intrusive_ptr<batt::Latch<std::shared_ptr<const PageView>>> new_value = nullptr;
-  PageCacheSlot::PinnedRef new_pinned;
-  usize new_slot_index = kInvalidIndex;
+  Optional<NewSlot> new_slot;
 
   // Let's take a look at what's there now...
   //
@@ -66,7 +75,7 @@ batt::StatusOr<PageCacheSlot::PinnedRef> PageDeviceCache::find_or_insert(
     if (observed_slot_index != kInvalidIndex) {
       // If the CAS at the end of this loop failed spuriously, we might end up here...
       //
-      if (observed_slot_index == new_slot_index) {
+      if (new_slot && observed_slot_index == new_slot->slot_index) {
         break;
       }
 
@@ -76,14 +85,16 @@ batt::StatusOr<PageCacheSlot::PinnedRef> PageDeviceCache::find_or_insert(
       PageCacheSlot* slot = this->slot_pool_->get_slot(observed_slot_index);
       PageCacheSlot::PinnedRef pinned = slot->acquire_pin(key);
       if (pinned) {
-        BATT_CHECK_NE(slot->value(), new_value);
+        if (new_slot) {
+          BATT_CHECK_NOT_NULLPTR(new_slot->p_value);
+          BATT_CHECK_NE(slot->value(), new_slot->p_value);
 
-        // [tastolfi 2024-02-09] I can't think of a reason why the new_value would ever be visible
-        // to anyone if we go down this code path, but just in case, resolve the Latch so that we
-        // don't get hangs waiting for pages to load.
-        //
-        if (new_value) {
-          new_value->set_error(::llfs::make_status(StatusCode::kPageCacheSlotNotInitialized));
+          // [tastolfi 2024-02-09] I can't think of a reason why the new_value would ever be visible
+          // to anyone if we go down this code path, but just in case, resolve the Latch with a
+          // unique status code so that we don't get hangs waiting for pages to load.
+          //
+          new_slot->p_value->set_error(
+              ::llfs::make_status(StatusCode::kPageCacheSlotNotInitialized));
         }
 
         // Refresh the LTS.
@@ -96,40 +107,40 @@ batt::StatusOr<PageCacheSlot::PinnedRef> PageDeviceCache::find_or_insert(
       }
     }
 
-    // No existing value found; allocate a new slot, fill it, and attempt to CAS it into the cache
-    // array.
+    // No existing value found, or pin failed; allocate a new slot, fill it, and attempt to CAS it
+    // into the cache array.
     //
     if (!new_slot) {
-      new_slot = this->slot_pool_->allocate();
-      if (!new_slot) {
+      new_slot.emplace();
+      new_slot->p_slot = this->slot_pool_->allocate();
+      if (!new_slot->p_slot) {
         return ::llfs::make_status(StatusCode::kCacheSlotsFull);
       }
-      BATT_CHECK(!new_slot->is_valid());
+      BATT_CHECK(!new_slot->p_slot->is_valid());
 
-      new_value.reset(new batt::Latch<std::shared_ptr<const PageView>>);
-      new_pinned = new_slot->fill(key, batt::make_copy(new_value));
-      new_slot_index = new_slot->index();
+      new_slot->p_value.reset(new batt::Latch<std::shared_ptr<const PageView>>);
+      new_slot->pinned_ref = new_slot->p_slot->fill(key, batt::make_copy(new_slot->p_value));
+      new_slot->slot_index = new_slot->p_slot->index();
     }
-    BATT_CHECK_NE(new_slot_index, kInvalidIndex);
+    BATT_CHECK_NE(new_slot->slot_index, kInvalidIndex);
 
-    // If we can atomically overwrite the slot index value we saw above, then we are done!
+    // If we can atomically overwrite the slot index value we saw above (CAS), then we are done!
     //
-    if (slot_index_ref.compare_exchange_weak(observed_slot_index, new_slot_index)) {
+    if (slot_index_ref.compare_exchange_weak(observed_slot_index, new_slot->slot_index)) {
       break;
     }
   }
 
-  BATT_CHECK_NOT_NULLPTR(new_value);
-  BATT_CHECK(new_pinned);
+  BATT_CHECK(new_slot);
 
   // We purposely delayed this step until we knew that this thread must initialize the cache
   // slot's Latch.  This function will probably start I/O (or do something else in a test case...)
   //
-  initialize(key, new_value.get());
+  initialize(new_slot->pinned_ref);
 
   // Done! (Inserted new value)
   //
-  return {std::move(new_pinned)};
+  return {std::move(new_slot->pinned_ref)};
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -141,7 +152,7 @@ void PageDeviceCache::erase(PageId key)
   // Lookup the cache table entry for the given page id.
   //
   const i64 physical_page = this->page_ids_.get_physical_page(key);
-  std::atomic<usize>& slot_index_ref = this->atomic_index(physical_page);
+  std::atomic<usize>& slot_index_ref = this->get_slot_index_ref(physical_page);
 
   usize slot_index = slot_index_ref.load();
   if (slot_index == kInvalidIndex) {
@@ -196,7 +207,7 @@ void PageDeviceCache::erase(PageId key)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-std::atomic<usize>& PageDeviceCache::atomic_index(i64 physical_page)
+std::atomic<usize>& PageDeviceCache::get_slot_index_ref(i64 physical_page)
 {
   static_assert(sizeof(std::atomic<usize>) == sizeof(usize));
   static_assert(alignof(std::atomic<usize>) == alignof(usize));

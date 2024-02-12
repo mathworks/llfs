@@ -53,11 +53,7 @@ batt::StatusOr<PinnedPage> PageIdSlot::try_pin() const noexcept
 {
   PageIdSlot::metrics().load_total_count.fetch_add(1);
 
-  const page_id_int id_val = this->page_id.int_value();
-
-  PinnedCacheSlot<page_id_int, batt::Latch<std::shared_ptr<const PageView>>> cache_slot =
-      this->cache_slot_ref.pin(id_val);
-
+  PageCacheSlot::PinnedRef cache_slot = this->cache_slot_ref.pin(this->page_id);
   if (!cache_slot) {
     PageIdSlot::metrics().load_slot_miss_count.fetch_add(1);
     return make_status(StatusCode::kPinFailedPageEvicted);

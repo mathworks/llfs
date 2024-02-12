@@ -129,11 +129,13 @@ TEST(StorageContextTest, GetPageCache)
   ASSERT_TRUE(cache.ok()) << BATT_INSPECT(cache.status());
   ASSERT_NE(*cache, nullptr);
 
-  llfs::Slice<const llfs::PageArena> arenas_4kb = (*cache)->arenas_for_page_size(4 * kKiB);
-  EXPECT_EQ(arenas_4kb.size(), 1u);
+  llfs::Slice<llfs::PageCache::PageDeviceEntry* const> devices_4kb =
+      (*cache)->devices_with_page_size(4 * kKiB);
+  EXPECT_EQ(devices_4kb.size(), 1u);
 
-  llfs::Slice<const llfs::PageArena> arenas_2mb = (*cache)->arenas_for_page_size(2 * kMiB);
-  EXPECT_EQ(arenas_2mb.size(), 1u);
+  llfs::Slice<llfs::PageCache::PageDeviceEntry* const> devices_2mb =
+      (*cache)->devices_with_page_size(2 * kMiB);
+  EXPECT_EQ(devices_2mb.size(), 1u);
 }
 
 }  // namespace

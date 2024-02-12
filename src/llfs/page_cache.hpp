@@ -24,6 +24,7 @@
 #include <llfs/page_cache_metrics.hpp>
 #include <llfs/page_cache_options.hpp>
 #include <llfs/page_device.hpp>
+#include <llfs/page_device_cache.hpp>
 #include <llfs/page_filter.hpp>
 #include <llfs/page_id_slot.hpp>
 #include <llfs/page_loader.hpp>
@@ -96,12 +97,22 @@ inline std::ostream& operator<<(std::ostream& out, const NewPageTracker& t)
 class PageCache : public PageLoader
 {
  public:
-  using CacheImpl = Cache<page_id_int, batt::Latch<std::shared_ptr<const PageView>>>;
-
   struct PageReaderFromFile {
     PageReader page_reader;
     const char* file;
     int line;
+  };
+
+  struct PageDeviceEntry {
+    explicit PageDeviceEntry(PageArena&& arena,
+                             boost::intrusive_ptr<PageCacheSlot::Pool>&& slot_pool) noexcept
+        : arena{std::move(arena)}
+        , cache{this->arena.device().page_ids(), std::move(slot_pool)}
+    {
+    }
+
+    PageArena arena;
+    PageDeviceCache cache;
   };
 
   class PageDeleterImpl : public PageDeleter
@@ -168,11 +179,11 @@ class PageCache : public PageLoader
 
   Status detach(const boost::uuids::uuid& user_id, slot_offset_type slot_offset);
 
-  Slice<const PageArena> arenas_for_page_size_log2(usize size_log2) const;
+  Slice<PageDeviceEntry* const> devices_with_page_size_log2(usize size_log2) const;
 
-  Slice<const PageArena> arenas_for_page_size(usize size) const;
+  Slice<PageDeviceEntry* const> devices_with_page_size(usize size) const;
 
-  Slice<const PageArena> all_arenas() const;
+  Slice<PageDeviceEntry* const> all_devices() const;
 
   const PageArena& arena_for_page_id(PageId id_val) const;
 
@@ -222,14 +233,16 @@ class PageCache : public PageLoader
     return this->metrics_;
   }
 
-  const CacheImpl::Metrics& metrics_for_page_size(PageSize page_size) const
+  const PageCacheSlot::Pool::Metrics& metrics_for_page_size(PageSize page_size) const
   {
     const i32 page_size_log2 = batt::log2_ceil(page_size);
 
-    BATT_CHECK_LT(static_cast<usize>(page_size_log2), this->impl_for_size_log2_.size());
-    BATT_CHECK_NOT_NULLPTR(this->impl_for_size_log2_[page_size_log2]);
+    BATT_CHECK_LT(static_cast<usize>(page_size_log2),
+                  this->cache_slot_pool_by_page_size_log2_.size());
 
-    return this->impl_for_size_log2_[page_size_log2]->metrics();
+    BATT_CHECK_NOT_NULLPTR(this->cache_slot_pool_by_page_size_log2_[page_size_log2]);
+
+    return this->cache_slot_pool_by_page_size_log2_[page_size_log2]->metrics();
   }
 
  private:
@@ -245,10 +258,14 @@ class PageCache : public PageLoader
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  CacheImpl& impl_for_page(PageId page_id);
+  PageDeviceEntry* get_device_for_page(PageId page_id);
 
-  batt::StatusOr<CacheImpl::PinnedSlot> find_page_in_cache(
+  batt::StatusOr<PageCacheSlot::PinnedRef> find_page_in_cache(
       PageId page_id, const Optional<PageLayoutId>& required_layout, OkIfNotFound ok_if_not_found);
+
+  void async_load_page_into_slot(const PageCacheSlot::PinnedRef& pinned_slot,
+                                 const Optional<PageLayoutId>& required_layout,
+                                 OkIfNotFound ok_if_not_found);
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -260,25 +277,24 @@ class PageCache : public PageLoader
   //
   PageCacheMetrics metrics_;
 
-  // The arenas backing up this cache, sorted in ascending order of page size (each arena has a
-  // homogenous page size).
+  // The arenas backing up this cache, indexed by device id int.
   //
-  std::vector<PageArena> storage_pool_;
+  std::vector<std::unique_ptr<PageDeviceEntry>> page_devices_;
+
+  // The contents of `storage_pool_`, sorted by non-decreasing page size.
+  //
+  std::vector<PageDeviceEntry*> page_devices_by_page_size_;
 
   // Slices of `this->storage_pool_` that group arenas by page size (log2).  For example,
   // `this->arenas_by_size_log2_[12]` is the slice of `this->storage_pool_` comprised of
   // PageArenas whose page size is 4096.
   //
-  std::array<Slice<PageArena>, kMaxPageSizeLog2> arenas_by_size_log2_;
+  std::array<Slice<PageDeviceEntry* const>, kMaxPageSizeLog2> page_devices_by_page_size_log2_;
 
-  // Index of `this->storage_pool_` by device id, for fast lookup from PageId to the PageArena that
-  // contains the page.
+  // A pool of cache slots for each page size.
   //
-  std::unordered_map<page_device_id_int, PageArena*> arenas_by_device_id_;
-
-  // Maintain cache maps from page id to the page data for each page size.
-  //
-  std::array<boost::intrusive_ptr<CacheImpl>, kMaxPageSizeLog2> impl_for_size_log2_;
+  std::array<boost::intrusive_ptr<PageCacheSlot::Pool>, kMaxPageSizeLog2>
+      cache_slot_pool_by_page_size_log2_;
 
   // A thread-safe shared map from PageLayoutId to PageReader function; layouts must be registered
   // with the PageCache so that we trace references during page recycling (aka garbage collection).

@@ -15,9 +15,11 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*explicit*/ PageCacheSlot::Pool::Pool(usize n_slots, usize eviction_candidates) noexcept
+/*explicit*/ PageCacheSlot::Pool::Pool(usize n_slots, std::string&& name,
+                                       usize eviction_candidates) noexcept
     : n_slots_{n_slots}
     , eviction_candidates_{std::min<usize>(n_slots, std::max<usize>(2, eviction_candidates))}
+    , name_{std::move(name)}
     , slot_storage_{new SlotStorage[n_slots]}
 {
   this->metrics_.max_slots.set(n_slots);

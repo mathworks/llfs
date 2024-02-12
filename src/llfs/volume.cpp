@@ -161,7 +161,9 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
              metadata.ids->recycler_uuid,
              metadata.ids->trimmer_uuid,
          }) {
-      for (const PageArena& arena : cache->all_arenas()) {
+      for (PageCache::PageDeviceEntry* entry : cache->all_devices()) {
+        BATT_CHECK_NOT_NULLPTR(entry);
+        const PageArena& arena = entry->arena;
         Optional<PageAllocatorAttachmentStatus> attachment =
             arena.allocator().get_client_attachment_status(uuid);
 
@@ -272,8 +274,9 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
              metadata.ids->recycler_uuid,
              metadata.ids->trimmer_uuid,
          }) {
-      for (const PageArena& arena : cache->all_arenas()) {
-        BATT_REQUIRE_OK(arena.allocator().notify_user_recovered(uuid));
+      for (PageCache::PageDeviceEntry* entry : cache->all_devices()) {
+        BATT_CHECK_NOT_NULLPTR(entry);
+        BATT_REQUIRE_OK(entry->arena.allocator().notify_user_recovered(uuid));
       }
     }
   }

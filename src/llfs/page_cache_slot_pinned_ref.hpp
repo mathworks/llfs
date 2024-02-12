@@ -81,19 +81,24 @@ class PageCacheSlot::PinnedRef : public boost::equality_comparable<PageCacheSlot
     return this->slot_ != nullptr;
   }
 
-  PageId key() const noexcept
-  {
-    return this->slot_->key();
-  }
-
   PageCacheSlot* slot() const noexcept
   {
     return this->slot_;
   }
 
-  value_type* get() const noexcept
+  PageId key() const noexcept
+  {
+    return this->slot_->key();
+  }
+
+  value_type* value() const noexcept
   {
     return this->value_;
+  }
+
+  value_type* get() const noexcept
+  {
+    return this->value();
   }
 
   value_type* operator->() const noexcept

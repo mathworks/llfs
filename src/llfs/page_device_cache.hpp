@@ -45,9 +45,17 @@ class PageDeviceCache
   explicit PageDeviceCache(const PageIdFactory& page_ids,
                            boost::intrusive_ptr<PageCacheSlot::Pool>&& slot_pool) noexcept;
 
+  PageDeviceCache(const PageDeviceCache&) = delete;
+  PageDeviceCache& operator=(const PageDeviceCache&) = delete;
+
   ~PageDeviceCache() noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  const PageCacheSlot::Pool::Metrics& metrics() const noexcept
+  {
+    return this->slot_pool_->metrics();
+  }
 
   /** \brief Returns the PageDevice id factory passed in at construction time.
    */
@@ -59,8 +67,7 @@ class PageDeviceCache
    * called to start the process of loading the page data into the slot.
    */
   batt::StatusOr<PageCacheSlot::PinnedRef> find_or_insert(
-      PageId key,
-      const std::function<void(PageId, batt::Latch<std::shared_ptr<const PageView>>*)>& initialize);
+      PageId key, const std::function<void(const PageCacheSlot::PinnedRef&)>& initialize);
 
   /** \brief Removes the specified key from this cache, if it is currently present.
    */
@@ -71,7 +78,7 @@ class PageDeviceCache
   /** \brief Returns a reference to the atomic cache slot index integer for the given physical page
    * on the device for this cache.
    */
-  std::atomic<usize>& atomic_index(i64 physical_page);
+  std::atomic<usize>& get_slot_index_ref(i64 physical_page);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

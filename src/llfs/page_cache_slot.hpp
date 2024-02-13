@@ -62,19 +62,16 @@ class PageCacheSlot
   //                  └─────────────────────────┘
   //
 
-  static constexpr unsigned kPinCountBits = 30;
-  static constexpr u64 kIncreasePinDelta = 1;
-  static constexpr u64 kIncreasePinOverflow = u64{1} << 30;
-  static constexpr u64 kDecreasePinDelta = u64{1} << 31;
-  static constexpr u64 kDecreasePinOverflow = u64{1} << 61;
-  static constexpr u64 kPinCountMask = kIncreasePinOverflow - 1;
-  static constexpr u64 kMaxPinCount = u64{1} << (kPinCountBits - 1);
-  static constexpr u64 kValidMask = u64{1} << 63;
+  static constexpr usize kPinCountShift = 1;
+  static constexpr usize kOverflowBits = 8;
+
+  static constexpr u64 kPinCountDelta = u64{1} << kPinCountShift;
+  static constexpr u64 kOverflowMask = ((u64{1} << kOverflowBits) - 1) << (64 - kOverflowBits);
+  static constexpr u64 kValidMask = 1;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   class Pool;
-  //class Ref;
   class AtomicRef;
   class PinnedRef;
 
@@ -82,28 +79,14 @@ class PageCacheSlot
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  static constexpr u32 get_pin_acquire_count(u64 state)
-  {
-    return u32(state & kPinCountMask);
-  }
-  static constexpr u32 get_pin_release_count(u64 state)
-  {
-    return u32((state >> 31) & kPinCountMask);
-  }
-
   static constexpr u32 get_pin_count(u64 state)
   {
-    const u32 acquire_count = get_pin_acquire_count(state);
-    const u32 release_count = get_pin_release_count(state);
-
-    BATT_CHECK_LE(acquire_count - release_count, kMaxPinCount);
-
-    return acquire_count - release_count;
+    return state >> kPinCountShift;
   }
 
   static constexpr bool is_pinned(u64 state)
   {
-    return get_pin_acquire_count(state) != get_pin_release_count(state);
+    return Self::get_pin_count(state) != 0;
   }
 
   static constexpr bool is_valid(u64 state)
@@ -119,6 +102,8 @@ class PageCacheSlot
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   explicit PageCacheSlot(Pool& pool) noexcept;
+
+  ~PageCacheSlot() noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -138,7 +123,7 @@ class PageCacheSlot
   /** Returns the current value held in the slot, if valid; if the slot is invalid, behavior is
    * undefined.
    */
-  batt::Latch<std::shared_ptr<const PageView>>* value() const noexcept;
+  batt::Latch<std::shared_ptr<const PageView>>* value() noexcept;
 
   /** \brief Returns true iff the slot is in a valid state.
    */
@@ -210,16 +195,14 @@ class PageCacheSlot
    */
   bool evict_if_key_equals(PageId key) noexcept;
 
-  /** \brief Set the key and value for this slot, then atomically increment the generation counter.
+  /** \brief Resets the key and value for this slot.
    *
    * The generation counter must be odd (indicating the slot has been evicted) prior to calling this
    * function.
    *
    * May only be called when the slot is in an invalid state.
    */
-  PinnedRef fill(
-      PageId key,
-      boost::intrusive_ptr<batt::Latch<std::shared_ptr<const PageView>>>&& value) noexcept;
+  PinnedRef fill(PageId key) noexcept;
 
   /** \brief Sets the key and value of the slot to empty/null.
    *
@@ -268,7 +251,7 @@ class PageCacheSlot
 
   Pool& pool_;
   PageId key_;
-  boost::intrusive_ptr<batt::Latch<std::shared_ptr<const PageView>>> value_;
+  Optional<batt::Latch<std::shared_ptr<const PageView>>> value_;
   std::atomic<u64> state_{0};
   std::atomic<u64> ref_count_{0};
   std::atomic<i64> latest_use_{0};

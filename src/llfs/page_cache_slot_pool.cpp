@@ -48,6 +48,18 @@ namespace llfs {
 //
 PageCacheSlot::Pool::~Pool() noexcept
 {
+  if (this->slot_storage_) {
+    const usize n_to_delete = this->n_constructed_.get_value();
+    BATT_CHECK_EQ(n_to_delete, this->n_allocated_.load());
+
+    for (usize i = 0; i < n_to_delete; ++i) {
+      BATT_DEBUG_INFO("Destructing slot " << i << BATT_INSPECT(n_to_delete)
+                                          << BATT_INSPECT(this->n_allocated_.load())
+                                          << BATT_INSPECT(this->n_slots_));
+      this->get_slot(i)->~PageCacheSlot();
+    }
+  }
+
   global_metric_registry()
       .remove(this->metrics_.max_slots)
       .remove(this->metrics_.indexed_slots)
@@ -77,7 +89,7 @@ PageCacheSlot* PageCacheSlot::Pool::get_slot(usize i) noexcept
 PageCacheSlot* PageCacheSlot::Pool::allocate() noexcept
 {
   if (this->n_allocated_.load() < this->n_slots_) {
-    const usize allocated_i = this->n_allocated_.fetch_add(1) + 1;
+    const usize allocated_i = this->n_allocated_.fetch_add(1);
     if (allocated_i < this->n_slots_) {
       void* storage_addr = this->slots() + allocated_i;
       PageCacheSlot* const new_slot = new (storage_addr) PageCacheSlot{*this};

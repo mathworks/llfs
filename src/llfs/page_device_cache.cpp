@@ -40,7 +40,6 @@ namespace {
 
 struct NewSlot {
   PageCacheSlot* p_slot = nullptr;
-  boost::intrusive_ptr<batt::Latch<std::shared_ptr<const PageView>>> p_value = nullptr;
   PageCacheSlot::PinnedRef pinned_ref;
   usize slot_index = PageDeviceCache::kInvalidIndex;
 };
@@ -86,14 +85,14 @@ batt::StatusOr<PageCacheSlot::PinnedRef> PageDeviceCache::find_or_insert(
       PageCacheSlot::PinnedRef pinned = slot->acquire_pin(key);
       if (pinned) {
         if (new_slot) {
-          BATT_CHECK_NOT_NULLPTR(new_slot->p_value);
-          BATT_CHECK_NE(slot->value(), new_slot->p_value);
+          BATT_CHECK(new_slot->pinned_ref);
+          BATT_CHECK_NE(slot->value(), new_slot->pinned_ref.value());
 
           // [tastolfi 2024-02-09] I can't think of a reason why the new_value would ever be visible
           // to anyone if we go down this code path, but just in case, resolve the Latch with a
           // unique status code so that we don't get hangs waiting for pages to load.
           //
-          new_slot->p_value->set_error(
+          new_slot->pinned_ref.value()->set_error(
               ::llfs::make_status(StatusCode::kPageCacheSlotNotInitialized));
         }
 
@@ -118,8 +117,7 @@ batt::StatusOr<PageCacheSlot::PinnedRef> PageDeviceCache::find_or_insert(
       }
       BATT_CHECK(!new_slot->p_slot->is_valid());
 
-      new_slot->p_value.reset(new batt::Latch<std::shared_ptr<const PageView>>);
-      new_slot->pinned_ref = new_slot->p_slot->fill(key, batt::make_copy(new_slot->p_value));
+      new_slot->pinned_ref = new_slot->p_slot->fill(key);
       new_slot->slot_index = new_slot->p_slot->index();
 
       BATT_CHECK_EQ(new_slot->p_slot, this->slot_pool_->get_slot(new_slot->slot_index));

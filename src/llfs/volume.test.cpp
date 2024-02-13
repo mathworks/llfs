@@ -1428,10 +1428,10 @@ class VolumeSimTest : public ::testing::Test
 TEST_F(VolumeSimTest, RecoverySimulation)
 {
   static const u32 kInitialSeed =  //
-      batt::getenv_as<u32>("LLFS_VOLUME_SIM_SEED").value_or(253689123);
+      batt::getenv_as<u32>("LLFS_VOLUME_SIM_SEED").value_or(987654321);
 
   static const u32 kNumSeeds =  //
-      batt::getenv_as<u32>("LLFS_VOLUME_SIM_COUNT").value_or(256);
+      batt::getenv_as<u32>("LLFS_VOLUME_SIM_COUNT").value_or(2500);
 
   static const u32 kCpuPin =  //
       batt::getenv_as<u32>("LLFS_VOLUME_SIM_CPU").value_or(0);
@@ -1734,7 +1734,7 @@ void VolumeSimTest::commit_first_job(RecoverySimState& state, llfs::StorageSimul
   batt::StatusOr<llfs::SlotRange> slot_range =
       this->commit_job_to_root_log(std::move(job), state.first_page_id, volume, sim);
 
-  ASSERT_TRUE(slot_range.ok()) << BATT_INSPECT(slot_range.status());
+  ASSERT_TRUE(slot_range.ok()) << BATT_INSPECT(slot_range.status()) << BATT_INSPECT(state.seed);
 
   sim.log_event("first job successfully appended! slot_range=", *slot_range);
 }

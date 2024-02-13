@@ -121,6 +121,8 @@ batt::StatusOr<PageCacheSlot::PinnedRef> PageDeviceCache::find_or_insert(
       new_slot->p_value.reset(new batt::Latch<std::shared_ptr<const PageView>>);
       new_slot->pinned_ref = new_slot->p_slot->fill(key, batt::make_copy(new_slot->p_value));
       new_slot->slot_index = new_slot->p_slot->index();
+
+      BATT_CHECK_EQ(new_slot->p_slot, this->slot_pool_->get_slot(new_slot->slot_index));
     }
     BATT_CHECK_NE(new_slot->slot_index, kInvalidIndex);
 

@@ -15,16 +15,14 @@ namespace llfs {
 //
 LRUClock::LocalCounter::LocalCounter() noexcept : value{0}
 {
-  batt::ScopedLock<LocalCounterList> locked{LRUClock::instance().counter_list_};
-  locked->push_back(*this);
+  LRUClock::instance().add_local_counter(*this);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 LRUClock::LocalCounter::~LocalCounter() noexcept
 {
-  batt::ScopedLock<LocalCounterList> locked{LRUClock::instance().counter_list_};
-  locked->erase(locked->iterator_to(*this));
+  LRUClock::instance().remove_local_counter(*this);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -65,9 +63,7 @@ LRUClock::LocalCounter::~LocalCounter() noexcept
 //
 /*static*/ i64 LRUClock::read_global() noexcept
 {
-  batt::ScopedLock<LocalCounterList> locked{Self::instance().counter_list_};
-
-  return Self::instance().observed_count_;
+  return Self::instance().read_observed_count();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -88,8 +84,10 @@ void LRUClock::run() noexcept
 
   std::random_device rand_dev;
   std::default_random_engine rng(rand_dev());
-  std::uniform_int_distribution<i64> pick_jitter{0,
-                                                 Self::kMaxSyncDelayUsec - Self::kMinSyncDelayUsec};
+  std::uniform_int_distribution<i64> pick_jitter{
+      0,
+      Self::kMaxSyncDelayUsec - Self::kMinSyncDelayUsec,
+  };
 
   // Loop forever, waiting and synchronizing thread-local counters.
   //
@@ -112,13 +110,13 @@ void LRUClock::run() noexcept
 //
 void LRUClock::sync_local_counters() noexcept
 {
-  batt::ScopedLock<LocalCounterList> locked{this->counter_list_};
+  std::unique_lock<std::mutex> lock{this->mutex_};
 
   i64 max_value = this->observed_count_;
 
   // On the first pass, figure out the maximum counter value.
   //
-  for (LocalCounter& counter : *locked) {
+  for (LocalCounter& counter : this->counter_list_) {
     max_value = std::max(max_value, counter.value.load());
   }
 
@@ -130,7 +128,7 @@ void LRUClock::sync_local_counters() noexcept
   // On the second pass, use CAS to make sure that all local counters are at least at the
   // `max_value` calculated above.
   //
-  for (LocalCounter& counter : *locked) {
+  for (LocalCounter& counter : this->counter_list_) {
     i64 observed = counter.value.load();
     while (observed < max_value) {
       if (counter.value.compare_exchange_weak(observed, max_value)) {
@@ -140,6 +138,33 @@ void LRUClock::sync_local_counters() noexcept
   }
 
   // Done!
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void LRUClock::add_local_counter(LocalCounter& counter) noexcept
+{
+  std::unique_lock<std::mutex> lock{this->mutex_};
+
+  this->counter_list_.push_back(counter);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void LRUClock::remove_local_counter(LocalCounter& counter) noexcept
+{
+  std::unique_lock<std::mutex> lock{this->mutex_};
+
+  this->counter_list_.erase(this->counter_list_.iterator_to(counter));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+i64 LRUClock::read_observed_count() noexcept
+{
+  std::unique_lock<std::mutex> lock{this->mutex_};
+
+  return this->observed_count_;
 }
 
 }  //namespace llfs

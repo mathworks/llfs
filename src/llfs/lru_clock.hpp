@@ -13,13 +13,12 @@
 #include <llfs/config.hpp>
 //
 
-#include <batteries/async/mutex.hpp>
-
 #include <boost/intrusive/list.hpp>
 #include <boost/intrusive/list_hook.hpp>
 
 #include <atomic>
 #include <chrono>
+#include <mutex>
 #include <random>
 #include <thread>
 
@@ -124,9 +123,22 @@ class LRUClock
    */
   void sync_local_counters() noexcept;
 
+  /** \brief Adds the passed LocalCounter to the global list.
+   */
+  void add_local_counter(LocalCounter& counter) noexcept;
+
+  /** \brief Removes the passed LocalCounter from the global list.
+   */
+  void remove_local_counter(LocalCounter& counter) noexcept;
+
+  /** \brief Returns the maximum count value from the last time sync_local_counters() was called.
+   */
+  i64 read_observed_count() noexcept;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  batt::Mutex<LocalCounterList> counter_list_;
+  std::mutex mutex_;
+  LocalCounterList counter_list_;
   std::thread sync_thread_;
 
   // Keeps track of the synchronized counter value as it advances, so we don't go backwards if all

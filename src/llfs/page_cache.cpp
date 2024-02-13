@@ -126,10 +126,9 @@ PageCache::PageCache(std::vector<PageArena>&& storage_pool,
     // Create a slot pool for this page size if we haven't already done so.
     //
     if (!this->cache_slot_pool_by_page_size_log2_[page_size_log2]) {
-      this->cache_slot_pool_by_page_size_log2_[page_size_log2].reset(new PageCacheSlot::Pool{
+      this->cache_slot_pool_by_page_size_log2_[page_size_log2] = PageCacheSlot::Pool::make_new(
           /*n_slots=*/this->options_.max_cached_pages_per_size_log2[page_size_log2],
-          /*name=*/batt::to_string("size_", u64{1} << page_size_log2),
-      });
+          /*name=*/batt::to_string("size_", u64{1} << page_size_log2));
     }
 
     BATT_CHECK_EQ(this->page_devices_[device_id], nullptr)

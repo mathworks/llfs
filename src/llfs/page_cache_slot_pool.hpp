@@ -14,16 +14,29 @@
 
 namespace llfs {
 
+/** \brief A pool of PageCacheSlot objects.
+ *
+ * Used to construct a PageDeviceCache.
+ */
 class PageCacheSlot::Pool : public boost::intrusive_ref_counter<Pool>
 {
  public:
   using Self = Pool;
 
+  /** \brief The default number of randomly-selected slots to consider when trying to evict a slot
+   * that hasn't been accessed recently.
+   */
   static constexpr usize kDefaultEvictionCandidates = 8;
 
+  /** \brief Aligned storage type for a single PageCacheSlot.  We allocate an array of this type
+   * when constructing a Pool object, then construct the individual slots via placement-new as they
+   * are needed.
+   */
   using SlotStorage = std::aligned_storage_t<sizeof(batt::CpuCacheLineIsolated<PageCacheSlot>),
                                              alignof(batt::CpuCacheLineIsolated<PageCacheSlot>)>;
 
+  /** \brief Observability metrics for a cache slot pool.
+   */
   struct Metrics {
     CountMetric<u64> max_slots{0};
     CountMetric<u64> indexed_slots{0};
@@ -39,19 +52,47 @@ class PageCacheSlot::Pool : public boost::intrusive_ref_counter<Pool>
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  explicit Pool(usize n_slots, std::string&& name,
-                usize eviction_candidates = Self::kDefaultEvictionCandidates) noexcept;
+  /** \brief Creates a new PageCacheSlot::Pool.
+   *
+   * Objects of this type MUST be managed via boost::intrusive_ptr<Pool>.
+   */
+  template <typename... Args>
+  static boost::intrusive_ptr<Pool> make_new(Args&&... args)
+  {
+    return boost::intrusive_ptr<Pool>{new Pool(BATT_FORWARD(args)...)};
+  }
 
+  /** \brief Destroys a PageCacheSlot pool.
+   *
+   * Will panic if there are any pinned slots.
+   */
   ~Pool() noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  /** \brief Returns the slot at the specified index (`i`).
+   *
+   * The passed index must refer to a slot that was previously returned by this->allocate(), or
+   * behavior is undefined!
+   */
   PageCacheSlot* get_slot(usize i) noexcept;
 
+  /** \brief Returns a cache slot in the `Invalid` state, ready to be filled by the caller.
+   *
+   * This function is guaranteed to return an available slot the first `n_slots` times it is called.
+   * Thereafter, it will attempt to evict an unpinned slot that hasn't been used recently.  If no
+   * such slot can be found, `nullptr` will be returned.
+   */
   PageCacheSlot* allocate() noexcept;
 
+  /** \brief Returns the index of the specified slot object.
+   *
+   * If `slot` does not belong to this pool, behavior is undefined!
+   */
   usize index_of(const PageCacheSlot* slot) noexcept;
 
+  /** \brief Returns the metrics for this pool.
+   */
   const Metrics& metrics() const
   {
     return this->metrics_;
@@ -59,6 +100,13 @@ class PageCacheSlot::Pool : public boost::intrusive_ref_counter<Pool>
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
+  /** \brief Constructs a new Pool with capacity for `n_slots` cached pages.
+   */
+  explicit Pool(usize n_slots, std::string&& name,
+                usize eviction_candidates = Self::kDefaultEvictionCandidates) noexcept;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   batt::CpuCacheLineIsolated<PageCacheSlot>* slots() noexcept;
 
   /** \brief Tries to find a slot that hasn't been used in a while to evict.

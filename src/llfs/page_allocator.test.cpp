@@ -476,8 +476,13 @@ class PageAllocatorModel
     }
 
     static std::atomic<usize> step_count{0};
-    ++step_count;
-    LLFS_LOG_INFO_EVERY_N(25000) << BATT_INSPECT(step_count);
+    thread_local usize local_count{0};
+    ++local_count;
+    if ((local_count & 0xfff) == 0) {
+      step_count.fetch_add(local_count);
+      local_count = 0;
+      LLFS_LOG_INFO_EVERY_N(5) << BATT_INSPECT(step_count);
+    }
 
     LLFS_VLOG(2) << "Entered PageAllocatorModel::step()";
 

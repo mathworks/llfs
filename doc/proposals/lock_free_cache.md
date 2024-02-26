@@ -24,41 +24,6 @@ The concurrent hash table access problem will be solved by implementing a new lo
 
 #### Background: CacheSlot
 
-
-
-#### LRU Maintenance
-
-A new field, `std::atomic<i64> latest_use_`, will be added to the class `llfs::CacheSlot<K,V>`.  This will be updated with a new logical time stamp (LTS) whenever that slot is accessed from the cache.  The LTS values will be provided by a new singleton class `llfs::LRUClock`.  The LRU clock will work by maintaining thread-local `i64` counters which are added to a global linked list the first time the thread-local object is created (on a new thread); the counter will later be removed from the global linked list in the destructor for the counter class (`llfs::LRUClock::LocalCounter`).  The global linked list of counters will be protected by a mutex.  When the `LRUClock` singleton is first initialized, it will create a background thread (`std::thread`) that will periodically synchronize the thread-local counters via the following procedure:
-
-  1. Lock the list mutex
-  2. Iterate over all the `LocalCounter` objects, saving the maximum value in a field of `LRUClock`
-  3. Do a second pass over all the `LocalCounter`s, this time clamping their value to at least the maximum observed in step 2
-
-This will keep the thread-local LTS counters from drifting too far from each other over time.  The `LRUClock` background thread will sleep for an average of 500 microseconds, with random jitter, in between each synchronization, so as not to impose much overhead on the rest of the system (this is something we can easily tune later if it turns out not to be a good choice).
-
-The `LRUClock` class will provide the following interface:
-
-```c++
-  /** \brief Returns the current thread's local counter.
-   */
-  static i64 read_local() noexcept;
-
-  /** \brief Increments the current thread's local counter, returning the old value.
-   */
-  static i64 advance_local() noexcept;
-
-  /** \brief Returns the last observed maximum count (over all thread-local values); this may be
-   * slightly out of date, as it is only updated by the background sync thread.
-   */
-  static i64 read_global() noexcept;
-```
-
-Note that the maximum observed LTS value from step 2 above is saved in between rounds of synchronization so that LTS values continue to move forward even if all threads with a local counter happen to go away at some point.
-
-#### Lock-Free Page Cache Index
-
-##### Background: CacheSlot
-
 The `llfs::CacheSlot<K,V>` class holds a key/value pair in the current implementation.  `CacheSlot` instances are essentially the values in the hash-table index used in the current `Cache` implementation.  There are two ways for some part of the system to obtain a reference to a `CacheSlot`: 
 
 1. Perform a lookup in the `Cache` object that owns the slot
@@ -136,6 +101,38 @@ acquire_pin():│               │
 It is only legal to read the key or value of a slot if it is in a Valid state.  If the slot enters the Invalid state because a thread is able to successfully call evict(), then that thread has exclusive access to the key and value fields.  This allows the either clear() or fill() to be called to change the key/value fields.  For this reason, readers must be careful to prevent a slot from transitioning states while they are reading the key and/or value fields.  Thus a reader must first "pin" the slot by incrementing the pin count; it can then check to see whether the pin succeeded (is the `Valid?` bit set?).  If successful, the reader can proceed to read the key and value, confident there is no data race.  Otherwise, it must restore the pin count to its prior value by incrementing the `DecreasePinCount` value.  This design allows the use of a single atomic `fetch_add` instruction to pin a slot (happy path), instead of a more expensive CAS instruction.
 
 This state machine mechanism essentially implements a non-blocking reader/writer locking system for a single cache slot.  To reiterate: if the pin count is non-zero, this means there are read locks held against the slot; it therefore must not be changed.  Conversely, if the slot is in the Invalid state, this means there is a unique (exclusive) write lock held against the slot; whoever called `evict()` to force the slot into this state (or whoever constructed the slot object) is free to modify the slot key and value without fear of a data race.
+
+
+#### LRU Maintenance
+
+A new field, `std::atomic<i64> latest_use_`, will be added to the class `llfs::CacheSlot<K,V>`.  This will be updated with a new logical time stamp (LTS) whenever that slot is accessed from the cache.  The LTS values will be provided by a new singleton class `llfs::LRUClock`.  The LRU clock will work by maintaining thread-local `i64` counters which are added to a global linked list the first time the thread-local object is created (on a new thread); the counter will later be removed from the global linked list in the destructor for the counter class (`llfs::LRUClock::LocalCounter`).  The global linked list of counters will be protected by a mutex.  When the `LRUClock` singleton is first initialized, it will create a background thread (`std::thread`) that will periodically synchronize the thread-local counters via the following procedure:
+
+  1. Lock the list mutex
+  2. Iterate over all the `LocalCounter` objects, saving the maximum value in a field of `LRUClock`
+  3. Do a second pass over all the `LocalCounter`s, this time clamping their value to at least the maximum observed in step 2
+
+This will keep the thread-local LTS counters from drifting too far from each other over time.  The `LRUClock` background thread will sleep for an average of 500 microseconds, with random jitter, in between each synchronization, so as not to impose much overhead on the rest of the system (this is something we can easily tune later if it turns out not to be a good choice).
+
+The `LRUClock` class will provide the following interface:
+
+```c++
+  /** \brief Returns the current thread's local counter.
+   */
+  static i64 read_local() noexcept;
+
+  /** \brief Increments the current thread's local counter, returning the old value.
+   */
+  static i64 advance_local() noexcept;
+
+  /** \brief Returns the last observed maximum count (over all thread-local values); this may be
+   * slightly out of date, as it is only updated by the background sync thread.
+   */
+  static i64 read_global() noexcept;
+```
+
+Note that the maximum observed LTS value from step 2 above is saved in between rounds of synchronization so that LTS values continue to move forward even if all threads with a local counter happen to go away at some point.
+
+#### Lock-Free Page Cache Index
 
 ##### Proposed Design
 

@@ -13,6 +13,18 @@
 
 namespace llfs {
 
+namespace {
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+struct NewSlot {
+  PageCacheSlot* p_slot = nullptr;
+  PageCacheSlot::PinnedRef pinned_ref;
+  usize slot_index = PageDeviceCache::kInvalidIndex;
+};
+
+}  //namespace
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 /*explicit*/ PageDeviceCache::PageDeviceCache(
@@ -35,16 +47,6 @@ const PageIdFactory& PageDeviceCache::page_ids() const noexcept
 {
   return this->page_ids_;
 }
-
-namespace {
-
-struct NewSlot {
-  PageCacheSlot* p_slot = nullptr;
-  PageCacheSlot::PinnedRef pinned_ref;
-  usize slot_index = PageDeviceCache::kInvalidIndex;
-};
-
-}  //namespace
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //

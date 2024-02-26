@@ -64,6 +64,11 @@ class PageLoader
 
   virtual StatusOr<PinnedPage> get_page(PageId page_id, OkIfNotFound ok_if_not_found);
 
+  virtual StatusOr<PinnedPage> get_page_slot_ref_with_layout_in_job(
+      PageId page_id, PageCacheSlot::AtomicRef& slot_ref,
+      const Optional<PageLayoutId>& required_layout, PinPageToJob pin_page_to_job,
+      OkIfNotFound ok_if_not_found);
+
  protected:
   PageLoader() = default;
 };

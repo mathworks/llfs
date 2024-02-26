@@ -536,7 +536,9 @@ void PageCache::purge(PageId page_id, u64 callers, u64 job_id)
 PageCache::PageDeviceEntry* PageCache::get_device_for_page(PageId page_id)
 {
   const page_device_id_int device_id = PageIdFactory::get_device_id(page_id);
-  BATT_CHECK_LT(device_id, this->page_devices_.size());
+  if (BATT_HINT_FALSE(device_id >= this->page_devices_.size())) {
+    return nullptr;
+  }
 
   return this->page_devices_[device_id].get();
 }
@@ -643,12 +645,13 @@ void PageCache::async_load_page_into_slot(const PageCacheSlot::PinnedRef& pinned
         std::shared_ptr<const PageBuffer>& page_data = *result;
         p_metrics->total_bytes_read.add(page_data->size());
 
-        const PageLayoutId layout_id = [&] {
-          if (required_layout) {
-            return *required_layout;
+        PageLayoutId layout_id = get_page_header(*page_data).layout_id;
+        if (required_layout) {
+          if (*required_layout != layout_id) {
+            latch->set_value(::llfs::make_status(StatusCode::kPageHeaderBadLayoutId));
+            return;
           }
-          return get_page_header(*page_data).layout_id;
-        }();
+        }
 
         PageReader reader_for_layout;
         {

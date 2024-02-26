@@ -103,6 +103,8 @@ class PageCache : public PageLoader
     int line;
   };
 
+  /** \brief All the per-PageDevice state for a single device in the storage pool.
+   */
   struct PageDeviceEntry {
     explicit PageDeviceEntry(PageArena&& arena,
                              boost::intrusive_ptr<PageCacheSlot::Pool>&& slot_pool) noexcept
@@ -111,7 +113,13 @@ class PageCache : public PageLoader
     {
     }
 
+    /** \brief The PageDevice and PageAllocator.
+     */
     PageArena arena;
+
+    /** \brief A per-device page cache; shares a PageCacheSlot::Pool with all other PageDeviceEntry
+     * objects that have the same page size.
+     */
     PageDeviceCache cache;
   };
 
@@ -214,12 +222,14 @@ class PageCache : public PageLoader
   //
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  // Insert a newly built PageView into the cache.
-  //
+  //----- --- -- -  -  -   -
+  /** \brief Inserts a newly built PageView into the cache.
+   */
   StatusOr<PinnedPage> put_view(std::shared_ptr<const PageView>&& view, u64 callers, u64 job_id);
 
-  // Remove all cached data for the specified page.
-  //
+  //----- --- -- -  -  -   -
+  /** \brief Removes all cached data for the specified page.
+   */
   void purge(PageId id_val, u64 callers, u64 job_id);
 
   bool page_might_contain_key(PageId id, const KeyView& key) const;
@@ -258,11 +268,43 @@ class PageCache : public PageLoader
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  //----- --- -- -  -  -   -
+  /** \brief Returns the PageDeviceEntry for the device that owns the given page.
+   *
+   * If the specified device (in the most-significant bits of `page_id`) isn't known by this
+   * PageCache, returns nullptr.
+   */
   PageDeviceEntry* get_device_for_page(PageId page_id);
 
+  //----- --- -- -  -  -   -
+  /** \brief Attempts to find the specified page (`page_id`) in the cache; if successful, the cache
+   * slot is pinned (so it can't be evicted) and a pinned reference is returned.  Otherwise, we
+   * attempt to load the page.
+   *
+   * If the given page is not in-cache and a cache slot can't be evicted/allocated (because there
+   * are too many pinned pages), then this function returns llfs::StatusCode::kCacheSlotsFull.
+   *
+   * \param page_id The page to load
+   *
+   * \param required_layout If specified, then the layout of the page is checked and if it doesn't
+   * match the given identifier, llfs::StatusCode::kPageHeaderBadLayoutId is returned.
+   *
+   * \param ok_if_not_found Controls whether page-not-found log messages (WARNING) are emitted if
+   * the page isn't found; ok_if_not_found == false -> emit log warnings, ... == true -> don't
+   */
   batt::StatusOr<PageCacheSlot::PinnedRef> find_page_in_cache(
       PageId page_id, const Optional<PageLayoutId>& required_layout, OkIfNotFound ok_if_not_found);
 
+  //----- --- -- -  -  -   -
+  /** \brief Populates the passed PageCacheSlot asynchronously by attempting to read the page from
+   * storage and setting the Latch value of the slot.
+   *
+   * \param required_layout If specified, then the layout of the page is checked and if it doesn't
+   * match the given identifier, the Latch is set to llfs::StatusCode::kPageHeaderBadLayoutId.
+   *
+   * \param ok_if_not_found Controls whether page-not-found log messages (WARNING) are emitted if
+   * the page isn't found; ok_if_not_found == false -> emit log warnings, ... == true -> don't
+   */
   void async_load_page_into_slot(const PageCacheSlot::PinnedRef& pinned_slot,
                                  const Optional<PageLayoutId>& required_layout,
                                  OkIfNotFound ok_if_not_found);

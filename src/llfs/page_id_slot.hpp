@@ -44,13 +44,13 @@ bool bool_from(PinPageToJob pin_page, bool default_value);
 struct PageIdSlot {
   using Self = PageIdSlot;
 
-  using AtomicCacheSlotRefT = PageCacheSlot::AtomicRef;
-
   struct Metrics {
     CountMetric<usize> load_total_count;
     CountMetric<usize> load_slot_hit_count;
     CountMetric<usize> load_slot_miss_count;
   };
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   static Metrics& metrics()
   {
@@ -68,8 +68,33 @@ struct PageIdSlot {
 
   static Self from_pinned_page(const PinnedPage& pinned);
 
+  /** \brief Attempts to pin the passed cache slot using the specified `page_id`; if this fails,
+   * then falls back on loading the page from the `loader`, updating `cache_slot_ref` if successful.
+   */
+  static batt::StatusOr<PinnedPage> load_through_impl(PageCacheSlot::AtomicRef& cache_slot_ref,
+                                                      PageLoader& loader,
+                                                      const Optional<PageLayoutId>& required_layout,
+                                                      PinPageToJob pin_page_to_job,
+                                                      OkIfNotFound ok_if_not_found,
+                                                      PageId page_id) noexcept;
+
+  /** \brief Attempts to pin the slot using the specified page_id.
+   *
+   * If pin succeeded, but the page failed to load into the slot when it was originally added to the
+   * cache, then the page load error status code is returned.
+   *
+   * \return The PinnedPage if successful, llfs::StatusCode::kPinFailedPageEvicted otherwise (unless
+   * load error; see above)
+   */
+  static batt::StatusOr<PinnedPage> try_pin_impl(PageCacheSlot::AtomicRef& cache_slot_ref,
+                                                 PageId page_id) noexcept;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   PageId page_id;
-  mutable AtomicCacheSlotRefT cache_slot_ref;
+  mutable PageCacheSlot::AtomicRef cache_slot_ref;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   operator PageId() const
   {
@@ -90,7 +115,7 @@ struct PageIdSlot {
   {
     if (BATT_HINT_TRUE(id != this->page_id)) {
       this->page_id = id;
-      this->cache_slot_ref = AtomicCacheSlotRefT{};
+      this->cache_slot_ref = PageCacheSlot::AtomicRef{};
     }
     return *this;
   }

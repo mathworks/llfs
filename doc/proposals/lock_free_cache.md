@@ -141,9 +141,9 @@ This state machine mechanism essentially implements a non-blocking reader/writer
 
 We propose the following changes to the existing design:
 
-1. Remove the generality of `Cache<K, V>` and `CacheSlot<K, V>`, replacing these with concrete classes that explicitly name `llfs::PageId` as the key type, and `boost::intrusive_ptr<batt::Latch<std::shared_ptr<const llfs::PageView>>>` as the value type.
+1. Remove the generality of `Cache<K, V>` and `CacheSlot<K, V>`, replacing these with concrete classes that explicitly name `llfs::PageId` as the key type, and `batt::Latch<std::shared_ptr<const llfs::PageView>>` as the value type.
 2. Replace `CacheSlot<K, V>` with `llfs::PageCacheSlot`, as described below
 3. Replace `Cache<K, V>` with two types that separate the concerns currently both handled inside `Cache<K, V>`:
    1. `llfs::PageDeviceCache` implements a per-`PageDevice` physical-page-index to cache slot index (using an array of atomic `u64` values)
    2. `llfs::PageCacheSlot::Pool` implements a shared pool of cache slots; one pool can be shared among many `PageDeviceCache` objects
-
+4. Simplify the design of the `PageCacheSlot` state update mechanism; we don't really need two counters for increase and decrease of pin count, and we can also avoid heap-allocating the `Latch` object in favor of using `Optional<Latch<std::shared_ptr<const PageView>>>`.

@@ -28,7 +28,7 @@
 
 namespace llfs {
 
-/** \brief A container for a single key/value pair in a Cache.
+/** \brief A container for a single key/value pair in a PageDeviceCache.
  *
  *  PageCacheSlot objects are always in one of four states:
  *   - Invalid (initial)
@@ -40,6 +40,7 @@ namespace llfs {
 class PageCacheSlot
 {
  public:
+  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   // State Transition Diagram:
   //
   //                                     ┌─────────┐
@@ -60,35 +61,68 @@ class PageCacheSlot
   //               │  ┌─────────────────────────┐
   //               └─▶│ Valid + Filled + Pinned │
   //                  └─────────────────────────┘
-  //
+  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+  // State integer bit layout:
+  //
+  // ┌─────────────────┬────────────────────────────────────────────────────┬─┐
+  // │Overflow (8 bits)│                Pin Count (47 bits)                 │ │
+  // └─────────────────┴────────────────────────────────────────────────────┴─┘
+  //                                                                         ▲
+  //                                                    Valid? (1 bit)───────┘
+  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief The byte offset of the Pin Count within the state integer.
+   */
   static constexpr usize kPinCountShift = 1;
+
+  /** \brief The number of unused (most-significant) bits; used to detect integer overflow.
+   */
   static constexpr usize kOverflowBits = 8;
 
+  /** \brief The amount to add/subtract to the state integer to increment or decrement the pin
+   * count.
+   */
   static constexpr u64 kPinCountDelta = u64{1} << kPinCountShift;
+
+  /** \brief Used to detect pin count integer overflow; should always be zero.
+   */
   static constexpr u64 kOverflowMask = ((u64{1} << kOverflowBits) - 1) << (64 - kOverflowBits);
+
+  /** \brief The Valid bit.
+   */
   static constexpr u64 kValidMask = 1;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  class Pool;
-  class AtomicRef;
-  class PinnedRef;
+  // Forward-declarations of member types.
+  //
+  class Pool;       // defined in <llfs/page_cache_slot_pool.hpp>
+  class AtomicRef;  // defined in <llfs/page_cache_slot_atomic_ref.hpp>
+  class PinnedRef;  // defined in <llfs/page_cache_slot_pinned_ref.hpp>
 
   using Self = PageCacheSlot;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  /** \brief Returns the pin count bit field within the passed state integer.
+   */
   static constexpr u32 get_pin_count(u64 state)
   {
     return state >> kPinCountShift;
   }
 
+  /** \brief Returns true iff the pin count of `state` is non-zero, indicating the slot is in-use
+   * and must not be evicted or modified.
+   */
   static constexpr bool is_pinned(u64 state)
   {
     return Self::get_pin_count(state) != 0;
   }
 
+  /** \brief Returns true iff the Valid? bit of `state` is set.
+   */
   static constexpr bool is_valid(u64 state)
   {
     return (state & kValidMask) != 0;
@@ -101,8 +135,13 @@ class PageCacheSlot
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  /** \brief Constructs a new PageCacheSlot owned by the passed Pool.
+   */
   explicit PageCacheSlot(Pool& pool) noexcept;
 
+  /** \brief Destroys the cache slot; ref count and pin count MUST both be zero when the slot is
+   * destroyed, or we will panic.
+   */
   ~PageCacheSlot() noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -115,13 +154,18 @@ class PageCacheSlot
    */
   usize index() const noexcept;
 
-  /** \brief Returns the current key held in the slot, if valid; if the slot is invalid, returned
-   * value is undefined.
+  /** \brief Returns the current key held in the slot, if valid; if the slot is invalid, the
+   * returned value is undefined.
    */
   PageId key() const;
 
   /** Returns the current value held in the slot, if valid; if the slot is invalid, behavior is
    * undefined.
+   *
+   * Most callers of this function must not modify the returned Latch object.  There is one
+   * exception to this rule: the caller who most recently called `fill` to transition the slot state
+   * from 'Invalid' to 'Valid + Filled' is required to set the Latch value, which broadcasts to all
+   * other observers of this slot that the page has been loaded.
    */
   batt::Latch<std::shared_ptr<const PageView>>* value() noexcept;
 
@@ -133,7 +177,9 @@ class PageCacheSlot
 
   /** \brief Returns the current (weak/non-pinning) reference count.
    *
-   * Do not confuse this with the pin count!
+   * Do not confuse this with the pin count!  A non-zero ref count keeps the PageCacheSlot (and by
+   * extension the pool that owns it) in scope, but it does not prevent the slot from being evicted
+   * and refilled.  Think of this as a weak reference count.
    */
   u64 ref_count() const noexcept;
 
@@ -231,20 +277,20 @@ class PageCacheSlot
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
-  // The implementation of acquire_pin; returns true iff successful.
-  //
+  /** \brief The implementation of acquire_pin; returns true iff successful.
+   */
   bool acquire_pin_impl(PageId key) noexcept;
 
-  // Invoked when the ref count goes from 0 -> 1.
-  //
+  /** \brief Invoked when the ref count goes from 0 -> 1.
+   */
   void notify_first_ref_acquired();
 
-  // Invoked when the ref count goes from 1 -> 0.
-  //
+  /** \brief Invoked when the ref count goes from 1 -> 0.
+   */
   void notify_last_ref_released();
 
-  // Sets the valid bit; Panic if the previous state was not Invalid.
-  //
+  /** \brief Sets the valid bit; Panic if the previous state was not Invalid.
+   */
   void set_valid();
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -261,6 +307,8 @@ class PageCacheSlot
 
 namespace detail {
 
+/** \brief Calls slot->add_ref() iff slot is not nullptr.
+ */
 inline PageCacheSlot* increment_weak_ref(PageCacheSlot* slot)
 {
   if (slot) {
@@ -269,6 +317,8 @@ inline PageCacheSlot* increment_weak_ref(PageCacheSlot* slot)
   return slot;
 }
 
+/** \brief Calls slot->remove_ref() iff slot is not nullptr.
+ */
 inline void decrement_weak_ref(PageCacheSlot* slot)
 {
   if (slot) {
@@ -284,6 +334,5 @@ inline void decrement_weak_ref(PageCacheSlot* slot)
 //
 #include <llfs/page_cache_slot_atomic_ref.hpp>
 #include <llfs/page_cache_slot_pool.hpp>
-//#include <llfs/page_cache_slot_ref.hpp>
 
 #endif  // LLFS_PAGE_CACHE_SLOT_HPP

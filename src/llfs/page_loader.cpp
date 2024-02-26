@@ -100,4 +100,15 @@ StatusOr<PinnedPage> PageLoader::get_page(PageId page_id, OkIfNotFound ok_if_not
   return this->get_page_with_layout(page_id, /*required_layout=*/None, ok_if_not_found);
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<PinnedPage> PageLoader::get_page_slot_ref_with_layout_in_job(
+    PageId page_id, PageCacheSlot::AtomicRef& slot_ref,
+    const Optional<PageLayoutId>& required_layout, PinPageToJob pin_page_to_job,
+    OkIfNotFound ok_if_not_found)
+{
+  return PageIdSlot::load_through_impl(slot_ref, *this, required_layout, pin_page_to_job,
+                                       ok_if_not_found, page_id);
+}
+
 }  // namespace llfs

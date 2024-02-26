@@ -12,6 +12,7 @@
 
 #include <llfs/config.hpp>
 //
+#include <llfs/metrics.hpp>
 #include <llfs/page_buffer.hpp>
 #include <llfs/page_cache_options.hpp>
 #include <llfs/page_deleter.hpp>

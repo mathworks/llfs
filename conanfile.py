@@ -14,7 +14,7 @@ import os, sys, platform
 #==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 # Import batt helper utilities module.
 #
-import script.batt as batt
+import script.batt
 from script.batt import VISIBLE, OVERRIDE
 #
 #+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -69,7 +69,7 @@ class LlfsConan(ConanFile):
 
 
     def requirements(self):
-        self.requires("batteries/0.50.2", **VISIBLE)
+        self.requires("batteries/0.51.0", **VISIBLE)
         self.requires("boost/1.83.0", **VISIBLE)
         self.requires("cli11/2.3.2", **VISIBLE)
         self.requires("glog/0.6.0", **VISIBLE)
@@ -77,11 +77,11 @@ class LlfsConan(ConanFile):
         self.requires("libbacktrace/cci.20210118", **VISIBLE)
         self.requires("openssl/3.2.0", **VISIBLE)
 
-        self.requires("zlib/1.2.13", **OVERRIDE)
+        self.requires("zlib/1.3", **OVERRIDE)
 
         if platform.system() == "Linux":
             self.requires("liburing/2.4", **VISIBLE)
-            self.requires("libfuse/3.10.5", **VISIBLE)
+            self.requires("libfuse/3.16.2", **VISIBLE)
             self.requires("libunwind/1.7.2", **VISIBLE, **OVERRIDE)
 
     #+++++++++++-+-+--+----- --- -- -  -  -   -

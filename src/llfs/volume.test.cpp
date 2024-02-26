@@ -1428,10 +1428,10 @@ class VolumeSimTest : public ::testing::Test
 TEST_F(VolumeSimTest, RecoverySimulation)
 {
   static const u32 kInitialSeed =  //
-      batt::getenv_as<u32>("LLFS_VOLUME_SIM_SEED").value_or(253689123);
+      batt::getenv_as<u32>("LLFS_VOLUME_SIM_SEED").value_or(987654321);
 
   static const u32 kNumSeeds =  //
-      batt::getenv_as<u32>("LLFS_VOLUME_SIM_COUNT").value_or(256);
+      batt::getenv_as<u32>("LLFS_VOLUME_SIM_COUNT").value_or(2500);
 
   static const u32 kCpuPin =  //
       batt::getenv_as<u32>("LLFS_VOLUME_SIM_CPU").value_or(0);
@@ -1585,9 +1585,11 @@ TEST_F(VolumeSimTest, ConcurrentAppendJobs)
         //
         constexpr i32 kExpectedRefCount = 2;
 
-        for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(1 * kKiB)) {
+        for (llfs::PageCache::PageDeviceEntry* entry :
+             sim.cache()->devices_with_page_size(1 * kKiB)) {
+          BATT_CHECK_NOT_NULLPTR(entry);
           for (llfs::PageId page_id : page_ids) {
-            EXPECT_EQ(arena.allocator().get_ref_count(page_id).first, kExpectedRefCount);
+            EXPECT_EQ(entry->arena.allocator().get_ref_count(page_id).first, kExpectedRefCount);
           }
           break;
         }
@@ -1732,7 +1734,7 @@ void VolumeSimTest::commit_first_job(RecoverySimState& state, llfs::StorageSimul
   batt::StatusOr<llfs::SlotRange> slot_range =
       this->commit_job_to_root_log(std::move(job), state.first_page_id, volume, sim);
 
-  ASSERT_TRUE(slot_range.ok()) << BATT_INSPECT(slot_range.status());
+  ASSERT_TRUE(slot_range.ok()) << BATT_INSPECT(slot_range.status()) << BATT_INSPECT(state.seed);
 
   sim.log_event("first job successfully appended! slot_range=", *slot_range);
 }
@@ -1855,45 +1857,57 @@ void VolumeSimTest::verify_post_recovery_expectations(RecoverySimState& state,
     if (state.recovered_second_page) {
       EXPECT_FALSE(state.second_job_will_not_commit);
 
-      for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(1 * kKiB)) {
-        EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
-        EXPECT_EQ(arena.allocator().get_ref_count(state.first_page_id).first, 3);
+      for (llfs::PageCache::PageDeviceEntry* entry :
+           sim.cache()->devices_with_page_size(1 * kKiB)) {
+        BATT_CHECK_NOT_NULLPTR(entry);
+        EXPECT_EQ(entry->arena.allocator().free_pool_size(), this->pages_per_device - 1);
+        EXPECT_EQ(entry->arena.allocator().get_ref_count(state.first_page_id).first, 3);
         ASSERT_TRUE(sim.has_data_for_page_id(state.first_page_id).ok());
         EXPECT_TRUE(*sim.has_data_for_page_id(state.first_page_id));
       }
-      for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(2 * kKiB)) {
-        EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
-        EXPECT_EQ(arena.allocator().get_ref_count(state.second_root_page_id).first, 2);
+      for (llfs::PageCache::PageDeviceEntry* entry :
+           sim.cache()->devices_with_page_size(2 * kKiB)) {
+        BATT_CHECK_NOT_NULLPTR(entry);
+        EXPECT_EQ(entry->arena.allocator().free_pool_size(), this->pages_per_device - 1);
+        EXPECT_EQ(entry->arena.allocator().get_ref_count(state.second_root_page_id).first, 2);
         ASSERT_TRUE(sim.has_data_for_page_id(state.second_root_page_id).ok());
         EXPECT_TRUE(*sim.has_data_for_page_id(state.second_root_page_id));
       }
-      for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(4 * kKiB)) {
-        EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
-        EXPECT_EQ(arena.allocator().get_ref_count(state.third_page_id).first, 2);
+      for (llfs::PageCache::PageDeviceEntry* entry :
+           sim.cache()->devices_with_page_size(4 * kKiB)) {
+        BATT_CHECK_NOT_NULLPTR(entry);
+        EXPECT_EQ(entry->arena.allocator().free_pool_size(), this->pages_per_device - 1);
+        EXPECT_EQ(entry->arena.allocator().get_ref_count(state.third_page_id).first, 2);
         ASSERT_TRUE(sim.has_data_for_page_id(state.third_page_id).ok());
         EXPECT_TRUE(*sim.has_data_for_page_id(state.third_page_id));
       }
     } else {
-      for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(1 * kKiB)) {
-        EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device - 1);
-        EXPECT_EQ(arena.allocator().get_ref_count(state.first_page_id).first, 2);
+      for (llfs::PageCache::PageDeviceEntry* entry :
+           sim.cache()->devices_with_page_size(1 * kKiB)) {
+        BATT_CHECK_NOT_NULLPTR(entry);
+        EXPECT_EQ(entry->arena.allocator().free_pool_size(), this->pages_per_device - 1);
+        EXPECT_EQ(entry->arena.allocator().get_ref_count(state.first_page_id).first, 2);
         ASSERT_TRUE(sim.has_data_for_page_id(state.first_page_id).ok());
         EXPECT_TRUE(*sim.has_data_for_page_id(state.first_page_id));
       }
-      for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(2 * kKiB)) {
-        EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device);
+      for (llfs::PageCache::PageDeviceEntry* entry :
+           sim.cache()->devices_with_page_size(2 * kKiB)) {
+        BATT_CHECK_NOT_NULLPTR(entry);
+        EXPECT_EQ(entry->arena.allocator().free_pool_size(), this->pages_per_device);
         if (state.second_root_page_id.is_valid()) {
-          EXPECT_EQ(arena.allocator().get_ref_count(state.second_root_page_id).first, 0);
+          EXPECT_EQ(entry->arena.allocator().get_ref_count(state.second_root_page_id).first, 0);
           if (!llfs::Volume::write_new_pages_asap()) {
             ASSERT_TRUE(sim.has_data_for_page_id(state.second_root_page_id).ok());
             EXPECT_FALSE(*sim.has_data_for_page_id(state.second_root_page_id));
           }
         }
       }
-      for (const llfs::PageArena& arena : sim.cache()->arenas_for_page_size(4 * kKiB)) {
-        EXPECT_EQ(arena.allocator().free_pool_size(), this->pages_per_device);
+      for (llfs::PageCache::PageDeviceEntry* entry :
+           sim.cache()->devices_with_page_size(4 * kKiB)) {
+        BATT_CHECK_NOT_NULLPTR(entry);
+        EXPECT_EQ(entry->arena.allocator().free_pool_size(), this->pages_per_device);
         if (state.third_page_id.is_valid()) {
-          EXPECT_EQ(arena.allocator().get_ref_count(state.third_page_id).first, 0);
+          EXPECT_EQ(entry->arena.allocator().get_ref_count(state.third_page_id).first, 0);
           if (!llfs::Volume::write_new_pages_asap()) {
             ASSERT_TRUE(sim.has_data_for_page_id(state.third_page_id).ok());
             EXPECT_FALSE(*sim.has_data_for_page_id(state.third_page_id));

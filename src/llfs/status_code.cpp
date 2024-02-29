@@ -133,6 +133,9 @@ bool initialize_status_codes()
                      "PageCache::put_view failed; page layout id is not registered"),  // 62,
       CODE_WITH_MSG_(StatusCode::kPageCacheSlotNotInitialized,
                      "The page cache slot for this PageId is not initialized"),  // 63,
+      CODE_WITH_MSG_(
+          StatusCode::kIoRingShutDown,
+          "The operation could not be completed because the IoRing was shut down"),  // 64,
   });
   return initialized;
 }

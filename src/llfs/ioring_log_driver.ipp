@@ -301,7 +301,7 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::flush_task_main()
     }};
 
     auto done_status = done.await_equal(true);
-    BATT_CHECK(done_status.ok());
+    BATT_CHECK_OK(done_status);
     io_thread.join();
 
     return OkStatus();

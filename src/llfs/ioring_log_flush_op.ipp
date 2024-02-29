@@ -563,7 +563,8 @@ inline bool BasicIoRingLogFlushOp<DriverImpl>::handle_errors(const StatusOr<i32>
       }
       return true;
     }
-    if (!this->quiet_failure_logging) {
+    if (!this->quiet_failure_logging &&
+        result.status() != ::llfs::make_status(StatusCode::kIoRingShutDown)) {
       LLFS_LOG_INFO() << "flush failed: " << result.status();
     } else {
       LLFS_VLOG(1) << "flush failed: " << result.status();

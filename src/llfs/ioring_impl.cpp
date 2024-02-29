@@ -121,7 +121,7 @@ IoRingImpl::~IoRingImpl() noexcept
   }
 
   batt::invoke_all_handlers(&this->completions_,  //
-                            StatusOr<i32>{Status{batt::StatusCode::kClosed}});
+                            StatusOr<i32>{::llfs::make_status(StatusCode::kIoRingShutDown)});
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

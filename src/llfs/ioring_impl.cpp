@@ -454,10 +454,7 @@ void IoRingImpl::invoke_handler(CompletionHandler** handler) noexcept
 {
   auto on_scope_exit = batt::finally([handler, this] {
     *handler = nullptr;
-    const isize prior_count = this->work_count_.fetch_sub(1);
-    if (prior_count == 1) {
-      this->wake_all();
-    }
+    this->on_work_finished();
   });
 
   BATT_CHECK((*handler)->result);

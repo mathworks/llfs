@@ -141,7 +141,7 @@ void run_sync_update_test(const usize kNumFastThreads)
     EXPECT_GT(slow_thread_values[i] - slow_thread_values[i - 1], 50)
         << BATT_INSPECT(i) << BATT_INSPECT(slow_thread_values[i])
         << BATT_INSPECT(slow_thread_values[i - 1]) << BATT_INSPECT(max_synced_count)
-        << BATT_INSPECT(max_count);
+        << BATT_INSPECT(max_count) << BATT_INSPECT_RANGE(slow_thread_values);
   }
 
   EXPECT_GT(slow_thread_values.back(), kUpdatesPerThread / 2);

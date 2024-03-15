@@ -16,7 +16,7 @@ default:
     - "test -d /local/gitlab-runner-local-cache || { echo \"FATAL: no local docker cache volume mapped\"; false; }"
     - export XDG_CACHE_HOME=/local/gitlab-runner-local-cache/.cache
     - export CONAN_USER_HOME=/local/gitlab-runner-local-cache
-    - export CONAN_HOME=/local/gitlab-runner-local-cache/.conan2
+    - export CONAN_HOME=/local/gitlab-runner-local-cache/.conan_2.0.16
     - /setup-conan.sh
     - echo "CI_DEPLOY_USER=${CI_DEPLOY_USER}"
     - echo "CI_DEPLOY_PASSWORD=${CI_DEPLOY_PASSWORD}"

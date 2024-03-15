@@ -183,6 +183,17 @@ class IoRingImpl
    */
   void invoke_handler(CompletionHandler** handler) noexcept;
 
+  /** \brief Wakes all threads inside a call to this->run().
+   *
+   * There are two blocking mechanisms which this function needs to address:
+   *
+   *   1. eventfd_read(), used to block waiting for the io_uring to signal an event
+   *      (one thread at a time)
+   *   2. this->state_change_.wait(), a condition variable wait used by all threads
+   *      _not_ waiting in eventfd_read(), to receive notification that they can proceed
+   */
+  void wake_all() noexcept;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   // Protects access to the io_uring context and associated data (registered_fds_, free_fds_,

@@ -228,48 +228,51 @@ TEST(IoRingTest, EnqueueManyHandlers)
 {
   constexpr usize kNumThreads = 3;
   constexpr usize kNumHandlers = 50;
+  constexpr usize kNumIterations = 5000;
 
-  StatusOr<IoRing> io = IoRing::make_new(llfs::MaxQueueDepth{64});
-  ASSERT_TRUE(io.ok()) << BATT_INSPECT(io.status());
+  for (usize n = 0; n < kNumIterations; ++n) {
+    StatusOr<IoRing> io = IoRing::make_new(llfs::MaxQueueDepth{64});
+    ASSERT_TRUE(io.ok()) << BATT_INSPECT(io.status());
 
-  io->on_work_started();
+    io->on_work_started();
 
-  std::array<llfs::Status, kNumThreads> status;
-  status.fill(batt::StatusCode::kUnknown);
+    std::array<llfs::Status, kNumThreads> status;
+    status.fill(batt::StatusCode::kUnknown);
 
-  std::atomic<bool> begin{false};
-  std::atomic<i32> counter{0};
+    std::atomic<bool> begin{false};
+    std::atomic<i32> counter{0};
 
-  std::vector<std::thread> helper_threads;
-  for (usize i = 0; i < kNumThreads; ++i) {
-    helper_threads.emplace_back([&io, &begin, &status, i] {
-      while (!begin) {
-        std::this_thread::yield();
-      }
-      status[i] = io->run();
-    });
+    std::vector<std::thread> helper_threads;
+    for (usize i = 0; i < kNumThreads; ++i) {
+      helper_threads.emplace_back([&io, &begin, &status, i] {
+        while (!begin) {
+          std::this_thread::yield();
+        }
+        status[i] = io->run();
+      });
+    }
+
+    for (usize i = 0; i < kNumHandlers; ++i) {
+      io->post([&counter](llfs::StatusOr<i32>) {
+        counter++;
+      });
+    }
+
+    begin = true;
+
+    io->on_work_finished();
+
+    {
+      usize i = 0;
+      for (std::thread& t : helper_threads) {
+        t.join();
+        EXPECT_TRUE(status[i].ok()) << BATT_INSPECT(status[i]) << BATT_INSPECT(i);
+        ++i;
+      };
+    }
+
+    EXPECT_EQ(counter, kNumHandlers);
   }
-
-  for (usize i = 0; i < kNumHandlers; ++i) {
-    io->post([&counter](llfs::StatusOr<i32>) {
-      counter++;
-    });
-  }
-
-  begin = true;
-
-  io->on_work_finished();
-
-  {
-    usize i = 0;
-    for (std::thread& t : helper_threads) {
-      t.join();
-      EXPECT_TRUE(status[i].ok()) << BATT_INSPECT(status[i]) << BATT_INSPECT(i);
-      ++i;
-    };
-  }
-
-  EXPECT_EQ(counter, kNumHandlers);
 }
 
 #ifdef BATT_PLATFORM_IS_LINUX

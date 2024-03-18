@@ -146,6 +146,10 @@ void LRUClock::add_local_counter(LocalCounter& counter) noexcept
 {
   std::unique_lock<std::mutex> lock{this->mutex_};
 
+  // Initialize the local counter to the max observed global value.
+  //
+  counter.value.store(this->observed_count_);
+
   this->counter_list_.push_back(counter);
 }
 
@@ -154,6 +158,10 @@ void LRUClock::add_local_counter(LocalCounter& counter) noexcept
 void LRUClock::remove_local_counter(LocalCounter& counter) noexcept
 {
   std::unique_lock<std::mutex> lock{this->mutex_};
+
+  // Update the global max observed count (last reading from this local counter).
+  //
+  this->observed_count_ = std::max(this->observed_count_, counter.value.load());
 
   this->counter_list_.erase(this->counter_list_.iterator_to(counter));
 }

@@ -239,6 +239,24 @@ void IoRingStreamBuffer::Fragment::push(BufferView&& view)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+void IoRingStreamBuffer::Fragment::push(const Fragment& fragment)
+{
+  for (const BufferView& part : fragment) {
+    this->push(part);
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void IoRingStreamBuffer::Fragment::push(Fragment&& fragment)
+{
+  for (BufferView& part : fragment) {
+    this->push(std::move(part));
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 auto IoRingStreamBuffer::Fragment::pop(usize max_byte_count) -> Fragment
 {
   usize bytes_popped = 0;

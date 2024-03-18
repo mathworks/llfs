@@ -72,6 +72,8 @@ class LRUClock
 
     ~LocalCounter() noexcept;
 
+    /** \brief The next unused counter value for the current thread.
+     */
     std::atomic<i64> value{0};
   };
 
@@ -131,7 +133,8 @@ class LRUClock
    */
   void remove_local_counter(LocalCounter& counter) noexcept;
 
-  /** \brief Returns the maximum count value from the last time sync_local_counters() was called.
+  /** \brief Returns the maximum count value (least upper bound; i.e., the first unused value) from
+   * the last time sync_local_counters() was called.
    */
   i64 read_observed_count() noexcept;
 

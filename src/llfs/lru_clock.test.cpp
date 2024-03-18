@@ -119,7 +119,7 @@ void run_sync_update_test(const usize kNumFastThreads)
         // this value will not change!
         //
         slow_thread_values.back() = llfs::LRUClock::read_local();
-        if (slow_thread_values.back() > prev_value) {
+        if (slow_thread_values.back() > prev_value || stop_slow_thread.load()) {
           break;
         }
       }

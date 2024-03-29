@@ -74,6 +74,15 @@ class IoRingStreamBuffer
      */
     void push(BufferView&& view);
 
+    /** \brief Pushes the specified Fragment onto the end of this sequence.
+     */
+    void push(const Fragment& other);
+
+    /** \brief Pushes the specified Fragment onto the end of this sequence, consuming the Fragment
+     * in the process.
+     */
+    void push(Fragment&& other);
+
     /** \brief Removes up to the specified number of bytes from the beginning of this sequence,
      * returning the resulting BufferView slices as a Fragment.
      */

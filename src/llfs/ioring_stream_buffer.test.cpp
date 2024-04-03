@@ -10,6 +10,7 @@
 //
 #include <llfs/ioring_stream_buffer.hpp>
 
+#include <llfs/ioring_buffer_view.test.hpp>
 #include <llfs/ioring_stream_buffer.test.hpp>
 
 #include <gmock/gmock.h>
@@ -22,6 +23,7 @@ namespace {
 
 using namespace llfs::int_types;
 
+using llfs::testing::IoringBufferViewTest;
 using llfs::testing::IoringStreamBufferClosedEmptyTest;
 using llfs::testing::IoringStreamBufferEmptyTest;
 using llfs::testing::IoringStreamBufferFullTest;
@@ -394,6 +396,61 @@ TEST_F(IoringStreamBufferFullTest, PrepareWaitOk2)
       });
 
   EXPECT_TRUE(view.ok()) << BATT_INSPECT(view.ok());
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(IoringBufferViewTest, FragmentSeqTest)
+{
+  const std::string_view kTestDataPrefix = "hello, world";
+
+  std::memset(this->buffer_1->data(), 'a', this->buffer_1->size());
+  std::memcpy(this->buffer_1->data(), kTestDataPrefix.data(), kTestDataPrefix.size());
+
+  const auto verify_data_in_fragment = [this](const llfs::IoRingStreamBuffer::Fragment& f) {
+    std::variant<llfs::IoRingBufferPool::Buffer, std::unique_ptr<u8[]>> storage;
+
+    batt::ConstBuffer cb = f.gather(storage);
+
+    ASSERT_EQ(cb.size(), this->buffer_1->size());
+    ASSERT_EQ(std::memcmp(cb.data(), this->buffer_1->data(), cb.size()), 0);
+  };
+
+  // Build Fragment f1 using a single buffer view.
+  //
+  llfs::IoRingConstBufferView view1{
+      *this->buffer_1,
+      this->buffer_1->get(),
+  };
+
+  llfs::IoRingStreamBuffer::Fragment f1;
+  f1.push(std::move(view1));
+
+  ASSERT_NO_FATAL_FAILURE(verify_data_in_fragment(f1));
+
+  // Now create Fragment f2 by copying views from f1.
+  //
+  llfs::IoRingStreamBuffer::Fragment f2;
+
+  f1.as_seq() | batt::seq::for_each([&f2](const llfs::IoRingConstBufferView& view) {
+    f2.push(batt::make_copy(view));
+  });
+
+  EXPECT_EQ(f1.byte_size(), f2.byte_size());
+  ASSERT_NO_FATAL_FAILURE(verify_data_in_fragment(f2));
+
+  // Use push overloads.
+  //
+  llfs::IoRingStreamBuffer::Fragment f3;
+  f3.push(f2);
+  EXPECT_EQ(f1.byte_size(), f3.byte_size());
+  ASSERT_NO_FATAL_FAILURE(verify_data_in_fragment(f3));
+
+  llfs::IoRingStreamBuffer::Fragment f4;
+  f4.push(std::move(f1));
+  EXPECT_EQ(f2.byte_size(), f4.byte_size());
+  EXPECT_TRUE(f1.empty());
+  ASSERT_NO_FATAL_FAILURE(verify_data_in_fragment(f4));
 }
 
 }  // namespace

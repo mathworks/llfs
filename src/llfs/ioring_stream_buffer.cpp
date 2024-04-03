@@ -253,6 +253,7 @@ void IoRingStreamBuffer::Fragment::push(Fragment&& fragment)
   for (BufferView& part : fragment.views_) {
     this->push(std::move(part));
   }
+  fragment.views_.clear();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

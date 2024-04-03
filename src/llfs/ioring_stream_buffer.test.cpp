@@ -10,6 +10,7 @@
 //
 #include <llfs/ioring_stream_buffer.hpp>
 
+#include <llfs/ioring_buffer_view.test.hpp>
 #include <llfs/ioring_stream_buffer.test.hpp>
 
 #include <gmock/gmock.h>
@@ -22,6 +23,7 @@ namespace {
 
 using namespace llfs::int_types;
 
+using llfs::testing::IoringBufferViewTest;
 using llfs::testing::IoringStreamBufferClosedEmptyTest;
 using llfs::testing::IoringStreamBufferEmptyTest;
 using llfs::testing::IoringStreamBufferFullTest;
@@ -394,6 +396,31 @@ TEST_F(IoringStreamBufferFullTest, PrepareWaitOk2)
       });
 
   EXPECT_TRUE(view.ok()) << BATT_INSPECT(view.ok());
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(IoringBufferViewTest, FragmentSeqTest)
+{
+  // Build Fragment f1 using a single buffer view.
+  //
+  llfs::IoRingConstBufferView view1{
+      *this->buffer_1,
+      this->buffer_1->get(),
+  };
+
+  llfs::IoRingStreamBuffer::Fragment f1;
+  f1.push(std::move(view1));
+
+  // Now create Fragment f2 by copying views from f1.
+  //
+  llfs::IoRingStreamBuffer::Fragment f2;
+
+  f1.as_seq() | batt::seq::for_each([&f2](const llfs::IoRingConstBufferView& view) {
+    f2.push(batt::make_copy(view));
+  });
+
+  EXPECT_EQ(f1.byte_size(), f2.byte_size());
 }
 
 }  // namespace

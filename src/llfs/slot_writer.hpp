@@ -304,6 +304,19 @@ class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
       };
     }
 
+    /** \brief Like typed_append, but erases type information from the returned value.
+     */
+    template <typename T, typename PackedT = PackedTypeFor<T>>
+    StatusOr<SlotRange> append(const batt::Grant& caller_grant, T&& payload)
+    {
+      StatusOr<SlotParseWithPayload<const PackedTypeFor<T>*>> packed =
+          this->typed_append(caller_grant, BATT_FORWARD(payload));
+
+      BATT_REQUIRE_OK(packed);
+
+      return {packed->slot.offset};
+    }
+
     /** \brief Atomically commits all slots appended previously by `this` via typed_append.
      */
     template <typename PostCommitFn = NullPostCommitFn>

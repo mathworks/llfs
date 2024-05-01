@@ -98,7 +98,8 @@ StatusOr<MutableBuffer> SlotWriter::WriterLock::prepare(usize slot_payload_size,
 //
 SlotRange SlotWriter::WriterLock::defer_commit() noexcept
 {
-  const slot_offset_type slot_lower_bound = (*this->writer_lock_)->slot_offset();
+  const slot_offset_type slot_lower_bound =
+      (*this->writer_lock_)->slot_offset() + this->deferred_commit_size_;
   const slot_offset_type slot_upper_bound = slot_lower_bound + this->prepare_size_;
 
   this->deferred_commit_size_ += this->prepare_size_;

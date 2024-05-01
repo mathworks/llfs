@@ -14,6 +14,7 @@
 
 #include <llfs/data_layout.hpp>
 #include <llfs/data_packer.hpp>
+#include <llfs/optional.hpp>
 #include <llfs/slot_parse.hpp>
 
 #include <batteries/async/grant.hpp>
@@ -30,7 +31,83 @@ class SlotWriter
  public:
   class Append;
 
+  class WriterLock
+  {
+   public:
+    /** \brief Acquires an exclusive lock on writing to the log managed by `slot_writer`, preparing
+     * to write new slot data.  This lock is released when the WriterLock object goes out of scope.
+     */
+    explicit WriterLock(SlotWriter& slot_writer) noexcept;
+
+    /** \brief WriterLock is not copyable.
+     */
+    WriterLock(const WriterLock&) = delete;
+
+    /** \brief WriterLock is not copyable.
+     */
+    WriterLock& operator=(const WriterLock&) = delete;
+
+    //----- --- -- -  -  -   -
+
+    /** \brief Verifies that the passed grant can accomodate a new slot with the passed payload size
+     * (in addition to any currently deferred slots), then allocates space in the log and writes a
+     * header for the new slot, returning a mutable buffer for _just_ the payload portion.
+     */
+    StatusOr<MutableBuffer> prepare(usize slot_payload_size,
+                                    const batt::Grant& caller_grant) noexcept;
+
+    /** \brief Defers the currently prepared slot for later commit.
+     *
+     * Future calls to prepare will return a memory segment after the deferred commit slots.
+     */
+    SlotRange defer_commit() noexcept;
+
+    /** \brief Commits the current prepared slot and any deferred commit slots to the log.
+     *
+     * Transfers the size of the committed data from `caller_grant` to the SlotWriter's in_use_
+     * grant.
+     *
+     * \return the log slot range of the committed data.
+     */
+    StatusOr<SlotRange> commit(batt::Grant& caller_grant) noexcept;
+
+    /** \brief Reverts the effect of the most recent call to prepare after the most recent call to
+     * defer_commit or commit.
+     */
+    void cancel_prepare() noexcept;
+
+    /** \brief Equivalent to this->cancel_prepare() plus clearing out all deferred commits.  Rolls
+     * back everything since the most recent call to this->commit().
+     */
+    void cancel_all() noexcept;
+
+    //----- --- -- -  -  -   -
+   private:
+    /** \brief The SlotWriter object passed in at construction time.
+     */
+    SlotWriter& slot_writer_;
+
+    /** \brief Lock on the SlotWriter's LogDevice::Writer.
+     */
+    batt::ScopedLock<LogDevice::Writer*> writer_lock_;
+
+    /** \brief The size (bytes) of the most recently prepared slot buffer (allocated via
+     * this->prepare).  This size includes the varint slot header (the payload size), so it is
+     * always larger than the `slot_payload_size` arg passed to `this->prepare()`.
+     */
+    usize prepare_size_ = 0;
+
+    /** \brief The size (bytes) of all slots that have been fully packed and are ready for commit
+     * the next time `this->commit()` is called.
+     */
+    usize deferred_commit_size_ = 0;
+  };
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   explicit SlotWriter(LogDevice& log_device) noexcept;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   usize log_size() const
   {
@@ -101,10 +178,6 @@ class SlotWriter
     return this->log_device_.sync(mode, event);
   }
 
-  // Prepare space in the log to append a slot.
-  //
-  StatusOr<Append> prepare(batt::Grant& grant, usize slot_body_size);
-
  private:
   LogDevice& log_device_;
 
@@ -127,67 +200,6 @@ class SlotWriter
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-
-class SlotWriter::Append
-{
- public:
-  explicit Append(SlotWriter* that, batt::Mutex<LogDevice::Writer*>::Lock writer_lock,
-                  batt::Grant&& slot_grant, const MutableBuffer& slot_buffer,
-                  usize slot_body_size) noexcept;
-
-  Append(const Append&) = delete;
-  Append& operator=(const Append&) = delete;
-
-  BATT_SUPPRESS_IF_CLANG("-Wdefaulted-function-deleted")
-  //
-  Append(Append&&) = default;
-  Append& operator=(Append&&) = default;
-  //
-  BATT_UNSUPPRESS_IF_CLANG()
-
-  ~Append() noexcept;
-
-  slot_offset_type slot_lower_bound() const
-  {
-    return this->slot_lower_bound_;
-  }
-
-  DataPacker& packer()
-  {
-    return this->packer_;
-  }
-
-  StatusOr<SlotRange> commit();
-
-  void cancel();
-
- private:
-  SlotWriter* that_;
-
-  // To pack the data into the log, we need exclusive access.
-  //
-  batt::Mutex<LogDevice::Writer*>::Lock writer_lock_;
-
-  // The slot_grant will be destroyed when we return, releasing its count back to the pool.
-  //
-  batt::Grant slot_grant_;
-
-  // Was this append cancelled?
-  //
-  bool cancelled_;
-
-  // Was this append committed?
-  //
-  bool committed_;
-
-  // The beginning offset at which this append will occur if committed.
-  //
-  slot_offset_type slot_lower_bound_;
-
-  // Exposed to the caller to serialize the contents of the slot.
-  //
-  DataPacker packer_;
-};
 
 inline constexpr usize packed_sizeof_slot_with_payload_size(usize payload_size)
 {
@@ -225,6 +237,87 @@ class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
     }
   };
 
+  /** \brief An append operation of one or more slots.
+   */
+  class MultiAppend
+  {
+   public:
+    /** \brief Initialize a MultiAppend operation using the passed TypedSlotWriter.
+     *
+     * This will obtain a lock on the slot writer's LogDevice::Writer mutex.
+     */
+    explicit MultiAppend(TypedSlotWriter& slot_writer) noexcept : writer_lock_{slot_writer}
+    {
+    }
+
+    MultiAppend(const MultiAppend&) = delete;
+    MultiAppend& operator=(const MultiAppend&) = delete;
+
+    //----- --- -- -  -  -   -
+
+    /** \brief Packs a single slot into the log device buffer.  Does not commit the slot; all slots
+     * are committed atomically when this->finalize() is called.
+     */
+    template <typename T, typename PackedT = PackedTypeFor<T>>
+    StatusOr<SlotParseWithPayload<const PackedT*>> typed_append(const batt::Grant& caller_grant,
+                                                                T&& payload)
+    {
+      // Calculate packed size of payload.
+      //
+      const usize slot_payload_size = sizeof(PackedVariant<Ts...>) + packed_sizeof(payload);
+
+      // Allocate log buffer space and write the slot header (varint).
+      //
+      BATT_ASSIGN_OK_RESULT(MutableBuffer payload_buffer,
+                            this->writer_lock_.prepare(slot_payload_size, caller_grant));
+
+      // Pack the payload.
+      //
+      DataPacker packer{payload_buffer};
+
+      PackedVariant<Ts...>* const variant_head =
+          packer.pack_record(batt::StaticType<PackedVariant<Ts...>>{});
+
+      if (!variant_head) {
+        return ::llfs::make_status(StatusCode::kFailedToPackSlotVarHead);
+      }
+
+      variant_head->init(batt::StaticType<PackedT>{});
+
+      if (!pack_object(BATT_FORWARD(payload), &packer)) {
+        return ::llfs::make_status(StatusCode::kFailedToPackSlotVarTail);
+      }
+
+      // Add the packed slot to the deferred commit segment.
+      //
+      SlotRange slot_range = this->writer_lock_.defer_commit();
+      auto* slot_payload_start = reinterpret_cast<const char*>(variant_head);
+
+      return SlotParseWithPayload<const PackedT*>{
+          .slot =
+              SlotParse{
+                  .offset = slot_range,
+                  .body = std::string_view{slot_payload_start, slot_payload_size},
+                  .total_grant_spent = slot_payload_size,
+              },
+          .payload = variant_head->as(batt::StaticType<PackedT>{}),
+      };
+    }
+
+    /** \brief Atomically commits all slots appended previously by `this` via typed_append.
+     */
+    template <typename PostCommitFn = NullPostCommitFn>
+    StatusOr<SlotRange> finalize(batt::Grant& caller_grant,
+                                 PostCommitFn&& post_commit_fn = {}) noexcept
+    {
+      return post_commit_fn(this->writer_lock_.commit(caller_grant));
+    }
+
+    //----- --- -- -  -  -   -
+   private:
+    SlotWriter::WriterLock writer_lock_;
+  };
+
   /** \brief Appends `payload` to the log using the passed `caller_grant`.
    *
    * \param caller_grant Must be at least as large as packed_sizeof(payload)
@@ -242,44 +335,17 @@ class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
                                                               T&& payload,
                                                               PostCommitFn&& post_commit_fn = {})
   {
-    const usize slot_body_size = sizeof(PackedVariant<Ts...>) + packed_sizeof(payload);
-    BATT_CHECK_NE(slot_body_size, 0u);
-
-    // Lock the writer in SlotWriter::prepare.
+    // Appending a single slot is treated as a degenerate case of a MultiAppend.
     //
-    StatusOr<Append> op = this->SlotWriter::prepare(caller_grant, slot_body_size);
-    BATT_REQUIRE_OK(op);
+    MultiAppend op{*this};
 
-    // Do allocation for the buffer to write the variant-ID.
-    //
-    PackedVariant<Ts...>* variant_head =
-        op->packer().pack_record(batt::StaticType<PackedVariant<Ts...>>{});
-    if (!variant_head) {
-      return ::llfs::make_status(StatusCode::kFailedToPackSlotVarHead);
-    }
+    StatusOr<SlotParseWithPayload<const PackedT*>> result =
+        op.typed_append(caller_grant, BATT_FORWARD(payload));
 
-    // Get variant-ID ('which') for this entry.
-    //
-    variant_head->init(batt::StaticType<PackedT>{});
+    BATT_REQUIRE_OK(result);
+    BATT_REQUIRE_OK(op.finalize(caller_grant, post_commit_fn));
 
-    if (!pack_object(BATT_FORWARD(payload), &(op->packer()))) {
-      return ::llfs::make_status(StatusCode::kFailedToPackSlotVarTail);
-    }
-
-    StatusOr<SlotRange> slot_range = post_commit_fn(op->commit());
-    BATT_REQUIRE_OK(slot_range);
-
-    auto* slot_body_start = reinterpret_cast<const char*>(variant_head);
-
-    return SlotParseWithPayload<const PackedT*>{
-        .slot =
-            SlotParse{
-                .offset = *slot_range,
-                .body = std::string_view{slot_body_start, slot_body_size},
-                .total_grant_spent = slot_body_size,
-            },
-        .payload = variant_head->as(batt::StaticType<PackedT>{}),
-    };
+    return result;
   }
 
   template <typename T, typename PostCommitFn = NullPostCommitFn>

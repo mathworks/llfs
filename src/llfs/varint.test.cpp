@@ -159,4 +159,18 @@ TEST(VarIntTest, BufferApi)
   }
 }
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+// Test that we accept longer-than-necessary encodings of integers.
+//
+TEST(VarIntTest, ExtraBytes)
+{
+  std::array<u8, 2> packed = {0b10000000, 0b00000000};
+
+  auto [n, parse_end] = unpack_varint_from(packed.data(), packed.data() + packed.size());
+
+  ASSERT_TRUE(n);
+  EXPECT_EQ(*n, 0u);
+  EXPECT_EQ((void*)parse_end, (void*)(&packed[2]));
+}
+
 }  // namespace

@@ -572,7 +572,10 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
 
     const auto grant_size_after_prepare = grant.size();
 
-    BATT_CHECK_EQ(prepared_job_size, grant_size_before_prepare - grant_size_after_prepare);
+    if (prepare_slot.ok()) {
+      BATT_CHECK_EQ(prepared_job_size, grant_size_before_prepare - grant_size_after_prepare)
+          << BATT_INSPECT(prepare_slot.status()) << BATT_INSPECT(grant_size_before_prepare);
+    }
 
     if (sequencer) {
       if (!prepare_slot.ok()) {

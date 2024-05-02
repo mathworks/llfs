@@ -26,6 +26,7 @@
 #include <llfs/logging.hpp>
 
 #include <batteries/assert.hpp>
+#include <batteries/slice.hpp>
 #include <batteries/type_traits.hpp>
 
 #include <boost/range/iterator_range.hpp>
@@ -96,6 +97,18 @@ class DataReader
   void reset_flags()
   {
     at_end_ = false;
+  }
+
+  bool read_token(const batt::Slice<const u8>& token) noexcept
+  {
+    if (this->bytes_available() < token.size()) {
+      return false;
+    }
+    if (std::memcmp(this->unread_.begin(), token.begin(), token.size()) != 0) {
+      return false;
+    }
+    this->unread_.advance_begin(token.size());
+    return true;
   }
 
   template <typename T>
@@ -238,6 +251,11 @@ class DataReader
   ConstBuffer unread_data() const
   {
     return ConstBuffer{this->unread_.begin(), this->unread_.size()};
+  }
+
+  const u8* unread_begin() const
+  {
+    return this->unread_.begin();
   }
 
  private:

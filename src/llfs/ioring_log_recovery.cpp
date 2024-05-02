@@ -10,6 +10,7 @@
 //
 #include <llfs/data_reader.hpp>
 #include <llfs/logging.hpp>
+#include <llfs/slot_writer.hpp>
 
 #include <batteries/stream_util.hpp>
 
@@ -210,6 +211,12 @@ void IoRingLogRecovery::recover_block_data()
 //
 void IoRingLogRecovery::recover_flush_pos()
 {
+  const static usize kBeginAtomicTokenSize =  //
+      SlotWriter::WriterLock::begin_atomic_range_token().size();
+
+  const static usize kEndAtomicTokenSize =  //
+      SlotWriter::WriterLock::end_atomic_range_token().size();
+
   LLFS_VLOG(1) << "IoRingLogRecovery::recover_flush_pos()";
 
   // Start at the trim pos and step forward through the recovered data, slot by slot, to discover
@@ -250,6 +257,10 @@ void IoRingLogRecovery::recover_flush_pos()
 
   ConstBuffer committed_bytes = resize_buffer(this->ring_buffer_.get(slot_offset),
                                               committed_ranges.front().offset_range.size());
+
+  slot_offset_type confirmed_flush_pos = slot_offset;
+  bool inside_atomic_range = false;
+
   for (;;) {
     LLFS_VLOG_EVERY_N(2, kUpdateCadence)
         << " -- attempting to recover log entry at " << BATT_INSPECT(slot_offset);
@@ -286,13 +297,31 @@ void IoRingLogRecovery::recover_flush_pos()
                    << BATT_INSPECT(slot_size);
       break;
     }
+
+    // Check for control token; this indicates the beginning or end of an atomic slot range.
+    //
+    if (*slot_body_size == 0) {
+      if (slot_header_size == kBeginAtomicTokenSize) {
+        inside_atomic_range = true;
+      } else if (slot_header_size == kEndAtomicTokenSize) {
+        inside_atomic_range = false;
+      }
+    }
+
     committed_bytes += slot_size;
     slot_offset += slot_size;
+
+    // If inside an atomic slot range, we hold off on updating the confirmed_flush_pos, just in case
+    // the flushed data is cut off before the end of the atomic range.
+    //
+    if (!inside_atomic_range) {
+      confirmed_flush_pos = slot_offset;
+    }
   }
 
   LLFS_VLOG(1) << " -- Slot scan complete;" << BATT_INSPECT(slot_offset);
 
-  this->flush_pos_ = slot_offset;
+  this->flush_pos_ = confirmed_flush_pos;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

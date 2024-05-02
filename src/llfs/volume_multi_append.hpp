@@ -33,10 +33,21 @@ class VolumeMultiAppend
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  u64 calculate_grant_size(u64 slots_total_size) const noexcept
+  {
+    return slots_total_size + (/*begin_atomic_range token size=*/3) +
+           (/*end_atomic_range token size=*/2);
+  }
+
   template <typename T>
   StatusOr<SlotRange> append(const T& payload, const batt::Grant& grant) noexcept
   {
     BATT_CHECK(!this->completed_);
+
+    if (this->first_) {
+      this->first_ = false;
+      BATT_REQUIRE_OK(this->op_.begin_atomic_range(grant));
+    }
 
     llfs::PackObjectAsRawData<const T&> packed_obj_as_raw{payload};
 
@@ -51,6 +62,11 @@ class VolumeMultiAppend
   StatusOr<SlotRange> commit(batt::Grant& grant) noexcept
   {
     BATT_CHECK(!this->completed_);
+
+    if (!this->first_) {
+      BATT_REQUIRE_OK(this->op_.end_atomic_range(grant));
+    }
+
     this->completed_ = true;
     return this->op_.finalize(grant);
   }
@@ -63,6 +79,7 @@ class VolumeMultiAppend
 
  private:
   TypedSlotWriter<VolumeEventVariant>::MultiAppend op_;
+  bool first_ = true;
   bool completed_ = false;
 };
 

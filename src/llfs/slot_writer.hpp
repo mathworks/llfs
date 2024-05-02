@@ -29,79 +29,9 @@ struct PackedRawData;
 class SlotWriter
 {
  public:
-  class Append;
+  using Self = SlotWriter;
 
-  class WriterLock
-  {
-   public:
-    /** \brief Acquires an exclusive lock on writing to the log managed by `slot_writer`, preparing
-     * to write new slot data.  This lock is released when the WriterLock object goes out of scope.
-     */
-    explicit WriterLock(SlotWriter& slot_writer) noexcept;
-
-    /** \brief WriterLock is not copyable.
-     */
-    WriterLock(const WriterLock&) = delete;
-
-    /** \brief WriterLock is not copyable.
-     */
-    WriterLock& operator=(const WriterLock&) = delete;
-
-    //----- --- -- -  -  -   -
-
-    /** \brief Verifies that the passed grant can accomodate a new slot with the passed payload size
-     * (in addition to any currently deferred slots), then allocates space in the log and writes a
-     * header for the new slot, returning a mutable buffer for _just_ the payload portion.
-     */
-    StatusOr<MutableBuffer> prepare(usize slot_payload_size,
-                                    const batt::Grant& caller_grant) noexcept;
-
-    /** \brief Defers the currently prepared slot for later commit.
-     *
-     * Future calls to prepare will return a memory segment after the deferred commit slots.
-     */
-    SlotRange defer_commit() noexcept;
-
-    /** \brief Commits the current prepared slot and any deferred commit slots to the log.
-     *
-     * Transfers the size of the committed data from `caller_grant` to the SlotWriter's in_use_
-     * grant.
-     *
-     * \return the log slot range of the committed data.
-     */
-    StatusOr<SlotRange> commit(batt::Grant& caller_grant) noexcept;
-
-    /** \brief Reverts the effect of the most recent call to prepare after the most recent call to
-     * defer_commit or commit.
-     */
-    void cancel_prepare() noexcept;
-
-    /** \brief Equivalent to this->cancel_prepare() plus clearing out all deferred commits.  Rolls
-     * back everything since the most recent call to this->commit().
-     */
-    void cancel_all() noexcept;
-
-    //----- --- -- -  -  -   -
-   private:
-    /** \brief The SlotWriter object passed in at construction time.
-     */
-    SlotWriter& slot_writer_;
-
-    /** \brief Lock on the SlotWriter's LogDevice::Writer.
-     */
-    batt::ScopedLock<LogDevice::Writer*> writer_lock_;
-
-    /** \brief The size (bytes) of the most recently prepared slot buffer (allocated via
-     * this->prepare).  This size includes the varint slot header (the payload size), so it is
-     * always larger than the `slot_payload_size` arg passed to `this->prepare()`.
-     */
-    usize prepare_size_ = 0;
-
-    /** \brief The size (bytes) of all slots that have been fully packed and are ready for commit
-     * the next time `this->commit()` is called.
-     */
-    usize deferred_commit_size_ = 0;
-  };
+  class WriterLock;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -201,6 +131,104 @@ class SlotWriter
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
+class SlotWriter::WriterLock
+{
+ public:
+  using Self = WriterLock;
+
+  static Slice<const u8> begin_atomic_range_token() noexcept;
+  static Slice<const u8> end_atomic_range_token() noexcept;
+
+  //----- --- -- -  -  -   -
+
+  /** \brief Acquires an exclusive lock on writing to the log managed by `slot_writer`, preparing
+   * to write new slot data.  This lock is released when the WriterLock object goes out of scope.
+   */
+  explicit WriterLock(SlotWriter& slot_writer) noexcept;
+
+  /** \brief WriterLock is not copyable.
+   */
+  WriterLock(const WriterLock&) = delete;
+
+  /** \brief WriterLock is not copyable.
+   */
+  WriterLock& operator=(const WriterLock&) = delete;
+
+  //----- --- -- -  -  -   -
+
+  /** \brief Appends special token to the log to indicate the start of a sequence of slots that
+   * must commit/recover atomically.
+   *
+   * The token commit is deferred, requiring later calls to end_atomic_range and commit.
+   */
+  Status begin_atomic_range(const batt::Grant& caller_grant) noexcept;
+
+  /** \brief Appends special sequence to the log indicating the end of the current atomic range.
+   *
+   * The token commit is deferred, requiring a later call to commit.
+   */
+  Status end_atomic_range(const batt::Grant& caller_grant) noexcept;
+
+  /** \brief Verifies that the passed grant can accomodate a new slot with the passed payload size
+   * (in addition to any currently deferred slots), then allocates space in the log and writes a
+   * header for the new slot, returning a mutable buffer for _just_ the payload portion.
+   */
+  StatusOr<MutableBuffer> prepare(usize slot_payload_size,
+                                  const batt::Grant& caller_grant) noexcept;
+
+  /** \brief Defers the currently prepared slot for later commit.
+   *
+   * Future calls to prepare will return a memory segment after the deferred commit slots.
+   */
+  SlotRange defer_commit() noexcept;
+
+  /** \brief Commits the current prepared slot and any deferred commit slots to the log.
+   *
+   * Transfers the size of the committed data from `caller_grant` to the SlotWriter's in_use_
+   * grant.
+   *
+   * \return the log slot range of the committed data.
+   */
+  StatusOr<SlotRange> commit(batt::Grant& caller_grant) noexcept;
+
+  /** \brief Reverts the effect of the most recent call to prepare after the most recent call to
+   * defer_commit or commit.
+   */
+  void cancel_prepare() noexcept;
+
+  /** \brief Equivalent to this->cancel_prepare() plus clearing out all deferred commits.  Rolls
+   * back everything since the most recent call to this->commit().
+   */
+  void cancel_all() noexcept;
+
+  //----- --- -- -  -  -   -
+ private:
+  Status append_token_impl(const Slice<const u8>& token, const batt::Grant& caller_grant) noexcept;
+
+  //----- --- -- -  -  -   -
+
+  /** \brief The SlotWriter object passed in at construction time.
+   */
+  SlotWriter& slot_writer_;
+
+  /** \brief Lock on the SlotWriter's LogDevice::Writer.
+   */
+  batt::ScopedLock<LogDevice::Writer*> writer_lock_;
+
+  /** \brief The size (bytes) of the most recently prepared slot buffer (allocated via
+   * this->prepare).  This size includes the varint slot header (the payload size), so it is
+   * always larger than the `slot_payload_size` arg passed to `this->prepare()`.
+   */
+  usize prepare_size_ = 0;
+
+  /** \brief The size (bytes) of all slots that have been fully packed and are ready for commit
+   * the next time `this->commit()` is called.
+   */
+  usize deferred_commit_size_ = 0;
+};
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+
 inline constexpr usize packed_sizeof_slot_with_payload_size(usize payload_size)
 {
   const usize slot_body_size = sizeof(PackedVariant<>) + payload_size;
@@ -225,7 +253,6 @@ template <typename... Ts>
 class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
 {
  public:
-  using Append = typename SlotWriter::Append;
   using SlotWriter::SlotWriter;
 
   struct NullPostCommitFn {
@@ -254,6 +281,16 @@ class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
     MultiAppend& operator=(const MultiAppend&) = delete;
 
     //----- --- -- -  -  -   -
+
+    Status begin_atomic_range(const batt::Grant& caller_grant) noexcept
+    {
+      return this->writer_lock_.begin_atomic_range(caller_grant);
+    }
+
+    Status end_atomic_range(const batt::Grant& caller_grant) noexcept
+    {
+      return this->writer_lock_.end_atomic_range(caller_grant);
+    }
 
     /** \brief Packs a single slot into the log device buffer.  Does not commit the slot; all slots
      * are committed atomically when this->finalize() is called.

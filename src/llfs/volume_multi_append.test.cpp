@@ -24,7 +24,7 @@ using namespace llfs::constants;
 
 using llfs::StatusOr;
 
-TEST(VolumeMultiAppendTest_DISABLED, SimTest)
+TEST(VolumeMultiAppendTest, DISABLED_SimTest)
 {
   for (u32 seed = 0; seed < 100; ++seed) {
     for (usize n_before_crash = 1; n_before_crash < 20; ++n_before_crash) {

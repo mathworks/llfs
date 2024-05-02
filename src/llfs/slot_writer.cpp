@@ -59,11 +59,66 @@ void SlotWriter::halt()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+/*static*/ Slice<const u8> SlotWriter::WriterLock::begin_atomic_range_token() noexcept
+{
+  const static std::array<u8, 3> token_ = {0b10000000, 0b10000000, 0b00000000};
+  return as_const_slice(token_);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*static*/ Slice<const u8> SlotWriter::WriterLock::end_atomic_range_token() noexcept
+{
+  const static std::array<u8, 2> token_ = {0b10000000, 0b00000000};
+  return as_const_slice(token_);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 /*explicit*/ SlotWriter::WriterLock::WriterLock(SlotWriter& slot_writer) noexcept
     : slot_writer_{slot_writer}
     , writer_lock_{this->slot_writer_.log_writer_}  // Lock the LogDevice::Writer mutex
 {
   BATT_CHECK_NOT_NULLPTR(*this->writer_lock_);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status SlotWriter::WriterLock::append_token_impl(const Slice<const u8>& token,
+                                                 const batt::Grant& caller_grant) noexcept
+{
+  BATT_CHECK_EQ(this->prepare_size_, 0u);
+
+  const usize prepare_size = this->deferred_commit_size_ + token.size();
+
+  if (caller_grant.size() < prepare_size) {
+    return ::llfs::make_status(StatusCode::kSlotGrantTooSmall);
+  }
+
+  BATT_ASSIGN_OK_RESULT(MutableBuffer buffer,
+                        (*this->writer_lock_)->prepare(prepare_size, /*head_room=*/0));
+
+  buffer += this->deferred_commit_size_;
+
+  std::memcpy(buffer.data(), token.begin(), token.size());
+
+  this->deferred_commit_size_ += token.size();
+
+  return batt::OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status SlotWriter::WriterLock::begin_atomic_range(const batt::Grant& caller_grant) noexcept
+{
+  return this->append_token_impl(Self::begin_atomic_range_token(), caller_grant);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status SlotWriter::WriterLock::end_atomic_range(const batt::Grant& caller_grant) noexcept
+{
+  return this->append_token_impl(Self::end_atomic_range_token(), caller_grant);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

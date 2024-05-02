@@ -104,17 +104,19 @@ StatusOr<SlotParse> SlotReader::parse_next(batt::WaitForResource wait_for_data)
     //
     const usize bytes_available_before = data_reader.bytes_available();
 
+    if (bytes_available_before != 0) {
+      BATT_CHECK_NE(*data_reader.unread_begin(), 0u)
+          << BATT_INSPECT(bytes_available_before) << BATT_INSPECT(current_slot)
+          << BATT_INSPECT(data.size()) << BATT_INSPECT(current_slot + data.size())
+          << BATT_INSPECT(this->slots_parsed_count_);
+    }
+
     Optional<u64> slot_body_size = data_reader.read_varint();
     if (!slot_body_size) {
       min_bytes_needed = data.size() + 1;
       continue;
     }
     const usize bytes_available_after = data_reader.bytes_available();
-
-    BATT_CHECK_NE(*slot_body_size, 0u)
-        << BATT_INSPECT(bytes_available_before) << BATT_INSPECT(bytes_available_after)
-        << BATT_INSPECT(current_slot) << BATT_INSPECT(data.size())
-        << BATT_INSPECT(current_slot + data.size()) << BATT_INSPECT(this->slots_parsed_count_);
 
     // Calculate the header (varint) size from bytes available before and after.
     //
@@ -136,7 +138,7 @@ StatusOr<SlotParse> SlotReader::parse_next(batt::WaitForResource wait_for_data)
     // Initialize the slot_range according to the log reader's offset attribute; we will update
     // `upper_bound` inside the variant visitor passed to `DataReader::read_variant`.
     //
-    return SlotParse{
+    auto slot_parse = SlotParse{
         .offset =
             SlotRange{
                 .lower_bound = current_slot,
@@ -145,6 +147,13 @@ StatusOr<SlotParse> SlotReader::parse_next(batt::WaitForResource wait_for_data)
         .body = slot_body,
         .total_grant_spent = slot_size,
     };
+
+    if (slot_parse.body.size() == 0) {
+      this->consume_slot(slot_parse);
+      continue;
+    }
+
+    return slot_parse;
   }
 }
 

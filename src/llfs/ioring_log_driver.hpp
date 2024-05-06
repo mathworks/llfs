@@ -18,6 +18,8 @@
 #include <llfs/basic_log_storage_driver.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/ioring_log_config.hpp>
+#include <llfs/ioring_log_device_storage.hpp>
+#include <llfs/ioring_log_driver_fwd.hpp>
 #include <llfs/ioring_log_driver_options.hpp>
 #include <llfs/ioring_log_flush_op.hpp>
 #include <llfs/log_block_calculator.hpp>
@@ -40,14 +42,11 @@ BATT_UNSUPPRESS()
 
 namespace llfs {
 
-template <template <typename> class FlushOpImpl>
-class BasicIoRingLogDriver;
-
-using IoRingLogDriver = BasicIoRingLogDriver<BasicIoRingLogFlushOp>;
+using IoRingLogDriver = BasicIoRingLogDriver<BasicIoRingLogFlushOp, DefaultIoRingLogDeviceStorage>;
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-template <template <typename> class FlushOpImpl>
+template <template <typename> class FlushOpImpl, typename StorageT>
 class BasicIoRingLogDriver
 {
  public:
@@ -71,9 +70,10 @@ class BasicIoRingLogDriver
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  explicit BasicIoRingLogDriver(LogStorageDriverContext& context,
-                                batt::TaskScheduler& task_scheduler, int fd,
-                                const IoRingLogConfig& config,
+  explicit BasicIoRingLogDriver(LogStorageDriverContext& context,     //
+                                batt::TaskScheduler& task_scheduler,  //
+                                StorageT&& storage,                   //
+                                const IoRingLogConfig& config,        //
                                 const IoRingLogDriverOptions& options) noexcept;
 
   ~BasicIoRingLogDriver() noexcept;
@@ -135,7 +135,7 @@ class BasicIoRingLogDriver
   {
     this->halt();
     this->join();
-    return this->file_.close();
+    return this->storage_.close();
   }
 
   void halt();
@@ -177,9 +177,9 @@ class BasicIoRingLogDriver
   }
 
   template <typename Handler>
-  void async_write_some(i64 log_offset, const ConstBuffer& data, i32 buf_index, Handler&& handler)
+  void async_write_some(i64 file_offset, const ConstBuffer& data, i32 buf_index, Handler&& handler)
   {
-    this->file_.async_write_some_fixed(log_offset, data, buf_index, BATT_FORWARD(handler));
+    this->storage_.async_write_some_fixed(file_offset, data, buf_index, BATT_FORWARD(handler));
   }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -278,10 +278,9 @@ class BasicIoRingLogDriver
   //
   const LogBlockCalculator calculate_;
 
-  // The IoRing and file used to do log flushing.
+  // Interface to the low-level storage media used to save log data.
   //
-  IoRing ioring_;
-  IoRing::File file_;
+  StorageT storage_;
 
   // Set to true once when halt is first called; used to detect unexpected/premature exit of
   // background tasks.

@@ -6,17 +6,21 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-#include <llfs/ioring_log_driver.hpp>
-//
+#pragma once
+#ifndef LLFS_IORING_LOG_DRIVER_FWD_HPP
+#define LLFS_IORING_LOG_DRIVER_FWD_HPP
 
-#ifndef LLFS_DISABLE_IO_URING
-
-#include <llfs/ioring_log_driver.ipp>
+#include <llfs/config.hpp>
 
 namespace llfs {
 
-template class BasicIoRingLogDriver<BasicIoRingLogFlushOp, DefaultIoRingLogDeviceStorage>;
+#ifndef LLFS_DISABLE_IO_URING
 
-}  // namespace llfs
+template <template <typename> class FlushOpImpl, typename StorageT>
+class BasicIoRingLogDriver;
 
 #endif  // LLFS_DISABLE_IO_URING
+
+}  //namespace llfs
+
+#endif  // LLFS_IORING_LOG_DRIVER_FWD_HPP

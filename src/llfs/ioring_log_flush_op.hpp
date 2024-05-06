@@ -17,6 +17,8 @@
 #include <llfs/data_layout.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/ioring.hpp>
+#include <llfs/ioring_log_device_storage.hpp>
+#include <llfs/ioring_log_driver_fwd.hpp>
 #include <llfs/log_block_calculator.hpp>
 #include <llfs/metrics.hpp>
 #include <llfs/packed_log_page_buffer.hpp>
@@ -35,10 +37,8 @@ namespace llfs {
 template <typename DriverImpl>
 class BasicIoRingLogFlushOp;
 
-template <template <typename> class FlushOpImpl>
-class BasicIoRingLogDriver;
-
-using IoRingLogFlushOp = BasicIoRingLogFlushOp<BasicIoRingLogDriver<BasicIoRingLogFlushOp>>;
+using IoRingLogFlushOp = BasicIoRingLogFlushOp<
+    BasicIoRingLogDriver<BasicIoRingLogFlushOp, DefaultIoRingLogDeviceStorage>>;
 
 template <typename DriverImpl>
 class BasicIoRingLogFlushOp

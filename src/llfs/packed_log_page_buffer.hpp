@@ -10,12 +10,15 @@
 #ifndef LLFS_PACKED_LOG_PAGE_BUFFER_HPP
 #define LLFS_PACKED_LOG_PAGE_BUFFER_HPP
 
-#include <llfs/buffer.hpp>
 #include <llfs/config.hpp>
+//
+#include <llfs/buffer.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/packed_log_page_header.hpp>
 
 #include <batteries/static_assert.hpp>
+
+#include <type_traits>
 
 namespace llfs {
 

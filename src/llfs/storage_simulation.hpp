@@ -18,6 +18,7 @@
 #include <llfs/page_cache.hpp>
 #include <llfs/page_size.hpp>
 #include <llfs/simulated_log_device.hpp>
+#include <llfs/simulated_log_device_storage.hpp>
 #include <llfs/simulated_page_device.hpp>
 #include <llfs/slot.hpp>
 #include <llfs/volume.hpp>
@@ -69,6 +70,11 @@ class StorageSimulation
   ~StorageSimulation() noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  void set_low_level_log_devices(bool on) noexcept
+  {
+    this->low_level_log_devices_ = on;
+  }
 
   /** \brief Schedules the passed function (signature: void()) to run at some future point in the
    * simulation.
@@ -170,6 +176,13 @@ class StorageSimulation
    * operations will not affect the simulated "durable" contents of the devices.
    */
   void crash_and_recover();
+
+  /** \brief Creates/accesses a simulated LogDeviceStorage object.
+   *
+   * \param name A unique name used to identify the LogDevice storage in the context of this
+   * simulation
+   */
+  SimulatedLogDeviceStorage get_log_device_storage(const std::string& name, Optional<u64> capacity);
 
   /** \brief Creates/accesses a simulated LogDevice.
    *
@@ -289,6 +302,12 @@ class StorageSimulation
   //
   std::unordered_map<std::string, std::shared_ptr<SimulatedLogDevice::Impl>> log_devices_;
 
+  // The set of all simulated log device storage (low-level), indexed by name string (passed in by
+  // the test code).
+  //
+  std::unordered_map<std::string, std::shared_ptr<SimulatedLogDeviceStorage::DurableState>>
+      log_storage_;
+
   // The set of all simulated page devices, indexed by name string (passed in by the test code).
   //
   std::unordered_map<std::string, std::shared_ptr<SimulatedPageDevice::Impl>> page_devices_;
@@ -305,6 +324,10 @@ class StorageSimulation
   // Page readers that should be registered with PageCache instances on each recovery.
   //
   std::unordered_map<PageLayoutId, PageCache::PageReaderFromFile, PageLayoutId::Hash> page_readers_;
+
+  // Are we in low-level LogDevice simulation mode?
+  //
+  bool low_level_log_devices_ = false;
 };
 
 }  //namespace llfs

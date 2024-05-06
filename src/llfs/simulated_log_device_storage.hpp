@@ -12,6 +12,7 @@
 
 #include <llfs/config.hpp>
 //
+#include <llfs/ioring_log_config.hpp>
 #include <llfs/packed_log_page_buffer.hpp>
 #include <llfs/simulated_storage_object.hpp>
 #include <llfs/status.hpp>
@@ -44,7 +45,9 @@ class SimulatedLogDeviceStorage
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-    explicit DurableState(StorageSimulation& simulation) noexcept : simulation_{simulation}
+    explicit DurableState(StorageSimulation& simulation, const IoRingLogConfig& config) noexcept
+        : simulation_{simulation}
+        , config_{config}
     {
     }
 
@@ -53,6 +56,11 @@ class SimulatedLogDeviceStorage
     StorageSimulation& simulation() noexcept
     {
       return this->simulation_;
+    }
+
+    const IoRingLogConfig& config() const noexcept
+    {
+      return this->config_;
     }
 
     /** \brief Simulates a process termination/restart by removing all non-flushed state.
@@ -110,6 +118,7 @@ class SimulatedLogDeviceStorage
 
    private:
     StorageSimulation& simulation_;
+    const IoRingLogConfig config_;
     batt::Mutex<Impl> impl_;
   };
 
@@ -119,6 +128,11 @@ class SimulatedLogDeviceStorage
     explicit EphemeralState(std::shared_ptr<DurableState>&& durable_state) noexcept;
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+    const IoRingLogConfig& config() const noexcept
+    {
+      return this->durable_state_->config();
+    }
 
     Status close()
     {
@@ -258,6 +272,59 @@ class SimulatedLogDeviceStorage
     std::atomic<bool> stopped_{false};
   };
 
+  class RawBlockFileImpl : public RawBlockFile
+  {
+   public:
+    explicit RawBlockFileImpl(std::shared_ptr<DurableState>&& durable_state) noexcept;
+
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+    StatusOr<i64> write_some(i64 offset, const ConstBuffer& buffer_arg) override
+    {
+      ConstBuffer buffer = buffer_arg;
+      i64 n_written = 0;
+
+      while (buffer.size() > 0) {
+        BATT_REQUIRE_OK(this->durable_state_->write_block(
+            this->creation_step_, offset,
+            ConstBuffer{buffer.data(), std::min(buffer.size(), sizeof(AlignedBlock))}));
+        offset += sizeof(AlignedBlock);
+        buffer += sizeof(AlignedBlock);
+        n_written += sizeof(AlignedBlock);
+      }
+
+      return n_written;
+    }
+
+    StatusOr<i64> read_some(i64 offset, const MutableBuffer& buffer_arg) override
+    {
+      MutableBuffer buffer = buffer_arg;
+      i64 n_read = 0;
+
+      while (buffer.size() > 0) {
+        BATT_REQUIRE_OK(this->durable_state_->read_block(
+            this->creation_step_, offset,
+            MutableBuffer{buffer.data(), std::min(buffer.size(), sizeof(AlignedBlock))}));
+        offset += sizeof(AlignedBlock);
+        buffer += sizeof(AlignedBlock);
+        n_read += sizeof(AlignedBlock);
+      }
+
+      return n_read;
+    }
+
+    StatusOr<i64> get_size() override
+    {
+      return Status{batt::StatusCode::kUnimplemented};
+    }
+
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+   private:
+    const std::shared_ptr<DurableState> durable_state_;
+
+    const u64 creation_step_;
+  };
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   explicit SimulatedLogDeviceStorage(std::shared_ptr<DurableState>&& durable_state) noexcept
@@ -272,6 +339,11 @@ class SimulatedLogDeviceStorage
   SimulatedLogDeviceStorage& operator=(SimulatedLogDeviceStorage&&) = default;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  const IoRingLogConfig& config() const noexcept
+  {
+    return this->impl_->config();
+  }
 
   Status register_fd()
   {

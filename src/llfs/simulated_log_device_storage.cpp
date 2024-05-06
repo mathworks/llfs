@@ -8,9 +8,17 @@
 
 #include <llfs/simulated_log_device_storage.hpp>
 //
+#include <llfs/ioring_log_driver.hpp>
+#include <llfs/ioring_log_driver.ipp>
+#include <llfs/ioring_log_flush_op.hpp>
+#include <llfs/ioring_log_flush_op.ipp>
 #include <llfs/storage_simulation.hpp>
 
 namespace llfs {
+
+template class BasicIoRingLogDriver<BasicIoRingLogFlushOp, SimulatedLogDeviceStorage>;
+template class BasicIoRingLogFlushOp<
+    BasicIoRingLogDriver<BasicIoRingLogFlushOp, SimulatedLogDeviceStorage>>;
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
@@ -78,6 +86,15 @@ void SimulatedLogDeviceStorage::EphemeralState::async_write_some_fixed(
 void SimulatedLogDeviceStorage::EphemeralState::simulation_post(std::function<void()>&& fn)
 {
   this->simulation_.post(std::move(fn));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*explicit*/ SimulatedLogDeviceStorage::RawBlockFileImpl::RawBlockFileImpl(
+    std::shared_ptr<DurableState>&& durable_state) noexcept
+    : durable_state_{std::move(durable_state)}
+    , creation_step_{this->durable_state_->simulation().current_step()}
+{
 }
 
 }  //namespace llfs

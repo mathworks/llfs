@@ -89,7 +89,7 @@ inline Status BasicIoRingLogDriver<FlushOpImpl, StorageT>::open()
   }
 
   StatusOr<usize> buffers_registered = this->storage_.register_buffers(
-      as_seq(this->flush_ops_) | seq::map([](const IoRingLogFlushOp& op) {
+      as_seq(this->flush_ops_) | seq::map([](const Self::FlushOp& op) {
         return op.get_buffer();
       }) |
       seq::boxed());

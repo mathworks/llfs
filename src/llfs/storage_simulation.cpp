@@ -9,6 +9,12 @@
 #include <llfs/storage_simulation.hpp>
 //
 
+#include <llfs/basic_ring_buffer_log_device.hpp>
+#include <llfs/confirm.hpp>
+#include <llfs/ioring_log_driver.hpp>
+#include <llfs/ioring_log_driver_options.hpp>
+#include <llfs/ioring_log_flush_op.hpp>
+#include <llfs/ioring_log_initializer.hpp>
 #include <llfs/simulated_log_device.hpp>
 #include <llfs/simulated_log_device_impl.hpp>
 #include <llfs/simulated_page_device.hpp>
@@ -167,30 +173,80 @@ void StorageSimulation::handle_events()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+SimulatedLogDeviceStorage StorageSimulation::get_log_device_storage(const std::string& name,
+                                                                    Optional<u64> capacity)
+{
+  auto iter = this->log_storage_.find(name);
+
+  // If we didn't find the named storage object, then create it.
+  //
+  if (iter == this->log_storage_.end()) {
+    BATT_CHECK(capacity.has_value());
+
+    auto config = IoRingLogConfig::from_logical_size(*capacity);
+    auto durable_state = std::make_shared<SimulatedLogDeviceStorage::DurableState>(*this, config);
+
+    Status init_status =
+        initialize_ioring_log_device(*std::make_unique<SimulatedLogDeviceStorage::RawBlockFileImpl>(
+                                         batt::make_copy(durable_state)),
+                                     config, ConfirmThisWillEraseAllMyData::kYes);
+
+    BATT_CHECK_OK(init_status);
+
+    iter = this->log_storage_.emplace(name, std::move(durable_state)).first;
+  }
+
+  BATT_CHECK_NE(iter, this->log_storage_.end());
+  BATT_CHECK_NOT_NULLPTR(iter->second);
+
+  return SimulatedLogDeviceStorage{batt::make_copy(iter->second)};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 std::unique_ptr<LogDevice> StorageSimulation::get_log_device(const std::string& name,
                                                              Optional<u64> capacity)
 {
-  auto iter = this->log_devices_.find(name);
+  if (this->low_level_log_devices_) {
+    SimulatedLogDeviceStorage storage = this->get_log_device_storage(name, capacity);
+    IoRingLogConfig config = storage.config();
+    auto options = IoRingLogDriverOptions::with_default_values();
+    options.name = name;
 
-  // If we didn't find the named device, then create it.
-  //
-  if (iter == this->log_devices_.end()) {
-    BATT_CHECK(capacity)
-        << "Must specify capacity if creating a simulated log device for the first time!";
+    using DriverT = BasicIoRingLogDriver<BasicIoRingLogFlushOp, SimulatedLogDeviceStorage>;
+    using LogDeviceT = BasicRingBufferLogDevice<DriverT>;
 
-    iter = this->log_devices_
-               .emplace(name, std::make_shared<SimulatedLogDevice::Impl>(*this, name, *capacity))
-               .first;
+    auto log_device =
+        std::make_unique<LogDeviceT>(RingBuffer::TempFile{.byte_size = config.logical_size},
+                                     this->task_scheduler(), std::move(storage), config, options);
+
+    BATT_CHECK_OK(log_device->open());
+
+    return log_device;
+
+  } else {
+    auto iter = this->log_devices_.find(name);
+
+    // If we didn't find the named device, then create it.
+    //
+    if (iter == this->log_devices_.end()) {
+      BATT_CHECK(capacity)
+          << "Must specify capacity if creating a simulated log device for the first time!";
+
+      iter = this->log_devices_
+                 .emplace(name, std::make_shared<SimulatedLogDevice::Impl>(*this, name, *capacity))
+                 .first;
+    }
+
+    // At this point we should have a valid entry.
+    //
+    BATT_CHECK_NE(iter, this->log_devices_.end());
+    BATT_CHECK_NOT_NULLPTR(iter->second);
+
+    LLFS_LOG_SIM_EVENT() << "creating SimulatedLogDevice " << batt::c_str_literal(name);
+
+    return std::make_unique<SimulatedLogDevice>(batt::make_copy(iter->second));
   }
-
-  // At this point we should have a valid entry.
-  //
-  BATT_CHECK_NE(iter, this->log_devices_.end());
-  BATT_CHECK_NOT_NULLPTR(iter->second);
-
-  LLFS_LOG_SIM_EVENT() << "creating SimulatedLogDevice " << batt::c_str_literal(name);
-
-  return std::make_unique<SimulatedLogDevice>(batt::make_copy(iter->second));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

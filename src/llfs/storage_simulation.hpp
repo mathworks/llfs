@@ -12,6 +12,8 @@
 
 #include <llfs/config.hpp>
 //
+#include <llfs/testing/test_config.hpp>
+
 #include <llfs/int_types.hpp>
 #include <llfs/log_device.hpp>
 #include <llfs/optional.hpp>
@@ -270,6 +272,10 @@ class StorageSimulation
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  // Reads test configuration from the environment.
+  //
+  testing::TestConfig test_config_;
+
   // Used to select event orderings, operations into which to inject failures, etc.
   //
   batt::StateMachineEntropySource entropy_source_;
@@ -334,7 +340,7 @@ class StorageSimulation
 
   // Are we in low-level LogDevice simulation mode?
   //
-  bool low_level_log_devices_ = true;
+  bool low_level_log_devices_ = this->test_config_.low_level_log_device_sim();
 
   // Set to true when we are inside the main simulation loop.
   //

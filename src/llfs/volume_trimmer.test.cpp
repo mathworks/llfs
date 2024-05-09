@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 
 #include <llfs/testing/fake_log_device.hpp>
+#include <llfs/testing/test_config.hpp>
 
 #include <llfs/log_device_snapshot.hpp>
 #include <llfs/pack_as_raw.hpp>
@@ -1031,9 +1032,9 @@ void VolumeTrimmerTest::TrimmerSession::terminate()
 //
 TEST_F(VolumeTrimmerTest, RandomizedTest)
 {
-  static const bool kExtraTesting =               //
-      batt::getenv_as<int>("LLFS_EXTRA_TESTING")  //
-          .value_or(0);
+  static llfs::testing::TestConfig test_config;
+
+  static const bool kExtraTesting = test_config.extra_testing();
 
   static const usize kNumSeeds =                   //
       batt::getenv_as<int>("LLFS_TEST_NUM_SEEDS")  //

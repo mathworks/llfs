@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 
 #include <llfs/testing/fake_log_device.hpp>
+#include <llfs/testing/test_config.hpp>
 
 #include <llfs/memory_log_device.hpp>
 #include <llfs/memory_page_cache.hpp>
@@ -1427,11 +1428,14 @@ class VolumeSimTest : public ::testing::Test
 //
 TEST_F(VolumeSimTest, RecoverySimulation)
 {
+  static const llfs::testing::TestConfig test_config;
+
   static const u32 kInitialSeed =  //
       batt::getenv_as<u32>("LLFS_VOLUME_SIM_SEED").value_or(987654321);
 
   static const u32 kNumSeeds =  //
-      batt::getenv_as<u32>("LLFS_VOLUME_SIM_COUNT").value_or(4096);
+      batt::getenv_as<u32>("LLFS_VOLUME_SIM_COUNT")
+          .value_or(test_config.extra_testing() ? 65536 : 4096);
 
   static const u32 kCpuPin =  //
       batt::getenv_as<u32>("LLFS_VOLUME_SIM_CPU").value_or(0);

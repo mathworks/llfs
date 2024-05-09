@@ -13,6 +13,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <llfs/testing/test_config.hpp>
 #include <llfs/testing/util.hpp>
 
 #include <llfs/data_packer.hpp>
@@ -115,7 +116,9 @@ struct PackedSSTableWrapper {
 
 TEST(Trie, Test)
 {
-  const bool extra_testing = batt::getenv_as<int>("LLFS_EXTRA_TESTING").value_or(0);
+  llfs::testing::TestConfig test_config;
+
+  const bool extra_testing = test_config.extra_testing();
 
   auto words = load_words();
 
@@ -369,7 +372,9 @@ inline bool operator<(const Rec& l, const Rec& r)
 
 TEST(Trie, VEBLayoutTest)
 {
-  const bool extra_testing = batt::getenv_as<int>("LLFS_EXTRA_TESTING").value_or(0);
+  llfs::testing::TestConfig test_config;
+
+  const bool extra_testing = test_config.extra_testing();
 
   std::cerr << "depth, avg(BFS), avg(vEB), avg(RND),";
   for (usize i = 0; i < 32; ++i) {

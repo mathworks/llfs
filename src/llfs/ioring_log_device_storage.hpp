@@ -14,20 +14,30 @@
 //
 #include <llfs/ioring.hpp>
 #include <llfs/ioring_file.hpp>
+#include <llfs/optional.hpp>
 #include <llfs/status.hpp>
+
+#include <batteries/async/watch.hpp>
+
+#include <thread>
 
 namespace llfs {
 
 class DefaultIoRingLogDeviceStorage
 {
  public:
-  static StatusOr<DefaultIoRingLogDeviceStorage> make_new(MaxQueueDepth entries, int fd)
-  {
-    BATT_ASSIGN_OK_RESULT(IoRing io_ring, IoRing::make_new(entries));
-    BATT_ASSIGN_OK_RESULT(IoRing::File file, IoRing::File::open(io_ring, fd));
+  /** \brief Creates a new IoRing with the specified queue depth, wraps it in a
+   * DefaultIoRingLogDeviceStorage, and returns the result.
+   *
+   * The returned object should be used by an IoRingLogDriver/IoRingLogDevice for the low-level file
+   * I/O.
+   */
+  static StatusOr<DefaultIoRingLogDeviceStorage> make_new(MaxQueueDepth entries, int fd);
 
-    return DefaultIoRingLogDeviceStorage{std::move(io_ring), std::move(file)};
-  }
+  /** \brief A background thread or task that runs the IoRing event loop for a given
+   * DefaultIoRingLogDeviceStorage object.
+   */
+  class EventLoopTask;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -65,11 +75,6 @@ class DefaultIoRingLogDeviceStorage
     this->io_ring_.on_work_finished();
   }
 
-  Status run_event_loop() const noexcept
-  {
-    return this->io_ring_.run();
-  }
-
   void reset_event_loop() const noexcept
   {
     this->io_ring_.reset();
@@ -93,23 +98,51 @@ class DefaultIoRingLogDeviceStorage
 
   template <typename Handler>
   void async_write_some_fixed(i64 file_offset, const ConstBuffer& data, i32 buf_index,
-                              Handler&& handler)
-  {
-    this->file_.async_write_some_fixed(file_offset, data, buf_index, BATT_FORWARD(handler));
-  }
+                              Handler&& handler);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
-  explicit DefaultIoRingLogDeviceStorage(IoRing&& io_ring, IoRing::File&& file) noexcept
-      : io_ring_{std::move(io_ring)}
-      , file_{std::move(file)}
-  {
-  }
+  explicit DefaultIoRingLogDeviceStorage(IoRing&& io_ring, IoRing::File&& file) noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   --
 
   IoRing io_ring_;
   IoRing::File file_;
+};
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+
+template <typename Handler>
+inline void DefaultIoRingLogDeviceStorage::async_write_some_fixed(i64 file_offset,
+                                                                  const ConstBuffer& data,
+                                                                  i32 buf_index, Handler&& handler)
+{
+  this->file_.async_write_some_fixed(file_offset, data, buf_index, BATT_FORWARD(handler));
+}
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+
+class DefaultIoRingLogDeviceStorage::EventLoopTask
+{
+ public:
+  explicit EventLoopTask(DefaultIoRingLogDeviceStorage& storage, std::string_view caller) noexcept;
+
+  EventLoopTask(const EventLoopTask&) = delete;
+  EventLoopTask& operator=(const EventLoopTask&) = delete;
+
+  ~EventLoopTask() noexcept;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  void join();
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+ private:
+  DefaultIoRingLogDeviceStorage& storage_;
+  std::string_view caller_;
+  std::thread thread_;
+  batt::Watch<bool> done_{false};
+  bool join_called_ = false;
 };
 
 }  //namespace llfs

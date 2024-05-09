@@ -75,6 +75,15 @@ class MockIoRingLogDriver
 
   MOCK_METHOD(void, poll_flush_state, (), ());
 
+  //----- --- -- -  -  -   -
+  // TODO [tastolfi 2024-05-08] implement this:
+  // MOCK_METHOD(void, report_flush_error, (Status), ());
+  //
+  void report_flush_error(Status)
+  {
+  }
+  //----- --- -- -  -  -   -
+
   MOCK_METHOD(void, update_init_upper_bound, (LogBlockCalculator::PhysicalBlockIndex), ());
 
   MOCK_METHOD(usize, get_init_upper_bound, (), (const));

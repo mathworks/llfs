@@ -194,7 +194,6 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
           StatusOr<slot_offset_type> sync_slot =
               arena.allocator().attach_user(uuid, /*user_slot=*/next_available_slot_offset);
 
-          BATT_UNTESTED_COND(!sync_slot.ok());
           BATT_REQUIRE_OK(sync_slot);
 
           Status sync_status = arena.allocator().sync(*sync_slot);

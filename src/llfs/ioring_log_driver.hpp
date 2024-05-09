@@ -110,7 +110,16 @@ class BasicIoRingLogDriver
 
   StatusOr<slot_offset_type> await_flush_pos(slot_offset_type flush_pos)
   {
-    return await_slot_offset(flush_pos, this->flush_pos_);
+    StatusOr<slot_offset_type> status_or = await_slot_offset(flush_pos, this->flush_pos_);
+
+    // If the flush_pos Watch has been closed, it may indicate there was an I/O error; check the
+    // LogStorageDriverContext and report any error status we find.
+    //
+    if (status_or.status() == batt::StatusCode::kClosed) {
+      BATT_REQUIRE_OK(this->context_.get_error_status());
+    }
+
+    return status_or;
   }
 
   //----
@@ -135,7 +144,7 @@ class BasicIoRingLogDriver
   {
     this->halt();
     this->join();
-    return this->storage_.close();
+    return this->storage_close_status_;
   }
 
   void halt();
@@ -168,6 +177,10 @@ class BasicIoRingLogDriver
   void wait_for_commit(slot_offset_type least_upper_bound);
 
   void poll_flush_state();
+
+  /** \brief Called by flush ops to report I/O failures.
+   */
+  void report_flush_error(Status error_status);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -281,6 +294,10 @@ class BasicIoRingLogDriver
   // Interface to the low-level storage media used to save log data.
   //
   StorageT storage_;
+
+  // The return value of this->storage_.close().
+  //
+  Status storage_close_status_ = batt::StatusCode::kUnknown;
 
   // Set to true once when halt is first called; used to detect unexpected/premature exit of
   // background tasks.

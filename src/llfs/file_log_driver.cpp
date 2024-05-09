@@ -342,8 +342,23 @@ StatusOr<slot_offset_type> FileLogDriver::await_commit_pos(slot_offset_type min_
 //
 Status FileLogDriver::close()
 {
-  this->shared_state_.halt();
+  this->halt();
+  this->join();
 
+  return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void FileLogDriver::halt()
+{
+  this->shared_state_.halt();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void FileLogDriver::join()
+{
   if (this->trim_task_) {
     this->trim_task_->join();
     this->trim_task_ = None;
@@ -352,8 +367,6 @@ Status FileLogDriver::close()
     this->flush_task_->join();
     this->flush_task_ = None;
   }
-
-  return OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

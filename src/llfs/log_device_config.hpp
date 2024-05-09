@@ -45,8 +45,7 @@ Status configure_storage_object(StorageFileBuilder::Transaction&,
 
 StatusOr<std::unique_ptr<IoRingLogDeviceFactory>> recover_storage_object(
     const batt::SharedPtr<StorageContext>& storage_context, const std::string& file_name,
-    const FileOffsetPtr<const PackedLogDeviceConfig&>& p_config,
-    const IoRingLogDriverOptions& options);
+    const FileOffsetPtr<const PackedLogDeviceConfig&>& p_config, IoRingLogDriverOptions options);
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
@@ -206,6 +205,17 @@ struct PackedLogDeviceConfig : PackedConfigSlotHeader {
   usize block_size() const
   {
     return kLogPageSize * this->pages_per_block();
+  }
+
+  StatusOr<usize> block_count() const
+  {
+    // If there isn't a whole number of blocks, then this config is corrupted/invalid.
+    //
+    if (this->physical_size % this->block_size()) {
+      return {batt::StatusCode::kDataLoss};
+    }
+
+    return this->physical_size / this->block_size();
   }
 };
 

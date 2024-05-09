@@ -78,9 +78,11 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
 //
 StatusOr<std::unique_ptr<IoRingLogDeviceFactory>> recover_storage_object(
     const batt::SharedPtr<StorageContext>& storage_context, const std::string& file_name,
-    const FileOffsetPtr<const PackedLogDeviceConfig&>& p_config,
-    const IoRingLogDriverOptions& options)
+    const FileOffsetPtr<const PackedLogDeviceConfig&>& p_config, IoRingLogDriverOptions options)
 {
+  BATT_ASSIGN_OK_RESULT(usize block_count, p_config->block_count());
+  options.limit_queue_depth(block_count);
+
   const int flags = O_DIRECT | O_SYNC | O_RDWR;
 
   int fd = batt::syscall_retry([&] {

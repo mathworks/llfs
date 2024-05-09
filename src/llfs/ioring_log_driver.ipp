@@ -47,6 +47,10 @@ inline BasicIoRingLogDriver<FlushOpImpl, StorageT>::BasicIoRingLogDriver(
 //                           initialize the next (empty) block header.
 
 {
+  BATT_CHECK_GE(this->calculate().block_count(), this->calculate().queue_depth())
+      << "Queue Depth (== number of concurrent flush ops) may not exceed the number of blocks in "
+         "the log; please use different options!";
+
   const auto metric_name = [this](const std::string_view& property) {
     return batt::to_string("IoRingLogDevice_", this->name_, "_", property);
   };
@@ -116,18 +120,14 @@ inline Status BasicIoRingLogDriver<FlushOpImpl, StorageT>::read_log_data()
 
   // The background thread to process IO completions.
   //
-  std::thread ioring_thread{[this] {
-    LLFS_VLOG(1) << "ioring_thread started";
-    this->storage_.run_event_loop().IgnoreError();
-    LLFS_VLOG(1) << "ioring_thread returning";
-  }};
+  typename StorageT::EventLoopTask event_loop{this->storage_, this->name_};
 
   // Shut down the ioring and reset when we leave this scope.
   //
   const auto stop_ioring_thread = batt::finally([&] {
     LLFS_VLOG(1) << "Stopping ioring (IoRingLogDriver::read_log_data)";
     this->storage_.on_work_finished();
-    ioring_thread.join();
+    event_loop.join();
     this->storage_.reset_event_loop();
   });
 
@@ -211,7 +211,8 @@ inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::halt()
 {
   const bool previously_halted = this->halt_requested_.exchange(true);
   if (!previously_halted) {
-    LLFS_VLOG(1) << "BasicIoRingLogDriver::halt() - (trim=" << this->trim_pos_.get_value()
+    LLFS_VLOG(1) << "BasicIoRingLogDriver::halt() - (driver=" << this->name_
+                 << " trim=" << this->trim_pos_.get_value()
                  << " flush=" << this->flush_pos_.get_value()
                  << " commit=" << this->commit_pos_.get_value() << ")";
 
@@ -285,24 +286,29 @@ inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::flush_task_main()
     this->poll_flush_state();
     this->poll_commit_state();
 
-    // Run the IoRing on a background thread so as not to tie up the executor on which this task
-    // is running.
+    // Process I/O events concurrently in the background so as not to tie up the executor on which
+    // this task is running.
     //
-    batt::Watch<bool> done{false};
-    std::thread io_thread{[this, &done] {
-      LLFS_VLOG(1) << "(driver=" << this->name_ << ") invoking IoRing::run()";
+    typename StorageT::EventLoopTask event_loop{this->storage_, this->name_};
 
-      Status io_status = this->storage_.run_event_loop();
-      if (!io_status.ok()) {
-        LLFS_LOG_WARNING() << "(driver=" << this->name_
-                           << ") IoRing::run() returned: " << io_status;
+    // Wait for the event loop to exit.
+    //
+    event_loop.join();
+
+    // Now it is safe to close the storage layer (i.e. direct I/O block file).
+    //
+    this->storage_close_status_ = this->storage_.close();
+
+    if (!this->storage_close_status_.ok()) {
+      if (default_ioring_quiet_failure_logging()) {
+        LLFS_VLOG(1) << "Failed to close storage for IoRingLogDevice;"
+                     << BATT_INSPECT_STR(this->name_) << BATT_INSPECT(this->storage_close_status_);
+      } else {
+        LLFS_LOG_WARNING() << "Failed to close storage for IoRingLogDevice;"
+                           << BATT_INSPECT_STR(this->name_)
+                           << BATT_INSPECT(this->storage_close_status_);
       }
-      done.set_value(true);
-    }};
-
-    auto done_status = done.await_equal(true);
-    BATT_CHECK_OK(done_status);
-    io_thread.join();
+    }
 
     return OkStatus();
   }();
@@ -326,11 +332,23 @@ inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::poll_flush_state()
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <template <typename> class FlushOpImpl, typename StorageT>
+inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::report_flush_error(Status error_status)
+{
+  this->context_.update_error_status(error_status);
+  this->flush_pos_.close();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <template <typename> class FlushOpImpl, typename StorageT>
 inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::poll_commit_state()
 {
+  LLFS_VLOG(2) << "(driver=" << this->name_ << ") poll_commit_state() entered";
+
   // Don't recursively re-enter `poll_commit_state`.
   //
   if (this->inside_poll_commit_state_) {
+    LLFS_VLOG(2) << "(driver=" << this->name_ << ") poll_commit_state() recursive call - returning";
     return;
   }
   this->inside_poll_commit_state_ = true;
@@ -341,6 +359,8 @@ inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::poll_commit_state()
   // Return immediately if there are no flush ops waiting for `commit_pos_` to advance.
   //
   if (this->waiting_for_commit_.empty()) {
+    LLFS_VLOG(2) << "(driver=" << this->name_
+                 << ") poll_commit_state() waiting_for_commit_ is empty - returning";
     return;
   }
 
@@ -363,8 +383,9 @@ inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::poll_commit_state()
       if (!this->commit_pos_listener_active_) {
         this->commit_pos_listener_active_ = true;
 
-        LLFS_VLOG(2) << "(driver=" << this->name_ << ")" << BATT_INSPECT(known_commit_pos)
-                     << BATT_INSPECT(next_wait_pos);
+        LLFS_VLOG(2) << "(driver=" << this->name_ << ") waiting on commit_pos;"
+                     << BATT_INSPECT(known_commit_pos) << BATT_INSPECT(next_wait_pos)
+                     << BATT_INSPECT(this->commit_pos_.is_closed());
 
         // If we break out of this loop before we completely drain `waiting_for_commit_`, we must
         // start another wait operation.
@@ -374,6 +395,8 @@ inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::poll_commit_state()
             make_custom_alloc_handler(         //
                 this->commit_handler_memory_,  //
                 [this](const StatusOr<slot_offset_type>& updated_commit_pos) {
+                  LLFS_VLOG(2) << "(driver=" << this->name_
+                               << ") commit_pos_ updated: " << updated_commit_pos;
                   this->handle_commit_pos_update(updated_commit_pos);
                 }));
       }
@@ -415,6 +438,9 @@ inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::handle_commit_pos_updat
   this->storage_.post_to_event_loop(make_custom_alloc_handler(  //
       this->commit_handler_memory_,                             //
       [this, updated_commit_pos](const StatusOr<i32>& post_result) {
+        LLFS_VLOG(2) << "(driver=" << this->name_ << ") handle_commit_pos_update("
+                     << updated_commit_pos << ")" << BATT_INSPECT(post_result);
+
         this->commit_pos_listener_active_ = false;
 
         if (!updated_commit_pos.ok() || !post_result.ok()) {
@@ -422,9 +448,6 @@ inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::handle_commit_pos_updat
           this->storage_.stop_event_loop();
           return;
         }
-
-        LLFS_VLOG(2) << "(driver=" << this->name_
-                     << ") commit_pos listener invoked: " << updated_commit_pos;
 
         this->poll_commit_state();
       }));

@@ -68,6 +68,20 @@ class IoRingLogDriverOptions
     return *this;
   }
 
+  /** \brief Sets queue depth to the smallest power of 2 that is not greater than `max_n` *and* not
+   * greater than the current value of queue depth.
+   *
+   * `max_n` must be at least 2.
+   */
+  Self& limit_queue_depth(usize max_n)
+  {
+    BATT_CHECK_GT(max_n, 1);
+    while (this->queue_depth() > max_n) {
+      --this->queue_depth_log2;
+    }
+    return *this;
+  }
+
   usize queue_depth_mask() const
   {
     return this->queue_depth() - 1;

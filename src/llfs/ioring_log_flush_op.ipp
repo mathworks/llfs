@@ -164,12 +164,11 @@ inline void BasicIoRingLogFlushOp<DriverImpl>::handle_commit(slot_offset_type kn
   PackedLogPageHeader* const header = this->get_header();
 
   const slot_offset_type known_flush_pos = header->slot_offset + header->commit_size;
+  const bool have_data_to_flush = slot_less_than(known_flush_pos, known_commit_pos);
 
   THIS_VLOG(1) << "handle_commit(known_commit_pos=" << known_commit_pos << ")"
                << BATT_INSPECT(header->slot_offset) << BATT_INSPECT(header->commit_size)
-               << BATT_INSPECT(known_flush_pos);
-
-  const bool have_data_to_flush = slot_less_than(known_flush_pos, known_commit_pos);
+               << BATT_INSPECT(known_flush_pos) << BATT_INSPECT(have_data_to_flush);
 
   // We should only suspend this op waiting for data if the current log block is known to be
   // initialized; otherwise we continue and flush whatever data we have (even if it is zero bytes)
@@ -563,11 +562,18 @@ inline bool BasicIoRingLogFlushOp<DriverImpl>::handle_errors(const StatusOr<i32>
       }
       return true;
     }
-    if (!this->quiet_failure_logging &&
-        result.status() != ::llfs::make_status(StatusCode::kIoRingShutDown)) {
+
+    const bool normal_shutdown_error =
+        (result.status() == ::llfs::make_status(StatusCode::kIoRingShutDown));
+
+    if (!this->quiet_failure_logging && !normal_shutdown_error) {
       LLFS_LOG_INFO() << "flush failed: " << result.status();
     } else {
       LLFS_VLOG(1) << "flush failed: " << result.status();
+    }
+
+    if (!normal_shutdown_error) {
+      this->driver_->report_flush_error(result.status());
     }
     return true;
   }

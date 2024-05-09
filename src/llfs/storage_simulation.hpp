@@ -107,7 +107,7 @@ class StorageSimulation
   /** \brief Forces the PageCache to be shut down; this will stop all background tasks associated
    * with the PageAllocators.
    */
-  void close_cache() noexcept;
+  void close_cache(bool main_fn_done = false) noexcept;
 
   /** \brief Returns a reference to a TaskScheduler that should be used for all Tasks involved in
    * the simulation.
@@ -164,6 +164,13 @@ class StorageSimulation
   void log_event(Args&&... args) const noexcept
   {
     LLFS_LOG_SIM_EVENT() << batt::to_string(BATT_FORWARD(args)...);
+  }
+
+  /** \brief Returns true iff the simulation is running.
+   */
+  bool is_running() const noexcept
+  {
+    return this->is_running_.load();
   }
 
   /** \brief Launches the "driver" (main) simulation task.  This is the entry point to the
@@ -259,7 +266,7 @@ class StorageSimulation
   /** \brief Step the simulation forward repeatedly until there are no pending handlers that can
    * run.
    */
-  void handle_events();
+  void handle_events(bool main_fn_done);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -327,7 +334,11 @@ class StorageSimulation
 
   // Are we in low-level LogDevice simulation mode?
   //
-  bool low_level_log_devices_ = false;
+  bool low_level_log_devices_ = true;
+
+  // Set to true when we are inside the main simulation loop.
+  //
+  std::atomic<bool> is_running_{false};
 };
 
 }  //namespace llfs

@@ -169,7 +169,7 @@ void PageAllocator::halt() noexcept
   this->stop_requested_.set_value(true);
 
   this->slot_writer_.halt();
-  this->log_device_->close().IgnoreError();
+  this->log_device_->halt();
   this->state_->halt();
   this->checkpoint_grant_.revoke();
 }
@@ -177,6 +177,7 @@ void PageAllocator::halt() noexcept
 void PageAllocator::join() noexcept
 {
   this->checkpoint_task_.join();
+  this->log_device_->join();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

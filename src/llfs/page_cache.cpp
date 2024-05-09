@@ -255,7 +255,7 @@ void PageCache::close()
 {
   for (const std::unique_ptr<PageDeviceEntry>& entry : this->page_devices_) {
     if (entry) {
-      entry->arena.close();
+      entry->arena.halt();
     }
   }
 }

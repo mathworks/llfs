@@ -13,6 +13,7 @@
 #include <llfs/basic_log_storage_driver.hpp>
 #include <llfs/basic_log_storage_reader.hpp>
 #include <llfs/log_device.hpp>
+#include <llfs/log_storage_driver_context.hpp>
 #include <llfs/ring_buffer.hpp>
 
 namespace llfs {
@@ -61,6 +62,16 @@ class BasicRingBufferLogDevice
   }
 
   Status close() override;
+
+  void halt() override
+  {
+    this->driver_.halt();
+  }
+
+  void join() override
+  {
+    this->driver_.join();
+  }
 
   Status sync(LogReadMode mode, SlotUpperBoundAt event) override;
 

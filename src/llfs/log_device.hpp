@@ -82,46 +82,87 @@ class LogDevice
 
   virtual ~LogDevice() = default;
 
-  // The maximum capacity in bytes of this log device.
-  //
+  /** \brief The maximum capacity in bytes of this log device.
+   */
   virtual u64 capacity() const = 0;
 
-  // The current size of all committed data in the log.
-  //
+  /** \brief The current size of all committed data in the log (commit_pos - trim_pos).
+   */
   virtual u64 size() const = 0;
 
-  // Convenience; the current available space.
-  //
+  /** \brief Convenience; the current available space (this->capacity() - this->size()).
+   */
   virtual u64 space() const
   {
     return this->capacity() - this->size();
   }
 
-  // Trim the log at `slot_lower_bound`.  May not take effect immediately if there are active
-  // Readers whose slot_offset is below `slot_lower_bound`.
-  //
+  /** \brief Trims the log at `slot_lower_bound`.
+   *
+   * May not take effect immediately if there are active Readers whose slot_offset is below
+   * `slot_lower_bound`, and/or if the implementation uses asynchronous data flushing.
+   */
   virtual Status trim(slot_offset_type slot_lower_bound) = 0;
 
-  // Create a new reader.
-  //
+  /** \brief Creates a new reader.
+   *
+   * If `slot_lower_bound` is None, then the current trim position is assumed.
+   *
+   * The `mode` arg determines what part of the log's contents can be seen by the returned reader.
+   * If mode is LogReadMode::kDurable, then the reader will only see up to the flush position.  If
+   * it is LogReadMode::kSpeculative, then the reader will see up to the commit position.  If
+   * LogReadMode::kInconsistent is used, then there is no guarantee provided to the caller as far as
+   * what data will be readable; the implementation should make a best effort attempt to include as
+   * much as it can (up to the commit position), while offering as little overhead as possible. What
+   * `kInconsistent` means will vary by implementation.
+   *
+   * The returned Reader will see a "live" view of the LogDevice as it is appended and trimmed.
+   */
   virtual std::unique_ptr<LogDevice::Reader> new_reader(Optional<slot_offset_type> slot_lower_bound,
                                                         LogReadMode mode) = 0;
 
-  // Returns the current active slot range for the log.  `mode` determines whether the upper bound
-  // will be the flushed or committed upper bound.
-  //
+  /** \brief Returns the current active slot range for the log.  `mode` determines whether the upper
+   * bound will be the flushed or committed upper bound.
+   */
   virtual SlotRange slot_range(LogReadMode mode) = 0;
 
-  // There can be only one Writer at a time.
-  //
+  /** \brief Returns the Writer associated with this LogDevice.
+   *
+   * There can only be one thread at a time using the Writer instance returned by this function.
+   */
   virtual LogDevice::Writer& writer() = 0;
 
+  /** \brief Performs a synchronous shutdown of the LogDevice, including all resources it is using
+   * and all background tasks it might be employing.
+   */
   virtual Status close() = 0;
 
+  /** \brief Initiates shutdown of the LogDevice, all resources it uses, and all background tasks it
+   * is running.
+   *
+   * This function may return before shutdown of the LogDevice has finished.  To block awaiting the
+   * completion of shutdown, use LogDevice::join().
+   */
+  virtual void halt()
+  {
+  }
+
+  /** \brief Blocks the caller until the LogDevice has been completely shut down.
+   *
+   * This function does not initiate the shutdown; see LogDevice::halt().
+   */
+  virtual void join()
+  {
+  }
+
+  /** \brief Blocks the caller until the specified event has happened; the upper bound implied in
+   * `event` is either the flush position (if mode is kDurable) or commit position (if mode is
+   * kSpeculative).
+   */
   virtual Status sync(LogReadMode mode, SlotUpperBoundAt event) = 0;
 
-  // Convenience: wait for kSpeculative to catch up to kDurable.
-  //
+  /** \brief Convenience: wait for kSpeculative to catch up to kDurable.
+   */
   Status flush()
   {
     return this->sync(LogReadMode::kDurable,

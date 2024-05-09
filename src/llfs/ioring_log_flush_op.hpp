@@ -40,6 +40,12 @@ class BasicIoRingLogFlushOp;
 using IoRingLogFlushOp = BasicIoRingLogFlushOp<
     BasicIoRingLogDriver<BasicIoRingLogFlushOp, DefaultIoRingLogDeviceStorage>>;
 
+inline std::atomic<bool>& default_ioring_quiet_failure_logging()
+{
+  static std::atomic<bool> be_quiet_{false};
+  return be_quiet_;
+}
+
 template <typename DriverImpl>
 class BasicIoRingLogFlushOp
 {
@@ -151,7 +157,7 @@ class BasicIoRingLogFlushOp
     return this->debug_info_message_;
   }
 
-  std::atomic<bool> quiet_failure_logging{false};
+  std::atomic<bool> quiet_failure_logging{default_ioring_quiet_failure_logging().load()};
 
  private:
   // Return the committed data portion of the block buffer, aligned to 512-byte boundaries.

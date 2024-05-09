@@ -19,7 +19,10 @@
 
 #include <batteries/async/mutex.hpp>
 #include <batteries/async/queue.hpp>
+#include <batteries/async/task.hpp>
+#include <batteries/async/task_scheduler.hpp>
 #include <batteries/async/watch.hpp>
+#include <batteries/shared_ptr.hpp>
 
 #include <atomic>
 #include <functional>
@@ -33,6 +36,12 @@ class StorageSimulation;
 class SimulatedLogDeviceStorage
 {
  public:
+  static i64 new_id()
+  {
+    static std::atomic<i64> next_{0};
+    return next_.fetch_add(1);
+  }
+
   using AlignedBlock = PackedLogPageBuffer::AlignedUnit;
 
   class DurableState : public SimulatedStorageObject
@@ -53,6 +62,11 @@ class SimulatedLogDeviceStorage
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+    i64 id() const noexcept
+    {
+      return this->id_;
+    }
+
     StorageSimulation& simulation() noexcept
     {
       return this->simulation_;
@@ -63,197 +77,110 @@ class SimulatedLogDeviceStorage
       return this->config_;
     }
 
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+
     /** \brief Simulates a process termination/restart by removing all non-flushed state.
      */
-    void crash_and_recover(u64 simulation_step) override
-    {
-      batt::ScopedLock<Impl> locked{this->impl_};
-
-      locked->last_recovery_step_ = simulation_step;
-    }
+    void crash_and_recover(u64 simulation_step) override;
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-    Status write_block(u64 creation_step, i64 offset, const ConstBuffer& buffer)
-    {
-      if (offset % sizeof(AlignedBlock) != 0 || buffer.size() != sizeof(AlignedBlock)) {
-        return batt::StatusCode::kInvalidArgument;
-      }
+    /** \brief Simulates writing a single block.
+     *
+     * If simulation is injecting errors, then this call may inject a batt::StatusCode::kInternal
+     * error spuriously.
+     */
+    Status write_block(u64 creation_step, i64 offset, const ConstBuffer& buffer);
 
-      batt::ScopedLock<Impl> locked{this->impl_};
+    /** \brief Simulates writing a single block.
+     *
+     * If simulation is injecting errors, then this call may inject a batt::StatusCode::kInternal
+     * error spuriously.
+     */
+    Status read_block(u64 creation_step, i64 offset, const MutableBuffer& buffer);
 
-      if (creation_step < locked->last_recovery_step_) {
-        return batt::StatusCode::kClosed;
-      }
-
-      auto& p_block = locked->blocks_[offset];
-      if (!p_block) {
-        p_block = std::make_unique<AlignedBlock>();
-      }
-      std::memcpy(p_block.get(), buffer.data(), buffer.size());
-
-      return batt::OkStatus();
-    }
-
-    Status read_block(u64 creation_step, i64 offset, const MutableBuffer& buffer)
-    {
-      if (offset % sizeof(AlignedBlock) != 0 || buffer.size() != sizeof(AlignedBlock)) {
-        return batt::StatusCode::kInvalidArgument;
-      }
-
-      batt::ScopedLock<Impl> locked{this->impl_};
-
-      if (creation_step < locked->last_recovery_step_) {
-        return batt::StatusCode::kClosed;
-      }
-
-      auto& p_block = locked->blocks_[offset];
-      if (!p_block) {
-        return batt::StatusCode::kNotFound;
-      }
-      std::memcpy(buffer.data(), p_block.get(), buffer.size());
-
-      return batt::OkStatus();
-    }
-
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
    private:
+    /** \brief Checks the offset and buffer size args to a block operation to make sure they are
+     * valid.
+     *
+     * \return OkStatus() if the args are valid, or an error status indicating the problem
+     * otherwise.
+     */
+    Status validate_args(i64 offset, usize size) noexcept;
+
+    /** \brief Abstracts the common parts of the implementation of write_block and read_block.
+     *
+     * The passed `op_fn` will be called on the AlignedBlock pointer corresponding to `offset`, if
+     * the arguments are valid and the creation step is after the most recent crash/recover step.
+     */
+    template <typename BufferT, typename OpFn = void(std::unique_ptr<AlignedBlock>&)>
+    Status block_op_impl(u64 creation_step, i64 offset, const BufferT& buffer, OpFn&& op_fn);
+
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+    const i64 id_{SimulatedLogDeviceStorage::new_id()};
     StorageSimulation& simulation_;
     const IoRingLogConfig config_;
     batt::Mutex<Impl> impl_;
   };
 
-  class EphemeralState
+  class EphemeralState : public batt::RefCounted<EphemeralState>
   {
    public:
     explicit EphemeralState(std::shared_ptr<DurableState>&& durable_state) noexcept;
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+    batt::TaskScheduler& get_task_scheduler() noexcept;
+
+    //----- --- -- -  -  -   -
+
+    i64 id() const noexcept
+    {
+      return this->id_;
+    }
+
     const IoRingLogConfig& config() const noexcept
     {
       return this->durable_state_->config();
     }
 
-    Status close()
-    {
-      if (this->closed_.exchange(true)) {
-        return batt::StatusCode::kClosed;
-      }
+    Status close();
 
-      return batt::OkStatus();
-    }
+    void on_work_started();
 
-    void on_work_started()
-    {
-      this->work_count_.fetch_add(1);
-    }
+    void on_work_finished();
 
-    void on_work_finished()
-    {
-      if (this->work_count_.fetch_sub(1) == 1) {
-        this->queue_.poke();
-      }
-    }
+    Status run_event_loop();
 
-    Status run_event_loop()
-    {
-      for (;;) {
-        if (this->stopped_.load() || this->work_count_.load() == 0) {
-          break;
-        }
-
-        StatusOr<std::function<void()>> handler = this->queue_.await_next();
-        if (!handler.ok()) {
-          if (handler.status() == batt::StatusCode::kPoke) {
-            continue;
-          }
-
-          if (handler.status() == batt::StatusCode::kClosed) {
-            break;
-          }
-
-          return handler.status();
-        }
-
-        try {
-          (*handler)();
-        } catch (...) {
-          LLFS_LOG_WARNING() << "Simulation handler threw exception!";
-        }
-      }
-
-      return batt::OkStatus();
-    }
-
-    void reset_event_loop()
-    {
-      this->stopped_.store(false);
-    }
+    void reset_event_loop();
 
     void post_to_event_loop(std::function<void(StatusOr<i32>)>&& handler);
 
-    void stop_event_loop()
-    {
-      this->stopped_.store(true);
-      this->queue_.poke();
-    }
+    void stop_event_loop();
 
-    Status read_all(i64 offset, MutableBuffer buffer)
-    {
-      return this->multi_block_iop<MutableBuffer, &DurableState::read_block>(offset, buffer);
-    }
+    Status read_all(i64 offset, MutableBuffer buffer);
 
     void async_write_some_fixed(i64 file_offset, const ConstBuffer& data, i32 /*buf_index*/,
                                 std::function<void(StatusOr<i32>)>&& handler);
+
+    i32 work_count() const noexcept
+    {
+      return this->work_count_.load();
+    }
+
+    bool is_stopped() const noexcept
+    {
+      return this->stopped_.load();
+    }
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
    private:
     void simulation_post(std::function<void()>&& fn);
 
     template <typename BufferT, Status (DurableState::*Op)(u64, i64, const BufferT&)>
-    Status multi_block_iop(i64 offset, BufferT buffer)
-    {
-      if (this->closed_.load()) {
-        return batt::StatusCode::kClosed;
-      }
-
-      std::vector<Status> block_status(buffer.size() / sizeof(AlignedBlock));
-      batt::Watch<usize> blocks_remaining(block_status.size());
-      std::atomic<usize> pin_count{block_status.size()};
-
-      if (buffer.size() != block_status.size() * sizeof(AlignedBlock)) {
-        return batt::StatusCode::kInvalidArgument;
-      }
-
-      usize i = 0;
-      while (buffer.size() > 0) {
-        this->simulation_post([this, i, offset, &block_status, &blocks_remaining, &pin_count,
-                               block_buffer = BufferT{buffer.data(), sizeof(AlignedBlock)}] {
-          auto on_scope_exit = batt::finally([&] {
-            blocks_remaining.fetch_sub(1);
-            pin_count.fetch_sub(1);
-          });
-
-          block_status[i] =
-              (this->durable_state_.get()->*Op)(this->creation_step_, offset, block_buffer);
-        });
-
-        offset += sizeof(AlignedBlock);
-        buffer += sizeof(AlignedBlock);
-        ++i;
-      }
-
-      BATT_CHECK_OK(blocks_remaining.await_equal(0));
-      while (pin_count.load() != 0) {
-        batt::Task::yield();
-      }
-
-      for (const Status& status : block_status) {
-        BATT_REQUIRE_OK(status);
-      }
-
-      return batt::OkStatus();
-    }
+    Status multi_block_iop(i64 offset, BufferT buffer);
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -262,6 +189,8 @@ class SimulatedLogDeviceStorage
     StorageSimulation& simulation_;
 
     const u64 creation_step_;
+
+    const i64 id_ = durable_state_->id();
 
     std::atomic<i32> work_count_{0};
 
@@ -279,57 +208,46 @@ class SimulatedLogDeviceStorage
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-    StatusOr<i64> write_some(i64 offset, const ConstBuffer& buffer_arg) override
-    {
-      ConstBuffer buffer = buffer_arg;
-      i64 n_written = 0;
+    StatusOr<i64> write_some(i64 offset, const ConstBuffer& buffer_arg) override;
 
-      while (buffer.size() > 0) {
-        BATT_REQUIRE_OK(this->durable_state_->write_block(
-            this->creation_step_, offset,
-            ConstBuffer{buffer.data(), std::min(buffer.size(), sizeof(AlignedBlock))}));
-        offset += sizeof(AlignedBlock);
-        buffer += sizeof(AlignedBlock);
-        n_written += sizeof(AlignedBlock);
-      }
+    StatusOr<i64> read_some(i64 offset, const MutableBuffer& buffer_arg) override;
 
-      return n_written;
-    }
-
-    StatusOr<i64> read_some(i64 offset, const MutableBuffer& buffer_arg) override
-    {
-      MutableBuffer buffer = buffer_arg;
-      i64 n_read = 0;
-
-      while (buffer.size() > 0) {
-        BATT_REQUIRE_OK(this->durable_state_->read_block(
-            this->creation_step_, offset,
-            MutableBuffer{buffer.data(), std::min(buffer.size(), sizeof(AlignedBlock))}));
-        offset += sizeof(AlignedBlock);
-        buffer += sizeof(AlignedBlock);
-        n_read += sizeof(AlignedBlock);
-      }
-
-      return n_read;
-    }
-
-    StatusOr<i64> get_size() override
-    {
-      return Status{batt::StatusCode::kUnimplemented};
-    }
+    StatusOr<i64> get_size() override;
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
    private:
     const std::shared_ptr<DurableState> durable_state_;
-
     const u64 creation_step_;
   };
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  explicit SimulatedLogDeviceStorage(std::shared_ptr<DurableState>&& durable_state) noexcept
-      : impl_{std::make_unique<EphemeralState>(std::move(durable_state))}
+  class EventLoopTask
   {
+   public:
+    explicit EventLoopTask(SimulatedLogDeviceStorage& storage, std::string_view caller) noexcept;
+
+    EventLoopTask(const EventLoopTask&) = delete;
+    EventLoopTask& operator=(const EventLoopTask&) = delete;
+
+    ~EventLoopTask() noexcept;
+
+    void join();
+
+   private:
+    SimulatedLogDeviceStorage& storage_;
+    std::string_view caller_;
+    batt::Task task_;
+    bool join_called_ = false;
+  };
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  explicit SimulatedLogDeviceStorage(std::shared_ptr<DurableState>&& durable_state) noexcept
+      : impl_{batt::make_shared<EphemeralState>(std::move(durable_state))}
+  {
+    BATT_STATIC_ASSERT_TYPE_EQ(batt::SharedPtr<EphemeralState>,
+                               boost::intrusive_ptr<EphemeralState>);
   }
 
   SimulatedLogDeviceStorage(const SimulatedLogDeviceStorage&) = delete;
@@ -370,11 +288,6 @@ class SimulatedLogDeviceStorage
     this->impl_->on_work_finished();
   }
 
-  Status run_event_loop() const noexcept
-  {
-    return this->impl_->run_event_loop();
-  }
-
   void reset_event_loop() const noexcept
   {
     this->impl_->reset_event_loop();
@@ -405,7 +318,7 @@ class SimulatedLogDeviceStorage
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
-  std::unique_ptr<EphemeralState> impl_;
+  batt::SharedPtr<EphemeralState> impl_;
 };
 
 }  //namespace llfs

@@ -43,17 +43,17 @@ class BasicLogStorageDriver
   //
   Status set_trim_pos(slot_offset_type trim_pos)
   {
-    return impl_.set_trim_pos(trim_pos);
+    return this->impl_.set_trim_pos(trim_pos);
   }
 
   slot_offset_type get_trim_pos() const
   {
-    return impl_.get_trim_pos();
+    return this->impl_.get_trim_pos();
   }
 
   StatusOr<slot_offset_type> await_trim_pos(slot_offset_type trim_pos)
   {
-    return impl_.await_trim_pos(trim_pos);
+    return this->impl_.await_trim_pos(trim_pos);
   }
 
   //----
@@ -63,41 +63,51 @@ class BasicLogStorageDriver
 
   slot_offset_type get_flush_pos() const
   {
-    return impl_.get_flush_pos();
+    return this->impl_.get_flush_pos();
   }
 
   StatusOr<slot_offset_type> await_flush_pos(slot_offset_type flush_pos)
   {
-    return impl_.await_flush_pos(flush_pos);
+    return this->impl_.await_flush_pos(flush_pos);
   }
 
   //----
 
   Status set_commit_pos(slot_offset_type commit_pos)
   {
-    return impl_.set_commit_pos(commit_pos);
+    return this->impl_.set_commit_pos(commit_pos);
   }
 
   slot_offset_type get_commit_pos() const
   {
-    return impl_.get_commit_pos();
+    return this->impl_.get_commit_pos();
   }
 
   StatusOr<slot_offset_type> await_commit_pos(slot_offset_type commit_pos)
   {
-    return impl_.await_commit_pos(commit_pos);
+    return this->impl_.await_commit_pos(commit_pos);
   }
 
   //----
 
   Status open()
   {
-    return impl_.open();
+    return this->impl_.open();
   }
 
   Status close()
   {
-    return impl_.close();
+    return this->impl_.close();
+  }
+
+  void halt()
+  {
+    this->impl_.halt();
+  }
+
+  void join()
+  {
+    this->impl_.join();
   }
   //
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

@@ -50,7 +50,7 @@ Status initialize_ioring_log_device(RawBlockFile& file, const IoRingLogConfig& c
       BATT_REQUIRE_OK(init_status);
 
     } else {
-      LLFS_LOG_INFO() << "Using slow path for log device initialization";
+      LLFS_LOG_INFO_FIRST_N(10) << "Using slow path for log device initialization";
 
       PackedLogPageBuffer buffer;
       buffer.clear();

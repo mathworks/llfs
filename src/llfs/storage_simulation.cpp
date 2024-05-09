@@ -77,7 +77,15 @@ batt::TaskScheduler& StorageSimulation::task_scheduler() noexcept
 void StorageSimulation::run_main_task(std::function<void()> main_fn)
 {
   LLFS_LOG_SIM_EVENT() << "entered run_main_task();" << BATT_INSPECT(batt::this_thread_id());
+
+  const bool was_running = this->is_running_.exchange(true);
+
+  const bool saved_quiet_logging =
+      default_ioring_quiet_failure_logging().exchange(this->low_level_log_devices_);
+
   auto on_scope_exit = batt::finally([&] {
+    this->is_running_.store(was_running);
+    default_ioring_quiet_failure_logging().store(saved_quiet_logging);
     LLFS_LOG_SIM_EVENT() << "leaving run_main_task()";
   });
 
@@ -87,7 +95,7 @@ void StorageSimulation::run_main_task(std::function<void()> main_fn)
   // Run the main task until there are no more events to process (either we have terminated or
   // deadlocked).
   //
-  this->handle_events();
+  this->handle_events(/*main_fn_done=*/false);
   //
   LLFS_LOG_SIM_EVENT() << "done handling events." << BATT_INSPECT(main_task.is_done());
 
@@ -95,7 +103,7 @@ void StorageSimulation::run_main_task(std::function<void()> main_fn)
   // Shut down the cache and call `handle_events` again to allow it to terminate all tasks
   // gracefully.
   //
-  this->close_cache();
+  this->close_cache(/*main_fn_done=*/true);
 
   //----- --- -- -  -  -   -
   // The main task should be terminated at this point.
@@ -129,13 +137,13 @@ void StorageSimulation::crash_and_recover()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void StorageSimulation::close_cache() noexcept
+void StorageSimulation::close_cache(bool main_fn_done) noexcept
 {
   if (this->cache_) {
     LLFS_LOG_SIM_EVENT() << "shutting down the PageCache...";
     this->cache_->close();
     //
-    this->handle_events();
+    this->handle_events(main_fn_done);
     //
     this->cache_->join();
     this->cache_ = nullptr;
@@ -145,7 +153,7 @@ void StorageSimulation::close_cache() noexcept
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void StorageSimulation::handle_events()
+void StorageSimulation::handle_events(bool main_fn_done)
 {
   for (;;) {
     const u64 step = this->step_.fetch_add(1) + 1;
@@ -159,6 +167,18 @@ void StorageSimulation::handle_events()
         });
 
     if (!next_event_handler) {
+      if (main_fn_done) {
+        const i64 observed_work_count = this->fake_io_context_.work_count().get_value();
+        if (observed_work_count != 0) {
+          LLFS_LOG_ERROR()
+              << "No work to do, but work count is non-zero (" << observed_work_count
+              << "); possible deadlock?  (or threads/tasks have escaped the simulation?)";
+
+          batt::Task::backtrace_all(/*force=*/true);
+          BATT_PANIC();
+          BATT_UNREACHABLE();
+        }
+      }
       LLFS_LOG_SIM_EVENT() << "no more events to handle";
       return;
     }
@@ -212,13 +232,17 @@ std::unique_ptr<LogDevice> StorageSimulation::get_log_device(const std::string& 
     IoRingLogConfig config = storage.config();
     auto options = IoRingLogDriverOptions::with_default_values();
     options.name = name;
+    options.limit_queue_depth(config.block_count());
 
     using DriverT = BasicIoRingLogDriver<BasicIoRingLogFlushOp, SimulatedLogDeviceStorage>;
     using LogDeviceT = BasicRingBufferLogDevice<DriverT>;
 
+    batt::TaskScheduler& scheduler =
+        this->is_running() ? this->task_scheduler() : batt::Runtime::instance().default_scheduler();
+
     auto log_device =
         std::make_unique<LogDeviceT>(RingBuffer::TempFile{.byte_size = config.logical_size},
-                                     this->task_scheduler(), std::move(storage), config, options);
+                                     scheduler, std::move(storage), config, options);
 
     BATT_CHECK_OK(log_device->open());
 

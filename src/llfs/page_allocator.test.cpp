@@ -185,8 +185,6 @@ TEST(PageAllocatorTest, LogCrashRecovery)
         /*size=*/PageAllocator::calculate_log_size(/*physical_page_count=*/kNumPages,
                                                    /*max_attachments=*/kMaxAttachments)};
 
-    LLFS_LOG_INFO_FIRST_N(1) << BATT_INSPECT(mem_log.space());
-
     auto fake_log_state = std::make_shared<FakeLogDevice::State>();
 
     FakeLogDeviceFactory<MemoryLogStorageDriver> fake_log_factory{mem_log, mem_log.driver().impl(),

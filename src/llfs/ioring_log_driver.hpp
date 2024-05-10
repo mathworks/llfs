@@ -270,6 +270,21 @@ class BasicIoRingLogDriver
 
   void handle_commit_pos_update(const StatusOr<slot_offset_type>& updated_commit_pos);
 
+  /** \brief Signals the entering of the storage I/O event loop; the first time this is called
+   * (before a corresponding call to this->storage_work_finished()), calls
+   * this->storage_.on_work_started() to increment the work count.
+   */
+  void storage_work_started();
+
+  /** \brief Signals that storage I/O work is now the in process of shutting down.  The first time
+   * this is called (after this->storage_work_started()), calls this->storage_.on_work_finished() to
+   * decrement the work count, allowing the storage I/O event loop to exit once all activity has
+   * completed.
+   *
+   * This may be called in response to a fatal error or an external call to this->halt().
+   */
+  void storage_work_finished();
+
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
   // Used to access the RingBuffer.
@@ -303,6 +318,13 @@ class BasicIoRingLogDriver
   // background tasks.
   //
   std::atomic<bool> halt_requested_{false};
+
+  // While in normal operation, we maintain a positive work count on the storage object; eventually
+  // we will release this count as part of shutting down; this field acts as a gate to make sure we
+  // only call this->storage_.on_work_started()/on_work_finished() once at the boundary of this time
+  // interval.
+  //
+  std::atomic<bool> storage_working_{false};
 
   // The standard log state variables.
   //

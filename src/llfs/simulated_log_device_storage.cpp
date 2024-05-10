@@ -39,7 +39,8 @@ void SimulatedLogDeviceStorage::DurableState::crash_and_recover(u64 simulation_s
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status SimulatedLogDeviceStorage::DurableState::validate_args(i64 offset, usize size) noexcept
+Status SimulatedLogDeviceStorage::DurableState::validate_args(i64 offset, usize size,
+                                                              const char* op_type) noexcept
 {
   if (offset % sizeof(AlignedBlock) != 0 || size != sizeof(AlignedBlock)) {
     return batt::StatusCode::kInvalidArgument;
@@ -51,6 +52,8 @@ Status SimulatedLogDeviceStorage::DurableState::validate_args(i64 offset, usize 
     return batt::StatusCode::kOutOfRange;
   }
   if (this->simulation_.inject_failure()) {
+    LLFS_VLOG(1) << "(id=" << this->id_ << ") injecting failure;" << BATT_INSPECT(offset)
+                 << BATT_INSPECT(size) << BATT_INSPECT(op_type);
     return batt::StatusCode::kInternal;
   }
 
@@ -63,7 +66,9 @@ template <typename BufferT, typename OpFn>
 Status SimulatedLogDeviceStorage::DurableState::block_op_impl(u64 creation_step, i64 offset,
                                                               const BufferT& buffer, OpFn&& op_fn)
 {
-  BATT_REQUIRE_OK(this->validate_args(offset, buffer.size()));
+  const char* op_type = std::is_same_v<std::decay_t<BufferT>, ConstBuffer> ? "write" : "read";
+
+  BATT_REQUIRE_OK(this->validate_args(offset, buffer.size(), op_type));
 
   batt::ScopedLock<Impl> locked{this->impl_};
 
@@ -73,6 +78,9 @@ Status SimulatedLogDeviceStorage::DurableState::block_op_impl(u64 creation_step,
 
   auto& p_block = locked->blocks_[offset];
   BATT_FORWARD(op_fn)(p_block);
+
+  LLFS_VLOG(1) << "(id=" << this->id_ << ") DurableState::" << op_type << "_block(" << offset
+               << ") Success";
 
   return batt::OkStatus();
 }
@@ -117,6 +125,7 @@ Status SimulatedLogDeviceStorage::DurableState::read_block(u64 creation_step, i6
     , simulation_{this->durable_state_->simulation()}
     , creation_step_{this->simulation_.current_step()}
 {
+  this->work_count_per_caller_.fill(0);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -131,8 +140,7 @@ batt::TaskScheduler& SimulatedLogDeviceStorage::EphemeralState::get_task_schedul
 //
 Status SimulatedLogDeviceStorage::EphemeralState::close()
 {
-  LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-               << "EphemeralState::close()";
+  LLFS_VLOG(1) << "(id=" << this->id_ << ") EphemeralState::close()";
 
   if (this->closed_.exchange(true)) {
     return batt::StatusCode::kClosed;
@@ -143,22 +151,35 @@ Status SimulatedLogDeviceStorage::EphemeralState::close()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void SimulatedLogDeviceStorage::EphemeralState::on_work_started()
+void SimulatedLogDeviceStorage::EphemeralState::on_work_started(usize caller)
 {
+  ++this->work_count_per_caller_[caller];
+
   const i32 old_value = this->work_count_.fetch_add(1);
 
-  LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-               << "EphemeralState::on_work_started() " << old_value << " -> " << (old_value + 1);
+  LLFS_VLOG(1) << "(id=" << this->id_ << ") EphemeralState::on_work_started() " << old_value
+               << " -> " << (old_value + 1);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void SimulatedLogDeviceStorage::EphemeralState::on_work_finished()
+void SimulatedLogDeviceStorage::EphemeralState::on_work_finished(usize caller)
 {
+  --this->work_count_per_caller_[caller];
+
   const i32 old_value = this->work_count_.fetch_sub(1);
 
-  LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-               << "EphemeralState::on_work_finished() " << old_value << " -> " << (old_value - 1);
+  for (i32 n : this->work_count_per_caller_) {
+    BATT_CHECK_GE(n, 0) << BATT_INSPECT(this->id_)
+                        << BATT_INSPECT_RANGE(this->work_count_per_caller_) << BATT_INSPECT(caller);
+  }
+
+  BATT_CHECK_GT(old_value, 0) << BATT_INSPECT(this->id_)
+                              << BATT_INSPECT_RANGE(this->work_count_per_caller_)
+                              << BATT_INSPECT(caller);
+
+  LLFS_VLOG(1) << "(id=" << this->id_ << ") EphemeralState::on_work_finished() " << old_value
+               << " -> " << (old_value - 1);
 
   if (old_value == 1) {
     this->queue_.poke();
@@ -169,13 +190,11 @@ void SimulatedLogDeviceStorage::EphemeralState::on_work_finished()
 //
 Status SimulatedLogDeviceStorage::EphemeralState::run_event_loop()
 {
-  LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-               << "EphemeralState::run_event_loop() entered" << std::endl
+  LLFS_VLOG(1) << "(id=" << this->id_ << ") EphemeralState::run_event_loop() entered" << std::endl
                << boost::stacktrace::stacktrace{};
   for (;;) {
-    LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-                 << "EphemeralState::run_event_loop() top of loop:" << BATT_INSPECT(this->stopped_)
-                 << BATT_INSPECT(this->work_count_);
+    LLFS_VLOG(1) << "(id=" << this->id_ << ") EphemeralState::run_event_loop() top of loop:"
+                 << BATT_INSPECT(this->stopped_) << BATT_INSPECT(this->work_count_);
     if (this->stopped_.load() || this->work_count_.load() == 0) {
       break;
     }
@@ -183,8 +202,7 @@ Status SimulatedLogDeviceStorage::EphemeralState::run_event_loop()
     BATT_DEBUG_INFO(BATT_INSPECT(this->stopped_)
                     << BATT_INSPECT(this->work_count_) << BATT_INSPECT(this->closed_));
 
-    LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-                 << "EphemeralState::run_event_loop() waiting for queue";
+    LLFS_VLOG(1) << "(id=" << this->id_ << ") EphemeralState::run_event_loop() waiting for queue";
     StatusOr<std::function<void()>> handler = this->queue_.await_next();
     if (!handler.ok()) {
       if (handler.status() == batt::StatusCode::kPoke) {
@@ -204,8 +222,7 @@ Status SimulatedLogDeviceStorage::EphemeralState::run_event_loop()
       LLFS_LOG_WARNING() << "Simulation handler threw exception!";
     }
   }
-  LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-               << "EphemeralState::run_event_loop() exiting";
+  LLFS_VLOG(1) << "(id=" << this->id_ << ") EphemeralState::run_event_loop() exiting";
 
   return batt::OkStatus();
 }
@@ -214,8 +231,8 @@ Status SimulatedLogDeviceStorage::EphemeralState::run_event_loop()
 //
 void SimulatedLogDeviceStorage::EphemeralState::reset_event_loop()
 {
-  LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-               << "EphemeralState::reset_event_loop()" << BATT_INSPECT(this->stopped_);
+  LLFS_VLOG(1) << "(id=" << this->id_ << ") EphemeralState::reset_event_loop()"
+               << BATT_INSPECT(this->stopped_);
   this->stopped_.store(false);
 }
 
@@ -223,8 +240,8 @@ void SimulatedLogDeviceStorage::EphemeralState::reset_event_loop()
 //
 void SimulatedLogDeviceStorage::EphemeralState::stop_event_loop()
 {
-  LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-               << "EphemeralState::reset_event_loop()" << BATT_INSPECT(this->stopped_);
+  LLFS_VLOG(1) << "(id=" << this->id_ << ") EphemeralState::reset_event_loop()"
+               << BATT_INSPECT(this->stopped_);
   this->stopped_.store(true);
   this->queue_.poke();
 }
@@ -234,20 +251,28 @@ void SimulatedLogDeviceStorage::EphemeralState::stop_event_loop()
 void SimulatedLogDeviceStorage::EphemeralState::post_to_event_loop(
     std::function<void(StatusOr<i32>)>&& handler)
 {
-  LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-               << "EphemeralState::post_to_event_loop(handler) entered"
+  LLFS_VLOG(1) << "(id=" << this->id_ << ") EphemeralState::post_to_event_loop(handler) entered"
                << BATT_INSPECT(this->simulation_.is_running());
 
-  this->on_work_started();
+  this->on_work_started(POST_TO_EVENT_LOOP);
 
-  auto runnable = [this, handler = BATT_FORWARD(handler)]() mutable {
-    LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-                 << "EphemeralState::post_to_event_loop(handler) invoked runnable";
+  auto runnable = [shared_this = batt::shared_ptr_from(this),
+                   handler = BATT_FORWARD(handler)]() mutable {
+    auto* const this_ = shared_this.get();
 
-    this->queue_
-        .push([this, handler]() mutable {
+    LLFS_VLOG(1) << "(id=" << this_->id_
+                 << ") EphemeralState::post_to_event_loop(handler) invoked runnable";
+
+    // We don't need to capture `shared_this` in the completion handler we push to the queue, since
+    // either the work count will keep the event loop task running (and if the log driver doesn't
+    // join the even loop task, this is a serious error we don't want to mask) *or* the completion
+    // handler will never run, in which case a dangling pointer doesn't matter (if a tree falls in a
+    // forest...)
+    //
+    this_->queue_
+        .push([this_, handler]() mutable {
           auto on_scope_exit = batt::finally([&] {
-            this->on_work_finished();
+            this_->on_work_finished(POST_TO_EVENT_LOOP);
           });
           BATT_FORWARD(handler)(StatusOr<i32>{0});
         })
@@ -265,9 +290,8 @@ void SimulatedLogDeviceStorage::EphemeralState::post_to_event_loop(
 //
 Status SimulatedLogDeviceStorage::EphemeralState::read_all(i64 offset, MutableBuffer buffer)
 {
-  LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-               << "EphemeralState::read_all(" << BATT_INSPECT(offset) << ","
-               << BATT_INSPECT(buffer.size()) << ")";
+  LLFS_VLOG(1) << "(id=" << this->id_ << ") EphemeralState::read_all(offset=" << offset
+               << ", size=" << buffer.size() << ")";
 
   return this->multi_block_iop<MutableBuffer, &DurableState::read_block>(offset, buffer);
 }
@@ -278,8 +302,7 @@ void SimulatedLogDeviceStorage::EphemeralState::async_write_some_fixed(
     i64 file_offset, const ConstBuffer& data, i32 /*buf_index*/,
     std::function<void(StatusOr<i32>)>&& handler)
 {
-  LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-               << "EphemeralState::async_write_some(offset=" << file_offset
+  LLFS_VLOG(1) << "(id=" << this->id_ << ") EphemeralState::async_write_some(offset=" << file_offset
                << ", size=" << data.size() << ")";
 
   if (this->closed_.load()) {
@@ -287,7 +310,7 @@ void SimulatedLogDeviceStorage::EphemeralState::async_write_some_fixed(
     return;
   }
 
-  this->on_work_started();
+  this->on_work_started(ASYNC_WRITE_SOME);
 
   auto* write_task = new batt::Task{
       this->get_task_scheduler().schedule_task(),
@@ -310,7 +333,7 @@ void SimulatedLogDeviceStorage::EphemeralState::async_write_some_fixed(
         this_->queue_
             .push([handler, result, this_] {
               auto on_scope_exit = batt::finally([this_] {
-                this_->on_work_finished();
+                this_->on_work_finished(ASYNC_WRITE_SOME);
               });
               handler(result);
             })
@@ -331,9 +354,8 @@ template <typename BufferT,
           Status (SimulatedLogDeviceStorage::DurableState::*Op)(u64, i64, const BufferT&)>
 Status SimulatedLogDeviceStorage::EphemeralState::multi_block_iop(i64 offset, BufferT buffer)
 {
-  LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-               << "EphmeralState::multi_block_iop(" << BATT_INSPECT(offset) << ","
-               << BATT_INSPECT(buffer.size())
+  LLFS_VLOG(1) << "(id=" << this->id_ << ") EphmeralState::multi_block_iop(" << BATT_INSPECT(offset)
+               << "," << BATT_INSPECT(buffer.size())
                << ") type=" << (std::is_same_v<BufferT, ConstBuffer> ? "write" : "read");
 
   if (this->closed_.load()) {
@@ -350,23 +372,22 @@ Status SimulatedLogDeviceStorage::EphemeralState::multi_block_iop(i64 offset, Bu
 
   usize i = 0;
   while (buffer.size() > 0) {
-    LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-                 << "EphmeralState::multi_block_iop()" << BATT_INSPECT(offset) << BATT_INSPECT(i)
-                 << "/" << block_status.size();
+    LLFS_VLOG(1) << "(id=" << this->id_ << ") EphmeralState::multi_block_iop()"
+                 << BATT_INSPECT(offset) << BATT_INSPECT(i) << "/" << block_status.size();
 
     this->simulation_post([this, i, offset, &block_status, &blocks_remaining, &pin_count,
                            block_buffer = BufferT{buffer.data(), sizeof(AlignedBlock)}] {
-      LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-                   << "EphmeralState::multi_block_iop() - activated" << BATT_INSPECT(offset)
-                   << BATT_INSPECT(i);
+      LLFS_VLOG(1) << "(id=" << this->id_ << ") EphmeralState::multi_block_iop() - activated"
+                   << BATT_INSPECT(offset) << BATT_INSPECT(i) << "/" << block_status.size();
 
       auto on_scope_exit = batt::finally([&] {
         blocks_remaining.fetch_sub(1);
         pin_count.fetch_sub(1);
       });
 
-      block_status[i] =
-          (this->durable_state_.get()->*Op)(this->creation_step_, offset, block_buffer);
+      block_status[i] = this->closed_.load() ? Status{batt::StatusCode::kClosed}
+                                             : (this->durable_state_.get()->*Op)(
+                                                   this->creation_step_, offset, block_buffer);
     });
 
     offset += sizeof(AlignedBlock);
@@ -374,8 +395,8 @@ Status SimulatedLogDeviceStorage::EphemeralState::multi_block_iop(i64 offset, Bu
     ++i;
   }
 
-  LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-               << "EphmeralState::multi_block_iop() waiting for all ops to complete";
+  LLFS_VLOG(1) << "(id=" << this->id_
+               << ") EphmeralState::multi_block_iop() waiting for all ops to complete";
 
   blocks_remaining.await_equal(0).IgnoreError();
   BATT_CHECK_EQ(blocks_remaining.get_value(), 0u);
@@ -383,15 +404,14 @@ Status SimulatedLogDeviceStorage::EphemeralState::multi_block_iop(i64 offset, Bu
     batt::Task::yield();
   }
 
-  LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-               << "EphmeralState::multi_block_iop() checking per-block statuses";
+  LLFS_VLOG(1) << "(id=" << this->id_
+               << ") EphmeralState::multi_block_iop() checking per-block statuses";
 
   for (const Status& status : block_status) {
     BATT_REQUIRE_OK(status);
   }
 
-  LLFS_VLOG(1) << "(id=" << this->id_ << ")"
-               << "EphmeralState::multi_block_iop() success!";
+  LLFS_VLOG(1) << "(id=" << this->id_ << ") EphmeralState::multi_block_iop() success!";
 
   return batt::OkStatus();
 }

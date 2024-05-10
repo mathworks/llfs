@@ -107,7 +107,7 @@ class SimulatedLogDeviceStorage
      * \return OkStatus() if the args are valid, or an error status indicating the problem
      * otherwise.
      */
-    Status validate_args(i64 offset, usize size) noexcept;
+    Status validate_args(i64 offset, usize size, const char* op_type) noexcept;
 
     /** \brief Abstracts the common parts of the implementation of write_block and read_block.
      *
@@ -128,6 +128,13 @@ class SimulatedLogDeviceStorage
   class EphemeralState : public batt::RefCounted<EphemeralState>
   {
    public:
+    enum : usize {
+      PUBLIC_API = 0,
+      POST_TO_EVENT_LOOP,
+      ASYNC_WRITE_SOME,
+      NUM_CALLERS,
+    };
+
     explicit EphemeralState(std::shared_ptr<DurableState>&& durable_state) noexcept;
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -148,9 +155,9 @@ class SimulatedLogDeviceStorage
 
     Status close();
 
-    void on_work_started();
+    void on_work_started(usize caller = PUBLIC_API);
 
-    void on_work_finished();
+    void on_work_finished(usize caller = PUBLIC_API);
 
     Status run_event_loop();
 
@@ -193,6 +200,8 @@ class SimulatedLogDeviceStorage
     const i64 id_ = durable_state_->id();
 
     std::atomic<i32> work_count_{0};
+
+    std::array<i32, NUM_CALLERS> work_count_per_caller_;
 
     batt::Queue<std::function<void()>> queue_;
 

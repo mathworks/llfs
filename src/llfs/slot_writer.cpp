@@ -170,7 +170,8 @@ SlotRange SlotWriter::WriterLock::defer_commit() noexcept
 //
 StatusOr<SlotRange> SlotWriter::WriterLock::commit(batt::Grant& caller_grant) noexcept
 {
-  this->defer_commit();
+  this->deferred_commit_size_ += this->prepare_size_;
+  this->prepare_size_ = 0;
 
   const slot_offset_type slot_lower_bound = (*this->writer_lock_)->slot_offset();
 

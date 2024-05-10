@@ -219,6 +219,8 @@ inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::halt()
     this->trim_pos_.close();
     this->flush_pos_.close();
     this->commit_pos_.close();
+
+    this->storage_work_finished();
   }
 }
 
@@ -228,6 +230,11 @@ template <template <typename> class FlushOpImpl, typename StorageT>
 inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::join()
 {
   if (this->flush_task_) {
+    BATT_DEBUG_INFO(
+        BATT_INSPECT(this->halt_requested_)
+        << BATT_INSPECT(this->trim_pos_.is_closed()) << BATT_INSPECT(this->flush_pos_.is_closed())
+        << BATT_INSPECT(this->commit_pos_.is_closed()) << BATT_INSPECT(this->storage_working_));
+
     this->flush_task_->join();
     this->flush_task_ = None;
 
@@ -282,7 +289,7 @@ inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::flush_task_main()
           << BATT_INSPECT(commit_pos_);
     });
 
-    this->storage_.on_work_started();
+    this->storage_work_started();
     this->poll_flush_state();
     this->poll_commit_state();
 
@@ -313,7 +320,7 @@ inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::flush_task_main()
     return OkStatus();
   }();
 
-  if (!this->halt_requested_.load()) {
+  if (!this->halt_requested_.load() && this->storage_working_.load()) {
     LLFS_LOG_WARNING() << "[IoRingLogDriver::flush_task] exited unexpectedly with status="
                        << status;
   } else {
@@ -336,6 +343,7 @@ inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::report_flush_error(Stat
 {
   this->context_.update_error_status(error_status);
   this->flush_pos_.close();
+  this->storage_work_finished();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -444,13 +452,36 @@ inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::handle_commit_pos_updat
         this->commit_pos_listener_active_ = false;
 
         if (!updated_commit_pos.ok() || !post_result.ok()) {
-          this->storage_.on_work_finished();
-          this->storage_.stop_event_loop();
+          this->storage_work_finished();
           return;
         }
 
         this->poll_commit_state();
       }));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::storage_work_started()
+{
+  const bool was_working = this->storage_working_.exchange(true);
+  if (!was_working) {
+    this->storage_.on_work_started();
+  } else {
+    LLFS_LOG_WARNING() << "storage started again?" << std::endl << boost::stacktrace::stacktrace{};
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::storage_work_finished()
+{
+  const bool was_working = this->storage_working_.exchange(false);
+  if (was_working) {
+    this->storage_.on_work_finished();
+  }
 }
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

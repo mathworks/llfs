@@ -394,7 +394,7 @@ void Volume::halt()
   this->slot_writer_->halt();
   this->trim_control_->halt();
   this->trimmer_->halt();
-  this->root_log_->close().IgnoreError();
+  this->root_log_->halt();
   if (this->recycler_) {
     this->recycler_->halt();
   }
@@ -408,6 +408,7 @@ void Volume::join()
     this->trimmer_task_->join();
     this->trimmer_task_ = None;
   }
+  this->root_log_->join();
   if (this->recycler_) {
     this->recycler_->join();
   }

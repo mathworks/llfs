@@ -45,7 +45,7 @@ Status IoRingLogRecovery::run()
        ++block_i, file_offset += this->config_.block_size()) {
     //----- --- -- -  -  -   -
     LLFS_VLOG(2) << "Reading " << BATT_INSPECT(block_i) << "/" << block_count << " from "
-                 << BATT_INSPECT(file_offset);
+                 << BATT_INSPECT(file_offset) << BATT_INSPECT(this->block_buffer().size());
 
     BATT_CHECK_LE(known_valid_blocks, block_count);
 

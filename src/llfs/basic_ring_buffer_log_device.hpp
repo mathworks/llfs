@@ -233,8 +233,6 @@ class BasicRingBufferLogDevice<Impl>::WriterImpl : public LogDevice::Writer
 
   StatusOr<MutableBuffer> prepare(usize byte_count, usize head_room) override
   {
-    BATT_CHECK(!this->prepared_offset_);
-
     if (this->device_->closed_.load()) {
       return ::llfs::make_status(StatusCode::kPrepareFailedLogClosed);
     }

@@ -28,7 +28,7 @@ class VolumeMultiAppend
 
   ~VolumeMultiAppend() noexcept
   {
-    BATT_CHECK(this->completed_);
+    BATT_CHECK(this->closed_);
   }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -39,10 +39,20 @@ class VolumeMultiAppend
            (/*end_atomic_range token size=*/2);
   }
 
+  bool is_open() const noexcept
+  {
+    return !this->closed_;
+  }
+
+  bool is_closed() const noexcept
+  {
+    return this->closed_;
+  }
+
   template <typename T>
   StatusOr<SlotRange> append(const T& payload, const batt::Grant& grant) noexcept
   {
-    BATT_CHECK(!this->completed_);
+    BATT_CHECK(!this->closed_);
 
     if (this->first_) {
       this->first_ = false;
@@ -61,26 +71,29 @@ class VolumeMultiAppend
 
   StatusOr<SlotRange> commit(batt::Grant& grant) noexcept
   {
-    BATT_CHECK(!this->completed_);
+    BATT_CHECK(!this->closed_);
 
     if (!this->first_) {
       BATT_REQUIRE_OK(this->op_.end_atomic_range(grant));
     }
 
-    this->completed_ = true;
-    return this->op_.finalize(grant);
+    StatusOr<SlotRange> result = this->op_.finalize(grant);
+    BATT_REQUIRE_OK(result);
+
+    this->closed_ = true;
+    return result;
   }
 
   void cancel() noexcept
   {
-    BATT_CHECK(!this->completed_);
-    this->completed_ = true;
+    BATT_CHECK(!this->closed_);
+    this->closed_ = true;
   }
 
  private:
   TypedSlotWriter<VolumeEventVariant>::MultiAppend op_;
   bool first_ = true;
-  bool completed_ = false;
+  bool closed_ = false;
 };
 
 }  //namespace llfs

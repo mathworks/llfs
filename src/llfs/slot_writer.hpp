@@ -139,7 +139,7 @@ class SlotWriter::WriterLock
   static Slice<const u8> begin_atomic_range_token() noexcept;
   static Slice<const u8> end_atomic_range_token() noexcept;
 
-  //----- --- -- -  -  -   -
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   /** \brief Acquires an exclusive lock on writing to the log managed by `slot_writer`, preparing
    * to write new slot data.  This lock is released when the WriterLock object goes out of scope.
@@ -154,7 +154,7 @@ class SlotWriter::WriterLock
    */
   WriterLock& operator=(const WriterLock&) = delete;
 
-  //----- --- -- -  -  -   -
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   /** \brief Appends special token to the log to indicate the start of a sequence of slots that
    * must commit/recover atomically.
@@ -201,11 +201,11 @@ class SlotWriter::WriterLock
    */
   void cancel_all() noexcept;
 
-  //----- --- -- -  -  -   -
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
   Status append_token_impl(const Slice<const u8>& token, const batt::Grant& caller_grant) noexcept;
 
-  //----- --- -- -  -  -   -
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   /** \brief The SlotWriter object passed in at construction time.
    */

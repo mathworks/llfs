@@ -108,7 +108,11 @@ void StorageSimulation::run_main_task(std::function<void()> main_fn)
   //----- --- -- -  -  -   -
   // The main task should be terminated at this point.
   //
-  BATT_CHECK_EQ(main_task.try_join(), batt::Task::IsDone{true})
+  auto is_done = main_task.try_join();
+  if (is_done != batt::Task::IsDone{true}) {
+    batt::Task::backtrace_all(/*force=*/true);
+  }
+  BATT_CHECK_EQ(is_done, batt::Task::IsDone{true})
       << "main task failed to terminate (possible deadlock?)" << [&main_task](std::ostream& out) {
            batt::print_debug_info(main_task.debug_info, out);
          };
@@ -127,6 +131,9 @@ void StorageSimulation::crash_and_recover()
 
   for (const auto& [name, p_log_device_impl] : this->log_devices_) {
     p_log_device_impl->crash_and_recover(recover_step);
+  }
+  for (const auto& [name, p_log_storage_impl] : this->log_storage_) {
+    p_log_storage_impl->crash_and_recover(recover_step);
   }
   for (const auto& [name, p_page_device_impl] : this->page_devices_) {
     p_page_device_impl->crash_and_recover(recover_step);

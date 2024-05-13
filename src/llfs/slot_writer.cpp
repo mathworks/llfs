@@ -61,7 +61,8 @@ void SlotWriter::halt()
 //
 /*static*/ Slice<const u8> SlotWriter::WriterLock::begin_atomic_range_token() noexcept
 {
-  const static std::array<u8, 3> token_ = {0b10000000, 0b10000000, 0b00000000};
+  const static std::array<u8, Self::kBeginAtomicRangeTokenSize> token_ = {0b10000000, 0b10000000,
+                                                                          0b00000000};
   return as_const_slice(token_);
 }
 
@@ -69,7 +70,7 @@ void SlotWriter::halt()
 //
 /*static*/ Slice<const u8> SlotWriter::WriterLock::end_atomic_range_token() noexcept
 {
-  const static std::array<u8, 2> token_ = {0b10000000, 0b00000000};
+  const static std::array<u8, Self::kEndAtomicRangeTokenSize> token_ = {0b10000000, 0b00000000};
   return as_const_slice(token_);
 }
 

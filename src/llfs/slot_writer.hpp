@@ -136,6 +136,9 @@ class SlotWriter::WriterLock
  public:
   using Self = WriterLock;
 
+  static constexpr usize kBeginAtomicRangeTokenSize = 3;
+  static constexpr usize kEndAtomicRangeTokenSize = 2;
+
   static Slice<const u8> begin_atomic_range_token() noexcept;
   static Slice<const u8> end_atomic_range_token() noexcept;
 

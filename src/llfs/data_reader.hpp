@@ -99,6 +99,10 @@ class DataReader
     at_end_ = false;
   }
 
+  /** \brief Tries to consume a prefix of the remaining input that exactly matches `token`.
+   *
+   * \return true iff the unread data begins with token and this prefix is successfully consumed.
+   */
   bool read_token(const batt::Slice<const u8>& token) noexcept
   {
     if (this->bytes_available() < token.size()) {
@@ -253,6 +257,8 @@ class DataReader
     return ConstBuffer{this->unread_.begin(), this->unread_.size()};
   }
 
+  /** \brief Returns a pointer to the start of unread data.
+   */
   const u8* unread_begin() const
   {
     return this->unread_.begin();

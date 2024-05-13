@@ -211,12 +211,6 @@ void IoRingLogRecovery::recover_block_data()
 //
 void IoRingLogRecovery::recover_flush_pos()
 {
-  const static usize kBeginAtomicTokenSize =  //
-      SlotWriter::WriterLock::begin_atomic_range_token().size();
-
-  const static usize kEndAtomicTokenSize =  //
-      SlotWriter::WriterLock::end_atomic_range_token().size();
-
   LLFS_VLOG(1) << "IoRingLogRecovery::recover_flush_pos()";
 
   // Start at the trim pos and step forward through the recovered data, slot by slot, to discover
@@ -301,9 +295,9 @@ void IoRingLogRecovery::recover_flush_pos()
     // Check for control token; this indicates the beginning or end of an atomic slot range.
     //
     if (*slot_body_size == 0) {
-      if (slot_header_size == kBeginAtomicTokenSize) {
+      if (slot_header_size == SlotWriter::WriterLock::kBeginAtomicRangeTokenSize) {
         inside_atomic_range = true;
-      } else if (slot_header_size == kEndAtomicTokenSize) {
+      } else if (slot_header_size == SlotWriter::WriterLock::kEndAtomicRangeTokenSize) {
         inside_atomic_range = false;
       }
     }

@@ -276,28 +276,28 @@ class LogDevice::Reader
 
   virtual ~Reader() = default;
 
-  // Check whether the log device is closed.
-  //
+  /** \brief Check whether the log device is closed.
+   */
   virtual bool is_closed() = 0;
 
-  // The current log contents.  The memory returned by this method is a valid reflection of this
-  // part of the log.  Even if `consume` invalidates some prefix of `data()`, the remaining portion
-  // will still be valid. Likewise, once await returns Ok to indicate there is more data ready to
-  // read, calling `data()` again will return the same memory with some extra at the end.
-  //
+  /** \brief The current log contents.  The memory returned by this method is a valid reflection of
+   * this part of the log.  Even if `consume` invalidates some prefix of `data()`, the remaining
+   * portion will still be valid. Likewise, once await returns Ok to indicate there is more data
+   * ready to read, calling `data()` again will return the same memory with some extra at the end.
+   */
   virtual ConstBuffer data() = 0;
 
-  // The current offset in bytes of this reader, relative to the start of the log.
-  //
+  /** \brief The current offset in bytes of this reader, relative to the start of the log.
+   */
   virtual slot_offset_type slot_offset() = 0;
 
-  // Releases ownership of some prefix of `data()` (possibly all of it).  See description of
-  // `data()` for more details.
-  //
+  /** \brief Releases ownership of some prefix of `data()` (possibly all of it).  See description of
+   * `data()` for more details.
+   */
   virtual void consume(usize byte_count) = 0;
 
-  // Wait for the log to reach the specified state.
-  //
+  /** \brief Wait for the log to reach the specified state.
+   */
   virtual Status await(LogDevice::ReaderEvent event) = 0;
 };
 
@@ -325,36 +325,39 @@ class LogDevice::Writer
 
   virtual ~Writer() = default;
 
-  // The current available space.
-  //
+  /** \brief The current available space (in bytes).
+   */
   virtual u64 space() const = 0;
 
-  // The next slot offset to be written.  Updated by `commit`.
-  //
+  /** \brief The next slot offset to be written.  Updated by `commit`.
+   */
   virtual slot_offset_type slot_offset() = 0;
 
-  // Allocate memory to write a new log slot of size `byte_count`.  Return error if not enough
-  // space.
-  //
-  // `head_room` (unit=bytes) specifies an additional amount of space to ensure is available in the
-  // log before returning success.  The head room is not included in the returned buffer.  Rather,
-  // its purpose is to allow differentiated levels of priority amongst slots written to the log.
-  // Without this, deadlock might be possible.  For example, a common scheme for log-event-driven
-  // state machines is to store periodic checkpoints with deltas in between.  If deltas are allowed
-  // to fill the entire capacity of the log, then there will be no room left to write a checkpoint,
-  // and trimming the log will be impossible, thus deadlocking the system.
-  //
+  /** Allocate memory to write a new log slot of size `byte_count`.  Return error if not enough
+   * space.
+   *
+   * This function may be called multiple times to attempt to allocate progressively larger buffers
+   * before a single call to commit.
+   *
+   * `head_room` (unit=bytes) specifies an additional amount of space to ensure is available in the
+   * log before returning success.  The head room is not included in the returned buffer.  Rather,
+   * its purpose is to allow differentiated levels of priority amongst slots written to the log.
+   * Without this, deadlock might be possible.  For example, a common scheme for log-event-driven
+   * state machines is to store periodic checkpoints with deltas in between.  If deltas are allowed
+   * to fill the entire capacity of the log, then there will be no room left to write a checkpoint,
+   * and trimming the log will be impossible, thus deadlocking the system.
+   */
   virtual StatusOr<MutableBuffer> prepare(usize byte_count, usize head_room = 0) = 0;
 
-  // Commits `byte_count` bytes; does not guarantee that these bytes are durable yet; a Reader may
-  // be created to await the flush of a certin slot offset.
-  //
-  // Returns the new end (slot upper bound) of the log.
-  //
+  /** \brief Commits `byte_count` bytes; does not guarantee that these bytes are durable yet; a
+   * Reader may be created to await the flush of a certin slot offset.
+   *
+   * Returns the new end (slot upper bound) of the log.
+   */
   virtual StatusOr<slot_offset_type> commit(usize byte_count) = 0;
 
-  // Wait for the log to reach the specified state.
-  //
+  /** \brief Wait for the log to reach the specified state.
+   */
   virtual Status await(LogDevice::WriterEvent event) = 0;
 };
 

@@ -45,7 +45,8 @@ struct IoRingLogConfig {
   u64 physical_size;
 
   // Specifies the size of a "flush block," the size of a single write operation while flushing,
-  // in number of 512 byte pages, log2.  For example:
+  // in number of kLogAtomicWriteSize (default=512; see llfs/config.hpp) byte pages, log2.  For
+  // example:
   //
   //  | flush_block_pages_log2   | flush write buffer size   |
   //  |--------------------------|---------------------------|
@@ -65,7 +66,14 @@ struct IoRingLogConfig {
   static IoRingLogConfig from_packed(
       const FileOffsetPtr<const PackedLogDeviceConfig&>& packed_config);
 
-  static IoRingLogConfig from_logical_size(u64 logical_size, Optional<usize> opt_block_size = None);
+  /** \brief Constructs and returns a config based on a given logical size.
+   *
+   * The block size is assumed to be IoRingLogConfig::kDefaultBlockSize unless otherwise specified.
+   * The physical offset is assumed to be 0 unless otherwise specified.  In all cases physical size
+   * is derived from logical size and block size.
+   */
+  static IoRingLogConfig from_logical_size(u64 logical_size, Optional<usize> opt_block_size = None,
+                                           Optional<i64> opt_physical_offset = None);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

@@ -40,12 +40,22 @@ class BasicIoRingLogFlushOp;
 using IoRingLogFlushOp = BasicIoRingLogFlushOp<
     BasicIoRingLogDriver<BasicIoRingLogFlushOp, DefaultIoRingLogDeviceStorage>>;
 
+/** \brief The global default setting for whether IoRingLogDevices should log failures at INFO or
+ * higher level by default.
+ *
+ * This exists mostly as a convenience for testing, so that the test output doesn't contain a large
+ * number of injected/simulated failure log messages.
+ */
 inline std::atomic<bool>& default_ioring_quiet_failure_logging()
 {
   static std::atomic<bool> be_quiet_{false};
   return be_quiet_;
 }
 
+/** \brief Flushes data from the in-memory ring buffer to log storage asynchronously.
+ *
+ * Concurrent flush operations are implemented by instantiating a number of objects of this type.
+ */
 template <typename DriverImpl>
 class BasicIoRingLogFlushOp
 {

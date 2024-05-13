@@ -110,7 +110,7 @@ TEST(VolumeMultiAppendTest, SimTest)
               // space in the log to add `s`.
               //
               LLFS_VLOG(1) << "Append error" << BATT_INSPECT(grant.size())
-                           << BATT_INSPECT(op->is_closed());
+                           << BATT_INSPECT(op->is_open());
               break;
             }
 

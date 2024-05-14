@@ -108,19 +108,7 @@ class BasicIoRingLogDriver
     return this->flush_pos_.get_value();
   }
 
-  StatusOr<slot_offset_type> await_flush_pos(slot_offset_type flush_pos)
-  {
-    StatusOr<slot_offset_type> status_or = await_slot_offset(flush_pos, this->flush_pos_);
-
-    // If the flush_pos Watch has been closed, it may indicate there was an I/O error; check the
-    // LogStorageDriverContext and report any error status we find.
-    //
-    if (status_or.status() == batt::StatusCode::kClosed) {
-      BATT_REQUIRE_OK(this->context_.get_error_status());
-    }
-
-    return status_or;
-  }
+  StatusOr<slot_offset_type> await_flush_pos(slot_offset_type flush_pos);
 
   //----
 
@@ -276,7 +264,7 @@ class BasicIoRingLogDriver
    */
   void storage_work_started();
 
-  /** \brief Signals that storage I/O work is now the in process of shutting down.  The first time
+  /** \brief Signals that storage I/O work is now in the process of shutting down.  The first time
    * this is called (after this->storage_work_started()), calls this->storage_.on_work_finished() to
    * decrement the work count, allowing the storage I/O event loop to exit once all activity has
    * completed.

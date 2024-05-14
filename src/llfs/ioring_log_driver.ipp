@@ -196,6 +196,24 @@ inline Status BasicIoRingLogDriver<FlushOpImpl, StorageT>::set_trim_pos(slot_off
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <template <typename> class FlushOpImpl, typename StorageT>
+inline StatusOr<slot_offset_type> BasicIoRingLogDriver<FlushOpImpl, StorageT>::await_flush_pos(
+    slot_offset_type flush_pos)
+{
+  StatusOr<slot_offset_type> status_or = await_slot_offset(flush_pos, this->flush_pos_);
+
+  // If the flush_pos Watch has been closed, it may indicate there was an I/O error; check the
+  // LogStorageDriverContext and report any error status we find.
+  //
+  if (status_or.status() == batt::StatusCode::kClosed) {
+    BATT_REQUIRE_OK(this->context_.get_error_status());
+  }
+
+  return status_or;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <template <typename> class FlushOpImpl, typename StorageT>
 inline Status BasicIoRingLogDriver<FlushOpImpl, StorageT>::set_commit_pos(
     slot_offset_type commit_pos)
 {

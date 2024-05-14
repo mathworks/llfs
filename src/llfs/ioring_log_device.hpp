@@ -69,7 +69,14 @@ class IoRingLogDeviceFactory : public LogDeviceFactory
 
     BATT_ASSIGN_OK_RESULT(DefaultIoRingLogDeviceStorage storage,
                           DefaultIoRingLogDeviceStorage::make_new(
-                              MaxQueueDepth{calculate.queue_depth() * 2}, this->fd_));
+                              MaxQueueDepth{
+                                  calculate.queue_depth() * 2
+                                  //
+                                  // Double the number of flush ops, to give us some margin so the
+                                  // rings don't ever run out of space (TODO [tastolfi 2024-05-14]
+                                  // this seems excessive; investigate lowering this)
+                              },
+                              this->fd_));
 
     this->fd_ = -1;
 

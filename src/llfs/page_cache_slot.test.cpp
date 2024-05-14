@@ -64,7 +64,7 @@ class PageCacheSlotTest : public ::testing::Test
 //  1. Create slots with different index values in a Pool; verify index()
 //     - also verify initial is_valid state
 //
-TEST_F(PageCacheSlotTest, CreateSlots)
+TEST_F(PageCacheSlotTest, CreateSlotsDeath)
 {
   for (usize i = 0; i < kNumTestSlots; ++i) {
     llfs::PageCacheSlot* slot = this->pool_->allocate();
@@ -89,7 +89,7 @@ TEST_F(PageCacheSlotTest, CreateSlots)
 //  2. ref_count test - add_ref/remove_ref should affect the ref_count, and also the use count of
 //     the pool but only in the case of add: 0 -> 1 and remove: 1 -> 0.
 //
-TEST_F(PageCacheSlotTest, AddRemoveRef)
+TEST_F(PageCacheSlotTest, AddRemoveRefDeath)
 {
   EXPECT_EQ(this->pool_->use_count(), 1u);
 
@@ -373,7 +373,7 @@ TEST_F(PageCacheSlotTest, EvictIfKeyEqualsFailureWrongKey)
 //     a. Valid + Filled
 //     c. Valid + Filled + Pinned
 //
-TEST_F(PageCacheSlotTest, FillFailureAlreadyFilled)
+TEST_F(PageCacheSlotTest, FillFailureAlreadyFilledDeath)
 {
   llfs::PageCacheSlot* slot = this->pool_->allocate();
   {
@@ -391,7 +391,7 @@ TEST_F(PageCacheSlotTest, FillFailureAlreadyFilled)
 //  7. fill fails when state is not Invalid:
 //     b. Valid + Cleared
 //
-TEST_F(PageCacheSlotTest, FillFailureCleared)
+TEST_F(PageCacheSlotTest, FillFailureClearedDeath)
 {
   llfs::PageCacheSlot* slot = this->pool_->allocate();
 

@@ -206,6 +206,10 @@ class SlotWriter::WriterLock
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
+  /** \brief Appends the specified byte range to the prepared data.  `token` is just a raw byte
+   * sequence, not a full slot.  This function is used to implement the `begin_atomic_range` and
+   * `end_atomic_range` tokens.
+   */
   Status append_token_impl(const Slice<const u8>& token, const batt::Grant& caller_grant) noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -

@@ -167,10 +167,10 @@ class SimulatedLogDeviceStorage
 
     void stop_event_loop();
 
-    Status read_all(i64 offset, MutableBuffer buffer);
+    Status read_all(i64 offset, const MutableBuffer& buffer);
 
-    void async_write_some_fixed(i64 file_offset, const ConstBuffer& data, i32 /*buf_index*/,
-                                std::function<void(StatusOr<i32>)>&& handler);
+    void async_write_some(i64 file_offset, const ConstBuffer& data,
+                          std::function<void(StatusOr<i32>)>&& handler);
 
     i32 work_count() const noexcept
     {
@@ -318,11 +318,14 @@ class SimulatedLogDeviceStorage
     return this->impl_->read_all(offset, buffer);
   }
 
+  // The buf_index arg here isn't used by the simulated impl, but it is needed by the other type
+  // used to instantiate IoRingLogDriver, DefaultIoRingLogDeviceStorage.
+  //
   template <typename Handler = void(StatusOr<i32>)>
-  void async_write_some_fixed(i64 file_offset, const ConstBuffer& data, i32 buf_index,
+  void async_write_some_fixed(i64 file_offset, const ConstBuffer& data, i32 /*buf_index*/,
                               Handler&& handler)
   {
-    this->impl_->async_write_some_fixed(file_offset, data, buf_index, BATT_FORWARD(handler));
+    this->impl_->async_write_some(file_offset, data, BATT_FORWARD(handler));
   }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -

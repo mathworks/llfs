@@ -195,6 +195,10 @@ Status SimulatedLogDeviceStorage::EphemeralState::run_event_loop()
   for (;;) {
     LLFS_VLOG(1) << "(id=" << this->id_ << ") EphemeralState::run_event_loop() top of loop:"
                  << BATT_INSPECT(this->stopped_) << BATT_INSPECT(this->work_count_);
+
+    // If there is no more work to do (work_count_ == 0), or stop has been explicitly requested,
+    // then exit the loop now before awaiting the next completion handler.
+    //
     if (this->stopped_.load() || this->work_count_.load() == 0) {
       break;
     }
@@ -288,7 +292,7 @@ void SimulatedLogDeviceStorage::EphemeralState::post_to_event_loop(
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status SimulatedLogDeviceStorage::EphemeralState::read_all(i64 offset, MutableBuffer buffer)
+Status SimulatedLogDeviceStorage::EphemeralState::read_all(i64 offset, const MutableBuffer& buffer)
 {
   LLFS_VLOG(1) << "(id=" << this->id_ << ") EphemeralState::read_all(offset=" << offset
                << ", size=" << buffer.size() << ")";
@@ -298,9 +302,8 @@ Status SimulatedLogDeviceStorage::EphemeralState::read_all(i64 offset, MutableBu
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void SimulatedLogDeviceStorage::EphemeralState::async_write_some_fixed(
-    i64 file_offset, const ConstBuffer& data, i32 /*buf_index*/,
-    std::function<void(StatusOr<i32>)>&& handler)
+void SimulatedLogDeviceStorage::EphemeralState::async_write_some(
+    i64 file_offset, const ConstBuffer& data, std::function<void(StatusOr<i32>)>&& handler)
 {
   LLFS_VLOG(1) << "(id=" << this->id_ << ") EphemeralState::async_write_some(offset=" << file_offset
                << ", size=" << data.size() << ")";

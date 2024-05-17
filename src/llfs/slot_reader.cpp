@@ -105,7 +105,7 @@ StatusOr<SlotParse> SlotReader::parse_next(batt::WaitForResource wait_for_data)
     const usize bytes_available_before = data_reader.bytes_available();
 
     if (bytes_available_before != 0) {
-      BATT_CHECK_NE(*data_reader.unread_begin(), 0u)
+      BATT_CHECK_NE((int)(*data_reader.unread_begin()), 0)
           << BATT_INSPECT(bytes_available_before) << BATT_INSPECT(current_slot)
           << BATT_INSPECT(data.size()) << BATT_INSPECT(current_slot + data.size())
           << BATT_INSPECT(this->slots_parsed_count_);

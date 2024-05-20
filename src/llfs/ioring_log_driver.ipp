@@ -484,11 +484,9 @@ template <template <typename> class FlushOpImpl, typename StorageT>
 inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::storage_work_started()
 {
   const bool was_working = this->storage_working_.exchange(true);
-  if (!was_working) {
-    this->storage_.on_work_started();
-  } else {
-    LLFS_LOG_WARNING() << "storage started again?" << std::endl << boost::stacktrace::stacktrace{};
-  }
+  BATT_CHECK(!was_working);
+
+  this->storage_.on_work_started();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -500,6 +498,9 @@ inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::storage_work_finished()
   if (was_working) {
     this->storage_.on_work_finished();
   }
+  // else:
+  //   Don't assert/check here, since there are multiple legitimate places where we could call
+  //   `on_work_finished`.
 }
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

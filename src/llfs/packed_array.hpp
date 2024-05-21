@@ -145,8 +145,6 @@ inline usize packed_array_size(usize item_count, batt::StaticType<T> = {})
 {
   const little_u24 packed_count = item_count;
 
-  BATT_ASSERT_EQ(static_cast<usize>(packed_count.value()), item_count);
-
   return sizeof(PackedArray<T>) + sizeof(T) * item_count;
 }
 

@@ -315,7 +315,7 @@ void SimulatedLogDeviceStorage::EphemeralState::async_write_some(
 
   this->on_work_started(ASYNC_WRITE_SOME);
 
-  auto* write_task = new batt::Task{
+  auto write_task = std::make_shared<batt::Task>(
       this->get_task_scheduler().schedule_task(),
       [shared_this = batt::shared_ptr_from(this), file_offset, data,
        handler = BATT_FORWARD(handler)]() mutable {
@@ -342,10 +342,12 @@ void SimulatedLogDeviceStorage::EphemeralState::async_write_some(
             })
             .IgnoreError();
       },
-      batt::Task::DeferStart{true}};
+      batt::Task::DeferStart{true});
 
-  write_task->call_when_done([write_task] {
-    delete write_task;
+  write_task->call_when_done([write_task]() mutable {
+    // Release the task.
+    //
+    write_task = nullptr;
   });
 
   write_task->start();

@@ -47,28 +47,27 @@ const std::filesystem::path& TestConfig::project_dir() noexcept
 {
   if (this->project_dir_.empty()) {
     this->project_dir_ = []() {
+      // Preferred method: read the PROJECT_DIR environment variable and use that.
+      //
       const char* project_dir_env = std::getenv("PROJECT_DIR");
       if (project_dir_env) {
         return std::filesystem::path{project_dir_env};
       }
 
+      // Fallback method: starting with the path to this source file (__FILE__), recursively look at
+      // parent directory names until we find `src`, then go up one level and stop.
+      //
       std::filesystem::path file_path{__FILE__};
-      if (std::filesystem::exists(file_path)) {
-        std::filesystem::path testing_dir_path = file_path.parent_path();
-        if (std::filesystem::exists(testing_dir_path)) {
-          std::filesystem::path src_llfs_dir_path = testing_dir_path.parent_path();
-          if (std::filesystem::exists(src_llfs_dir_path)) {
-            std::filesystem::path src_dir_path = src_llfs_dir_path.parent_path();
-            if (std::filesystem::exists(src_dir_path)) {
-              std::filesystem::path project_dir_path = src_dir_path.parent_path();
-              if (std::filesystem::exists(project_dir_path)) {
-                return project_dir_path;
-              }
-            }
-          }
-        }
+      while (file_path.has_parent_path() && file_path.filename() != "src") {
+        file_path = file_path.parent_path();
+      }
+      if (file_path.filename() == "src") {
+        file_path = file_path.parent_path();
+        return file_path;
       }
 
+      // All methods failed.
+      //
       BATT_PANIC() << "Could not find project root; make sure PROJECT_DIR is set!";
       BATT_UNREACHABLE();
     }();

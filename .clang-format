@@ -10,11 +10,9 @@ AllowShortFunctionsOnASingleLine: None
 AllowShortIfStatementsOnASingleLine: false
 AllowShortLambdasOnASingleLine: false
 AllowShortLoopsOnASingleLine: false
-AllowAllConstructorInitializersOnNextLine: false
 BreakBeforeBraces: Custom
 DerivePointerAlignment: false
 FixNamespaceComments: true
-IndentCaseLabels: false
 IndentPPDirectives: None
 IndentWidth: 2
 PointerAlignment: Left

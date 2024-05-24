@@ -19,7 +19,7 @@ namespace {
 
 using namespace llfs::int_types;
 
-TEST(PackedStatusOrTest, PackUnPack)
+TEST(PackedStatusOrTest, PackUnPackDeath)
 {
   batt::Status not_found_status{batt::StatusCode::kNotFound};
 

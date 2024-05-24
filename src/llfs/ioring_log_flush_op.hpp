@@ -17,6 +17,8 @@
 #include <llfs/data_layout.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/ioring.hpp>
+#include <llfs/ioring_log_device_storage.hpp>
+#include <llfs/ioring_log_driver_fwd.hpp>
 #include <llfs/log_block_calculator.hpp>
 #include <llfs/metrics.hpp>
 #include <llfs/packed_log_page_buffer.hpp>
@@ -35,11 +37,25 @@ namespace llfs {
 template <typename DriverImpl>
 class BasicIoRingLogFlushOp;
 
-template <template <typename> class FlushOpImpl>
-class BasicIoRingLogDriver;
+using IoRingLogFlushOp = BasicIoRingLogFlushOp<
+    BasicIoRingLogDriver<BasicIoRingLogFlushOp, DefaultIoRingLogDeviceStorage>>;
 
-using IoRingLogFlushOp = BasicIoRingLogFlushOp<BasicIoRingLogDriver<BasicIoRingLogFlushOp>>;
+/** \brief The global default setting for whether IoRingLogDevices should log failures at INFO or
+ * higher level by default.
+ *
+ * This exists mostly as a convenience for testing, so that the test output doesn't contain a large
+ * number of injected/simulated failure log messages.
+ */
+inline std::atomic<bool>& default_ioring_quiet_failure_logging()
+{
+  static std::atomic<bool> be_quiet_{false};
+  return be_quiet_;
+}
 
+/** \brief Flushes data from the in-memory ring buffer to log storage asynchronously.
+ *
+ * Concurrent flush operations are implemented by instantiating a number of objects of this type.
+ */
 template <typename DriverImpl>
 class BasicIoRingLogFlushOp
 {
@@ -151,7 +167,7 @@ class BasicIoRingLogFlushOp
     return this->debug_info_message_;
   }
 
-  std::atomic<bool> quiet_failure_logging{false};
+  std::atomic<bool> quiet_failure_logging{default_ioring_quiet_failure_logging().load()};
 
  private:
   // Return the committed data portion of the block buffer, aligned to 512-byte boundaries.

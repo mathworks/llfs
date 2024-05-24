@@ -20,6 +20,7 @@
 #include <llfs/file_offset_ptr.hpp>
 #include <llfs/ioring.hpp>
 #include <llfs/ioring_log_config.hpp>
+#include <llfs/ioring_log_device_storage.hpp>
 #include <llfs/ioring_log_driver.hpp>
 #include <llfs/ioring_log_driver_options.hpp>
 #include <llfs/ioring_log_flush_op.hpp>
@@ -64,11 +65,24 @@ class IoRingLogDeviceFactory : public LogDeviceFactory
 
   StatusOr<std::unique_ptr<IoRingLogDevice>> open_ioring_log_device()
   {
-    auto instance = std::make_unique<IoRingLogDevice>(
-        RingBuffer::TempFile{.byte_size = this->config_.logical_size}, this->task_scheduler_,
-        this->fd_, this->config_, this->options_);
+    LogBlockCalculator calculate{this->config_, this->options_};
+
+    BATT_ASSIGN_OK_RESULT(DefaultIoRingLogDeviceStorage storage,
+                          DefaultIoRingLogDeviceStorage::make_new(
+                              MaxQueueDepth{
+                                  calculate.queue_depth() * 2
+                                  //
+                                  // Double the number of flush ops, to give us some margin so the
+                                  // rings don't ever run out of space (TODO [tastolfi 2024-05-14]
+                                  // this seems excessive; investigate lowering this)
+                              },
+                              this->fd_));
 
     this->fd_ = -1;
+
+    auto instance = std::make_unique<IoRingLogDevice>(
+        RingBuffer::TempFile{.byte_size = this->config_.logical_size}, this->task_scheduler_,
+        std::move(storage), this->config_, this->options_);
 
     Status open_status = instance->open();
     BATT_REQUIRE_OK(open_status);

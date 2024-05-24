@@ -32,7 +32,7 @@ TEST(LatchingBitSetTest, Size0)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-TEST(LatchingBitSetTest, Size1)
+TEST(LatchingBitSetTest, Size1Death)
 {
   llfs::LatchingBitSet s{1};
 

@@ -393,6 +393,9 @@ class IoRingLogFlushOpModel
                                             ::testing::_ /*handler*/))
         .WillRepeatedly(::testing::InvokeArgument<1>(this->calculate_->block_count()));
 
+    EXPECT_CALL(*this->driver_, report_flush_error(::testing::_ /*error status*/))
+        .WillRepeatedly(::testing::Return());
+
     //----- --- -- -  -  -   -
 
     // Create the expected flush op state.

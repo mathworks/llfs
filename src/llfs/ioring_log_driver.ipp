@@ -31,23 +31,26 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-template <template <typename> class FlushOpImpl>
-inline BasicIoRingLogDriver<FlushOpImpl>::BasicIoRingLogDriver(
-    LogStorageDriverContext& context, batt::TaskScheduler& task_scheduler, int fd,
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline BasicIoRingLogDriver<FlushOpImpl, StorageT>::BasicIoRingLogDriver(
+    LogStorageDriverContext& context, batt::TaskScheduler& task_scheduler, StorageT&& storage,
     const IoRingLogConfig& config, const IoRingLogDriverOptions& options) noexcept
     : context_{context}
     , task_scheduler_{task_scheduler}
     , config_{config}
     , options_{options}
     , calculate_{config, options}
-    , ioring_{*IoRing::make_new(MaxQueueDepth{this->calculate().queue_depth() * 2})}
-    , file_{this->ioring_, fd}
+    , storage_{std::move(storage)}
     , flush_ops_(std::max(usize{2}, this->calculate().queue_depth()))
 //                        ^ we require at least two flush ops for lazy init:
 //                           one to flush a full block at the end of the log and one to
 //                           initialize the next (empty) block header.
 
 {
+  BATT_CHECK_GE(this->calculate().block_count(), this->calculate().queue_depth())
+      << "Queue Depth (== number of concurrent flush ops) may not exceed the number of blocks in "
+         "the log; please use different options!";
+
   const auto metric_name = [this](const std::string_view& property) {
     return batt::to_string("IoRingLogDevice_", this->name_, "_", property);
   };
@@ -60,8 +63,8 @@ inline BasicIoRingLogDriver<FlushOpImpl>::BasicIoRingLogDriver(
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-template <template <typename> class FlushOpImpl>
-inline BasicIoRingLogDriver<FlushOpImpl>::~BasicIoRingLogDriver() noexcept
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline BasicIoRingLogDriver<FlushOpImpl, StorageT>::~BasicIoRingLogDriver() noexcept
 {
   global_metric_registry()  //
       .remove(this->trim_pos_)
@@ -71,15 +74,15 @@ inline BasicIoRingLogDriver<FlushOpImpl>::~BasicIoRingLogDriver() noexcept
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-template <template <typename> class FlushOpImpl>
-inline Status BasicIoRingLogDriver<FlushOpImpl>::open()
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline Status BasicIoRingLogDriver<FlushOpImpl, StorageT>::open()
 {
   // Read all blocks into the ring buffer.
   //
   Status data_read = this->read_log_data();
   BATT_REQUIRE_OK(data_read) << BATT_INSPECT(this->name_);
 
-  Status fd_registered = this->file_.register_fd();
+  Status fd_registered = this->storage_.register_fd();
   BATT_REQUIRE_OK(fd_registered);
 
   // First initialize all ops in the queue pipeline to point back at this driver.  IMPORTANT: this
@@ -89,8 +92,8 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::open()
     op.initialize(this);
   }
 
-  StatusOr<usize> buffers_registered = this->ioring_.register_buffers(
-      as_seq(this->flush_ops_) | seq::map([](const IoRingLogFlushOp& op) {
+  StatusOr<usize> buffers_registered = this->storage_.register_buffers(
+      as_seq(this->flush_ops_) | seq::map([](const Self::FlushOp& op) {
         return op.get_buffer();
       }) |
       seq::boxed());
@@ -104,8 +107,8 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::open()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-template <template <typename> class FlushOpImpl>
-inline Status BasicIoRingLogDriver<FlushOpImpl>::read_log_data()
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline Status BasicIoRingLogDriver<FlushOpImpl, StorageT>::read_log_data()
 {
   BATT_CHECK(!this->flush_task_);
 
@@ -113,29 +116,25 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::read_log_data()
   // the read operations in the loop below.  After we are done, we must stop this background thread
   // and return the IoRing to its original state so that device driver can start up.
   //
-  this->ioring_.on_work_started();
+  this->storage_.on_work_started();
 
   // The background thread to process IO completions.
   //
-  std::thread ioring_thread{[this] {
-    LLFS_VLOG(1) << "ioring_thread started";
-    this->ioring_.run().IgnoreError();
-    LLFS_VLOG(1) << "ioring_thread returning";
-  }};
+  typename StorageT::EventLoopTask event_loop{this->storage_, this->name_};
 
   // Shut down the ioring and reset when we leave this scope.
   //
   const auto stop_ioring_thread = batt::finally([&] {
     LLFS_VLOG(1) << "Stopping ioring (IoRingLogDriver::read_log_data)";
-    this->ioring_.on_work_finished();
-    ioring_thread.join();
-    this->ioring_.reset();
+    this->storage_.on_work_finished();
+    event_loop.join();
+    this->storage_.reset_event_loop();
   });
 
   IoRingLogRecovery recovery{
       this->config_, this->context_.buffer_,
       /*read_data_fn=*/[this](i64 file_offset, MutableBuffer buffer) -> Status {
-        return this->file_.read_all(file_offset + this->config_.physical_offset, buffer);
+        return this->storage_.read_all(file_offset + this->config_.physical_offset, buffer);
       }};
 
   LLFS_VLOG(1) << "Starting log recovery..." << BATT_INSPECT(this->name_);
@@ -183,10 +182,10 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::read_log_data()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-template <template <typename> class FlushOpImpl>
-inline Status BasicIoRingLogDriver<FlushOpImpl>::set_trim_pos(slot_offset_type trim_pos)
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline Status BasicIoRingLogDriver<FlushOpImpl, StorageT>::set_trim_pos(slot_offset_type trim_pos)
 {
-  LLFS_VLOG(1) << "BasicIoRingLogDriver<FlushOpImpl>::set_trim_pos(" << trim_pos << ")"
+  LLFS_VLOG(1) << "BasicIoRingLogDriver::set_trim_pos(" << trim_pos << ")"
                << BATT_INSPECT(this->trim_pos_.get_value());
 
   clamp_min_slot(this->trim_pos_, trim_pos);
@@ -196,8 +195,27 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::set_trim_pos(slot_offset_type t
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-template <template <typename> class FlushOpImpl>
-inline Status BasicIoRingLogDriver<FlushOpImpl>::set_commit_pos(slot_offset_type commit_pos)
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline StatusOr<slot_offset_type> BasicIoRingLogDriver<FlushOpImpl, StorageT>::await_flush_pos(
+    slot_offset_type flush_pos)
+{
+  StatusOr<slot_offset_type> status_or = await_slot_offset(flush_pos, this->flush_pos_);
+
+  // If the flush_pos Watch has been closed, it may indicate there was an I/O error; check the
+  // LogStorageDriverContext and report any error status we find.
+  //
+  if (status_or.status() == batt::StatusCode::kClosed) {
+    BATT_REQUIRE_OK(this->context_.get_error_status());
+  }
+
+  return status_or;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline Status BasicIoRingLogDriver<FlushOpImpl, StorageT>::set_commit_pos(
+    slot_offset_type commit_pos)
 {
   clamp_min_slot(this->commit_pos_, commit_pos);
 
@@ -206,27 +224,35 @@ inline Status BasicIoRingLogDriver<FlushOpImpl>::set_commit_pos(slot_offset_type
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-template <template <typename> class FlushOpImpl>
-inline void BasicIoRingLogDriver<FlushOpImpl>::halt()
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::halt()
 {
   const bool previously_halted = this->halt_requested_.exchange(true);
   if (!previously_halted) {
-    LLFS_VLOG(1) << "BasicIoRingLogDriver<FlushOpImpl>::halt() - (trim="
-                 << this->trim_pos_.get_value() << " flush=" << this->flush_pos_.get_value()
+    LLFS_VLOG(1) << "BasicIoRingLogDriver::halt() - (driver=" << this->name_
+                 << " trim=" << this->trim_pos_.get_value()
+                 << " flush=" << this->flush_pos_.get_value()
                  << " commit=" << this->commit_pos_.get_value() << ")";
 
     this->trim_pos_.close();
     this->flush_pos_.close();
     this->commit_pos_.close();
+
+    this->storage_work_finished();
   }
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-template <template <typename> class FlushOpImpl>
-inline void BasicIoRingLogDriver<FlushOpImpl>::join()
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::join()
 {
   if (this->flush_task_) {
+    BATT_DEBUG_INFO(
+        BATT_INSPECT(this->halt_requested_)
+        << BATT_INSPECT(this->trim_pos_.is_closed()) << BATT_INSPECT(this->flush_pos_.is_closed())
+        << BATT_INSPECT(this->commit_pos_.is_closed()) << BATT_INSPECT(this->storage_working_));
+
     this->flush_task_->join();
     this->flush_task_ = None;
 
@@ -237,8 +263,8 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::join()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-template <template <typename> class FlushOpImpl>
-inline void BasicIoRingLogDriver<FlushOpImpl>::start_flush_task()
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::start_flush_task()
 {
   this->flush_task_.emplace(
       this->task_scheduler_.schedule_task(),
@@ -250,8 +276,8 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::start_flush_task()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-template <template <typename> class FlushOpImpl>
-inline void BasicIoRingLogDriver<FlushOpImpl>::flush_task_main()
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::flush_task_main()
 {
   Status status = [&]() -> Status {
     const u64 total_size = this->calculate().physical_size();
@@ -281,33 +307,38 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::flush_task_main()
           << BATT_INSPECT(commit_pos_);
     });
 
-    this->ioring_.on_work_started();
+    this->storage_work_started();
     this->poll_flush_state();
     this->poll_commit_state();
 
-    // Run the IoRing on a background thread so as not to tie up the executor on which this task
-    // is running.
+    // Process I/O events concurrently in the background so as not to tie up the executor on which
+    // this task is running.
     //
-    batt::Watch<bool> done{false};
-    std::thread io_thread{[this, &done] {
-      LLFS_VLOG(1) << "(driver=" << this->name_ << ") invoking IoRing::run()";
+    typename StorageT::EventLoopTask event_loop{this->storage_, this->name_};
 
-      Status io_status = this->ioring_.run();
-      if (!io_status.ok()) {
-        LLFS_LOG_WARNING() << "(driver=" << this->name_
-                           << ") IoRing::run() returned: " << io_status;
+    // Wait for the event loop to exit.
+    //
+    event_loop.join();
+
+    // Now it is safe to close the storage layer (i.e. direct I/O block file).
+    //
+    this->storage_close_status_ = this->storage_.close();
+
+    if (!this->storage_close_status_.ok()) {
+      if (default_ioring_quiet_failure_logging()) {
+        LLFS_VLOG(1) << "Failed to close storage for IoRingLogDevice;"
+                     << BATT_INSPECT_STR(this->name_) << BATT_INSPECT(this->storage_close_status_);
+      } else {
+        LLFS_LOG_WARNING() << "Failed to close storage for IoRingLogDevice;"
+                           << BATT_INSPECT_STR(this->name_)
+                           << BATT_INSPECT(this->storage_close_status_);
       }
-      done.set_value(true);
-    }};
-
-    auto done_status = done.await_equal(true);
-    BATT_CHECK_OK(done_status);
-    io_thread.join();
+    }
 
     return OkStatus();
   }();
 
-  if (!this->halt_requested_.load()) {
+  if (!this->halt_requested_.load() && this->storage_working_.load()) {
     LLFS_LOG_WARNING() << "[IoRingLogDriver::flush_task] exited unexpectedly with status="
                        << status;
   } else {
@@ -317,20 +348,33 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::flush_task_main()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-template <template <typename> class FlushOpImpl>
-inline void BasicIoRingLogDriver<FlushOpImpl>::poll_flush_state()
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::poll_flush_state()
 {
   this->flush_state_->poll(this);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-template <template <typename> class FlushOpImpl>
-inline void BasicIoRingLogDriver<FlushOpImpl>::poll_commit_state()
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::report_flush_error(Status error_status)
 {
+  this->context_.update_error_status(error_status);
+  this->flush_pos_.close();
+  this->storage_work_finished();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::poll_commit_state()
+{
+  LLFS_VLOG(2) << "(driver=" << this->name_ << ") poll_commit_state() entered";
+
   // Don't recursively re-enter `poll_commit_state`.
   //
   if (this->inside_poll_commit_state_) {
+    LLFS_VLOG(2) << "(driver=" << this->name_ << ") poll_commit_state() recursive call - returning";
     return;
   }
   this->inside_poll_commit_state_ = true;
@@ -341,6 +385,8 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::poll_commit_state()
   // Return immediately if there are no flush ops waiting for `commit_pos_` to advance.
   //
   if (this->waiting_for_commit_.empty()) {
+    LLFS_VLOG(2) << "(driver=" << this->name_
+                 << ") poll_commit_state() waiting_for_commit_ is empty - returning";
     return;
   }
 
@@ -363,8 +409,9 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::poll_commit_state()
       if (!this->commit_pos_listener_active_) {
         this->commit_pos_listener_active_ = true;
 
-        LLFS_VLOG(2) << "(driver=" << this->name_ << ")" << BATT_INSPECT(known_commit_pos)
-                     << BATT_INSPECT(next_wait_pos);
+        LLFS_VLOG(2) << "(driver=" << this->name_ << ") waiting on commit_pos;"
+                     << BATT_INSPECT(known_commit_pos) << BATT_INSPECT(next_wait_pos)
+                     << BATT_INSPECT(this->commit_pos_.is_closed());
 
         // If we break out of this loop before we completely drain `waiting_for_commit_`, we must
         // start another wait operation.
@@ -374,6 +421,8 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::poll_commit_state()
             make_custom_alloc_handler(         //
                 this->commit_handler_memory_,  //
                 [this](const StatusOr<slot_offset_type>& updated_commit_pos) {
+                  LLFS_VLOG(2) << "(driver=" << this->name_
+                               << ") commit_pos_ updated: " << updated_commit_pos;
                   this->handle_commit_pos_update(updated_commit_pos);
                 }));
       }
@@ -395,8 +444,9 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::poll_commit_state()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-template <template <typename> class FlushOpImpl>
-inline void BasicIoRingLogDriver<FlushOpImpl>::wait_for_commit(slot_offset_type least_upper_bound)
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::wait_for_commit(
+    slot_offset_type least_upper_bound)
 {
   this->waiting_for_commit_.push(least_upper_bound);
   this->poll_commit_state();
@@ -404,36 +454,60 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::wait_for_commit(slot_offset_type 
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-template <template <typename> class FlushOpImpl>
-inline void BasicIoRingLogDriver<FlushOpImpl>::handle_commit_pos_update(
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::handle_commit_pos_update(
     const StatusOr<slot_offset_type>& updated_commit_pos)
 {
   // VERY IMPORTANT: we must execute the actual handler logic on the ioring thread to avoid data
   // races!
   //
-  this->ioring_.post(make_custom_alloc_handler(  //
-      this->commit_handler_memory_,              //
+  this->storage_.post_to_event_loop(make_custom_alloc_handler(  //
+      this->commit_handler_memory_,                             //
       [this, updated_commit_pos](const StatusOr<i32>& post_result) {
+        LLFS_VLOG(2) << "(driver=" << this->name_ << ") handle_commit_pos_update("
+                     << updated_commit_pos << ")" << BATT_INSPECT(post_result);
+
         this->commit_pos_listener_active_ = false;
 
         if (!updated_commit_pos.ok() || !post_result.ok()) {
-          this->ioring_.on_work_finished();
-          this->ioring_.stop();
+          this->storage_work_finished();
           return;
         }
-
-        LLFS_VLOG(2) << "(driver=" << this->name_
-                     << ") commit_pos listener invoked: " << updated_commit_pos;
 
         this->poll_commit_state();
       }));
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::storage_work_started()
+{
+  const bool was_working = this->storage_working_.exchange(true);
+  BATT_CHECK(!was_working);
+
+  this->storage_.on_work_started();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::storage_work_finished()
+{
+  const bool was_working = this->storage_working_.exchange(false);
+  if (was_working) {
+    this->storage_.on_work_finished();
+  }
+  // else:
+  //   Don't assert/check here, since there are multiple legitimate places where we could call
+  //   `on_work_finished`.
+}
+
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 // class FlushState
 //
-template <template <typename> class FlushOpImpl>
-inline BasicIoRingLogDriver<FlushOpImpl>::FlushState::FlushState(
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline BasicIoRingLogDriver<FlushOpImpl, StorageT>::FlushState::FlushState(
     BasicIoRingLogDriver* driver) noexcept
     : flushed_upper_bound_{driver->get_flush_pos()}
 
@@ -451,8 +525,9 @@ inline BasicIoRingLogDriver<FlushOpImpl>::FlushState::FlushState(
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-template <template <typename> class FlushOpImpl>
-inline void BasicIoRingLogDriver<FlushOpImpl>::FlushState::poll(BasicIoRingLogDriver* driver)
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::FlushState::poll(
+    BasicIoRingLogDriver* driver)
 {
   bool update = false;
 
@@ -486,9 +561,9 @@ inline void BasicIoRingLogDriver<FlushOpImpl>::FlushState::poll(BasicIoRingLogDr
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-template <template <typename> class FlushOpImpl>
-inline slot_offset_type BasicIoRingLogDriver<FlushOpImpl>::FlushState::get_flushed_upper_bound()
-    const
+template <template <typename> class FlushOpImpl, typename StorageT>
+inline slot_offset_type
+BasicIoRingLogDriver<FlushOpImpl, StorageT>::FlushState::get_flushed_upper_bound() const
 {
   return this->flushed_upper_bound_;
 }

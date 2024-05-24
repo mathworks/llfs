@@ -12,6 +12,7 @@
 #ifndef LLFS_VARINT_HPP
 #define LLFS_VARINT_HPP
 
+#include <llfs/buffer.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/optional.hpp>
 
@@ -66,12 +67,48 @@ BATT_STATIC_ASSERT_EQ(kMaxVarInt64Size, max_packed_sizeof_varint(64));
 //
 u8* pack_varint_to(u8* first, u8* last, u64 n);
 
+/** \brief (Convenience) Packs the passed integer `n` to the buffer `dst`, returning the remaining
+ * portion of `dst` if successful or None if there is not enough space.
+ */
+inline Optional<MutableBuffer> pack_varint_to(const MutableBuffer& dst, u64 n)
+{
+  u8* const first = static_cast<u8*>(dst.data());
+  u8* const last = first + dst.size();
+  u8* const rest = pack_varint_to(first, last, n);
+  if (rest) {
+    return MutableBuffer{rest, static_cast<usize>(last - rest)};
+  }
+  return None;
+}
+
 // Attempts to decode a varint value from the given byte range.  If successful, this function will
 // return the decoded integer as the first tuple element; else this element will be None.  The
 // second element of the returned tuple will be a pointer to the byte after the last byte parsed as
 // part of the varint.
 //
 std::tuple<Optional<u64>, const u8*> unpack_varint_from(const u8* first, const u8* last);
+
+/** \brief (Convenience) Unpacks a varint from the passed buffer; updates the buffer in-place.
+ */
+inline Optional<u64> unpack_varint_from(ConstBuffer* src)
+{
+  const u8* const first = static_cast<const u8*>(src->data());
+  const u8* const last = first + src->size();
+  auto [n, rest] = unpack_varint_from(first, last);
+  if (n) {
+    *src += rest - first;
+  }
+  return n;
+}
+
+/** \brief (Convenience) Unpacks a varint from the passed buffer, returning the parsed integer and
+ * the rest of the data.
+ */
+inline std::tuple<Optional<u64>, ConstBuffer> unpack_varint_from(ConstBuffer src)
+{
+  Optional<u64> n = unpack_varint_from(&src);
+  return {n, src};
+}
 
 }  // namespace llfs
 

@@ -85,11 +85,22 @@ class MemoryLogStorageDriver /*Impl*/
 
   Status close()
   {
+    this->halt();
+    this->join();
+
+    return OkStatus();
+  }
+
+  void halt()
+  {
     this->trim_pos_.close();
     this->manual_flush_pos_.close();
     this->commit_pos_.close();
+  }
 
-    return OkStatus();
+  void join()
+  {
+    // Nothing to do.
   }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -

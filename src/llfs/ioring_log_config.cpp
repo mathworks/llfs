@@ -11,6 +11,7 @@
 
 #ifndef LLFS_DISABLE_IO_URING
 
+#include <llfs/log_block_calculator.hpp>
 #include <llfs/log_device_config.hpp>
 
 namespace llfs {
@@ -25,6 +26,26 @@ namespace llfs {
       .physical_offset = packed_config.absolute_block_0_offset(),
       .physical_size = packed_config->physical_size,
       .pages_per_block_log2 = packed_config->pages_per_block_log2,
+  };
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*static*/ IoRingLogConfig IoRingLogConfig::from_logical_size(u64 logical_size,
+                                                              Optional<usize> opt_block_size,
+                                                              Optional<i64> opt_physical_offset)
+{
+  const usize block_size = opt_block_size.value_or(IoRingLogConfig::kDefaultBlockSize);
+  const i32 block_size_log2 = batt::log2_ceil(block_size);
+
+  BATT_CHECK_GE(block_size_log2, kLogPageSizeLog2);
+
+  return IoRingLogConfig{
+      .logical_size = logical_size,
+      .physical_offset = opt_physical_offset.value_or(0),
+      .physical_size =
+          LogBlockCalculator::disk_size_required_for_log_size(logical_size, block_size),
+      .pages_per_block_log2 = block_size_log2 - kLogPageSizeLog2,
   };
 }
 

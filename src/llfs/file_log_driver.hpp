@@ -189,6 +189,10 @@ class FileLogDriver
 
   Status close();
 
+  void halt();
+
+  void join();
+
  private:
   // See <llfs/file_log_driver/concurrent_shared_state.cpp>
   //

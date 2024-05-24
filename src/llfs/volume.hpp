@@ -45,13 +45,17 @@ struct VolumeRecoverParams {
 };
 
 class VolumeJobRecoveryVisitor;
+class VolumeMultiAppend;
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 class Volume
 {
  public:
+  friend class VolumeMultiAppend;
   friend class VolumeReader;
+
+  using MultiAppend = VolumeMultiAppend;
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -349,3 +353,4 @@ class Volume
 #endif  // LLFS_VOLUME_HPP
 
 #include <llfs/volume.ipp>
+#include <llfs/volume_multi_append.hpp>

@@ -12,12 +12,15 @@
 
 #include <llfs/config.hpp>
 //
+#include <llfs/testing/test_config.hpp>
+
 #include <llfs/int_types.hpp>
 #include <llfs/log_device.hpp>
 #include <llfs/optional.hpp>
 #include <llfs/page_cache.hpp>
 #include <llfs/page_size.hpp>
 #include <llfs/simulated_log_device.hpp>
+#include <llfs/simulated_log_device_storage.hpp>
 #include <llfs/simulated_page_device.hpp>
 #include <llfs/slot.hpp>
 #include <llfs/volume.hpp>
@@ -70,6 +73,11 @@ class StorageSimulation
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  void set_low_level_log_devices(bool on) noexcept
+  {
+    this->low_level_log_devices_ = on;
+  }
+
   /** \brief Schedules the passed function (signature: void()) to run at some future point in the
    * simulation.
    *
@@ -101,7 +109,7 @@ class StorageSimulation
   /** \brief Forces the PageCache to be shut down; this will stop all background tasks associated
    * with the PageAllocators.
    */
-  void close_cache() noexcept;
+  void close_cache(bool main_fn_done = false) noexcept;
 
   /** \brief Returns a reference to a TaskScheduler that should be used for all Tasks involved in
    * the simulation.
@@ -160,6 +168,13 @@ class StorageSimulation
     LLFS_LOG_SIM_EVENT() << batt::to_string(BATT_FORWARD(args)...);
   }
 
+  /** \brief Returns true iff the simulation is running.
+   */
+  bool is_running() const noexcept
+  {
+    return this->is_running_.load();
+  }
+
   /** \brief Launches the "driver" (main) simulation task.  This is the entry point to the
    * simulation run.
    */
@@ -170,6 +185,13 @@ class StorageSimulation
    * operations will not affect the simulated "durable" contents of the devices.
    */
   void crash_and_recover();
+
+  /** \brief Creates/accesses a simulated LogDeviceStorage object.
+   *
+   * \param name A unique name used to identify the LogDevice storage in the context of this
+   * simulation
+   */
+  SimulatedLogDeviceStorage get_log_device_storage(const std::string& name, Optional<u64> capacity);
 
   /** \brief Creates/accesses a simulated LogDevice.
    *
@@ -246,9 +268,13 @@ class StorageSimulation
   /** \brief Step the simulation forward repeatedly until there are no pending handlers that can
    * run.
    */
-  void handle_events();
+  void handle_events(bool main_fn_done);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  // Reads test configuration from the environment.
+  //
+  testing::TestConfig test_config_;
 
   // Used to select event orderings, operations into which to inject failures, etc.
   //
@@ -289,6 +315,12 @@ class StorageSimulation
   //
   std::unordered_map<std::string, std::shared_ptr<SimulatedLogDevice::Impl>> log_devices_;
 
+  // The set of all simulated log device storage (low-level), indexed by name string (passed in by
+  // the test code).
+  //
+  std::unordered_map<std::string, std::shared_ptr<SimulatedLogDeviceStorage::DurableState>>
+      log_storage_;
+
   // The set of all simulated page devices, indexed by name string (passed in by the test code).
   //
   std::unordered_map<std::string, std::shared_ptr<SimulatedPageDevice::Impl>> page_devices_;
@@ -305,6 +337,14 @@ class StorageSimulation
   // Page readers that should be registered with PageCache instances on each recovery.
   //
   std::unordered_map<PageLayoutId, PageCache::PageReaderFromFile, PageLayoutId::Hash> page_readers_;
+
+  // Are we in low-level LogDevice simulation mode?
+  //
+  bool low_level_log_devices_ = this->test_config_.low_level_log_device_sim();
+
+  // Set to true when we are inside the main simulation loop.
+  //
+  std::atomic<bool> is_running_{false};
 };
 
 }  //namespace llfs

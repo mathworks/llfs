@@ -18,6 +18,8 @@
 #include <llfs/basic_log_storage_driver.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/ioring_log_config.hpp>
+#include <llfs/ioring_log_device_storage.hpp>
+#include <llfs/ioring_log_driver_fwd.hpp>
 #include <llfs/ioring_log_driver_options.hpp>
 #include <llfs/ioring_log_flush_op.hpp>
 #include <llfs/log_block_calculator.hpp>
@@ -40,14 +42,11 @@ BATT_UNSUPPRESS()
 
 namespace llfs {
 
-template <template <typename> class FlushOpImpl>
-class BasicIoRingLogDriver;
-
-using IoRingLogDriver = BasicIoRingLogDriver<BasicIoRingLogFlushOp>;
+using IoRingLogDriver = BasicIoRingLogDriver<BasicIoRingLogFlushOp, DefaultIoRingLogDeviceStorage>;
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-template <template <typename> class FlushOpImpl>
+template <template <typename> class FlushOpImpl, typename StorageT>
 class BasicIoRingLogDriver
 {
  public:
@@ -71,9 +70,10 @@ class BasicIoRingLogDriver
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  explicit BasicIoRingLogDriver(LogStorageDriverContext& context,
-                                batt::TaskScheduler& task_scheduler, int fd,
-                                const IoRingLogConfig& config,
+  explicit BasicIoRingLogDriver(LogStorageDriverContext& context,     //
+                                batt::TaskScheduler& task_scheduler,  //
+                                StorageT&& storage,                   //
+                                const IoRingLogConfig& config,        //
                                 const IoRingLogDriverOptions& options) noexcept;
 
   ~BasicIoRingLogDriver() noexcept;
@@ -108,10 +108,7 @@ class BasicIoRingLogDriver
     return this->flush_pos_.get_value();
   }
 
-  StatusOr<slot_offset_type> await_flush_pos(slot_offset_type flush_pos)
-  {
-    return await_slot_offset(flush_pos, this->flush_pos_);
-  }
+  StatusOr<slot_offset_type> await_flush_pos(slot_offset_type flush_pos);
 
   //----
 
@@ -135,7 +132,7 @@ class BasicIoRingLogDriver
   {
     this->halt();
     this->join();
-    return this->file_.close();
+    return this->storage_close_status_;
   }
 
   void halt();
@@ -169,6 +166,10 @@ class BasicIoRingLogDriver
 
   void poll_flush_state();
 
+  /** \brief Called by flush ops to report I/O failures.
+   */
+  void report_flush_error(Status error_status);
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   ConstBuffer get_data(slot_offset_type slot_offset) const
@@ -177,9 +178,9 @@ class BasicIoRingLogDriver
   }
 
   template <typename Handler>
-  void async_write_some(i64 log_offset, const ConstBuffer& data, i32 buf_index, Handler&& handler)
+  void async_write_some(i64 file_offset, const ConstBuffer& data, i32 buf_index, Handler&& handler)
   {
-    this->file_.async_write_some_fixed(log_offset, data, buf_index, BATT_FORWARD(handler));
+    this->storage_.async_write_some_fixed(file_offset, data, buf_index, BATT_FORWARD(handler));
   }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -257,6 +258,21 @@ class BasicIoRingLogDriver
 
   void handle_commit_pos_update(const StatusOr<slot_offset_type>& updated_commit_pos);
 
+  /** \brief Signals the entering of the storage I/O event loop; the first time this is called
+   * (before a corresponding call to this->storage_work_finished()), calls
+   * this->storage_.on_work_started() to increment the work count.
+   */
+  void storage_work_started();
+
+  /** \brief Signals that storage I/O work is now in the process of shutting down.  The first time
+   * this is called (after this->storage_work_started()), calls this->storage_.on_work_finished() to
+   * decrement the work count, allowing the storage I/O event loop to exit once all activity has
+   * completed.
+   *
+   * This may be called in response to a fatal error or an external call to this->halt().
+   */
+  void storage_work_finished();
+
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
   // Used to access the RingBuffer.
@@ -278,15 +294,25 @@ class BasicIoRingLogDriver
   //
   const LogBlockCalculator calculate_;
 
-  // The IoRing and file used to do log flushing.
+  // Interface to the low-level storage media used to save log data.
   //
-  IoRing ioring_;
-  IoRing::File file_;
+  StorageT storage_;
+
+  // The return value of this->storage_.close().
+  //
+  Status storage_close_status_ = batt::StatusCode::kUnknown;
 
   // Set to true once when halt is first called; used to detect unexpected/premature exit of
   // background tasks.
   //
   std::atomic<bool> halt_requested_{false};
+
+  // While in normal operation, we maintain a positive work count on the storage object; eventually
+  // we will release this count as part of shutting down; this field acts as a gate to make sure we
+  // only call this->storage_.on_work_started()/on_work_finished() once at the boundary of this time
+  // interval.
+  //
+  std::atomic<bool> storage_working_{false};
 
   // The standard log state variables.
   //

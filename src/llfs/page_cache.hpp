@@ -166,6 +166,8 @@ class PageCache : public PageLoader
 
   void close();
 
+  void halt();
+
   void join();
 
   std::unique_ptr<PageCacheJob> new_job();

@@ -13,9 +13,11 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <llfs/testing/fake_log_device.hpp>
+#include <llfs/testing/test_config.hpp>
+
 #include <llfs/log_device_snapshot.hpp>
 #include <llfs/memory_log_device.hpp>
-#include <llfs/testing/fake_log_device.hpp>
 #include <llfs/uuid.hpp>
 
 #include <batteries/async/fake_execution_context.hpp>
@@ -137,6 +139,8 @@ TEST(PageAllocatorTest, UpdateRefCounts)
 
 TEST(PageAllocatorTest, LogCrashRecovery)
 {
+  llfs::testing::TestConfig test_config;
+
   llfs::suppress_log_output_for_test() = true;
   auto undo_suppress = batt::finally([] {
     llfs::suppress_log_output_for_test() = false;
@@ -152,7 +156,7 @@ TEST(PageAllocatorTest, LogCrashRecovery)
   std::uniform_int_distribution<i32> pick_ref_count_delta(-5, +5);
   std::uniform_int_distribution<u64> pick_failure_time(1u, 4096u);
 
-  const bool extra_testing = batt::getenv_as<int>("LLFS_EXTRA_TESTING").value_or(0);
+  const bool extra_testing = test_config.extra_testing();
 
   constexpr u64 kStartSeed = 0;
   const u64 kEndSeed = (extra_testing ? (10000 * kNumSeeds) : kNumSeeds) + kStartSeed;
@@ -180,8 +184,6 @@ TEST(PageAllocatorTest, LogCrashRecovery)
     MemoryLogDevice mem_log{
         /*size=*/PageAllocator::calculate_log_size(/*physical_page_count=*/kNumPages,
                                                    /*max_attachments=*/kMaxAttachments)};
-
-    LLFS_LOG_INFO_FIRST_N(1) << BATT_INSPECT(mem_log.space());
 
     auto fake_log_state = std::make_shared<FakeLogDevice::State>();
 

@@ -49,7 +49,7 @@ class PageArena
     return *this->allocator_;
   }
 
-  void close()
+  void halt()
   {
     // this->device_->close();  TODO [tastolfi 2021-04-07]
     this->allocator_->halt();

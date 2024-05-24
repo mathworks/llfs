@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 
 #include <llfs/testing/fake_log_device.hpp>
+#include <llfs/testing/test_config.hpp>
 
 #include <llfs/memory_log_device.hpp>
 #include <llfs/memory_page_cache.hpp>
@@ -1427,11 +1428,14 @@ class VolumeSimTest : public ::testing::Test
 //
 TEST_F(VolumeSimTest, RecoverySimulation)
 {
+  static const llfs::testing::TestConfig test_config;
+
   static const u32 kInitialSeed =  //
       batt::getenv_as<u32>("LLFS_VOLUME_SIM_SEED").value_or(987654321);
 
   static const u32 kNumSeeds =  //
-      batt::getenv_as<u32>("LLFS_VOLUME_SIM_COUNT").value_or(2500);
+      batt::getenv_as<u32>("LLFS_VOLUME_SIM_COUNT")
+          .value_or(test_config.extra_testing() ? 65536 : 4096);
 
   static const u32 kCpuPin =  //
       batt::getenv_as<u32>("LLFS_VOLUME_SIM_CPU").value_or(0);
@@ -1506,6 +1510,8 @@ TEST_F(VolumeSimTest, ConcurrentAppendJobs)
                              llfs::PageGraphNodeView::page_reader());
 
     const auto main_task_fn = [&] {
+      LLFS_VLOG(1) << "entered main;" << BATT_INSPECT(seed);
+
       // Create the simulated Volume.
       //
       {
@@ -1519,6 +1525,8 @@ TEST_F(VolumeSimTest, ConcurrentAppendJobs)
         ASSERT_TRUE(recovered_volume.ok()) << recovered_volume.status();
 
         llfs::Volume& volume = **recovered_volume;
+
+        LLFS_VLOG(1) << "recovered volume";
 
         // Test plan:
         //  1. Concurrently, on `this->pages_per_device` different tasks:
@@ -1571,9 +1579,13 @@ TEST_F(VolumeSimTest, ConcurrentAppendJobs)
               /*name=*/batt::to_string("TestCommitTask", task_i)));
         }
 
+        LLFS_VLOG(1) << "starting tasks...";
+
         for (auto& p_task : tasks) {
           p_task->start();
         }
+
+        LLFS_VLOG(1) << "joining tasks...";
 
         for (auto& p_task : tasks) {
           p_task->join();
@@ -1585,6 +1597,8 @@ TEST_F(VolumeSimTest, ConcurrentAppendJobs)
         //
         constexpr i32 kExpectedRefCount = 2;
 
+        LLFS_VLOG(1) << "checking ref counts...";
+
         for (llfs::PageCache::PageDeviceEntry* entry :
              sim.cache()->devices_with_page_size(1 * kKiB)) {
           BATT_CHECK_NOT_NULLPTR(entry);
@@ -1594,8 +1608,11 @@ TEST_F(VolumeSimTest, ConcurrentAppendJobs)
           break;
         }
 
+        LLFS_VLOG(1) << "volume.halt()";
         volume.halt();
+        LLFS_VLOG(1) << "volume.join()";
         volume.join();
+        LLFS_VLOG(1) << "done!";
       }
     };
 
@@ -1655,15 +1672,22 @@ void VolumeSimTest::run_recovery_sim(u32 seed)
                            llfs::PageGraphNodeView::page_reader());
 
   const auto main_task_fn = [&] {
+    sim.set_inject_failures_mode(false);
+
+    LLFS_VLOG(1) << "Entered main task;" << BATT_INSPECT(seed) << BATT_INSPECT(sim.is_running());
+
     // Create the simulated Volume.
     //
     {
+      LLFS_VLOG(1) << "Creating simulated volume";
       batt::StatusOr<std::unique_ptr<llfs::Volume>> recovered_volume = sim.get_volume(
           "TestVolume", /*slot_visitor_fn=*/
           [](auto&&...) {
             return batt::OkStatus();
           },
           /*root_log_capacity=*/64 * kKiB);
+
+      LLFS_VLOG(1) << "volume recovery status=" << recovered_volume.status();
 
       ASSERT_TRUE(recovered_volume.ok()) << recovered_volume.status();
 
@@ -1683,13 +1707,18 @@ void VolumeSimTest::run_recovery_sim(u32 seed)
 
       // Simulate a full crash and recovery.
       //
+      LLFS_VLOG(1) << "Before crash_and_recover()";
       sim.crash_and_recover();
+      LLFS_VLOG(1) << "After crash_and_recover(); Before volume.halt()";
 
       // Terminate the volume.
       //
       volume.halt();
+      LLFS_VLOG(1) << "After volume.halt(); Before volume.join()";
       volume.join();
+      LLFS_VLOG(1) << "After volume.join()";
     }
+    LLFS_VLOG(1) << "First crash_and_recover()" << BATT_INSPECT(seed);
     EXPECT_TRUE(state.first_page_id.is_valid()) << BATT_INSPECT(state.seed);
 
     // Recover system state, post-crash.
@@ -1706,6 +1735,8 @@ void VolumeSimTest::run_recovery_sim(u32 seed)
       ASSERT_NO_FATAL_FAILURE(
           this->verify_post_recovery_expectations(state, sim, **recovered_volume));
     }
+
+    LLFS_VLOG(1) << "Sim run finished;" << BATT_INSPECT(seed);
   };
 
   sim.run_main_task(main_task_fn);

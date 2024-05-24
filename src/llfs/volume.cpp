@@ -194,7 +194,6 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
           StatusOr<slot_offset_type> sync_slot =
               arena.allocator().attach_user(uuid, /*user_slot=*/next_available_slot_offset);
 
-          BATT_UNTESTED_COND(!sync_slot.ok());
           BATT_REQUIRE_OK(sync_slot);
 
           Status sync_status = arena.allocator().sync(*sync_slot);
@@ -395,7 +394,7 @@ void Volume::halt()
   this->slot_writer_->halt();
   this->trim_control_->halt();
   this->trimmer_->halt();
-  this->root_log_->close().IgnoreError();
+  this->root_log_->halt();
   if (this->recycler_) {
     this->recycler_->halt();
   }
@@ -409,6 +408,7 @@ void Volume::join()
     this->trimmer_task_->join();
     this->trimmer_task_ = None;
   }
+  this->root_log_->join();
   if (this->recycler_) {
     this->recycler_->join();
   }
@@ -572,7 +572,10 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
 
     const auto grant_size_after_prepare = grant.size();
 
-    BATT_CHECK_EQ(prepared_job_size, grant_size_before_prepare - grant_size_after_prepare);
+    if (prepare_slot.ok()) {
+      BATT_CHECK_EQ(prepared_job_size, grant_size_before_prepare - grant_size_after_prepare)
+          << BATT_INSPECT(prepare_slot.status()) << BATT_INSPECT(grant_size_before_prepare);
+    }
 
     if (sequencer) {
       if (!prepare_slot.ok()) {

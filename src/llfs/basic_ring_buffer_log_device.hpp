@@ -126,7 +126,7 @@ inline u64 BasicRingBufferLogDevice<Impl>::capacity() const
 template <class Impl>
 inline u64 BasicRingBufferLogDevice<Impl>::size() const
 {
-  return slot_distance(this->driver_.get_trim_pos(), this->driver_.get_commit_pos());
+  return slot_clamp_distance(this->driver_.get_trim_pos(), this->driver_.get_commit_pos());
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -134,7 +134,7 @@ inline u64 BasicRingBufferLogDevice<Impl>::size() const
 template <class Impl>
 inline Status BasicRingBufferLogDevice<Impl>::trim(slot_offset_type slot_lower_bound)
 {
-  BATT_CHECK_LE(this->driver_.get_trim_pos(), slot_lower_bound);
+  LLFS_CHECK_SLOT_GE(slot_lower_bound, this->driver_.get_trim_pos());
 
   return this->driver_.set_trim_pos(slot_lower_bound);
 }
@@ -226,7 +226,7 @@ class BasicRingBufferLogDevice<Impl>::WriterImpl : public LogDevice::Writer
     const slot_offset_type readable_end = this->device_->driver_.get_commit_pos();
 
     const usize space_available =
-        this->device_->buffer_.size() - slot_distance(readable_begin, readable_end);
+        this->device_->buffer_.size() - LLFS_CHECKED_SLOT_DISTANCE(readable_begin, readable_end);
 
     return space_available;
   }

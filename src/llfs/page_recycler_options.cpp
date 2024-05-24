@@ -110,8 +110,8 @@ u64 PageRecyclerOptions::recycle_task_target() const
 bool PageRecyclerOptions::info_needs_refresh(slot_offset_type last_info_refresh_slot_lower_bound,
                                              LogDevice& log_device) const
 {
-  return (slot_distance(last_info_refresh_slot_lower_bound,
-                        log_device.slot_range(LogReadMode::kSpeculative).upper_bound) +
+  return (slot_clamp_distance(last_info_refresh_slot_lower_bound,
+                              log_device.slot_range(LogReadMode::kSpeculative).upper_bound) +
           this->info_slot_size()) >= (log_device.capacity() / this->info_refresh_rate());
 }
 

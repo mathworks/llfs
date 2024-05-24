@@ -299,6 +299,16 @@ class LogDevice::Reader
   /** \brief Wait for the log to reach the specified state.
    */
   virtual Status await(LogDevice::ReaderEvent event) = 0;
+
+  /** \brief (Optional) Returns a function that prints human-readable debug information about the
+   * Reader.
+   */
+  virtual std::function<void(std::ostream&)> debug_info()
+  {
+    return [](std::ostream& out) {
+      out << "(Not Implemented)";
+    };
+  }
 };
 
 /** \brief Open the log without scanning its contents.

@@ -52,15 +52,15 @@ class BasicLogStorageReader : public LogDevice::Reader
     BATT_CHECK(!slot_less_than(this->offset_, this->driver_.get_trim_pos()))
         << "offset=" << this->offset_ << " trim_pos=" << this->driver_.get_trim_pos();
 
-    return data_;
+    return this->data_;
   }
 
   slot_offset_type slot_offset() override
   {
-    return offset_;
+    return this->offset_;
   }
 
-  void consume(std::size_t byte_count) override
+  void consume(usize byte_count) override
   {
     BATT_CHECK_LE(byte_count, this->data_.size());
 
@@ -98,6 +98,15 @@ class BasicLogStorageReader : public LogDevice::Reader
           BATT_DEBUG_INFO("[Reader::await] waiting for BytesAvailable.size=" << avail.size);
           return this->await(SlotUpperBoundAt{this->offset_ + avail.size});
         });
+  }
+
+  std::function<void(std::ostream&)> debug_info() override
+  {
+    return [this](std::ostream& out) {
+      out << BATT_INSPECT(this->mode_) << BATT_INSPECT(this->driver_.get_trim_pos())
+          << BATT_INSPECT(this->driver_.get_flush_pos())
+          << BATT_INSPECT(this->driver_.get_commit_pos());
+    };
   }
 
   //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
@@ -138,11 +147,8 @@ class BasicLogStorageReader : public LogDevice::Reader
 
   void refresh_view(slot_offset_type upper_bound)
   {
-    data_ = [&] {
-      ConstBuffer b = this->context_.buffer_.get(this->offset_);
-
-      return ConstBuffer{b.data(), slot_distance(this->offset_, upper_bound)};
-    }();
+    const ConstBuffer b = this->context_.buffer_.get(this->offset_);
+    this->data_ = ConstBuffer{b.data(), slot_clamp_distance(this->offset_, upper_bound)};
   }
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

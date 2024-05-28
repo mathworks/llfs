@@ -110,12 +110,39 @@ inline slot_offset_type slot_max(slot_offset_type first, slot_offset_type second
   return first;
 }
 
-inline std::size_t slot_distance(slot_offset_type x, slot_offset_type y)
+/** \brief Returns the (signed) difference between two slot offsets.
+ *
+ * If slot_less_than(y, x), the returned value will be negative; otherwise, it will be non-negative.
+ */
+inline isize slot_difference(slot_offset_type x, slot_offset_type y)
+{
+  return (isize)y - (isize)x;
+}
+
+/** \brief Returns the (unsigned) absolute value of the difference between two slot offsets.
+ */
+inline usize slot_abs_distance(slot_offset_type x, slot_offset_type y)
 {
   if (slot_less_than(y, x)) {
-    return slot_distance(y, x);
+    return x - y;
   }
   return y - x;
+}
+
+/** \brief Returns the distance from x to y, if y is not before x; otherwise returns 0.
+ */
+inline usize slot_clamp_distance(slot_offset_type x, slot_offset_type y)
+{
+  if (slot_less_than(y, x)) {
+    return 0;
+  }
+  return y - x;
+}
+
+[[deprecated("Use one of these instead: slot_abs_distance, slot_difference, slot_clamp_distance")]]
+inline usize slot_distance(slot_offset_type x, slot_offset_type y)
+{
+  return slot_abs_distance(x, y);
 }
 
 // Sets `active_offset` to at least `min_offset`.  Returns the distance between the old offset and
@@ -128,7 +155,7 @@ inline slot_offset_type clamp_min_slot(batt::Watch<slot_offset_type>& active_off
   active_offset.modify_if(
       [min_offset, &delta](slot_offset_type current_offset) -> Optional<slot_offset_type> {
         if (slot_less_than(current_offset, min_offset)) {
-          delta = slot_distance(current_offset, min_offset);
+          delta = min_offset - current_offset;
           return min_offset;
         }
         delta = 0;
@@ -294,6 +321,31 @@ struct SlotRangeOrder {
                               get_slot_range(second).lower_bound);
   }
 };
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+
+#define LLFS_CHECK_SLOT_LT(first, second)                                                          \
+  BATT_CHECK(::llfs::slot_less_than((first), (second)))                                            \
+      << BATT_INSPECT(first) << BATT_INSPECT(second)
+
+#define LLFS_CHECK_SLOT_GE(first, second)                                                          \
+  BATT_CHECK(!::llfs::slot_less_than((first), (second)))                                           \
+      << BATT_INSPECT(first) << BATT_INSPECT(second)
+
+#define LLFS_CHECK_SLOT_GT(first, second) LLFS_CHECK_SLOT_LT(second, first)
+#define LLFS_CHECK_SLOT_LE(first, second) LLFS_CHECK_SLOT_GE(second, first)
+
+/** \brief Panics if second is slot_less_than first; otherwise, evaluates to slot_distance(first,
+ * second).
+ */
+#define LLFS_CHECKED_SLOT_DISTANCE(first, second)                                                  \
+  ([&]() -> ::llfs::slot_offset_type {                                                             \
+    const ::llfs::slot_offset_type first_offset = (first);                                         \
+    const ::llfs::slot_offset_type second_offset = (second);                                       \
+    BATT_CHECK(!::llfs::slot_less_than(second_offset, first_offset))                               \
+        << " " << #first << " == " << first_offset << " " << #second << " == " << second_offset;   \
+    return (second) - (first);                                                                     \
+  })()
 
 }  // namespace llfs
 

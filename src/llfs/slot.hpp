@@ -124,7 +124,7 @@ inline isize slot_difference(slot_offset_type x, slot_offset_type y)
 inline usize slot_abs_distance(slot_offset_type x, slot_offset_type y)
 {
   if (slot_less_than(y, x)) {
-    return slot_abs_distance(y, x);
+    return x - y;
   }
   return y - x;
 }

@@ -147,11 +147,8 @@ class BasicLogStorageReader : public LogDevice::Reader
 
   void refresh_view(slot_offset_type upper_bound)
   {
-    this->data_ = [&] {
-      ConstBuffer b = this->context_.buffer_.get(this->offset_);
-
-      return ConstBuffer{b.data(), slot_clamp_distance(this->offset_, upper_bound)};
-    }();
+    const ConstBuffer b = this->context_.buffer_.get(this->offset_);
+    this->data_ = ConstBuffer{b.data(), slot_clamp_distance(this->offset_, upper_bound)};
   }
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

@@ -111,64 +111,65 @@ PageCache::PageCache(std::vector<PageArena>&& storage_pool,
     max_page_device_id = std::max(max_page_device_id, arena.device().get_id());
   }
 
-  // Populate this->page_devices_.
-  //
   {
-    batt::ScopedWriteLock<std::vector<std::unique_ptr<PageDeviceEntry>>> pages_lock{
+    batt::ScopedWriteLock<std::vector<std::unique_ptr<PageDeviceEntry>>> page_devices_lock{
         this->page_devices_};
-    pages_lock->resize(max_page_device_id + 1);
-  }
-  for (PageArena& arena : storage_pool) {
-    const page_device_id_int device_id = arena.device().get_id();
-    const auto page_size_log2 = batt::log2_ceil(arena.device().page_size());
+    batt::ScopedWriteLock<std::vector<PageDeviceEntry*>> page_devices_by_size_lock{
+        this->page_devices_by_page_size_};
+    batt::ScopedWriteLock<std::array<Slice<PageDeviceEntry* const>, kMaxPageSizeLog2>>
+        page_devices_by_size_log2_lock{this->page_devices_by_page_size_log2_};
 
-    BATT_CHECK_EQ(PageSize{1} << page_size_log2, arena.device().page_size())
-        << "Page sizes must be powers of 2!";
-
-    BATT_CHECK_LT(page_size_log2, kMaxPageSizeLog2);
-
-    // Create a slot pool for this page size if we haven't already done so.
+    // Populate this->page_devices_.
     //
-    if (!this->cache_slot_pool_by_page_size_log2_[page_size_log2]) {
-      this->cache_slot_pool_by_page_size_log2_[page_size_log2] = PageCacheSlot::Pool::make_new(
-          /*n_slots=*/this->options_.max_cached_pages_per_size_log2[page_size_log2],
-          /*name=*/batt::to_string("size_", u64{1} << page_size_log2));
-    }
+    page_devices_lock->resize(max_page_device_id + 1);
+    for (PageArena& arena : storage_pool) {
+      const page_device_id_int device_id = arena.device().get_id();
+      const auto page_size_log2 = batt::log2_ceil(arena.device().page_size());
 
-    {
-      batt::ScopedWriteLock<std::vector<std::unique_ptr<PageDeviceEntry>>> pages_lock{
-          this->page_devices_};
-      BATT_CHECK_EQ((*pages_lock)[device_id], nullptr)
+      BATT_CHECK_EQ(PageSize{1} << page_size_log2, arena.device().page_size())
+          << "Page sizes must be powers of 2!";
+
+      BATT_CHECK_LT(page_size_log2, kMaxPageSizeLog2);
+
+      // Create a slot pool for this page size if we haven't already done so.
+      //
+      if (!this->cache_slot_pool_by_page_size_log2_[page_size_log2]) {
+        this->cache_slot_pool_by_page_size_log2_[page_size_log2] = PageCacheSlot::Pool::make_new(
+            /*n_slots=*/this->options_.max_cached_pages_per_size_log2[page_size_log2],
+            /*name=*/batt::to_string("size_", u64{1} << page_size_log2));
+      }
+
+      BATT_CHECK_EQ((*page_devices_lock)[device_id], nullptr)
           << "Duplicate entries found for the same device id!" << BATT_INSPECT(device_id);
 
-      (*pages_lock)[device_id] = std::make_unique<PageDeviceEntry>(                  //
+      (*page_devices_lock)[device_id] = std::make_unique<PageDeviceEntry>(           //
           std::move(arena),                                                          //
           batt::make_copy(this->cache_slot_pool_by_page_size_log2_[page_size_log2])  //
       );
 
       // We will sort these later.
       //
-      this->page_devices_by_page_size_.emplace_back((*pages_lock)[device_id].get());
+      page_devices_by_size_lock->emplace_back((*page_devices_lock)[device_id].get());
     }
-  }
-  BATT_CHECK_EQ(this->page_devices_by_page_size_.size(), storage_pool.size());
+    BATT_CHECK_EQ(page_devices_by_size_lock->size(), storage_pool.size());
 
-  // Sort the storage pool by page size (MUST be first).
-  //
-  std::sort(this->page_devices_by_page_size_.begin(), this->page_devices_by_page_size_.end(),
-            PageSizeOrder{});
+    // Sort the storage pool by page size (MUST be first).
+    //
+    std::sort(page_devices_by_size_lock->begin(), page_devices_by_size_lock->end(),
+              PageSizeOrder{});
 
-  // Index the storage pool into groups of arenas by page size.
-  //
-  for (usize size_log2 = 6; size_log2 < kMaxPageSizeLog2; ++size_log2) {
-    auto iter_pair = std::equal_range(this->page_devices_by_page_size_.begin(),
-                                      this->page_devices_by_page_size_.end(),
-                                      PageSize{u32{1} << size_log2}, PageSizeOrder{});
+    // Index the storage pool into groups of arenas by page size.
+    //
+    for (usize size_log2 = 6; size_log2 < kMaxPageSizeLog2; ++size_log2) {
+      auto iter_pair =
+          std::equal_range(page_devices_by_size_lock->begin(), page_devices_by_size_lock->end(),
+                           PageSize{u32{1} << size_log2}, PageSizeOrder{});
 
-    this->page_devices_by_page_size_log2_[size_log2] =
-        as_slice(this->page_devices_by_page_size_.data() +
-                     std::distance(this->page_devices_by_page_size_.begin(), iter_pair.first),
-                 as_range(iter_pair).size());
+      (*page_devices_by_size_log2_lock)[size_log2] =
+          as_slice(page_devices_by_size_lock->data() +
+                       std::distance(page_devices_by_size_lock->begin(), iter_pair.first),
+                   as_range(iter_pair).size());
+    }
   }
 
   // Register metrics.
@@ -438,14 +439,16 @@ void PageCache::prefetch_hint(PageId page_id)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Slice<PageCache::PageDeviceEntry* const> PageCache::all_devices() const
+Slice<PageCache::PageDeviceEntry* const> PageCache::all_devices()
 {
-  return as_slice(this->page_devices_by_page_size_);
+  batt::ScopedReadLock<std::vector<PageDeviceEntry*>> page_devices_by_size_lock{
+      this->page_devices_by_page_size_};
+  return as_slice(*page_devices_by_size_lock);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Slice<PageCache::PageDeviceEntry* const> PageCache::devices_with_page_size(usize size) const
+Slice<PageCache::PageDeviceEntry* const> PageCache::devices_with_page_size(usize size)
 {
   const usize size_log2 = batt::log2_ceil(size);
   BATT_CHECK_EQ(size, usize{1} << size_log2) << "page size must be a power of 2";
@@ -455,12 +458,14 @@ Slice<PageCache::PageDeviceEntry* const> PageCache::devices_with_page_size(usize
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Slice<PageCache::PageDeviceEntry* const> PageCache::devices_with_page_size_log2(
-    usize size_log2) const
+Slice<PageCache::PageDeviceEntry* const> PageCache::devices_with_page_size_log2(usize size_log2)
 {
   BATT_CHECK_LT(size_log2, kMaxPageSizeLog2);
 
-  return this->page_devices_by_page_size_log2_[size_log2];
+  batt::ScopedReadLock<std::array<Slice<PageDeviceEntry* const>, kMaxPageSizeLog2>>
+      page_devices_by_size_log2_lock{this->page_devices_by_page_size_log2_};
+
+  return (*page_devices_by_size_log2_lock)[size_log2];
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

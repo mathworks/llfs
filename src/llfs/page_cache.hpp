@@ -42,6 +42,7 @@
 #include <batteries/async/cancel_token.hpp>
 #include <batteries/async/latch.hpp>
 #include <batteries/async/mutex.hpp>
+#include <batteries/async/read_write_lock.hpp>
 
 #include <functional>
 #include <iomanip>
@@ -195,9 +196,9 @@ class PageCache : public PageLoader
 
   Slice<PageDeviceEntry* const> all_devices() const;
 
-  const PageArena& arena_for_page_id(PageId id_val) const;
+  const PageArena& arena_for_page_id(PageId id_val);
 
-  const PageArena& arena_for_device_id(page_device_id_int device_id_val) const;
+  const PageArena& arena_for_device_id(page_device_id_int device_id_val);
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   // PageLoader interface
@@ -236,7 +237,7 @@ class PageCache : public PageLoader
 
   bool page_might_contain_key(PageId id, const KeyView& key) const;
 
-  BoxedSeq<NewPageTracker> find_new_page_events(PageId page_id) const;
+  BoxedSeq<NewPageTracker> find_new_page_events(PageId page_id);
 
   void track_new_page_event(const NewPageTracker& tracker);
 
@@ -323,7 +324,7 @@ class PageCache : public PageLoader
 
   // The arenas backing up this cache, indexed by device id int.
   //
-  std::vector<std::unique_ptr<PageDeviceEntry>> page_devices_;
+  batt::ReadWriteMutex<std::vector<std::unique_ptr<PageDeviceEntry>>> page_devices_;
 
   // The contents of `storage_pool_`, sorted by non-decreasing page size.
   //

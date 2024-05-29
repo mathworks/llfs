@@ -113,7 +113,11 @@ PageCache::PageCache(std::vector<PageArena>&& storage_pool,
 
   // Populate this->page_devices_.
   //
-  this->page_devices_.resize(max_page_device_id + 1);
+  {
+    batt::ScopedWriteLock<std::vector<std::unique_ptr<PageDeviceEntry>>> pages_lock{
+        this->page_devices_};
+    pages_lock->resize(max_page_device_id + 1);
+  }
   for (PageArena& arena : storage_pool) {
     const page_device_id_int device_id = arena.device().get_id();
     const auto page_size_log2 = batt::log2_ceil(arena.device().page_size());
@@ -131,17 +135,21 @@ PageCache::PageCache(std::vector<PageArena>&& storage_pool,
           /*name=*/batt::to_string("size_", u64{1} << page_size_log2));
     }
 
-    BATT_CHECK_EQ(this->page_devices_[device_id], nullptr)
-        << "Duplicate entries found for the same device id!" << BATT_INSPECT(device_id);
+    {
+      batt::ScopedWriteLock<std::vector<std::unique_ptr<PageDeviceEntry>>> pages_lock{
+          this->page_devices_};
+      BATT_CHECK_EQ((*pages_lock)[device_id], nullptr)
+          << "Duplicate entries found for the same device id!" << BATT_INSPECT(device_id);
 
-    this->page_devices_[device_id] = std::make_unique<PageDeviceEntry>(            //
-        std::move(arena),                                                          //
-        batt::make_copy(this->cache_slot_pool_by_page_size_log2_[page_size_log2])  //
-    );
+      (*pages_lock)[device_id] = std::make_unique<PageDeviceEntry>(                  //
+          std::move(arena),                                                          //
+          batt::make_copy(this->cache_slot_pool_by_page_size_log2_[page_size_log2])  //
+      );
 
-    // We will sort these later.
-    //
-    this->page_devices_by_page_size_.emplace_back(this->page_devices_[device_id].get());
+      // We will sort these later.
+      //
+      this->page_devices_by_page_size_.emplace_back((*pages_lock)[device_id].get());
+    }
   }
   BATT_CHECK_EQ(this->page_devices_by_page_size_.size(), storage_pool.size());
 
@@ -253,7 +261,12 @@ batt::Status PageCache::register_page_reader(const PageLayoutId& layout_id, cons
 //
 void PageCache::close()
 {
-  for (const std::unique_ptr<PageDeviceEntry>& entry : this->page_devices_) {
+  // TODO: [Gabe Bornstein 5/29/24] Consider, does arena.halt() do any writing s.t. we should use a
+  // ScopedWriteLock instead? Are arenas thread safe?
+  //
+  batt::ScopedReadLock<std::vector<std::unique_ptr<PageDeviceEntry>>> pages_lock{
+      this->page_devices_};
+  for (const std::unique_ptr<PageDeviceEntry>& entry : *pages_lock) {
     if (entry) {
       entry->arena.halt();
     }
@@ -264,7 +277,12 @@ void PageCache::close()
 //
 void PageCache::join()
 {
-  for (const std::unique_ptr<PageDeviceEntry>& entry : this->page_devices_) {
+  // TODO: [Gabe Bornstein 5/29/24] Consider, does arena.join() do any writing s.t. we should use a
+  // ScopedWriteLock instead? Are arenas thread safe?
+  //
+  batt::ScopedReadLock<std::vector<std::unique_ptr<PageDeviceEntry>>> pages_lock{
+      this->page_devices_};
+  for (const std::unique_ptr<PageDeviceEntry>& entry : *pages_lock) {
     if (entry) {
       entry->arena.join();
     }
@@ -447,21 +465,23 @@ Slice<PageCache::PageDeviceEntry* const> PageCache::devices_with_page_size_log2(
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-const PageArena& PageCache::arena_for_page_id(PageId page_id) const
+const PageArena& PageCache::arena_for_page_id(PageId page_id)
 {
   return this->arena_for_device_id(PageIdFactory::get_device_id(page_id));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-const PageArena& PageCache::arena_for_device_id(page_device_id_int device_id_val) const
+const PageArena& PageCache::arena_for_device_id(page_device_id_int device_id_val)
 {
-  BATT_CHECK_LT(device_id_val, this->page_devices_.size())
+  batt::ScopedReadLock<std::vector<std::unique_ptr<PageDeviceEntry>>> pages_lock{
+      this->page_devices_};
+  BATT_CHECK_LT(device_id_val, pages_lock->size())
       << "the specified page_id's device is not in the storage pool for this cache";
 
-  BATT_CHECK_NOT_NULLPTR(this->page_devices_[device_id_val]);
+  BATT_CHECK_NOT_NULLPTR((*pages_lock)[device_id_val]);
 
-  return this->page_devices_[device_id_val]->arena;
+  return (*pages_lock)[device_id_val]->arena;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -535,12 +555,14 @@ void PageCache::purge(PageId page_id, u64 callers, u64 job_id)
 //
 PageCache::PageDeviceEntry* PageCache::get_device_for_page(PageId page_id)
 {
+  batt::ScopedReadLock<std::vector<std::unique_ptr<PageDeviceEntry>>> pages_lock{
+      this->page_devices_};
   const page_device_id_int device_id = PageIdFactory::get_device_id(page_id);
-  if (BATT_HINT_FALSE(device_id >= this->page_devices_.size())) {
+  if (BATT_HINT_FALSE(device_id >= pages_lock->size())) {
     return nullptr;
   }
 
-  return this->page_devices_[device_id].get();
+  return (*pages_lock)[device_id].get();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -698,7 +720,7 @@ void PageCache::track_new_page_event(const NewPageTracker& tracker)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-BoxedSeq<NewPageTracker> PageCache::find_new_page_events(PageId page_id) const
+BoxedSeq<NewPageTracker> PageCache::find_new_page_events(PageId page_id)
 {
   const isize n = this->history_end_.load();
   return batt::as_seq(boost::irange(isize{0}, isize(this->history_.size())))  //

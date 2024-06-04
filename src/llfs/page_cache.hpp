@@ -42,6 +42,7 @@
 #include <batteries/async/cancel_token.hpp>
 #include <batteries/async/latch.hpp>
 #include <batteries/async/mutex.hpp>
+#include <batteries/async/read_write_lock.hpp>
 
 #include <functional>
 #include <iomanip>
@@ -189,15 +190,15 @@ class PageCache : public PageLoader
 
   Status detach(const boost::uuids::uuid& user_id, slot_offset_type slot_offset);
 
-  Slice<PageDeviceEntry* const> devices_with_page_size_log2(usize size_log2) const;
+  Slice<PageDeviceEntry* const> devices_with_page_size_log2(usize size_log2);
 
-  Slice<PageDeviceEntry* const> devices_with_page_size(usize size) const;
+  Slice<PageDeviceEntry* const> devices_with_page_size(usize size);
 
-  Slice<PageDeviceEntry* const> all_devices() const;
+  Slice<PageDeviceEntry* const> all_devices();
 
-  const PageArena& arena_for_page_id(PageId id_val) const;
+  const PageArena& arena_for_page_id(PageId id_val);
 
-  const PageArena& arena_for_device_id(page_device_id_int device_id_val) const;
+  const PageArena& arena_for_device_id(page_device_id_int device_id_val);
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   // PageLoader interface
@@ -236,7 +237,7 @@ class PageCache : public PageLoader
 
   bool page_might_contain_key(PageId id, const KeyView& key) const;
 
-  BoxedSeq<NewPageTracker> find_new_page_events(PageId page_id) const;
+  BoxedSeq<NewPageTracker> find_new_page_events(PageId page_id);
 
   void track_new_page_event(const NewPageTracker& tracker);
 
@@ -321,19 +322,23 @@ class PageCache : public PageLoader
   //
   PageCacheMetrics metrics_;
 
-  // The arenas backing up this cache, indexed by device id int.
-  //
-  std::vector<std::unique_ptr<PageDeviceEntry>> page_devices_;
+  struct State {
+    // The arenas backing up this cache, indexed by device id int.
+    //
+    std::vector<std::unique_ptr<PageDeviceEntry>> page_devices;
 
-  // The contents of `storage_pool_`, sorted by non-decreasing page size.
-  //
-  std::vector<PageDeviceEntry*> page_devices_by_page_size_;
+    // The contents of `storage_pool_`, sorted by non-decreasing page size.
+    //
+    std::vector<PageDeviceEntry*> page_devices_by_page_size;
 
-  // Slices of `this->storage_pool_` that group arenas by page size (log2).  For example,
-  // `this->arenas_by_size_log2_[12]` is the slice of `this->storage_pool_` comprised of
-  // PageArenas whose page size is 4096.
-  //
-  std::array<Slice<PageDeviceEntry* const>, kMaxPageSizeLog2> page_devices_by_page_size_log2_;
+    // Slices of `this->storage_pool_` that group arenas by page size (log2).  For example,
+    // `this->arenas_by_size_log2_[12]` is the slice of `this->storage_pool_` comprised of
+    // PageArenas whose page size is 4096.
+    //
+    std::array<Slice<PageDeviceEntry* const>, kMaxPageSizeLog2> page_devices_by_page_size_log2;
+  };
+
+  batt::ReadWriteMutex<State> state_;
 
   // A pool of cache slots for each page size.
   //

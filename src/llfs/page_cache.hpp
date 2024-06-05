@@ -190,11 +190,11 @@ class PageCache : public PageLoader
 
   Status detach(const boost::uuids::uuid& user_id, slot_offset_type slot_offset);
 
-  Slice<PageDeviceEntry* const> devices_with_page_size_log2(usize size_log2);
+  Slice<std::shared_ptr<const PageDeviceEntry>> devices_with_page_size_log2(usize size_log2);
 
-  Slice<PageDeviceEntry* const> devices_with_page_size(usize size);
+  Slice<std::shared_ptr<const PageDeviceEntry>> devices_with_page_size(usize size);
 
-  Slice<PageDeviceEntry* const> all_devices();
+  std::vector<std::shared_ptr<const PageCache::PageDeviceEntry>> all_devices();
 
   const PageArena& arena_for_page_id(PageId id_val);
 
@@ -325,17 +325,18 @@ class PageCache : public PageLoader
   struct State {
     // The arenas backing up this cache, indexed by device id int.
     //
-    std::vector<std::unique_ptr<PageDeviceEntry>> page_devices;
+    std::vector<std::shared_ptr<PageDeviceEntry>> page_devices;
 
     // The contents of `storage_pool_`, sorted by non-decreasing page size.
     //
-    std::vector<PageDeviceEntry*> page_devices_by_page_size;
+    std::vector<std::shared_ptr<const PageDeviceEntry>> page_devices_by_page_size;
 
     // Slices of `this->storage_pool_` that group arenas by page size (log2).  For example,
     // `this->arenas_by_size_log2_[12]` is the slice of `this->storage_pool_` comprised of
     // PageArenas whose page size is 4096.
     //
-    std::array<Slice<PageDeviceEntry* const>, kMaxPageSizeLog2> page_devices_by_page_size_log2;
+    std::array<Slice<std::shared_ptr<const PageDeviceEntry>>, kMaxPageSizeLog2>
+        page_devices_by_page_size_log2;
   };
 
   batt::ReadWriteMutex<State> state_;

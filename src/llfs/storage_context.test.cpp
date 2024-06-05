@@ -40,7 +40,6 @@ TEST(StorageContextTest, GetPageCache)
       llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{1024}, llfs::ThreadPoolSize{1});
 
   ASSERT_TRUE(io.ok()) << BATT_INSPECT(io.status());
-
   // Create a StorageContext.
   //
   batt::SharedPtr<llfs::StorageContext> storage_context = batt::make_shared<llfs::StorageContext>(
@@ -84,7 +83,6 @@ TEST(StorageContextTest, GetPageCache)
                             },
                     },
             });
-
         BATT_REQUIRE_OK(config_4kb);
 
         llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageArenaConfig&>> config_2mb =
@@ -120,22 +118,19 @@ TEST(StorageContextTest, GetPageCache)
             });
 
         BATT_REQUIRE_OK(config_2mb);
-
         return llfs::OkStatus();
       });
   ASSERT_TRUE(file_create_status.ok()) << BATT_INSPECT(file_create_status);
 
-  llfs::StatusOr<batt::SharedPtr<llfs::PageCache>> cache = storage_context->get_page_cache();
-  ASSERT_TRUE(cache.ok()) << BATT_INSPECT(cache.status());
-  ASSERT_NE(*cache, nullptr);
-
-  llfs::Slice<llfs::PageCache::PageDeviceEntry* const> devices_4kb =
-      (*cache)->devices_with_page_size(4 * kKiB);
-  EXPECT_EQ(devices_4kb.size(), 1u);
-
-  llfs::Slice<llfs::PageCache::PageDeviceEntry* const> devices_2mb =
-      (*cache)->devices_with_page_size(2 * kMiB);
-  EXPECT_EQ(devices_2mb.size(), 1u);
+    llfs::StatusOr<batt::SharedPtr<llfs::PageCache>> cache = storage_context->get_page_cache();
+    ASSERT_TRUE(cache.ok()) << BATT_INSPECT(cache.status());
+    ASSERT_NE(*cache, nullptr);
+    llfs::Slice<std::shared_ptr<const llfs::PageCache::PageDeviceEntry>> devices_4kb =
+        (*cache)->devices_with_page_size(4 * kKiB);
+    EXPECT_EQ(devices_4kb.size(), 1u);
+    llfs::Slice<std::shared_ptr<const llfs::PageCache::PageDeviceEntry>> devices_2mb =
+        (*cache)->devices_with_page_size(2 * kMiB);
+    EXPECT_EQ(devices_2mb.size(), 1u);
 }
 
 }  // namespace

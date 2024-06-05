@@ -94,6 +94,157 @@ Status StorageContext::add_existing_file(const batt::SharedPtr<StorageFile>& fil
   return OkStatus();
 }
 
+Status StorageContext::increase_storage_capacity(
+    const std::filesystem::path& dir_path, u64 increase_capacity, PageSize leaf_size,
+    PageSizeLog2 leaf_size_log2, PageSize node_size, PageSizeLog2 node_size_log2,
+    const char* const kPageFileName, unsigned int max_tree_height, unsigned int max_attachments)
+{
+  // TODO: [Gabe Bornstein 6/3/24] A lot of this code is copy-pasted and could be de-duped.
+  //
+
+  // Calculate the page counts from the total capacity and TreeOptions.
+  //
+  const auto max_in_refs_size_per_leaf = 64 * max_tree_height;
+
+  const auto leaf_page_count =
+      llfs::PageCount{increase_capacity / (leaf_size + max_in_refs_size_per_leaf)};
+
+  const auto total_leaf_pages_size = leaf_page_count * leaf_size;
+  const auto total_node_pages_size = increase_capacity - total_leaf_pages_size;
+
+  const auto node_page_count = llfs::PageCount{total_node_pages_size / node_size};
+
+  VLOG(1) << BATT_INSPECT(increase_capacity) << BATT_INSPECT(node_page_count)
+          << BATT_INSPECT(leaf_page_count);
+
+  // Create the page file.
+  //
+  Status page_file_status = this->add_new_file(
+      (dir_path / kPageFileName).string(),
+      [&](llfs::StorageFileBuilder& builder) -> Status  //
+      {
+        // Add an arena for node pages.
+        //
+        llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageArenaConfig&>> node_pool_config =
+            builder.add_object(
+                llfs::PageArenaConfigOptions{
+                    .uuid = None,
+                    .page_allocator =
+                        llfs::CreateNewPageAllocator{
+                            .options =
+                                llfs::PageAllocatorConfigOptions{
+                                    .uuid = llfs::None,
+                                    .max_attachments = max_attachments,
+                                    .page_count = node_page_count,
+                                    .log_device =
+                                        llfs::CreateNewLogDeviceWithDefaultSize{
+                                            .uuid = llfs::None,
+                                            .pages_per_block_log2 = 1,
+                                        },
+                                    .page_size_log2 = node_size_log2,
+                                    .page_device = llfs::LinkToNewPageDevice{},
+                                },
+                        },
+                    .page_device =
+                        llfs::CreateNewPageDevice{
+                            .options =
+                                llfs::PageDeviceConfigOptions{
+                                    .uuid = llfs::None,
+                                    .device_id = llfs::None,
+                                    .page_count = node_page_count,
+                                    .page_size_log2 = node_size_log2,
+                                },
+                        },
+                });
+
+        BATT_REQUIRE_OK(node_pool_config);
+
+        // Add an arena for leaf pages.
+        //
+        llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageArenaConfig&>> leaf_pool_config =
+            builder.add_object(
+                llfs::PageArenaConfigOptions{
+                    .uuid = None,
+                    .page_allocator =
+                        llfs::CreateNewPageAllocator{
+                            .options =
+                                llfs::PageAllocatorConfigOptions{
+                                    .uuid = llfs::None,
+                                    .max_attachments = max_attachments,
+                                    .page_count = leaf_page_count,
+                                    .log_device =
+                                        llfs::CreateNewLogDeviceWithDefaultSize{
+                                            .uuid = llfs::None,
+                                            .pages_per_block_log2 = 1,
+                                        },
+                                    .page_size_log2 = leaf_size_log2,
+                                    .page_device = llfs::LinkToNewPageDevice{},
+                                },
+                        },
+                    .page_device =
+                        llfs::CreateNewPageDevice{
+                            .options =
+                                llfs::PageDeviceConfigOptions{
+                                    .uuid = llfs::None,
+                                    .device_id = llfs::None,
+                                    .page_count = leaf_page_count,
+                                    .page_size_log2 = leaf_size_log2,
+                                },
+                        },
+                });
+
+        BATT_REQUIRE_OK(leaf_pool_config);
+
+        return OkStatus();
+      });
+  BATT_REQUIRE_OK(page_file_status);
+  return OkStatus();
+}
+
+std::vector<std::shared_ptr<PageArena>> StorageContext::retrieve_arenas(
+    std::vector<boost::uuids::uuid> uuids)
+{
+  // TODO: [Gabe Bornstein 6/3/24] A lot of this code is copy-pasted and could be de-duped.
+  //
+
+  // Add Arenas to PageCache.
+  //
+  std::vector<std::shared_ptr<PageArena>> arenas;
+  for (boost::uuids::uuid uuid : uuids) {
+    batt::SharedPtr<StorageObjectInfo> p_object_info = this->find_object_by_uuid(uuid);
+
+    if (p_object_info->p_config_slot->tag == PackedConfigSlotBase::Tag::kPageArena) {
+      const auto& packed_arena_config =
+          config_slot_cast<PackedPageArenaConfig>(p_object_info->p_config_slot.object);
+
+      const std::string base_name =
+          batt::to_string("PageDevice_", packed_arena_config.page_device_uuid);
+
+      StatusOr<PageArena> arena = this->recover_object(
+          batt::StaticType<PackedPageArenaConfig>{}, uuid,
+          PageAllocatorRuntimeOptions{
+              .scheduler = this->get_scheduler(),
+              .name = batt::to_string(base_name, "_Allocator"),
+          },
+          [&] {
+            IoRingLogDriverOptions options;
+            options.name = batt::to_string(base_name, "_AllocatorLog");
+            return options;
+          }(),
+          IoRingFileRuntimeOptions{
+              .io_ring = this->get_io_ring(),
+              .use_raw_io = true,
+              .allow_read = true,
+              .allow_write = true,
+          });
+
+      // BATT_REQUIRE_OK(arena);
+      arenas.push_back(std::make_shared<PageArena>(std::move(*arena)));
+    }
+  }
+  return arenas;
+}
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 void StorageContext::set_page_cache_options(const PageCacheOptions& options)

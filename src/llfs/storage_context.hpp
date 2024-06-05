@@ -102,10 +102,19 @@ class StorageContext : public batt::RefCounted<StorageContext>
   //
   Status add_existing_file(const batt::SharedPtr<StorageFile>& file);
 
+  Status increase_storage_capacity(const std::filesystem::path& dir_path, u64 increase_capacity,
+                                   PageSize leaf_size, PageSizeLog2 leaf_size_log2,
+                                   PageSize node_size, PageSizeLog2 node_size_log2,
+                                   const char* const kPageFileName = "pages.llfs",
+                                   unsigned int max_tree_height = 10,
+                                   unsigned int max_attachments = 32);
+
+  std::vector<std::shared_ptr<PageArena>> retrieve_arenas(std::vector<boost::uuids::uuid> uuids);
+
   // Attempts to recover an object of a given type from this context by uuid.
   //
-  // The type of the first argument determines the return type, the tag of the packed config, and
-  // the type of the extra_options parameter pack.
+  // The type of the first argument determines the return type, the tag of the packed config,
+  // and the type of the extra_options parameter pack.
   //
   template <typename PackedConfigT, typename... ExtraConfigOptions,
             typename R = decltype(recover_storage_object(

@@ -94,7 +94,7 @@ Status StorageContext::add_existing_file(const batt::SharedPtr<StorageFile>& fil
   return OkStatus();
 }
 
-Status StorageContext::increase_storage_capacity(
+StatusOr<std::vector<boost::uuids::uuid>> StorageContext::increase_storage_capacity(
     const std::filesystem::path& dir_path, u64 increase_capacity, PageSize leaf_size,
     PageSizeLog2 leaf_size_log2, PageSize node_size, PageSizeLog2 node_size_log2,
     const char* const kPageFileName, unsigned int max_tree_height, unsigned int max_attachments)
@@ -119,6 +119,7 @@ Status StorageContext::increase_storage_capacity(
 
   // Create the page file.
   //
+  std::vector<boost::uuids::uuid> uuids;
   Status page_file_status = this->add_new_file(
       (dir_path / kPageFileName).string(),
       [&](llfs::StorageFileBuilder& builder) -> Status  //
@@ -194,11 +195,13 @@ Status StorageContext::increase_storage_capacity(
                 });
 
         BATT_REQUIRE_OK(leaf_pool_config);
-
+        boost::uuids::uuid uuid = (*node_pool_config).get()->uuid;
+        uuids.push_back(uuid);
         return OkStatus();
       });
+
   BATT_REQUIRE_OK(page_file_status);
-  return OkStatus();
+  return uuids;
 }
 
 std::vector<std::shared_ptr<PageArena>> StorageContext::retrieve_arenas(

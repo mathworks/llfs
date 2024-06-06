@@ -204,55 +204,68 @@ StatusOr<std::vector<boost::uuids::uuid>> StorageContext::increase_storage_capac
   return uuids;
 }
 
-std::vector<std::shared_ptr<PageArena>> StorageContext::retrieve_arenas(
-    std::vector<boost::uuids::uuid> uuids)
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void StorageContext::set_page_cache_options(const PageCacheOptions& options)
+{
+  this->page_cache_options_ = options;
+}
+
+Status StorageContext::recover_arena(std::vector<PageArena>& arenas, boost::uuids::uuid uuid,
+                                     batt::SharedPtr<StorageObjectInfo> p_object_info)
+{
+  // TODO: [Gabe Bornstein 6/6/24] Verify that each arena we attempt to recover has not yet been
+  // recovered. If we recover the same arena multiple times, it may exist in memory multiple times,
+  // unaware of the other instance, which can cause issues.
+  //
+
+  if (p_object_info->p_config_slot->tag == PackedConfigSlotBase::Tag::kPageArena) {
+    const auto& packed_arena_config =
+        config_slot_cast<PackedPageArenaConfig>(p_object_info->p_config_slot.object);
+
+    const std::string base_name =
+        batt::to_string("PageDevice_", packed_arena_config.page_device_uuid);
+
+    StatusOr<PageArena> arena = this->recover_object(
+        batt::StaticType<PackedPageArenaConfig>{}, uuid,
+        PageAllocatorRuntimeOptions{
+            .scheduler = this->get_scheduler(),
+            .name = batt::to_string(base_name, "_Allocator"),
+        },
+        [&] {
+          IoRingLogDriverOptions options;
+          options.name = batt::to_string(base_name, "_AllocatorLog");
+          return options;
+        }(),
+        IoRingFileRuntimeOptions{
+            .io_ring = this->get_io_ring(),
+            .use_raw_io = true,
+            .allow_read = true,
+            .allow_write = true,
+        });
+
+    BATT_REQUIRE_OK(arena);
+    arenas.emplace_back(std::move(*arena));
+  }
+  return OkStatus();
+}
+
+Status StorageContext::recover_arenas(std::vector<boost::uuids::uuid>& uuids,
+                                      std::vector<PageArena>& arenas)
 {
   // TODO: [Gabe Bornstein 6/3/24] A lot of this code is copy-pasted and could be de-duped.
   //
 
   // Add Arenas to PageCache.
   //
-  std::vector<std::shared_ptr<PageArena>> arenas;
   for (boost::uuids::uuid uuid : uuids) {
     batt::SharedPtr<StorageObjectInfo> p_object_info = this->find_object_by_uuid(uuid);
 
-    if (p_object_info->p_config_slot->tag == PackedConfigSlotBase::Tag::kPageArena) {
-      const auto& packed_arena_config =
-          config_slot_cast<PackedPageArenaConfig>(p_object_info->p_config_slot.object);
-
-      const std::string base_name =
-          batt::to_string("PageDevice_", packed_arena_config.page_device_uuid);
-
-      StatusOr<PageArena> arena = this->recover_object(
-          batt::StaticType<PackedPageArenaConfig>{}, uuid,
-          PageAllocatorRuntimeOptions{
-              .scheduler = this->get_scheduler(),
-              .name = batt::to_string(base_name, "_Allocator"),
-          },
-          [&] {
-            IoRingLogDriverOptions options;
-            options.name = batt::to_string(base_name, "_AllocatorLog");
-            return options;
-          }(),
-          IoRingFileRuntimeOptions{
-              .io_ring = this->get_io_ring(),
-              .use_raw_io = true,
-              .allow_read = true,
-              .allow_write = true,
-          });
-
-      // BATT_REQUIRE_OK(arena);
-      arenas.push_back(std::make_shared<PageArena>(std::move(*arena)));
-    }
+    BATT_CHECK_OK(this->recover_arena(arenas, uuid, p_object_info));
   }
-  return arenas;
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-void StorageContext::set_page_cache_options(const PageCacheOptions& options)
-{
-  this->page_cache_options_ = options;
+  // TODO: [Gabe Bornstein 6/6/24] Consider adding new arenas to the page cache here.
+  //
+  return OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -267,33 +280,7 @@ StatusOr<batt::SharedPtr<PageCache>> StorageContext::get_page_cache()
 
   for (const auto& [uuid, p_object_info] : this->index_) {
     if (p_object_info->p_config_slot->tag == PackedConfigSlotBase::Tag::kPageArena) {
-      const auto& packed_arena_config =
-          config_slot_cast<PackedPageArenaConfig>(p_object_info->p_config_slot.object);
-
-      const std::string base_name =
-          batt::to_string("PageDevice_", packed_arena_config.page_device_uuid);
-
-      StatusOr<PageArena> arena = this->recover_object(
-          batt::StaticType<PackedPageArenaConfig>{}, uuid,
-          PageAllocatorRuntimeOptions{
-              .scheduler = this->scheduler_,
-              .name = batt::to_string(base_name, "_Allocator"),
-          },
-          [&] {
-            IoRingLogDriverOptions options;
-            options.name = batt::to_string(base_name, "_AllocatorLog");
-            return options;
-          }(),
-          IoRingFileRuntimeOptions{
-              .io_ring = *this->io_ring_,
-              .use_raw_io = true,
-              .allow_read = true,
-              .allow_write = true,
-          });
-
-      BATT_REQUIRE_OK(arena);
-
-      storage_pool.emplace_back(std::move(*arena));
+      BATT_CHECK_OK(this->recover_arena(storage_pool, uuid, p_object_info));
     }
   }
 

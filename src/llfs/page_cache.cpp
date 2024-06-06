@@ -104,66 +104,7 @@ PageCache::PageCache(std::vector<PageArena>&& storage_pool,
 {
   this->cache_slot_pool_by_page_size_log2_.fill(nullptr);
 
-  // Find the maximum page device id value.
-  //
-  page_device_id_int max_page_device_id = 0;
-  for (const PageArena& arena : storage_pool) {
-    max_page_device_id = std::max(max_page_device_id, arena.device().get_id());
-  }
-
-  batt::ScopedWriteLock<State> state(this->state_);
-
-  // Populate state.page_devices.
-  //
-  state->page_devices.resize(max_page_device_id + 1);
-  for (PageArena& arena : storage_pool) {
-    const page_device_id_int device_id = arena.device().get_id();
-    const auto page_size_log2 = batt::log2_ceil(arena.device().page_size());
-
-    BATT_CHECK_EQ(PageSize{1} << page_size_log2, arena.device().page_size())
-        << "Page sizes must be powers of 2!";
-
-    BATT_CHECK_LT(page_size_log2, kMaxPageSizeLog2);
-
-    // Create a slot pool for this page size if we haven't already done so.
-    //
-    if (!this->cache_slot_pool_by_page_size_log2_[page_size_log2]) {
-      this->cache_slot_pool_by_page_size_log2_[page_size_log2] = PageCacheSlot::Pool::make_new(
-          /*n_slots=*/this->options_.max_cached_pages_per_size_log2[page_size_log2],
-          /*name=*/batt::to_string("size_", u64{1} << page_size_log2));
-    }
-
-    BATT_CHECK_EQ(state->page_devices[device_id], nullptr)
-        << "Duplicate entries found for the same device id!" << BATT_INSPECT(device_id);
-
-    state->page_devices[device_id] = std::make_shared<PageDeviceEntry>(            //
-        std::move(arena),                                                          //
-        batt::make_copy(this->cache_slot_pool_by_page_size_log2_[page_size_log2])  //
-    );
-
-    // We will sort these later.
-    //
-    state->page_devices_by_page_size.emplace_back(state->page_devices[device_id]);
-  }
-  BATT_CHECK_EQ(state->page_devices_by_page_size.size(), storage_pool.size());
-
-  // Sort the storage pool by page size (MUST be first).
-  //
-  std::sort(state->page_devices_by_page_size.begin(), state->page_devices_by_page_size.end(),
-            PageSizeOrder{});
-
-  // Index the storage pool into groups of arenas by page size.
-  //
-  for (usize size_log2 = 6; size_log2 < kMaxPageSizeLog2; ++size_log2) {
-    auto iter_pair = std::equal_range(state->page_devices_by_page_size.begin(),
-                                      state->page_devices_by_page_size.end(),
-                                      PageSize{u32{1} << size_log2}, PageSizeOrder{});
-
-    state->page_devices_by_page_size_log2[size_log2] =
-        as_slice(state->page_devices_by_page_size.data() +
-                     std::distance(state->page_devices_by_page_size.begin(), iter_pair.first),
-                 as_range(iter_pair).size());
-  }
+  BATT_CHECK_OK(this->add_arenas(storage_pool));
 
   // Register metrics.
   //
@@ -539,6 +480,76 @@ void PageCache::purge(PageId page_id, u64 callers, u64 job_id)
 
     entry->cache.erase(page_id);
   }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+batt::Status PageCache::add_arenas(std::vector<PageArena>& arenas)
+{
+  batt::ScopedWriteLock<State> state(this->state_);
+
+  // Find the maximum page device id value.
+  //
+  // TODO: [Gabe Bornstein 6/6/24] Consider, this only looks for the max_page_device_id in `arenas`.
+  // Do we need to include pre-existing ids in `page_devices` as well?
+  //
+  page_device_id_int max_page_device_id = 0;
+  for (const PageArena& arena : arenas) {
+    max_page_device_id = std::max(max_page_device_id, arena.device().get_id());
+  }
+
+  // Populate state.page_devices.
+  //
+  state->page_devices.resize(max_page_device_id + 1);
+  for (PageArena& arena : arenas) {
+    const page_device_id_int device_id = arena.device().get_id();
+    const auto page_size_log2 = batt::log2_ceil(arena.device().page_size());
+
+    BATT_CHECK_EQ(PageSize{1} << page_size_log2, arena.device().page_size())
+        << "Page sizes must be powers of 2!";
+
+    BATT_CHECK_LT(page_size_log2, kMaxPageSizeLog2);
+
+    // Create a slot pool for this page size if we haven't already done so.
+    //
+    if (!this->cache_slot_pool_by_page_size_log2_[page_size_log2]) {
+      this->cache_slot_pool_by_page_size_log2_[page_size_log2] = PageCacheSlot::Pool::make_new(
+          /*n_slots=*/this->options_.max_cached_pages_per_size_log2[page_size_log2],
+          /*name=*/batt::to_string("size_", u64{1} << page_size_log2));
+    }
+
+    BATT_CHECK_EQ(state->page_devices[device_id], nullptr)
+        << "Duplicate entries found for the same device id!" << BATT_INSPECT(device_id);
+
+    state->page_devices[device_id] = std::make_shared<PageDeviceEntry>(            //
+        std::move(arena),                                                          //
+        batt::make_copy(this->cache_slot_pool_by_page_size_log2_[page_size_log2])  //
+    );
+
+    // We will sort these later.
+    //
+    state->page_devices_by_page_size.emplace_back(state->page_devices[device_id]);
+  }
+  // BATT_CHECK_EQ(state->page_devices_by_page_size.size(), storage_pool.size());
+
+  // Sort the storage pool by page size (MUST be first).
+  //
+  std::sort(state->page_devices_by_page_size.begin(), state->page_devices_by_page_size.end(),
+            PageSizeOrder{});
+
+  // Index the storage pool into groups of arenas by page size.
+  //
+  for (usize size_log2 = 6; size_log2 < kMaxPageSizeLog2; ++size_log2) {
+    auto iter_pair = std::equal_range(state->page_devices_by_page_size.begin(),
+                                      state->page_devices_by_page_size.end(),
+                                      PageSize{u32{1} << size_log2}, PageSizeOrder{});
+
+    state->page_devices_by_page_size_log2[size_log2] =
+        as_slice(state->page_devices_by_page_size.data() +
+                     std::distance(state->page_devices_by_page_size.begin(), iter_pair.first),
+                 as_range(iter_pair).size());
+  }
+  return batt::OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

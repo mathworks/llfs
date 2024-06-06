@@ -108,7 +108,10 @@ class StorageContext : public batt::RefCounted<StorageContext>
       const char* const kPageFileName = "pages.llfs", unsigned int max_tree_height = 10,
       unsigned int max_attachments = 32);
 
-  std::vector<std::shared_ptr<PageArena>> retrieve_arenas(std::vector<boost::uuids::uuid> uuids);
+  Status recover_arena(std::vector<PageArena>& arenas, boost::uuids::uuid uuid,
+                       batt::SharedPtr<StorageObjectInfo> p_object_info);
+
+  Status recover_arenas(std::vector<boost::uuids::uuid>& uuids, std::vector<PageArena>& arenas);
 
   // Attempts to recover an object of a given type from this context by uuid.
   //

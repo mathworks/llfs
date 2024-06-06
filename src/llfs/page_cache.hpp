@@ -312,6 +312,8 @@ class PageCache : public PageLoader
                                  const Optional<PageLayoutId>& required_layout,
                                  OkIfNotFound ok_if_not_found);
 
+  batt::Status add_arenas(std::vector<PageArena>& arenas);
+
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
   // The configuration passed in at creation time.

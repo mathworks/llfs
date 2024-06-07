@@ -487,6 +487,8 @@ void PageCache::purge(PageId page_id, u64 callers, u64 job_id)
 batt::Status PageCache::add_arenas(std::vector<PageArena>& arenas)
 {
   batt::ScopedWriteLock<State> state(this->state_);
+  // TODO: [Gabe Bornstein 6/6/24] Read over this function and make sure it won't break anything
+  // with just appending some values vs. creating page_cache from scratch.
 
   // Find the maximum page device id value.
   //

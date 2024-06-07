@@ -94,12 +94,16 @@ Status StorageContext::add_existing_file(const batt::SharedPtr<StorageFile>& fil
   return OkStatus();
 }
 
-StatusOr<std::vector<boost::uuids::uuid>> StorageContext::increase_storage_capacity(
+// TODO: [Gabe Bornstein 6/4/24] Could encapsulate some of these params in a new llfs object
+//
+Status StorageContext::increase_storage_capacity(
     const std::filesystem::path& dir_path, u64 increase_capacity, PageSize leaf_size,
     PageSizeLog2 leaf_size_log2, PageSize node_size, PageSizeLog2 node_size_log2,
     const char* const kPageFileName, unsigned int max_tree_height, unsigned int max_attachments)
 {
-  // TODO: [Gabe Bornstein 6/3/24] A lot of this code is copy-pasted and could be de-duped.
+  // TODO: [Gabe Bornstein 6/3/24] A lot of this code is copy-pasted and could be de-duped. This
+  // code could potentially be moved into turtle_db. It basically already exists there in
+  // DB::create.
   //
 
   // Calculate the page counts from the total capacity and TreeOptions.
@@ -201,7 +205,13 @@ StatusOr<std::vector<boost::uuids::uuid>> StorageContext::increase_storage_capac
       });
 
   BATT_REQUIRE_OK(page_file_status);
-  return uuids;
+
+  std::vector<PageArena> arenas;
+  BATT_CHECK_OK(this->recover_arenas(uuids, arenas));
+
+  BATT_CHECK_NE(this->page_cache_, nullptr);
+  BATT_CHECK_OK(this->page_cache_->add_arenas(arenas));
+  return OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -211,6 +221,8 @@ void StorageContext::set_page_cache_options(const PageCacheOptions& options)
   this->page_cache_options_ = options;
 }
 
+// TODO: [Gabe Bornstein 6/7/24] This could probably be a private function.
+//
 Status StorageContext::recover_arena(std::vector<PageArena>& arenas, boost::uuids::uuid uuid,
                                      batt::SharedPtr<StorageObjectInfo> p_object_info)
 {
@@ -250,12 +262,11 @@ Status StorageContext::recover_arena(std::vector<PageArena>& arenas, boost::uuid
   return OkStatus();
 }
 
+// TODO: [Gabe Bornstein 6/7/24] This could probably be a private function.
+//
 Status StorageContext::recover_arenas(std::vector<boost::uuids::uuid>& uuids,
                                       std::vector<PageArena>& arenas)
 {
-  // TODO: [Gabe Bornstein 6/3/24] A lot of this code is copy-pasted and could be de-duped.
-  //
-
   // Add Arenas to PageCache.
   //
   for (boost::uuids::uuid uuid : uuids) {
@@ -263,8 +274,6 @@ Status StorageContext::recover_arenas(std::vector<boost::uuids::uuid>& uuids,
 
     BATT_CHECK_OK(this->recover_arena(arenas, uuid, p_object_info));
   }
-  // TODO: [Gabe Bornstein 6/6/24] Consider adding new arenas to the page cache here.
-  //
   return OkStatus();
 }
 

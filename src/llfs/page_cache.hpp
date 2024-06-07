@@ -230,6 +230,8 @@ class PageCache : public PageLoader
    */
   StatusOr<PinnedPage> put_view(std::shared_ptr<const PageView>&& view, u64 callers, u64 job_id);
 
+  batt::Status add_arenas(std::vector<PageArena>& arenas);
+
   //----- --- -- -  -  -   -
   /** \brief Removes all cached data for the specified page.
    */
@@ -311,8 +313,6 @@ class PageCache : public PageLoader
   void async_load_page_into_slot(const PageCacheSlot::PinnedRef& pinned_slot,
                                  const Optional<PageLayoutId>& required_layout,
                                  OkIfNotFound ok_if_not_found);
-
-  batt::Status add_arenas(std::vector<PageArena>& arenas);
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 

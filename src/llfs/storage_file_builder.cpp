@@ -26,13 +26,14 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StorageFileBuilder::StorageFileBuilder(RawBlockFile& file, i64 base_offset) noexcept
+StorageFileBuilder::StorageFileBuilder(RawBlockFile& file, i64 base_offset,
+                                       page_device_id_int next_available_device_id) noexcept
     : file_{file}
     , config_blocks_{}
     , unused_payload_{None}
     , base_offset_{base_offset}
     , next_offset_{base_offset}
-    , next_available_device_id_{0}
+    , next_available_device_id_{next_available_device_id}
     , pre_flush_actions_{}
 {
 }

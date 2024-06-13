@@ -39,7 +39,6 @@ namespace llfs {
     , caller_{caller}
     , thread_{[this] {
       LLFS_VLOG(1) << "(" << this->caller_ << ") invoking IoRing::run()";
-
       Status io_status = this->storage_.io_ring_.run();
       if (!io_status.ok()) {
         LLFS_LOG_WARNING() << "(" << this->caller_ << ") IoRing::run() returned: " << io_status;
@@ -64,6 +63,7 @@ DefaultIoRingLogDeviceStorage::EventLoopTask::~EventLoopTask() noexcept
 void DefaultIoRingLogDeviceStorage::EventLoopTask::join()
 {
   this->join_called_ = true;
+
   BATT_CHECK_OK(this->done_.await_equal(true));
   this->thread_.join();
 }

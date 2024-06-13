@@ -31,7 +31,8 @@ class StorageFileBuilder
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  explicit StorageFileBuilder(RawBlockFile& file, i64 base_offset) noexcept;
+  explicit StorageFileBuilder(RawBlockFile& file, i64 base_offset,
+                              page_device_id_int next_available_device_id = 0) noexcept;
 
   // Add a storage object to the file.
   //

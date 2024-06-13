@@ -52,6 +52,7 @@ constexpr page_id_int kPageDeviceIdMask = ((page_id_int{1} << kPageDeviceIdBits)
 // |<-- kPageDeviceIdBits -->|<-- log_2(Max-Generation-Count) -->|<- log_2(Physical-Page-Count) ->|
 // +-------------------------+-----------------------------------+--------------------------------+
 //
+
 class PageIdFactory : public boost::equality_comparable<PageIdFactory>
 {
  public:

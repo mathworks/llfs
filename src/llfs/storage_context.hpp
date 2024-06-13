@@ -112,7 +112,7 @@ class StorageContext : public batt::RefCounted<StorageContext>
   Status recover_arena(std::vector<PageArena>& arenas, boost::uuids::uuid uuid,
                        batt::SharedPtr<StorageObjectInfo> p_object_info);
 
-  Status recover_arenas(std::vector<boost::uuids::uuid>& uuids, std::vector<PageArena>& arenas);
+  Status recover_arenas(std::vector<PageArena>& arenas);
 
   // Attempts to recover an object of a given type from this context by uuid.
   //
@@ -158,6 +158,10 @@ class StorageContext : public batt::RefCounted<StorageContext>
   std::unordered_map<boost::uuids::uuid, batt::SharedPtr<StorageObjectInfo>,
                      boost::hash<boost::uuids::uuid>>
       index_;
+
+  // An index of all storage objects by uuid.
+  //
+  std::unordered_set<boost::uuids::uuid, boost::hash<boost::uuids::uuid>> recovered_uuids_;
 
   // Options that will be used to instantiate `this->page_cache_`.
   //

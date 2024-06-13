@@ -46,7 +46,6 @@ inline batt::Status BasicIoRingLogInitializer<IoRingImpl>::run()
                << BATT_INSPECT(this->n_blocks_to_init_);
   {
     batt::MutableBuffer memory{this->subtasks_.data(), this->subtasks_.size() * sizeof(Subtask)};
-
     LLFS_VLOG(1) << "memory = " << (const void*)memory.data() << ".."
                  << (const void*)(this->subtasks_.data() + this->subtasks_.size());
 
@@ -73,7 +72,6 @@ inline batt::Status BasicIoRingLogInitializer<IoRingImpl>::run()
   }
   Status all_finished = this->finished_count_.await_equal(this->subtasks_.size());
   BATT_REQUIRE_OK(all_finished);
-
   for (auto& task : this->subtasks_) {
     BATT_REQUIRE_OK(task.final_status);
   }

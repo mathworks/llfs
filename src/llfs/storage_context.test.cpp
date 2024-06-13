@@ -29,100 +29,105 @@ namespace {
 using namespace llfs::constants;
 using namespace llfs::int_types;
 
-TEST(StorageContextTest, GetPageCache)
+class StorageContextTest : public ::testing::Test
 {
-  const char* storage_file_name = "/tmp/llfs_StorageContextTest_GetPageCache_storage_file.llfs";
+ public:
+  void SetUp() override
+  {
+    this->dir_name = "/tmp/";
+    const char* storage_file_name = "/tmp/llfs_StorageContextTest_GetPageCache_storage_file.llfs";
 
-  llfs::delete_file(storage_file_name).IgnoreError();
-  EXPECT_FALSE(std::filesystem::exists(std::filesystem::path{storage_file_name}));
+    llfs::delete_file(storage_file_name).IgnoreError();
+    EXPECT_FALSE(std::filesystem::exists(std::filesystem::path{storage_file_name}));
 
-  llfs::StatusOr<llfs::ScopedIoRing> io =
-      llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{1024}, llfs::ThreadPoolSize{1});
+    this->io =
+        llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{1024}, llfs::ThreadPoolSize{1});
 
-  ASSERT_TRUE(io.ok()) << BATT_INSPECT(io.status());
-  // Create a StorageContext.
-  //
-  batt::SharedPtr<llfs::StorageContext> storage_context = batt::make_shared<llfs::StorageContext>(
-      batt::Runtime::instance().default_scheduler(), io->get_io_ring());
+    ASSERT_TRUE(io.ok()) << BATT_INSPECT(io.status());
+    // Create a StorageContext.
+    //
+    this->storage_context = batt::make_shared<llfs::StorageContext>(
+        batt::Runtime::instance().default_scheduler(), io->get_io_ring());
 
-  boost::uuids::uuid arena_uuid_4kb = llfs::random_uuid();
-  boost::uuids::uuid arena_uuid_2mb = llfs::random_uuid();
+    boost::uuids::uuid arena_uuid_4kb = llfs::random_uuid();
+    boost::uuids::uuid arena_uuid_2mb = llfs::random_uuid();
 
-  // Create a storage file with two page arenas, one for small pages (4kb), one for large (2mb).
-  //
-  llfs::Status file_create_status = storage_context->add_new_file(
-      storage_file_name, [&](llfs::StorageFileBuilder& builder) -> llfs::Status {
-        llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageArenaConfig&>> config_4kb =
-            builder.add_object(llfs::PageArenaConfigOptions{
-                .uuid = arena_uuid_4kb,
-                .page_allocator =
-                    llfs::CreateNewPageAllocator{
-                        .options =
-                            llfs::PageAllocatorConfigOptions{
-                                .uuid = llfs::None,
-                                .max_attachments = 32,
-                                .page_count = llfs::PageCount{32},
-                                .log_device =
-                                    llfs::CreateNewLogDeviceWithDefaultSize{
-                                        .uuid = llfs::None,
-                                        .pages_per_block_log2 =
-                                            llfs::IoRingLogConfig::kDefaultPagesPerBlockLog2 + 1,
-                                    },
-                                .page_size_log2 = llfs::PageSizeLog2{12},
-                                .page_device = llfs::LinkToNewPageDevice{},
-                            },
-                    },
-                .page_device =
-                    llfs::CreateNewPageDevice{
-                        .options =
-                            llfs::PageDeviceConfigOptions{
-                                .uuid = llfs::None,
-                                .device_id = llfs::None,
-                                .page_count = llfs::PageCount{32},
-                                .page_size_log2 = llfs::PageSizeLog2{12},
-                            },
-                    },
-            });
-        BATT_REQUIRE_OK(config_4kb);
+    // Create a storage file with two page arenas, one for small pages (4kb), one for large (2mb).
+    //
+    llfs::Status file_create_status = storage_context->add_new_file(
+        storage_file_name, [&](llfs::StorageFileBuilder& builder) -> llfs::Status {
+          llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageArenaConfig&>> config_4kb =
+              builder.add_object(llfs::PageArenaConfigOptions{
+                  .uuid = arena_uuid_4kb,
+                  .page_allocator =
+                      llfs::CreateNewPageAllocator{
+                          .options =
+                              llfs::PageAllocatorConfigOptions{
+                                  .uuid = llfs::None,
+                                  .max_attachments = 32,
+                                  .page_count = llfs::PageCount{32},
+                                  .log_device =
+                                      llfs::CreateNewLogDeviceWithDefaultSize{
+                                          .uuid = llfs::None,
+                                          .pages_per_block_log2 =
+                                              llfs::IoRingLogConfig::kDefaultPagesPerBlockLog2 + 1,
+                                      },
+                                  .page_size_log2 = llfs::PageSizeLog2{12},
+                                  .page_device = llfs::LinkToNewPageDevice{},
+                              },
+                      },
+                  .page_device =
+                      llfs::CreateNewPageDevice{
+                          .options =
+                              llfs::PageDeviceConfigOptions{
+                                  .uuid = llfs::None,
+                                  .device_id = llfs::None,
+                                  .page_count = llfs::PageCount{32},
+                                  .page_size_log2 = llfs::PageSizeLog2{12},
+                              },
+                      },
+              });
+          BATT_REQUIRE_OK(config_4kb);
 
-        llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageArenaConfig&>> config_2mb =
-            builder.add_object(llfs::PageArenaConfigOptions{
-                .uuid = arena_uuid_2mb,
-                .page_allocator =
-                    llfs::CreateNewPageAllocator{
-                        .options =
-                            llfs::PageAllocatorConfigOptions{
-                                .uuid = llfs::None,
-                                .max_attachments = 32,
-                                .page_count = llfs::PageCount{32},
-                                .log_device =
-                                    llfs::CreateNewLogDeviceWithDefaultSize{
-                                        .uuid = llfs::None,
-                                        .pages_per_block_log2 =
-                                            llfs::IoRingLogConfig::kDefaultPagesPerBlockLog2 + 1,
-                                    },
-                                .page_size_log2 = llfs::PageSizeLog2{21},
-                                .page_device = llfs::LinkToNewPageDevice{},
-                            },
-                    },
-                .page_device =
-                    llfs::CreateNewPageDevice{
-                        .options =
-                            llfs::PageDeviceConfigOptions{
-                                .uuid = llfs::None,
-                                .device_id = llfs::None,
-                                .page_count = llfs::PageCount{32},
-                                .page_size_log2 = llfs::PageSizeLog2{21},
-                            },
-                    },
-            });
+          llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageArenaConfig&>> config_2mb =
+              builder.add_object(llfs::PageArenaConfigOptions{
+                  .uuid = arena_uuid_2mb,
+                  .page_allocator =
+                      llfs::CreateNewPageAllocator{
+                          .options =
+                              llfs::PageAllocatorConfigOptions{
+                                  .uuid = llfs::None,
+                                  .max_attachments = 32,
+                                  .page_count = llfs::PageCount{32},
+                                  .log_device =
+                                      llfs::CreateNewLogDeviceWithDefaultSize{
+                                          .uuid = llfs::None,
+                                          .pages_per_block_log2 =
+                                              llfs::IoRingLogConfig::kDefaultPagesPerBlockLog2 + 1,
+                                      },
+                                  .page_size_log2 = llfs::PageSizeLog2{21},
+                                  .page_device = llfs::LinkToNewPageDevice{},
+                              },
+                      },
+                  .page_device =
+                      llfs::CreateNewPageDevice{
+                          .options =
+                              llfs::PageDeviceConfigOptions{
+                                  .uuid = llfs::None,
+                                  .device_id = llfs::None,
+                                  .page_count = llfs::PageCount{32},
+                                  .page_size_log2 = llfs::PageSizeLog2{21},
+                              },
+                      },
+              });
 
-        BATT_REQUIRE_OK(config_2mb);
-        return llfs::OkStatus();
-      });
-  ASSERT_TRUE(file_create_status.ok()) << BATT_INSPECT(file_create_status);
+          BATT_REQUIRE_OK(config_2mb);
+          return llfs::OkStatus();
+        });
+    ASSERT_TRUE(file_create_status.ok()) << BATT_INSPECT(file_create_status);
 
-    llfs::StatusOr<batt::SharedPtr<llfs::PageCache>> cache = storage_context->get_page_cache();
+    llfs::StatusOr<batt::SharedPtr<llfs::PageCache>> cache =
+        this->storage_context->get_page_cache();
     ASSERT_TRUE(cache.ok()) << BATT_INSPECT(cache.status());
     ASSERT_NE(*cache, nullptr);
     llfs::Slice<std::shared_ptr<const llfs::PageCache::PageDeviceEntry>> devices_4kb =
@@ -131,6 +136,60 @@ TEST(StorageContextTest, GetPageCache)
     llfs::Slice<std::shared_ptr<const llfs::PageCache::PageDeviceEntry>> devices_2mb =
         (*cache)->devices_with_page_size(2 * kMiB);
     EXPECT_EQ(devices_2mb.size(), 1u);
+  }
+
+  batt::SharedPtr<llfs::StorageContext> storage_context;
+
+  llfs::StatusOr<llfs::ScopedIoRing> io;
+
+  const char* dir_name;
+};
+
+TEST_F(StorageContextTest, GetPageCache)
+{
+  // This test just runs SetUp()
+  //
+}
+
+TEST_F(StorageContextTest, IncreasePageCacheStorage)
+{
+    const char* storage_file_name1 =
+    "llfs_StorageContextTest_GetPageCache_storage_file2.llfs";
+    const char* storage_file_name2 =
+    "llfs_StorageContextTest_GetPageCache_storage_file3.llfs";
+
+    u8 node_size_log2 = 12 /*4kb*/;
+    u8 leaf_size_log2 = 21 /*2mb*/;
+
+    BATT_CHECK_OK(this->storage_context->increase_storage_capacity(
+        this->dir_name, 4096, llfs::PageSize{batt::checked_cast<u32>(u64{1} << leaf_size_log2)},
+        llfs::PageSizeLog2{leaf_size_log2},
+        llfs::PageSize{batt::checked_cast<u32>(u64{1} << node_size_log2)},
+        llfs::PageSizeLog2{node_size_log2}, storage_file_name1));
+
+    llfs::StatusOr<batt::SharedPtr<llfs::PageCache>> cache =
+        this->storage_context->get_page_cache();
+    ASSERT_TRUE(cache.ok()) << BATT_INSPECT(cache.status());
+    ASSERT_NE(*cache, nullptr);
+    llfs::Slice<std::shared_ptr<const llfs::PageCache::PageDeviceEntry>> devices_4kb =
+        (*cache)->devices_with_page_size(4 * kKiB);
+    EXPECT_EQ(devices_4kb.size(), 2u);
+    llfs::Slice<std::shared_ptr<const llfs::PageCache::PageDeviceEntry>> devices_2mb =
+        (*cache)->devices_with_page_size(2 * kMiB);
+    EXPECT_EQ(devices_2mb.size(), 2u);
+
+    BATT_CHECK_OK(this->storage_context->increase_storage_capacity(
+        this->dir_name, 4096, llfs::PageSize{batt::checked_cast<u32>(u64{1} << leaf_size_log2)},
+        llfs::PageSizeLog2{leaf_size_log2},
+        llfs::PageSize{batt::checked_cast<u32>(u64{1} << node_size_log2)},
+        llfs::PageSizeLog2{node_size_log2}, storage_file_name2));
+
+    ASSERT_TRUE(cache.ok()) << BATT_INSPECT(cache.status());
+    ASSERT_NE(*cache, nullptr);
+    devices_4kb = (*cache)->devices_with_page_size(4 * kKiB);
+    EXPECT_EQ(devices_4kb.size(), 3u);
+    devices_2mb = (*cache)->devices_with_page_size(2 * kMiB);
+    EXPECT_EQ(devices_2mb.size(), 3u);
 }
 
 }  // namespace

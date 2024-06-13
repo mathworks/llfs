@@ -192,7 +192,6 @@ StatusOr<PageArena> recover_storage_object(
   };
 
   BATT_CHECK_EQ(arena.id(), arena.allocator().get_device_id());
-
   return arena;
 }
 

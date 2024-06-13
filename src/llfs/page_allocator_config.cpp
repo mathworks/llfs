@@ -153,8 +153,7 @@ StatusOr<std::unique_ptr<PageAllocator>> recover_storage_object(
 
   const auto page_ids = PageIdFactory{
       PageCount{BATT_CHECKED_CAST(PageCount::value_type, p_allocator_config->page_count.value())},
-      p_allocator_config->page_device_id,
-  };
+      p_allocator_config->page_device_id};
 
   return PageAllocator::recover(allocator_options, page_ids, **log_factory);
 }

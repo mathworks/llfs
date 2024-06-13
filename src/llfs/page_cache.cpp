@@ -556,6 +556,14 @@ batt::Status PageCache::add_arenas(std::vector<PageArena>& arenas)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+int PageCache::get_num_page_devices()
+{
+  batt::ScopedReadLock<State> state(this->state_);
+  return state->page_devices.size();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 PageCache::PageDeviceEntry* PageCache::get_device_for_page(PageId page_id)
 {
   batt::ScopedReadLock<State> state(this->state_);

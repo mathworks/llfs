@@ -39,7 +39,6 @@ namespace llfs {
     }
   });
   BATT_REQUIRE_OK(batt::status_from_retval(fd));
-
   return std::make_unique<IoRingRawBlockFile>(IoRing::File{io_ring, fd});
 }
 

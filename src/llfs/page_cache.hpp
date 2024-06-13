@@ -232,6 +232,8 @@ class PageCache : public PageLoader
 
   batt::Status add_arenas(std::vector<PageArena>& arenas);
 
+  int get_num_page_devices();
+
   //----- --- -- -  -  -   -
   /** \brief Removes all cached data for the specified page.
    */

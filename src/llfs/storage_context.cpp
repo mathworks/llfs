@@ -199,7 +199,7 @@ Status StorageContext::increase_storage_capacity(
   std::vector<PageArena> arenas;
   BATT_CHECK_OK(this->recover_arenas(arenas));
   BATT_CHECK_NE(this->page_cache_, nullptr);
-  BATT_CHECK_OK(this->page_cache_->add_arenas(arenas));
+  BATT_CHECK_OK(this->page_cache_->add_page_devices(arenas));
   return OkStatus();
 }
 

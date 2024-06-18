@@ -230,7 +230,7 @@ class PageCache : public PageLoader
    */
   StatusOr<PinnedPage> put_view(std::shared_ptr<const PageView>&& view, u64 callers, u64 job_id);
 
-  batt::Status add_arenas(std::vector<PageArena>& arenas);
+  batt::Status add_page_devices(std::vector<PageArena>& arenas);
 
   int get_num_page_devices();
 
@@ -250,16 +250,18 @@ class PageCache : public PageLoader
     return this->metrics_;
   }
 
-  const PageCacheSlot::Pool::Metrics& metrics_for_page_size(PageSize page_size) const
+  const PageCacheSlot::Pool::Metrics& metrics_for_page_size(PageSize page_size)
   {
     const i32 page_size_log2 = batt::log2_ceil(page_size);
 
+    batt::ScopedReadLock<State> state(this->state_);
+
     BATT_CHECK_LT(static_cast<usize>(page_size_log2),
-                  this->cache_slot_pool_by_page_size_log2_.size());
+                  state->cache_slot_pool_by_page_size_log2.size());
 
-    BATT_CHECK_NOT_NULLPTR(this->cache_slot_pool_by_page_size_log2_[page_size_log2]);
+    BATT_CHECK_NOT_NULLPTR(state->cache_slot_pool_by_page_size_log2[page_size_log2]);
 
-    return this->cache_slot_pool_by_page_size_log2_[page_size_log2]->metrics();
+    return state->cache_slot_pool_by_page_size_log2[page_size_log2]->metrics();
   }
 
  private:
@@ -341,14 +343,14 @@ class PageCache : public PageLoader
     //
     std::array<Slice<std::shared_ptr<const PageDeviceEntry>>, kMaxPageSizeLog2>
         page_devices_by_page_size_log2;
+
+    // A pool of cache slots for each page size.
+    //
+    std::array<boost::intrusive_ptr<PageCacheSlot::Pool>, kMaxPageSizeLog2>
+        cache_slot_pool_by_page_size_log2;
   };
 
   batt::ReadWriteMutex<State> state_;
-
-  // A pool of cache slots for each page size.
-  //
-  std::array<boost::intrusive_ptr<PageCacheSlot::Pool>, kMaxPageSizeLog2>
-      cache_slot_pool_by_page_size_log2_;
 
   // A thread-safe shared map from PageLayoutId to PageReader function; layouts must be registered
   // with the PageCache so that we trace references during page recycling (aka garbage collection).

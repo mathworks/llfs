@@ -102,9 +102,12 @@ PageCache::PageCache(std::vector<PageArena>&& storage_pool,
     , metrics_{}
     , page_readers_{std::make_shared<batt::Mutex<PageLayoutReaderMap>>()}
 {
-  this->cache_slot_pool_by_page_size_log2_.fill(nullptr);
+  {
+    batt::ScopedWriteLock<State> state(this->state_);
+    state->cache_slot_pool_by_page_size_log2.fill(nullptr);
+  }
 
-  BATT_CHECK_OK(this->add_arenas(storage_pool));
+  BATT_CHECK_OK(this->add_page_devices(storage_pool));
 
   // Register metrics.
   //
@@ -484,7 +487,7 @@ void PageCache::purge(PageId page_id, u64 callers, u64 job_id)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-batt::Status PageCache::add_arenas(std::vector<PageArena>& arenas)
+batt::Status PageCache::add_page_devices(std::vector<PageArena>& arenas)
 {
   batt::ScopedWriteLock<State> state(this->state_);
   // TODO: [Gabe Bornstein 6/6/24] Read over this function and make sure it won't break anything
@@ -514,8 +517,8 @@ batt::Status PageCache::add_arenas(std::vector<PageArena>& arenas)
 
     // Create a slot pool for this page size if we haven't already done so.
     //
-    if (!this->cache_slot_pool_by_page_size_log2_[page_size_log2]) {
-      this->cache_slot_pool_by_page_size_log2_[page_size_log2] = PageCacheSlot::Pool::make_new(
+    if (!state->cache_slot_pool_by_page_size_log2[page_size_log2]) {
+      state->cache_slot_pool_by_page_size_log2[page_size_log2] = PageCacheSlot::Pool::make_new(
           /*n_slots=*/this->options_.max_cached_pages_per_size_log2[page_size_log2],
           /*name=*/batt::to_string("size_", u64{1} << page_size_log2));
     }
@@ -525,7 +528,7 @@ batt::Status PageCache::add_arenas(std::vector<PageArena>& arenas)
 
     state->page_devices[device_id] = std::make_shared<PageDeviceEntry>(            //
         std::move(arena),                                                          //
-        batt::make_copy(this->cache_slot_pool_by_page_size_log2_[page_size_log2])  //
+        batt::make_copy(state->cache_slot_pool_by_page_size_log2[page_size_log2])  //
     );
 
     // We will sort these later.

@@ -270,6 +270,35 @@ class PageCache : public PageLoader
   using PageLayoutReaderMap =
       std::unordered_map<PageLayoutId, PageReaderFromFile, PageLayoutId::Hash>;
 
+  struct State {
+    // The arenas backing up this cache, indexed by device id int.
+    //
+    std::vector<std::shared_ptr<PageDeviceEntry>> page_devices;
+
+    // The contents of `storage_pool_`, sorted by non-decreasing page size.
+    //
+    std::vector<std::shared_ptr<const PageDeviceEntry>> page_devices_by_page_size;
+
+    // PageDevices that are not full. If a PageDevice is in this list after `update_available_pages`
+    // is called, it means that PageDevice has un-used pages. a call to `allocate_page` should
+    // succeed on that device.
+    //
+    std::unordered_set<page_device_id_int> arenas_with_available_pages;
+    // std::vector<std::shared_ptr<const PageDeviceEntry>> available_pages;
+
+    // Slices of `this->storage_pool_` that group arenas by page size (log2).  For example,
+    // `this->arenas_by_size_log2_[12]` is the slice of `this->storage_pool_` comprised of
+    // PageArenas whose page size is 4096.
+    //
+    std::array<Slice<std::shared_ptr<const PageDeviceEntry>>, kMaxPageSizeLog2>
+        page_devices_by_page_size_log2;
+
+    // A pool of cache slots for each page size.
+    //
+    std::array<boost::intrusive_ptr<PageCacheSlot::Pool>, kMaxPageSizeLog2>
+        cache_slot_pool_by_page_size_log2;
+  };
+
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
   explicit PageCache(std::vector<PageArena>&& storage_pool,
@@ -304,6 +333,10 @@ class PageCache : public PageLoader
   batt::StatusOr<PageCacheSlot::PinnedRef> find_page_in_cache(
       PageId page_id, const Optional<PageLayoutId>& required_layout, OkIfNotFound ok_if_not_found);
 
+  // Requires that ScopedWriteLock is acquired on state before calling.
+  //
+  void update_available_pages(/*batt::ScopedWriteLock<PageCache::State>& state*/);
+
   //----- --- -- -  -  -   -
   /** \brief Populates the passed PageCacheSlot asynchronously by attempting to read the page from
    * storage and setting the Latch value of the slot.
@@ -327,28 +360,6 @@ class PageCache : public PageLoader
   // Metrics for this cache.
   //
   PageCacheMetrics metrics_;
-
-  struct State {
-    // The arenas backing up this cache, indexed by device id int.
-    //
-    std::vector<std::shared_ptr<PageDeviceEntry>> page_devices;
-
-    // The contents of `storage_pool_`, sorted by non-decreasing page size.
-    //
-    std::vector<std::shared_ptr<const PageDeviceEntry>> page_devices_by_page_size;
-
-    // Slices of `this->storage_pool_` that group arenas by page size (log2).  For example,
-    // `this->arenas_by_size_log2_[12]` is the slice of `this->storage_pool_` comprised of
-    // PageArenas whose page size is 4096.
-    //
-    std::array<Slice<std::shared_ptr<const PageDeviceEntry>>, kMaxPageSizeLog2>
-        page_devices_by_page_size_log2;
-
-    // A pool of cache slots for each page size.
-    //
-    std::array<boost::intrusive_ptr<PageCacheSlot::Pool>, kMaxPageSizeLog2>
-        cache_slot_pool_by_page_size_log2;
-  };
 
   batt::ReadWriteMutex<State> state_;
 

@@ -205,8 +205,6 @@ TEST_F(StorageContextTest, RunOutOfMemory)
 {
   std::string file_name = "llfs_StorageContextTest_RunOutOfMemory_storage_file";
   std::string file_extension = ".llfs";
-  //   const char*  = file_name + ".llfs";
-  //   const char* storage_file_name2 = "llfs_StorageContextTest_GetPageCache_storage_file5.llfs";
 
   u8 node_size_log2 = 12 /*4kb*/;
   u8 leaf_size_log2 = 21 /*2mb*/;
@@ -229,8 +227,9 @@ TEST_F(StorageContextTest, RunOutOfMemory)
 
   std::thread increase_storage_capacity_thread([&] {
     for (int i = 0; i < num_storage_increases + 1; ++i) {
-      LOG(INFO) << "increase_storage_capacity_thread start: " << i;
-      const char* storage_file_name = (file_name + batt::to_string(i) + file_extension).c_str();
+      std::string file_name_str = file_name + batt::to_string(i) + file_extension;
+      const char* storage_file_name = file_name_str.c_str();
+      LOG(INFO) << "increase_storage_capacity_thread start: " << i << " with file name: " << storage_file_name;
       llfs::delete_file(storage_file_name).IgnoreError();
       EXPECT_FALSE(std::filesystem::exists(std::filesystem::path{storage_file_name}));
 

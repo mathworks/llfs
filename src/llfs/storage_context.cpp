@@ -61,7 +61,6 @@ Status StorageContext::add_new_file(const std::string& file_name,
         IoRingRawBlockFile::open(*this->io_ring_, file_name.c_str(),
                                  /*flags=*/O_RDWR | O_CREAT | O_EXCL | O_DIRECT | O_SYNC,
                                  /*mode=*/S_IRUSR | S_IWUSR));
-
     llfs::page_device_id_int initial_device_id =
         (this->page_cache_) ? this->page_cache_->get_num_page_devices() : 0;
     StorageFileBuilder builder{*file, /*base_offset=*/0, initial_device_id};
@@ -116,6 +115,7 @@ Status StorageContext::increase_storage_capacity(
   VLOG(1) << BATT_INSPECT(increase_capacity) << BATT_INSPECT(node_page_count)
           << BATT_INSPECT(leaf_page_count);
 
+  LOG(INFO) << "PAGE COUNT add_existing_file: " << node_page_count;
   // Create the page file.
   //
   Status page_file_status = this->add_new_file(

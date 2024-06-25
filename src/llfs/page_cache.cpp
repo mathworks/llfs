@@ -250,49 +250,82 @@ StatusOr<std::shared_ptr<PageBuffer>> PageCache::allocate_page_of_size_log2(
 
   LatencyTimer alloc_timer{this->metrics_.allocate_page_alloc_latency};
 
-  Slice<std::shared_ptr<const PageDeviceEntry>> device_entries =
-      this->devices_with_page_size_log2(size_log2);
+  static const char* kOperationName = "PageCache::allocate_page_of_size_log2";
 
-  // TODO [tastolfi 2021-09-08] If the caller wants to wait, which device should we wait on?  First
-  // available? Random?  Round-Robin?
+  // TODO: [Gabe Bornstein 6/19/24] Tony mentioned there's a different method besides
+  // `with_retry_policy` that we could use. It could potentially cause less congestion in the
+  // pipeline of CheckpointGenerator -> Trim -> PageRecycler -> Etc. However, it's more complicated
   //
-  for (auto wait_arg : {batt::WaitForResource::kFalse, batt::WaitForResource::kTrue}) {
-    for (std::shared_ptr<const PageDeviceEntry> device_entry : device_entries) {
-      const PageArena& arena = device_entry->arena;
-      StatusOr<PageId> page_id = arena.allocator().allocate_page(wait_arg, cancel_token);
-      if (!page_id.ok()) {
-        if (page_id.status() == batt::StatusCode::kResourceExhausted) {
-          const u64 page_size = u64{1} << size_log2;
-          LLFS_LOG_INFO_FIRST_N(1)  //
-              << "Failed to allocate page (pool is empty): " << BATT_INSPECT(page_size);
-        }
-        continue;
-      }
+  return                        //
+      batt::with_retry_policy(  //
+                                // TODO: [Gabe Bornstein 6/20/24] Ensure MAX waittime is < 100 ms
+                                //
+          batt::ExponentialBackoff{
+              .max_attempts = ~u64{0},
+              .initial_delay_usec = 500,
+              .backoff_factor = 3,
+              .backoff_divisor = 2,
+              .max_delay_usec = 1000 * 100,
+          },
+          kOperationName,  //
+          [this, &size_log2, &cancel_token, &job_id, &callers, &wait_for_resource] {
+            this->update_available_pages();
 
-      BATT_CHECK_EQ(PageIdFactory::get_device_id(*page_id), arena.id());
+            batt::StatusOr<std::shared_ptr<PageBuffer>> page_buffer;
+            batt::Status s = batt::StatusCode::kResourceExhausted;
+            page_buffer = s;
 
-      LLFS_VLOG(1) << "allocated page " << *page_id;
+            Slice<std::shared_ptr<const PageDeviceEntry>> device_entries =
+                this->devices_with_page_size_log2(size_log2);
+            // TODO: [Gabe Bornstein 6/20/24] Currently, we're dropping the state lock in between
+            // `update_available_pages` and `allocate_page`. Could this cause issues? Could we run
+            // out of pages?
+            //
+            batt::ScopedWriteLock<State> state(this->state_);
+            // If available_pages does not have not have any pages that match device_entries,
+            // nothing to do. No available pages. Return and try again.
+            //
+            for (std::shared_ptr<const PageDeviceEntry> device_entry : device_entries) {
+              const PageArena& arena = device_entry->arena;
+              if (state->arenas_with_available_pages.find(arena.id()) ==
+                  state->arenas_with_available_pages.end()) {
+                continue;
+              }
+              StatusOr<PageId> page_id =
+                  arena.allocator().allocate_page(batt::WaitForResource::kFalse, cancel_token);
+              if (!page_id.ok()) {
+                if (page_id.status() == batt::StatusCode::kResourceExhausted) {
+                  const u64 page_size = u64{1} << size_log2;
+                  LLFS_LOG_INFO_FIRST_N(1)  //
+                      << "Failed to allocate page (pool is empty): " << BATT_INSPECT(page_size);
+                }
+                continue;
+              }
+              BATT_CHECK_EQ(PageIdFactory::get_device_id(*page_id), arena.id());
 
-      this->track_new_page_event(NewPageTracker{
-          .ts = 0,
-          .job_id = job_id,
-          .page_id = *page_id,
-          .callers = callers,
-          .event_id = (int)NewPageTracker::Event::kAllocate,
-      });
+              LLFS_VLOG(1) << "allocated page " << *page_id;
 
-      // PageDevice::prepare must be thread-safe.
-      //
-      return arena.device().prepare(*page_id);
-    }
+              this->track_new_page_event(NewPageTracker{
+                  .ts = 0,
+                  .job_id = job_id,
+                  .page_id = *page_id,
+                  .callers = callers,
+                  .event_id = (int)NewPageTracker::Event::kAllocate,
+              });
+              // PageDevice::prepare must be thread-safe.
+              //
+              page_buffer = arena.device().prepare(*page_id);
+              break;
+            }
 
-    if (wait_for_resource == batt::WaitForResource::kFalse) {
-      break;
-    }
-  }
-
-  LLFS_LOG_WARNING() << "No arena with free space could be found";
-  return Status{batt::StatusCode::kUnavailable};  // TODO [tastolfi 2021-10-20]
+            return page_buffer;
+          },                                   //
+          batt::TaskSleepImpl{},               //
+          [](const batt::Status& s) -> bool {  //
+            VLOG(2) << "batt::StatusCode::kResourceExhausted == "
+                    << (s == batt::StatusCode::kResourceExhausted);
+            return batt::status_is_retryable(s) || (s == batt::StatusCode::kResourceExhausted);
+          });
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -489,71 +522,74 @@ void PageCache::purge(PageId page_id, u64 callers, u64 job_id)
 //
 batt::Status PageCache::add_page_devices(std::vector<PageArena>& arenas)
 {
-  batt::ScopedWriteLock<State> state(this->state_);
-  // TODO: [Gabe Bornstein 6/6/24] Read over this function and make sure it won't break anything
-  // with just appending some values vs. creating page_cache from scratch.
+  {
+    batt::ScopedWriteLock<State> state(this->state_);
+    // TODO: [Gabe Bornstein 6/6/24] Read over this function and make sure it won't break anything
+    // with just appending some values vs. creating page_cache from scratch.
 
-  // Find the maximum page device id value.
-  //
-  // TODO: [Gabe Bornstein 6/6/24] Consider, this only looks for the max_page_device_id in `arenas`.
-  // Do we need to include pre-existing ids in `page_devices` as well?
-  //
-  page_device_id_int max_page_device_id = 0;
-  for (const PageArena& arena : arenas) {
-    max_page_device_id = std::max(max_page_device_id, arena.device().get_id());
-  }
-
-  // Populate state.page_devices.
-  //
-  state->page_devices.resize(max_page_device_id + 1);
-  for (PageArena& arena : arenas) {
-    const page_device_id_int device_id = arena.device().get_id();
-    const auto page_size_log2 = batt::log2_ceil(arena.device().page_size());
-
-    BATT_CHECK_EQ(PageSize{1} << page_size_log2, arena.device().page_size())
-        << "Page sizes must be powers of 2!";
-
-    BATT_CHECK_LT(page_size_log2, kMaxPageSizeLog2);
-
-    // Create a slot pool for this page size if we haven't already done so.
+    // Find the maximum page device id value.
     //
-    if (!state->cache_slot_pool_by_page_size_log2[page_size_log2]) {
-      state->cache_slot_pool_by_page_size_log2[page_size_log2] = PageCacheSlot::Pool::make_new(
-          /*n_slots=*/this->options_.max_cached_pages_per_size_log2[page_size_log2],
-          /*name=*/batt::to_string("size_", u64{1} << page_size_log2));
+    // TODO: [Gabe Bornstein 6/6/24] Consider, this only looks for the max_page_device_id in
+    // `arenas`. Do we need to include pre-existing ids in `page_devices` as well?
+    //
+    page_device_id_int max_page_device_id = 0;
+    for (const PageArena& arena : arenas) {
+      max_page_device_id = std::max(max_page_device_id, arena.device().get_id());
     }
 
-    BATT_CHECK_EQ(state->page_devices[device_id], nullptr)
-        << "Duplicate entries found for the same device id!" << BATT_INSPECT(device_id);
-
-    state->page_devices[device_id] = std::make_shared<PageDeviceEntry>(            //
-        std::move(arena),                                                          //
-        batt::make_copy(state->cache_slot_pool_by_page_size_log2[page_size_log2])  //
-    );
-
-    // We will sort these later.
+    // Populate state.page_devices.
     //
-    state->page_devices_by_page_size.emplace_back(state->page_devices[device_id]);
+    state->page_devices.resize(max_page_device_id + 1);
+    for (PageArena& arena : arenas) {
+      const page_device_id_int device_id = arena.device().get_id();
+      const auto page_size_log2 = batt::log2_ceil(arena.device().page_size());
+
+      BATT_CHECK_EQ(PageSize{1} << page_size_log2, arena.device().page_size())
+          << "Page sizes must be powers of 2!";
+
+      BATT_CHECK_LT(page_size_log2, kMaxPageSizeLog2);
+
+      // Create a slot pool for this page size if we haven't already done so.
+      //
+      if (!state->cache_slot_pool_by_page_size_log2[page_size_log2]) {
+        state->cache_slot_pool_by_page_size_log2[page_size_log2] = PageCacheSlot::Pool::make_new(
+            /*n_slots=*/this->options_.max_cached_pages_per_size_log2[page_size_log2],
+            /*name=*/batt::to_string("size_", u64{1} << page_size_log2));
+      }
+
+      BATT_CHECK_EQ(state->page_devices[device_id], nullptr)
+          << "Duplicate entries found for the same device id!" << BATT_INSPECT(device_id);
+
+      state->page_devices[device_id] = std::make_shared<PageDeviceEntry>(            //
+          std::move(arena),                                                          //
+          batt::make_copy(state->cache_slot_pool_by_page_size_log2[page_size_log2])  //
+      );
+
+      // We will sort these later.
+      //
+      state->page_devices_by_page_size.emplace_back(state->page_devices[device_id]);
+    }
+    // BATT_CHECK_EQ(state->page_devices_by_page_size.size(), storage_pool.size());
+
+    // Sort the storage pool by page size (MUST be first).
+    //
+    std::sort(state->page_devices_by_page_size.begin(), state->page_devices_by_page_size.end(),
+              PageSizeOrder{});
+
+    // Index the storage pool into groups of arenas by page size.
+    //
+    for (usize size_log2 = 6; size_log2 < kMaxPageSizeLog2; ++size_log2) {
+      auto iter_pair = std::equal_range(state->page_devices_by_page_size.begin(),
+                                        state->page_devices_by_page_size.end(),
+                                        PageSize{u32{1} << size_log2}, PageSizeOrder{});
+
+      state->page_devices_by_page_size_log2[size_log2] =
+          as_slice(state->page_devices_by_page_size.data() +
+                       std::distance(state->page_devices_by_page_size.begin(), iter_pair.first),
+                   as_range(iter_pair).size());
+    }
   }
-  // BATT_CHECK_EQ(state->page_devices_by_page_size.size(), storage_pool.size());
 
-  // Sort the storage pool by page size (MUST be first).
-  //
-  std::sort(state->page_devices_by_page_size.begin(), state->page_devices_by_page_size.end(),
-            PageSizeOrder{});
-
-  // Index the storage pool into groups of arenas by page size.
-  //
-  for (usize size_log2 = 6; size_log2 < kMaxPageSizeLog2; ++size_log2) {
-    auto iter_pair = std::equal_range(state->page_devices_by_page_size.begin(),
-                                      state->page_devices_by_page_size.end(),
-                                      PageSize{u32{1} << size_log2}, PageSizeOrder{});
-
-    state->page_devices_by_page_size_log2[size_log2] =
-        as_slice(state->page_devices_by_page_size.data() +
-                     std::distance(state->page_devices_by_page_size.begin(), iter_pair.first),
-                 as_range(iter_pair).size());
-  }
   return batt::OkStatus();
 }
 
@@ -621,6 +657,18 @@ auto PageCache::find_page_in_cache(PageId page_id, const Optional<PageLayoutId>&
   return entry->cache.find_or_insert(page_id, [&](const PageCacheSlot::PinnedRef& pinned_slot) {
     this->async_load_page_into_slot(pinned_slot, required_layout, ok_if_not_found);
   });
+}
+
+void PageCache::update_available_pages()
+{
+  batt::ScopedWriteLock<State> state(this->state_);
+  for (std::shared_ptr<PageDeviceEntry> page_device : state->page_devices) {
+    if (page_device->arena.allocator().free_pool_size() != 0) {
+      state->arenas_with_available_pages.insert(page_device->arena.id());
+    } else {
+      state->arenas_with_available_pages.erase(page_device->arena.id());
+    }
+  }
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

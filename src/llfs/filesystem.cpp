@@ -9,6 +9,8 @@
 #include <llfs/filesystem.hpp>
 //
 
+#include <llfs/track_fds.hpp>
+
 #include <batteries/finally.hpp>
 #include <batteries/syscall_retry.hpp>
 
@@ -18,6 +20,24 @@
 namespace llfs {
 
 using ::batt::syscall_retry;
+
+namespace {
+
+}  //namespace
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+int system_open2(const char* path, int flags)
+{
+  return maybe_track_fd(::open(path, flags));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+int system_open3(const char* path, int flags, int mode)
+{
+  return maybe_track_fd(::open(path, flags, mode));
+}
 
 namespace {
 
@@ -63,7 +83,7 @@ StatusOr<int> open_file_read_only(std::string_view file_name, OpenRawIO open_raw
                                open_raw_io);
 
   const int fd = syscall_retry([&] {
-    return ::open(std::string(file_name).c_str(), flags);
+    return system_open2(std::string(file_name).c_str(), flags);
   });
 
   BATT_REQUIRE_OK(batt::status_from_retval(fd));
@@ -82,7 +102,7 @@ StatusOr<int> open_file_read_write(std::string_view file_name, OpenForAppend ope
                                open_raw_io);
 
   const int fd = syscall_retry([&] {
-    return ::open(std::string(file_name).c_str(), flags);
+    return system_open2(std::string(file_name).c_str(), flags);
   });
   BATT_REQUIRE_OK(batt::status_from_retval(fd));
 
@@ -100,7 +120,7 @@ StatusOr<int> create_file_read_write(std::string_view file_name, OpenForAppend o
               | O_CREAT | O_EXCL | O_TRUNC;
 
   const int fd = syscall_retry([&] {
-    return ::open(std::string(file_name).c_str(), flags, /*mode=*/0644);
+    return system_open3(std::string(file_name).c_str(), flags, /*mode=*/0644);
   });
   BATT_REQUIRE_OK(batt::status_from_retval(fd));
 
@@ -112,7 +132,7 @@ StatusOr<int> create_file_read_write(std::string_view file_name, OpenForAppend o
 Status truncate_file(std::string_view file_name, u64 size)
 {
   const int fd = syscall_retry([&] {
-    return ::open(std::string(file_name).c_str(), O_RDWR | O_CREAT, 0644);
+    return system_open3(std::string(file_name).c_str(), O_RDWR | O_CREAT, 0644);
   });
   BATT_REQUIRE_OK(batt::status_from_retval(fd));
 

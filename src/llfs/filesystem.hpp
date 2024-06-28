@@ -28,6 +28,16 @@ BATT_STRONG_TYPEDEF(bool, OpenForWrite);
 BATT_STRONG_TYPEDEF(bool, OpenForAppend);
 BATT_STRONG_TYPEDEF(bool, OpenRawIO);
 
+/** \brief Wrapper for all calls to system open; this allows us to track open file descriptors and
+ * where they were opened, to detect leaks.
+ */
+int system_open2(const char* path, int flags);
+
+/** \brief Wrapper for all calls to system open; this allows us to track open file descriptors and
+ * where they were opened, to detect leaks.
+ */
+int system_open3(const char* path, int flags, int mode);
+
 StatusOr<int> open_file_read_only(std::string_view file_name,
                                   OpenRawIO open_raw_io = OpenRawIO{false});
 

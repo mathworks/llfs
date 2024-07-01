@@ -86,7 +86,7 @@ StatusOr<std::unique_ptr<IoRingLogDeviceFactory>> recover_storage_object(
   const int flags = O_DIRECT | O_SYNC | O_RDWR;
 
   int fd = batt::syscall_retry([&] {
-    return ::open(file_name.c_str(), flags);
+    return system_open2(file_name.c_str(), flags);
   });
   BATT_REQUIRE_OK(batt::status_from_retval(fd));
 

@@ -9,7 +9,9 @@
 #include <llfs/ring_buffer.hpp>
 //
 
+#include <llfs/filesystem.hpp>
 #include <llfs/status.hpp>
+#include <llfs/track_fds.hpp>
 
 #include <batteries/checked_cast.hpp>
 #include <batteries/env.hpp>
@@ -93,13 +95,12 @@ auto RingBuffer::ImplPool::allocate(const Params& params) noexcept -> Impl
 
         const i64 id = counter.fetch_add(1);
 
-        FILE* const fp = nullptr;
-
-        const int fd = memfd_create(Impl::memfd_name_from_id(id).c_str(), MFD_CLOEXEC);
+        const int fd =
+            maybe_track_fd(memfd_create(Impl::memfd_name_from_id(id).c_str(), MFD_CLOEXEC));
 
         return Impl{FileDescriptor{
                         .fd = fd,
-                        .fp = fp,
+                        .fp = nullptr,
                         .byte_size = p.byte_size,
                         .byte_offset = 0,
                         .truncate = true,
@@ -121,7 +122,7 @@ auto RingBuffer::ImplPool::allocate(const Params& params) noexcept -> Impl
           flags |= O_TRUNC;
         }
         return Impl{FileDescriptor{
-                        .fd = ::open(p.file_name.c_str(), flags, S_IRWXU),
+                        .fd = system_open3(p.file_name.c_str(), flags, S_IRWXU),
                         .fp = nullptr,
                         .byte_size = p.byte_size,
                         .byte_offset = p.byte_offset,
@@ -261,7 +262,11 @@ RingBuffer::Impl::~Impl() noexcept
       int local_fd = -1;
       std::swap(this->fd_, local_fd);
 
-      ::close(this->fd_);
+      Status close_status = close_fd(local_fd);
+      if (!close_status.ok()) {
+        LLFS_LOG_ERROR() << "Failed to close RingBuffer::Impl fd=" << local_fd
+                         << "; status=" << close_status;
+      }
     }
   }
 

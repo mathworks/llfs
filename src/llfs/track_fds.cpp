@@ -41,7 +41,9 @@ struct TrackFdState {
 
   static TrackFdState& instance() noexcept
   {
-    // Intentionally leaked.
+    // Intentionally leaked, since if this is being deleted the process is going away anyhow, the
+    // destructor of std::unordered_map in this case doesn't have any side-effects external to the
+    // process, so it's better to keep the process tear-down as simple as possible.
     //
     static TrackFdState* const instance_ = new TrackFdState{};
 
@@ -53,14 +55,19 @@ struct TrackFdState {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-std::set<int> get_open_fds()
+StatusOr<std::set<int>> get_open_fds()
 {
   std::set<int> result;
   const char* dirpath = "/proc/self/fd";
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 #ifdef __linux__
+  // TODO [tastolfi 2024-07-01] Make Windows compatible.
+  //
   DIR* p_dir = opendir(dirpath);
+  if (!p_dir) {
+    return batt::status_from_errno(errno);
+  }
 
   if (!p_dir) {
     LLFS_LOG_ERROR() << "Could not open " << dirpath;
@@ -71,33 +78,16 @@ std::set<int> get_open_fds()
 
     const int p_dir_fd = dirfd(p_dir);
 
-    isize name_max = pathconf(dirpath, _PC_NAME_MAX);
-    if (name_max == -1) { /* Limit not defined, or error */
-      name_max = 255;     /* Take a guess */
-    }
-    const usize len = offsetof(struct dirent, d_name) + name_max + 1;
-    void* const entry_buffer = malloc(len);
-    auto on_scope_exit2 = batt::finally([&] {
-      free(entry_buffer);
-    });
-
     for (;;) {
-      struct dirent* p_entry = nullptr;
-
-      BATT_SUPPRESS_IF_GCC("-Wdeprecated-declarations")
-      const int retval = readdir_r(p_dir, (struct dirent*)entry_buffer, &p_entry);
-      BATT_UNSUPPRESS_IF_GCC()
-
-      // Check for errors.
-      //
-      if (retval != 0) {
-        LLFS_LOG_ERROR() << "readdir_r returned: " << retval;
-        break;
-      }
+      errno = 0;
+      struct dirent* p_entry = readdir(p_dir);
 
       // If p_entry is null, we are done!
       //
       if (!p_entry) {
+        if (errno != 0) {
+          return batt::status_from_errno(errno);
+        }
         break;
       }
 

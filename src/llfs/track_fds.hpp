@@ -13,6 +13,7 @@
 #include <llfs/config.hpp>
 //
 #include <llfs/optional.hpp>
+#include <llfs/status.hpp>
 
 #include <boost/stacktrace/stacktrace.hpp>
 
@@ -22,7 +23,7 @@ namespace llfs {
 
 /** \brief Returns the set of currently open file descriptors for this process.
  */
-std::set<int> get_open_fds();
+StatusOr<std::set<int>> get_open_fds();
 
 /** \brief If tracking is enabled and fd is not invalid, adds it to the tracked set.
  * \return the passed fd

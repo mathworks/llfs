@@ -36,7 +36,8 @@ TEST(IoringFileTest, FdLeakTest)
   ASSERT_TRUE(scoped_io_ring.ok()) << BATT_INSPECT(scoped_io_ring.status());
 
   for (usize i = 0; i < 1000; ++i) {
-    std::set<int> before_fds = llfs::get_open_fds();
+    StatusOr<std::set<int>> before_fds = llfs::get_open_fds();
+    ASSERT_TRUE(before_fds.ok()) << BATT_INSPECT(before_fds.status());
     {
       StatusOr<int> fd = llfs::open_file_read_only(__FILE__);
       ASSERT_TRUE(fd.ok()) << BATT_INSPECT(fd.status());
@@ -47,14 +48,18 @@ TEST(IoringFileTest, FdLeakTest)
 
         EXPECT_TRUE(register_status.ok()) << BATT_INSPECT(register_status);
 
-        std::set<int> after_fds = llfs::get_open_fds();
+        StatusOr<std::set<int>> after_fds = llfs::get_open_fds();
+
+        ASSERT_TRUE(after_fds.ok()) << BATT_INSPECT(after_fds.status());
         EXPECT_NE(before_fds, after_fds)
-            << BATT_INSPECT_RANGE(before_fds) << BATT_INSPECT_RANGE(after_fds);
+            << BATT_INSPECT_RANGE(*before_fds) << BATT_INSPECT_RANGE(*after_fds);
       }
     }
-    std::set<int> after_fds = llfs::get_open_fds();
+    StatusOr<std::set<int>> after_fds = llfs::get_open_fds();
+
+    ASSERT_TRUE(after_fds.ok()) << BATT_INSPECT(after_fds.status());
     EXPECT_EQ(before_fds, after_fds)
-        << BATT_INSPECT_RANGE(before_fds) << BATT_INSPECT_RANGE(after_fds) << BATT_INSPECT(i);
+        << BATT_INSPECT_RANGE(*before_fds) << BATT_INSPECT_RANGE(*after_fds) << BATT_INSPECT(i);
   }
 }
 

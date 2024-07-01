@@ -21,7 +21,15 @@ namespace {
 
 TEST(TrackFdsTest, Test)
 {
-  LLFS_LOG_INFO() << batt::dump_range(llfs::get_open_fds());
+  llfs::StatusOr<std::set<int>> fds = llfs::get_open_fds();
+  ASSERT_TRUE(fds.ok()) << BATT_INSPECT(fds.status());
+
+  EXPECT_GE(fds->size(), 3u);
+  EXPECT_EQ(fds->count(0), 1u);
+  EXPECT_EQ(fds->count(1), 1u);
+  EXPECT_EQ(fds->count(2), 1u);
+
+  LLFS_LOG_INFO() << batt::dump_range(*fds);
 }
 
 }  // namespace

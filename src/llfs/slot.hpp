@@ -322,6 +322,15 @@ struct SlotRangeOrder {
   }
 };
 
+struct SlotRangePriority {
+  template <typename First, typename Second>
+  bool operator()(const First& first, const Second& second) const
+  {
+    return slot_greater_or_equal(get_slot_range(first).lower_bound,
+                                 get_slot_range(second).upper_bound);
+  }
+};
+
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
 #define LLFS_CHECK_SLOT_LT(first, second)                                                          \

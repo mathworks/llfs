@@ -16,6 +16,7 @@
 #include <gtest/gtest.h>
 
 #include <llfs/ioring.hpp>
+#include <llfs/ioring_log_device.test.hpp>
 #include <llfs/log_device_config.hpp>
 #include <llfs/storage_context.hpp>
 #include <llfs/uuid.hpp>
@@ -172,6 +173,8 @@ TEST(IoringLogDeviceTest, StorageFile)
  */
 TEST(IoringLogDeviceTest, Benchmark)
 {
+  using llfs::read_test_var;
+
   const char* file_name =  //
       std::getenv("LLFS_LOG_DEVICE_FILE");
 
@@ -182,34 +185,18 @@ TEST(IoringLogDeviceTest, Benchmark)
 
   std::cout << "LLFS_LOG_DEVICE_FILE=" << batt::c_str_literal(file_name) << std::endl;
 
-  //---- --- -- -  -  -   -
-  const auto read_var = [](const char* name, auto default_value) {
-    using value_type = decltype(default_value);
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-    const value_type value =
-        batt::getenv_as<value_type>("LLFS_STORAGE_CONTEXT_QUEUE_DEPTH").value_or(default_value);
-
-    std::cout << name << "=" << value << std::endl;
-
-    return value;
-  };
-  //---- --- -- -  -  -   -
-
-  const usize queue_depth = read_var("LLFS_STORAGE_CONTEXT_QUEUE_DEPTH", usize{64});
-  const usize thread_pool_size = read_var("LLFS_STORAGE_CONTEXT_THREADS", usize{1});
-  const usize pages_per_block = read_var("LLFS_LOG_DEVICE_PAGES_PER_BLOCK", usize{32});
-  const usize log_size = read_var("LLFS_LOG_DEVICE_SIZE_KB", usize{1024 * 64}) * 1024;
-  const usize log_queue_depth = read_var("LLFS_LOG_DEVICE_QUEUE_DEPTH", usize{1024});
-  const usize total_to_write = read_var("LLFS_LOG_DEVICE_WRITE_KB", usize{1024 * 1024}) * 1024;
-  const usize append_size = read_var("LLFS_LOG_DEVICE_APPEND_SIZE", usize{256});
-  const usize trim_size = read_var("LLFS_LOG_DEVICE_TRIM_SIZE", usize{4 * 1024 * 1024});
-  const usize trim_trigger = read_var("LLFS_LOG_DEVICE_TRIM_TRIGGER",  //
-                                      usize{log_size - trim_size * 2});
-  const usize repeat_count = read_var("LLFS_LOG_DEVICE_REPEAT", usize{3});
+  const usize queue_depth = read_test_var("LLFS_STORAGE_CONTEXT_QUEUE_DEPTH", usize{64});
+  const usize thread_pool_size = read_test_var("LLFS_STORAGE_CONTEXT_THREADS", usize{1});
+  const usize pages_per_block = read_test_var("LLFS_LOG_DEVICE_PAGES_PER_BLOCK", usize{32});
+  const usize log_queue_depth = read_test_var("LLFS_LOG_DEVICE_QUEUE_DEPTH", usize{1024});
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
-  //
-  for (usize retry = 0; retry < repeat_count; ++retry) {
+
+  llfs::run_log_device_benchmark([&](usize log_size, bool create, auto&& consume_log_fn) {
+    BATT_CHECK(create);
+
     auto scoped_ioring = llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{queue_depth},
                                                       llfs::ThreadPoolSize{thread_pool_size});
 
@@ -259,75 +246,10 @@ TEST(IoringLogDeviceTest, Benchmark)
 
     llfs::IoRingLogDevice& log_device = **status_or_log_device;
 
-    // Generate some random data.
+    // Run the workload.
     //
-    std::vector<u64> data(32 * 1024 * 1024);
-    std::default_random_engine rng{1};
-    for (u64& word : data) {
-      word = rng();
-    }
-
-    auto start = std::chrono::steady_clock::now();
-
-    std::thread writer_thread{[&] {
-      llfs::LogDevice::Writer& log_writer = log_device.writer();
-
-      std::uniform_int_distribution<usize> pick_offset{
-          0, data.size() - (append_size + sizeof(u64) - 1) / sizeof(u64)};
-
-      usize n_written = 0;
-      while (n_written < total_to_write) {
-        BATT_CHECK_OK(log_writer.await(llfs::BytesAvailable{.size = append_size}));
-
-        llfs::StatusOr<llfs::MutableBuffer> buffer = log_writer.prepare(append_size);
-        BATT_CHECK_OK(buffer);
-
-        std::memcpy(buffer->data(), &data[pick_offset(rng)], buffer->size());
-
-        BATT_CHECK_OK(log_writer.commit(buffer->size()));
-
-        n_written += buffer->size();
-      }
-
-      BATT_CHECK_OK(log_device.flush());
-
-      log_device.halt();
-    }};
-
-    std::thread trimmer_thread{[&] {
-      for (;;) {
-        llfs::SlotRange durable = log_device.slot_range(llfs::LogReadMode::kDurable);
-
-        llfs::Status sync_status =
-            log_device.sync(llfs::LogReadMode::kDurable,
-                            llfs::SlotUpperBoundAt{durable.lower_bound + trim_trigger});
-
-        if (!sync_status.ok()) {
-          break;
-        }
-
-        llfs::Status trim_status = log_device.trim(durable.lower_bound + trim_size);
-
-        if (!trim_status.ok()) {
-          break;
-        }
-      }
-    }};
-
-    writer_thread.join();
-    trimmer_thread.join();
-    log_device.join();
-
-    auto finish = std::chrono::steady_clock::now();
-
-    double duration_sec =
-        double(std::chrono::duration_cast<std::chrono::microseconds>(finish - start).count()) /
-        (1000.0 * 1000.0);
-
-    LLFS_LOG_INFO() << total_to_write << " bytes written in " << duration_sec
-                    << " seconds; rate=" << (double(total_to_write) / duration_sec) / 1000000.0
-                    << "MB/s";
-  }
+    consume_log_fn(log_device);
+  });
 }
 
 }  // namespace

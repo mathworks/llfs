@@ -45,10 +45,10 @@ Status SimulatedLogDeviceStorage::DurableState::validate_args(i64 offset, usize 
   if (offset % sizeof(AlignedBlock) != 0 || size != sizeof(AlignedBlock)) {
     return batt::StatusCode::kInvalidArgument;
   }
-  if (offset < this->config_.physical_offset) {
+  if (offset < this->file_offset_.lower_bound) {
     return batt::StatusCode::kOutOfRange;
   }
-  if (offset + size > this->config_.physical_offset + this->config_.physical_size) {
+  if (offset + static_cast<i64>(size) > this->file_offset_.upper_bound) {
     return batt::StatusCode::kOutOfRange;
   }
   if (this->simulation_.inject_failure()) {

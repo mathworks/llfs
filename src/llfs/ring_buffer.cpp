@@ -333,11 +333,13 @@ void RingBuffer::Impl::update_mapped_regions() noexcept
 
   // Map each half of the buffer into the underlying file.
   //
-  BATT_CHECK_EQ(mirror_0,
-                mmap(mirror_0, this->size_, mode, flags, this->fd_, this->offset_within_file_));
+  BATT_CHECK_EQ((void*)mirror_0, (void*)mmap(mirror_0, this->size_, mode, flags, this->fd_,
+                                             this->offset_within_file_))
+      << BATT_INSPECT(this->size_);
 
-  BATT_CHECK_EQ(mirror_1,
-                mmap(mirror_1, this->size_, mode, flags, this->fd_, this->offset_within_file_));
+  BATT_CHECK_EQ((void*)mirror_1, (void*)mmap(mirror_1, this->size_, mode, flags, this->fd_,
+                                             this->offset_within_file_))
+      << BATT_INSPECT(this->size_);
 
   LLFS_WARN_IF_NOT_OK(batt::status_from_retval(batt::syscall_retry([&] {
     return madvise(this->memory_, this->capacity_ * 2, MADV_SEQUENTIAL);

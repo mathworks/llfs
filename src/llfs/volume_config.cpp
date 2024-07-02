@@ -28,20 +28,14 @@ BATT_PRINT_OBJECT_IMPL(PackedVolumeConfig,  //
                        (recycler_log_uuid)  //
 )
 
+namespace {
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status configure_storage_object(StorageFileBuilder::Transaction& txn,
-                                FileOffsetPtr<PackedVolumeConfig&> p_config,
-                                const VolumeConfigOptions& options)
+StatusOr<FileOffsetPtr<const PackedLogDeviceConfig&>> add_recycler_log(
+    StorageFileBuilder::Transaction& txn, batt::StaticType<LogDeviceConfigOptions>,
+    const VolumeConfigOptions& options)
 {
-  BATT_CHECK(!options.root_log.uuid)
-      << "Creating a Volume from a pre-existing root log is not supported";
-
-  StatusOr<FileOffsetPtr<const PackedLogDeviceConfig&>> p_root_log_config =
-      txn.add_object(options.root_log);
-
-  BATT_REQUIRE_OK(p_root_log_config);
-
   const LogDeviceConfigOptions recycler_log_options{
       .uuid = random_uuid(),
       .pages_per_block_log2 = IoRingLogConfig::kDefaultPagesPerBlockLog2 + 1,
@@ -50,29 +44,67 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
           options.recycler_max_buffered_page_count),
   };
 
-  StatusOr<FileOffsetPtr<const PackedLogDeviceConfig&>> p_recycler_log_config =
-      txn.add_object(recycler_log_options);
+  return txn.add_object(recycler_log_options);
+}
 
-  BATT_REQUIRE_OK(p_recycler_log_config);
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<FileOffsetPtr<const PackedLogDeviceConfig2&>> add_recycler_log(
+    StorageFileBuilder::Transaction& txn, batt::StaticType<LogDeviceConfigOptions2>,
+    const VolumeConfigOptions& options)
+{
+  const LogDeviceConfigOptions2 recycler_log_options{
+      .uuid = random_uuid(),
+      .log_size = PageRecycler::calculate_log_size(
+          PageRecyclerOptions{}.set_max_refs_per_page(options.base.max_refs_per_page),
+          options.recycler_max_buffered_page_count),
+      .device_page_size_log2 = None,
+      .data_alignment_log2 = None,
+  };
 
-  p_config->uuid = options.base.uuid.value_or(random_uuid());
-  p_config->slot_i = 0;
-  p_config->n_slots = 2;
-  p_config->max_refs_per_page = options.base.max_refs_per_page;
-  p_config->root_log_uuid = (*p_root_log_config)->uuid;
-  p_config->recycler_log_uuid = (*p_recycler_log_config)->uuid;
+  return txn.add_object(recycler_log_options);
+}
 
-  p_config->slot_1.tag = PackedConfigSlotBase::Tag::kVolumeContinuation;
-  p_config->slot_1.slot_i = 1;
-  p_config->slot_1.n_slots = 2;
-  p_config->trim_lock_update_interval_bytes = options.base.trim_lock_update_interval;
-  p_config->trim_delay_byte_count = options.base.trim_delay_byte_count;
+}  // namespace
 
-  if (!txn.packer().pack_string_to(&p_config->name, options.base.name)) {
-    return ::batt::StatusCode::kResourceExhausted;
-  }
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status configure_storage_object(StorageFileBuilder::Transaction& txn,
+                                FileOffsetPtr<PackedVolumeConfig&> p_config,
+                                const VolumeConfigOptions& options)
+{
+  return batt::case_of(options.root_log, [&](const auto& root_log_options) -> Status {
+    BATT_CHECK(!root_log_options.uuid)
+        << "Creating a Volume from a pre-existing root log is not supported";
 
-  return OkStatus();
+    using LogDeviceOptionsType = std::decay_t<decltype(root_log_options)>;
+
+    auto p_root_log_config = txn.add_object(root_log_options);
+    BATT_REQUIRE_OK(p_root_log_config);
+
+    auto p_recycler_log_config =
+        add_recycler_log(txn, batt::StaticType<LogDeviceOptionsType>{}, options);
+    BATT_REQUIRE_OK(p_recycler_log_config);
+
+    p_config->uuid = options.base.uuid.value_or(random_uuid());
+    p_config->slot_i = 0;
+    p_config->n_slots = 2;
+    p_config->max_refs_per_page = options.base.max_refs_per_page;
+    p_config->root_log_uuid = (*p_root_log_config)->uuid;
+    p_config->recycler_log_uuid = (*p_recycler_log_config)->uuid;
+
+    p_config->slot_1.tag = PackedConfigSlotBase::Tag::kVolumeContinuation;
+    p_config->slot_1.slot_i = 1;
+    p_config->slot_1.n_slots = 2;
+    p_config->trim_lock_update_interval_bytes = options.base.trim_lock_update_interval;
+    p_config->trim_delay_byte_count = options.base.trim_delay_byte_count;
+
+    if (!txn.packer().pack_string_to(&p_config->name, options.base.name)) {
+      return ::batt::StatusCode::kResourceExhausted;
+    }
+
+    return OkStatus();
+  });
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -85,15 +117,14 @@ StatusOr<std::unique_ptr<Volume>> recover_storage_object(
   StatusOr<batt::SharedPtr<PageCache>> page_cache = storage_context->get_page_cache();
   BATT_REQUIRE_OK(page_cache);
 
-  StatusOr<std::unique_ptr<LogDeviceFactory>> root_log_factory = storage_context->recover_object(
-      batt::StaticType<PackedLogDeviceConfig>{}, p_volume_config->root_log_uuid,
-      volume_runtime_options.root_log_options);
+  StatusOr<std::unique_ptr<LogDeviceFactory>> root_log_factory =
+      storage_context->recover_log_device(p_volume_config->root_log_uuid,
+                                          volume_runtime_options.root_log_options);
   BATT_REQUIRE_OK(root_log_factory);
 
   StatusOr<std::unique_ptr<LogDeviceFactory>> recycler_log_factory =
-      storage_context->recover_object(batt::StaticType<PackedLogDeviceConfig>{},
-                                      p_volume_config->recycler_log_uuid,
-                                      volume_runtime_options.recycler_log_options);
+      storage_context->recover_log_device(p_volume_config->recycler_log_uuid,
+                                          volume_runtime_options.recycler_log_options);
   BATT_REQUIRE_OK(recycler_log_factory);
 
   VolumeRecoverParams params{

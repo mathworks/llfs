@@ -285,8 +285,7 @@ inline void BasicIoRingLogDriver<FlushOpImpl, StorageT>::flush_task_main()
                  << " block_size=0x" << this->calculate().block_size() << " block_capacity=0x"
                  << this->calculate().block_capacity() << " queue_depth=" << std::dec
                  << this->calculate().queue_depth();
-    LLFS_VLOG(1) << "(driver=" << this->name_
-                 << ") buffer delay=" << this->options_.page_write_buffer_delay_usec << "usec";
+    LLFS_VLOG(1) << "(driver=" << this->name_ << ")";
 
     // Now tell the ops to start flushing data.  They will write in parallel but only one at a
     // time will perform an async_wait on `commit_pos_`, to prevent thundering herd bottlenecks.

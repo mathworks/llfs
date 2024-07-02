@@ -10,89 +10,14 @@
 #ifndef LLFS_IORING_LOG_DRIVER_OPTIONS_HPP
 #define LLFS_IORING_LOG_DRIVER_OPTIONS_HPP
 
-#include <llfs/int_types.hpp>
+#include <llfs/config.hpp>
+//
 
-#include <batteries/math.hpp>
-#include <batteries/stream_util.hpp>
-
-#include <atomic>
-#include <string>
+#include <llfs/log_device_runtime_options.hpp>
 
 namespace llfs {
 
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-// Performance tuning options.
-//
-class IoRingLogDriverOptions
-{
- public:
-  using Self = IoRingLogDriverOptions;
-
-  static IoRingLogDriverOptions with_default_values();
-
-  static int next_id()
-  {
-    static std::atomic<int> n{1};
-    return n.fetch_add(1);
-  }
-
-  //+++++++++++-+-+--+----- --- -- -  -  -   -
-
-  IoRingLogDriverOptions() noexcept
-  {
-  }
-
-  // The debug name of this log.
-  //
-  std::string name = batt::to_string("(anonymous log ", next_id(), ")");
-
-  // How long to wait for a full page worth of log data before flushing to disk.
-  //
-  u32 page_write_buffer_delay_usec = 0;  // TODO [tastolfi 2021-06-21] remove or implement
-
-  // How many log segments to flush in parallel.
-  //
-  usize queue_depth_log2 = 4;
-
-  //+++++++++++-+-+--+----- --- -- -  -  -   -
-
-  usize queue_depth() const
-  {
-    return usize{1} << this->queue_depth_log2;
-  }
-
-  Self& set_queue_depth(usize n)
-  {
-    this->queue_depth_log2 = batt::log2_ceil(n);
-    BATT_CHECK_EQ(this->queue_depth(), n) << "The queue depth must be a power of 2!";
-    return *this;
-  }
-
-  /** \brief Sets queue depth to the smallest power of 2 that is not greater than `max_n` *and* not
-   * greater than the current value of queue depth.
-   *
-   * `max_n` must be at least 2.
-   */
-  Self& limit_queue_depth(usize max_n)
-  {
-    BATT_CHECK_GT(max_n, 1);
-    while (this->queue_depth() > max_n) {
-      --this->queue_depth_log2;
-    }
-    return *this;
-  }
-
-  usize queue_depth_mask() const
-  {
-    return this->queue_depth() - 1;
-  }
-
-  Self& set_name(std::string_view name)
-  {
-    this->name = name;
-    return *this;
-  }
-};
+using IoRingLogDriverOptions = LogDeviceRuntimeOptions;
 
 }  // namespace llfs
 

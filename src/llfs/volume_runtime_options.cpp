@@ -19,8 +19,8 @@ namespace llfs {
       .slot_visitor_fn = [](const SlotParse& /*slot*/, std::string_view /*user_data*/) -> Status {
         return OkStatus();
       },
-      .root_log_options = IoRingLogDriverOptions::with_default_values(),
-      .recycler_log_options = IoRingLogDriverOptions::with_default_values(),
+      .root_log_options = LogDeviceRuntimeOptions::with_default_values(),
+      .recycler_log_options = LogDeviceRuntimeOptions::with_default_values(),
       .trim_control = nullptr,
   };
 }

@@ -18,7 +18,7 @@
 #include <llfs/page_allocator_runtime_options.hpp>
 
 #include <llfs/int_types.hpp>
-#include <llfs/log_device_config.hpp>
+#include <llfs/nested_log_device_config.hpp>
 #include <llfs/optional.hpp>
 #include <llfs/packed_config.hpp>
 #include <llfs/packed_pointer.hpp>

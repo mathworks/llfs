@@ -23,7 +23,7 @@ SlotLockManager::~SlotLockManager() noexcept
 {
   this->halt();
 
-  auto locked = this->state_.lock();
+  batt::ScopedLock<State> locked{this->state_};
 
   BATT_CHECK(locked->lock_heap_.empty()) << this->debug_info_locked(locked);
 }
@@ -53,7 +53,7 @@ slot_offset_type SlotLockManager::get_lower_bound() const
 //
 slot_offset_type SlotLockManager::get_upper_bound() const
 {
-  auto locked = this->state_.lock();
+  batt::ScopedLock<State> locked{this->state_};
   return locked->upper_bound_;
 }
 
@@ -68,7 +68,7 @@ StatusOr<slot_offset_type> SlotLockManager::await_lower_bound(slot_offset_type m
 //
 void SlotLockManager::update_upper_bound(slot_offset_type offset)
 {
-  auto locked = this->state_.lock();
+  batt::ScopedLock<State> locked{this->state_};
 
   this->update_upper_bound_locked(locked, /*new_upper_bound=*/offset);
 }
@@ -77,9 +77,7 @@ void SlotLockManager::update_upper_bound(slot_offset_type offset)
 //
 StatusOr<SlotReadLock> SlotLockManager::lock_slots(const SlotRange& range, const char* holder)
 {
-  (void)holder;
-
-  auto locked = this->state_.lock();
+  batt::ScopedLock<State> locked{this->state_};
 
   if (range.lower_bound < this->lower_bound_.get_value()) {
     return Status{
@@ -87,6 +85,31 @@ StatusOr<SlotReadLock> SlotLockManager::lock_slots(const SlotRange& range, const
                                          // extends below the current locked slot range"
   }
 
+  return this->lock_slots_nocheck(locked, range, holder);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<SlotReadLock> SlotLockManager::lock_all_slots(const char* holder)
+{
+  batt::ScopedLock<State> locked{this->state_};
+
+  const llfs::slot_offset_type lower_bound = this->lower_bound_.get_value();
+
+  return this->lock_slots_nocheck(locked,
+                                  SlotRange{
+                                      .lower_bound = lower_bound,
+                                      .upper_bound = lower_bound,
+                                  },
+                                  holder);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<SlotReadLock> SlotLockManager::lock_slots_nocheck(batt::ScopedLock<State>& locked,
+                                                           const SlotRange& range,
+                                                           const char* holder)
+{
   const usize size_before = locked->lock_heap_.size();
 
   SlotLockHeap::handle_type handle =
@@ -104,7 +127,7 @@ StatusOr<SlotReadLock> SlotLockManager::lock_slots(const SlotRange& range, const
 //
 void SlotLockManager::unlock_slots(SlotReadLock* read_lock)
 {
-  auto locked = this->state_.lock();
+  batt::ScopedLock<State> locked{this->state_};
 
   const usize size_before = locked->lock_heap_.size();
   BATT_CHECK_GT(size_before, 0u);
@@ -128,7 +151,7 @@ StatusOr<SlotReadLock> SlotLockManager::update_lock(SlotReadLock old_lock,
   BATT_CHECK_GE(new_range.lower_bound, old_lock.slot_range().lower_bound)
       << "The locked lower bound must increase monotonically" << BATT_INSPECT(holder);
 
-  auto locked = this->state_.lock();
+  batt::ScopedLock<State> locked{this->state_};
 
   const usize size_before = locked->lock_heap_.size();
 
@@ -147,7 +170,7 @@ StatusOr<SlotReadLock> SlotLockManager::update_lock(SlotReadLock old_lock,
 //
 std::function<void(std::ostream&)> SlotLockManager::debug_info()
 {
-  auto locked = this->state_.lock();
+  batt::ScopedLock<State> locked{this->state_};
 
   return this->debug_info_locked(locked);
 }
@@ -155,7 +178,7 @@ std::function<void(std::ostream&)> SlotLockManager::debug_info()
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 std::function<void(std::ostream&)> SlotLockManager::debug_info_locked(
-    batt::Mutex<State>::Lock& locked)
+    batt::ScopedLock<State>& locked)
 {
   Optional<SlotLockRecord> top_copy;
   if (!locked->lock_heap_.empty()) {
@@ -187,7 +210,7 @@ std::function<void(std::ostream&)> SlotLockManager::debug_info_locked(
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void SlotLockManager::update_lower_bound_locked(batt::Mutex<State>::Lock& locked)
+void SlotLockManager::update_lower_bound_locked(batt::ScopedLock<State>& locked)
 {
   if (!locked->lock_heap_.empty()) {
     const slot_offset_type trim_pos = get_slot_offset(locked->lock_heap_.top());
@@ -204,7 +227,7 @@ void SlotLockManager::update_lower_bound_locked(batt::Mutex<State>::Lock& locked
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void SlotLockManager::update_upper_bound_locked(batt::Mutex<State>::Lock& locked,
+void SlotLockManager::update_upper_bound_locked(batt::ScopedLock<State>& locked,
                                                 slot_offset_type new_upper_bound)
 {
   locked->upper_bound_ = slot_max(new_upper_bound, locked->upper_bound_);

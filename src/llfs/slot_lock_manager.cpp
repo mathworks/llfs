@@ -79,7 +79,7 @@ StatusOr<SlotReadLock> SlotLockManager::lock_slots(const SlotRange& range, const
 {
   batt::ScopedLock<State> locked{this->state_};
 
-  if (range.lower_bound < this->lower_bound_.get_value()) {
+  if (slot_less_than(range.lower_bound, this->lower_bound_.get_value())) {
     return Status{
         batt::StatusCode::kOutOfRange};  // TODO [tastolfi 2021-10-20]   "the requested value
                                          // extends below the current locked slot range"

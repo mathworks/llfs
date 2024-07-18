@@ -26,7 +26,9 @@
 #include <batteries/tuples.hpp>
 
 #include <chrono>
+#include <deque>
 #include <thread>
+#include <vector>
 
 namespace llfs {
 
@@ -178,6 +180,7 @@ class IoRingLogDriver2
    *  - this->commit_pos_
    *  - this->started_flush_upper_bound_
    *  - this->known_flush_pos_
+   *  - this->known_flushed_commit_pos_
    *
    * Should only be called during recovery.
    */
@@ -210,7 +213,7 @@ class IoRingLogDriver2
    * two writes may be initiated by this function, provided the conditions above are still met after
    * starting the first write.
    */
-  void start_flush(slot_offset_type observed_commit_pos);
+  void start_flush(CommitPos observed_commit_pos);
 
   /** \brief Returns the passed slot range with the lower and upper bounds aligned to the nearest
    * data page boundary.
@@ -254,7 +257,7 @@ class IoRingLogDriver2
    *
    * Only one pending async write to the control block is allowed at a time.
    */
-  void start_control_block_update(slot_offset_type observed_target_trim_pos) noexcept;
+  void start_control_block_update(TargetTrimPos observed_target_trim_pos) noexcept;
 
   /** \brief I/O callback that handles the completion of a write to the control block.
    */
@@ -365,6 +368,10 @@ class IoRingLogDriver2
    */
   slot_offset_type known_flush_pos_ = 0;
 
+  /** \brief The highest observed commit pos known to be flushed.
+   */
+  slot_offset_type known_flushed_commit_pos_ = 0;
+
   /** \brief The trailing aligned data page for the highest-offset pending flush operation.  This is
    * used to avoid concurrently updating the same data page.
    */
@@ -396,6 +403,10 @@ class IoRingLogDriver2
   /** \brief Pointer to initialized control block for the log.
    */
   PackedLogControlBlock2* control_block_ = nullptr;
+
+  /** \brief A queue of observed commit positions that have triggered an async write.
+   */
+  std::deque<CommitPos> observed_commit_offsets_;
 
   /** \brief A min-heap of confirmed flushed slot ranges; used to advance this->known_flush_pos_,
    * which in turn drives the update of the control block and this->flush_pos_.

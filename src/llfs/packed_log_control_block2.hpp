@@ -63,15 +63,9 @@ struct PackedLogControlBlock2 {
    */
   little_i16 data_alignment_log2;
 
-  /** \brief The index of the next element of this->commit_points to be overwritten.
+  /** \brief Padding; reserved for future use.
    */
-  little_u32 next_commit_i;
-
-  /** \brief A rolling history of known commit points; this is updated each time the control block
-   * is updated.  It is used to speed up log recovery, especially in the case where the log device
-   * was cleanly shut down.
-   */
-  std::array<little_u64, (512 - 56) / sizeof(little_u64)> commit_points;
+  std::array<u8, (512 - 52)> reserved_;
 };
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedLogControlBlock2), 512);

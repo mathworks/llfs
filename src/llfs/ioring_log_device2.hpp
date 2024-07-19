@@ -149,20 +149,6 @@ class IoRingLogDriver2
    */
   Status read_log_data();
 
-  /** \brief Returns upper bound of known slot commit points recovered from the control block.
-   *
-   * This will either be the highest of the commit points inside the control block, without
-   * exceeding the recovered flush position, or the recovered trim position, whichever is greater.
-   */
-  slot_offset_type recover_flushed_commit_point() const noexcept;
-
-  /** \brief Starts at the value returned by this->recover_flushed_commit_point() and scans forward
-   * in the log data, parsing slot headers until we reach a partially flushed slot or run out of
-   * data.  Calls this->reset_flush_pos with the slot upper bound of the highest confirmed slot from
-   * the scan.
-   */
-  Status recover_flush_pos() noexcept;
-
   /** \brief Forces all slot lower bound pointers to `new_trim_pos`.
    *
    * Resets:
@@ -363,12 +349,13 @@ class IoRingLogDriver2
    */
   slot_offset_type unflushed_lower_bound_ = 0;
 
-  /** \brief The least upper bound of contiguous flushed data in the log.  Updates to this value
-   * should trigger an update of the control block.
+  /** \brief The least upper bound of contiguous flushed data in the log.  Updates to this value may
+   * cause this->known_flushed_commit_pos_ to advance.
    */
   slot_offset_type known_flush_pos_ = 0;
 
-  /** \brief The highest observed commit pos known to be flushed.
+  /** \brief The highest observed commit pos known to be flushed.  Updates to this value
+   * should trigger an update of the control block.
    */
   slot_offset_type known_flushed_commit_pos_ = 0;
 

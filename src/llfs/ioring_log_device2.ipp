@@ -201,114 +201,6 @@ inline Status IoRingLogDriver2<StorageT>::read_log_data()
     BATT_REQUIRE_OK(this->storage_.read_all(read_begin_offset, upper_part_buffer));
   }
 
-  return this->recover_flush_pos();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-template <typename StorageT>
-slot_offset_type IoRingLogDriver2<StorageT>::recover_flushed_commit_point() const noexcept
-{
-  const slot_offset_type recovered_trim_pos = this->control_block_->trim_pos;
-  const slot_offset_type recovered_flush_pos = this->control_block_->flush_pos;
-
-  slot_offset_type slot_offset = recovered_trim_pos;
-
-  std::vector<slot_offset_type> sorted_commit_points(this->control_block_->commit_points.begin(),
-                                                     this->control_block_->commit_points.end());
-
-  std::sort(sorted_commit_points.begin(), sorted_commit_points.end(), SlotOffsetOrder{});
-
-  LLFS_VLOG(1) << BATT_INSPECT_RANGE(sorted_commit_points);
-
-  auto iter = std::upper_bound(sorted_commit_points.begin(), sorted_commit_points.end(),
-                               recovered_flush_pos, SlotOffsetOrder{});
-
-  if (iter != sorted_commit_points.begin()) {
-    --iter;
-    slot_offset = slot_max(slot_offset, *iter);
-    LLFS_VLOG(1) << " -- using commit point: " << *iter;
-  }
-
-  LLFS_CHECK_SLOT_LE(slot_offset, recovered_flush_pos);
-  return slot_offset;
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-template <typename StorageT>
-Status IoRingLogDriver2<StorageT>::recover_flush_pos() noexcept
-{
-  const slot_offset_type recovered_flush_pos = this->flush_pos_.get_value();
-
-  slot_offset_type slot_offset = this->recover_flushed_commit_point();
-
-  ConstBuffer buffer =
-      resize_buffer(this->context_.buffer_.get(slot_offset), recovered_flush_pos - slot_offset);
-
-  slot_offset_type confirmed_flush_pos = slot_offset;
-
-  // This should be correct, since commit is called only once per atomic range, and atomic ranges
-  // are only recoverable if no part of the range (including the begin/end tokens) has been trimmed.
-  //
-  bool inside_atomic_range = false;
-
-  for (;;) {
-    DataReader reader{buffer};
-    const usize bytes_available_before = reader.bytes_available();
-    Optional<u64> slot_body_size = reader.read_varint();
-
-    if (!slot_body_size) {
-      // Partially committed slot (couldn't even read a whole varint for the slot header!)  Break
-      // out of the loop.
-      //
-      LLFS_VLOG(1) << " -- Incomplete slot header, exiting loop;" << BATT_INSPECT(slot_offset)
-                   << BATT_INSPECT(bytes_available_before);
-      break;
-    }
-
-    const usize bytes_available_after = reader.bytes_available();
-    const usize slot_header_size = bytes_available_before - bytes_available_after;
-    const usize slot_size = slot_header_size + *slot_body_size;
-
-    if (slot_size > buffer.size()) {
-      // Partially committed slot; break out of the loop without updating slot_offset (we're
-      // done!)
-      //
-      LLFS_VLOG(1) << " -- Incomplete slot body, exiting loop;" << BATT_INSPECT(slot_offset)
-                   << BATT_INSPECT(bytes_available_before) << BATT_INSPECT(bytes_available_after)
-                   << BATT_INSPECT(slot_header_size) << BATT_INSPECT(slot_body_size)
-                   << BATT_INSPECT(slot_size);
-      break;
-    }
-
-    // Check for control token; this indicates the beginning or end of an atomic slot range.
-    //
-    if (*slot_body_size == 0) {
-      if (slot_header_size == SlotWriter::WriterLock::kBeginAtomicRangeTokenSize) {
-        inside_atomic_range = true;
-      } else if (slot_header_size == SlotWriter::WriterLock::kEndAtomicRangeTokenSize) {
-        inside_atomic_range = false;
-      }
-    }
-
-    buffer += slot_size;
-    slot_offset += slot_size;
-
-    // If inside an atomic slot range, we hold off on updating the confirmed_flush_pos, just in
-    // case the flushed data is cut off before the end of the atomic range.
-    //
-    if (!inside_atomic_range) {
-      confirmed_flush_pos = slot_offset;
-    }
-  }
-
-  LLFS_VLOG(1) << " -- Slot scan complete;" << BATT_INSPECT(slot_offset);
-
-  this->reset_flush_pos(confirmed_flush_pos);
-
-  BATT_CHECK_EQ(recovered_flush_pos, confirmed_flush_pos);
-
   return OkStatus();
 }
 
@@ -398,8 +290,13 @@ inline void IoRingLogDriver2<StorageT>::wait_for_slot_offset_change(T observed_v
 template <typename StorageT>
 inline void IoRingLogDriver2<StorageT>::start_flush(CommitPos observed_commit_pos)
 {
+  // Unflushed data comes after flushed.
+  //
   slot_offset_type flush_upper_bound = this->unflushed_lower_bound_;
 
+  // Repeat is for when unflushed data wraps around the end of the ring buffer, back to the
+  // beginning; in this case we start two writes.
+  //
   for (usize repeat = 0; repeat < 2; ++repeat) {
     //----- --- -- -  -  -   -
 
@@ -449,6 +346,8 @@ inline void IoRingLogDriver2<StorageT>::start_flush(CommitPos observed_commit_po
       }
     }
 
+    // Align to 512-byte boundaries for direct I/O
+    //
     SlotRange aligned_range = this->get_aligned_range(slot_range);
 
     // If this flush would overlap with an ongoing one (at the last device page) then trim the
@@ -535,7 +434,9 @@ inline void IoRingLogDriver2<StorageT>::start_flush_write(const SlotRange& slot_
   ConstBuffer buffer =
       resize_buffer(this->context_.buffer_.get(aligned_range.lower_bound), aligned_range.size());
 
-  BATT_CHECK_LE(write_offset + (i64)buffer.size(), this->data_end_);
+  BATT_CHECK_LE(write_offset + (i64)buffer.size(), this->data_end_)
+      << "Data to flush extends beyond the end of the storage extent; forgot to handle wrap-around "
+         "case?";
 
   LLFS_VLOG(1) << " -- async_write_some(offset=" << write_offset << ".."
                << write_offset + buffer.size() << ", size=" << buffer.size() << ")";
@@ -592,6 +493,10 @@ inline void IoRingLogDriver2<StorageT>::handle_flush_write(const SlotRange& slot
 
   const auto observed_commit_pos = this->observe(CommitPos{});
 
+  // If is_tail is false, then there was a write initiated *after* this portion of the log.  In this
+  // case, if the write was short, this function needs to initiate writing the remainder of the
+  // data.
+  //
   if (!is_tail) {
     SlotRange updated_range{
         .lower_bound = flushed_range.upper_bound,
@@ -687,18 +592,6 @@ void IoRingLogDriver2<StorageT>::start_control_block_update(
 
   BATT_CHECK_EQ(observed_trim_pos, this->control_block_->trim_pos);
   BATT_CHECK_EQ(observed_flush_pos, this->control_block_->flush_pos);
-
-  const slot_offset_type latest_commit_pos = this->observe(CommitPos{});
-  auto& next_commit_pos_slot =
-      this->control_block_->commit_points[this->control_block_->next_commit_i];
-
-  if (next_commit_pos_slot != latest_commit_pos) {
-    next_commit_pos_slot = latest_commit_pos;
-
-    this->control_block_->next_commit_i =
-        (this->control_block_->next_commit_i + 1) % this->control_block_->commit_points.size();
-  }
-
   LLFS_CHECK_SLOT_LE(effective_target_trim_pos, effective_target_flush_pos);
   BATT_CHECK_LE(effective_target_flush_pos - effective_target_trim_pos, this->config_.log_capacity);
 

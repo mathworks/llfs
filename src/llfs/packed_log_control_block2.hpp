@@ -22,6 +22,13 @@
 namespace llfs {
 
 struct PackedLogControlBlock2 {
+  /** \brief The control block structure should take up exactly 512 bytes, since that is the
+   * smallest atomic block size for the kinds of devices we care about.
+   */
+  static constexpr usize kSize = 512;
+
+  /** \brief Used to sanity check instances of this packed structure read from media.
+   */
   static constexpr u64 kMagic = 0x128095f84cfba8b0ull;
 
   /** \brief Must always be set to PackedLogControlBlock2::kMagic.
@@ -65,10 +72,12 @@ struct PackedLogControlBlock2 {
 
   /** \brief Padding; reserved for future use.
    */
-  std::array<u8, (512 - 52)> reserved_;
+  std::array<u8, (kSize - (52 /*== the offset of this field*/))> reserved_;
 };
 
-BATT_STATIC_ASSERT_EQ(sizeof(PackedLogControlBlock2), 512);
+// Verify that the struct is the desired size.
+//
+BATT_STATIC_ASSERT_EQ(sizeof(PackedLogControlBlock2), PackedLogControlBlock2::kSize);
 
 }  //namespace llfs
 

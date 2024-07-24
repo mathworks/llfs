@@ -55,9 +55,9 @@ class IoRingLogDriver2
 
   /** \brief The size (bytes) of each preallocated completion handler memory object.
    */
-  static constexpr usize kHandlerMemorySize = 160;
+  static constexpr usize kHandlerMemorySizeBytes = 160;
 
-  using HandlerMemory = batt::HandlerMemory<kHandlerMemorySize>;
+  using HandlerMemory = batt::HandlerMemory<kHandlerMemorySizeBytes>;
 
   using HandlerMemoryStorage =
       std::aligned_storage_t<sizeof(HandlerMemory), alignof(HandlerMemory)>;
@@ -238,7 +238,7 @@ class IoRingLogDriver2
 
   /** \brief Initiates a rewrite of the control block if necessary.
    *
-   * The control block must be updated when the target trim pos or unknown flush pos become out of
+   * The control block must be updated when the target trim pos or known flush pos becomes out of
    * sync with the last written values.
    *
    * Only one pending async write to the control block is allowed at a time.

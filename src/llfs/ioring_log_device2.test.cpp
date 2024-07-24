@@ -198,7 +198,7 @@ class IoringLogDevice2SimTest : public ::testing::Test
      */
     bool append_one_slot() noexcept
     {
-      const usize payload_size = pick_slot_size(rng);
+      const usize payload_size = pick_slot_size(this->rng);
       const usize header_size = llfs::packed_sizeof_varint(payload_size);
       const usize slot_size = header_size + payload_size;
 
@@ -211,7 +211,7 @@ class IoringLogDevice2SimTest : public ::testing::Test
       BATT_CHECK_OK(buffer);
 
       *buffer = batt::get_or_panic(llfs::pack_varint_to(*buffer, payload_size));
-      std::memset(buffer->data(), 'a' + (slot_offset % 26), buffer->size());
+      std::memset(buffer->data(), 'a' + (slot_offset % (('z' - 'a') + 1)), buffer->size());
 
       StatusOr<llfs::slot_offset_type> end_offset = this->log_writer->commit(slot_size);
       BATT_CHECK_OK(end_offset);
@@ -331,7 +331,7 @@ class IoringLogDevice2SimTest : public ::testing::Test
      * range, we know for sure which ones still belong on this list.
      *
      * By the time this function returns, maybe_trimmed_slots will be empty, since we've either
-     * removed each slot range, or moved it from maybed_trimmed_slots to appended_slots.
+     * removed each slot range, or moved it from maybe_trimmed_slots to appended_slots.
      */
     void resolve_maybe_trimmed_slots(const llfs::SlotRange& slot_range)
     {
@@ -371,7 +371,7 @@ class IoringLogDevice2SimTest : public ::testing::Test
 
             // Verify the data.
             //
-            const char expected_ch = 'a' + (slot.offset.lower_bound % 26);
+            const char expected_ch = 'a' + (slot.offset.lower_bound % (('z' - 'a') + 1));
             for (char actual_ch : slot.body) {
               EXPECT_EQ(expected_ch, actual_ch);
               if (actual_ch != expected_ch) {
@@ -456,10 +456,12 @@ TEST_F(IoringLogDevice2SimTest, Simulation)
   const usize kNumThreads = std::thread::hardware_concurrency();
   const usize kUpdateInterval = kNumSeeds / 20;
 
+  llfs::testing::TestConfig test_config;
+
   LLFS_LOG_INFO() << BATT_INSPECT(kNumSeeds);
 
   std::vector<std::thread> threads;
-  usize start_seed = 0;
+  usize start_seed = test_config.get_random_seed();
   usize seeds_remaining = kNumSeeds;
   for (usize i = 0; i < kNumThreads; ++i) {
     usize n_seeds = seeds_remaining / (kNumThreads - i);
@@ -480,8 +482,6 @@ TEST_F(IoringLogDevice2SimTest, Simulation)
   for (std::thread& t : threads) {
     t.join();
   }
-
-  //EXPECT_GT(partial_slot_flush_count, 0);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

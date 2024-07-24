@@ -39,7 +39,7 @@ struct PackedLogDeviceConfig2;
 
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-Status configure_storage_object(StorageFileBuilder::Transaction&,
+Status configure_storage_object(StorageFileBuilder::Transaction& txn,
                                 FileOffsetPtr<PackedLogDeviceConfig2&> p_config,
                                 const LogDeviceConfigOptions2& options);
 

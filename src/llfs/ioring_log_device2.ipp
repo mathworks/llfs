@@ -140,7 +140,7 @@ inline Status IoRingLogDriver2<StorageT>::read_control_block()
   this->reset_trim_pos(recovered_trim_pos);
   this->reset_flush_pos(recovered_flush_pos);
 
-  this->data_begin_ = this->config_.control_block_offset + this->data_page_size_;
+  this->data_begin_ = this->config_.control_block_offset + control_block_size;
   this->data_end_ = this->data_begin_ + p_control_block->data_size;
 
   this->control_block_buffer_ = ConstBuffer{
@@ -150,6 +150,10 @@ inline Status IoRingLogDriver2<StorageT>::read_control_block()
   this->control_block_ = p_control_block;
 
   // TODO [tastolfi 2024-06-11] verify control block values against config where possible.
+
+  if (this->control_block_->magic != PackedLogControlBlock2::kMagic) {
+    return ::llfs::make_status(::llfs::StatusCode::kLogControlBlockBadMagic);
+  }
 
   return OkStatus();
 }
@@ -230,8 +234,8 @@ void IoRingLogDriver2<StorageT>::reset_flush_pos(slot_offset_type new_flush_pos)
 template <typename StorageT>
 inline void IoRingLogDriver2<StorageT>::poll() noexcept
 {
-  auto observed_commit_pos = this->observe(CommitPos{});
-  auto observed_target_trim_pos = this->observe(TargetTrimPos{});
+  CommitPos observed_commit_pos = this->observe(CommitPos{});
+  TargetTrimPos observed_target_trim_pos = this->observe(TargetTrimPos{});
 
   LLFS_VLOG(1) << "poll()" << BATT_INSPECT(observed_commit_pos)
                << BATT_INSPECT(observed_target_trim_pos);
@@ -491,7 +495,7 @@ inline void IoRingLogDriver2<StorageT>::handle_flush_write(const SlotRange& slot
 
   this->update_known_flush_pos(flushed_range);
 
-  const auto observed_commit_pos = this->observe(CommitPos{});
+  const CommitPos observed_commit_pos = this->observe(CommitPos{});
 
   // If is_tail is false, then there was a write initiated *after* this portion of the log.  In this
   // case, if the write was short, this function needs to initiate writing the remainder of the

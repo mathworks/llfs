@@ -75,7 +75,12 @@ class BasicRingBufferLogDevice
 
   Status sync(LogReadMode mode, SlotUpperBoundAt event) override;
 
-  driver_type& driver()
+  driver_type& driver() noexcept
+  {
+    return this->driver_;
+  }
+
+  const driver_type& driver() const noexcept
   {
     return this->driver_;
   }

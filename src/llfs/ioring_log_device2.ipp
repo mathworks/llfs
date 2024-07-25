@@ -13,6 +13,8 @@
 #include <llfs/data_reader.hpp>
 #include <llfs/slot_writer.hpp>
 
+#include <batteries/metrics/metric_registry.hpp>
+
 namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -34,6 +36,37 @@ inline /*explicit*/ IoRingLogDriver2<StorageT>::IoRingLogDriver2(
 {
   BATT_CHECK_GE(this->config_.data_alignment_log2, this->config_.device_page_size_log2);
   BATT_CHECK_GE(this->data_page_size_, sizeof(PackedLogControlBlock2));
+
+  using batt::Token;
+
+  // Register all metrics.
+  //
+  MetricLabelSet labels{
+      MetricLabel{Token{"object_type"}, Token{"llfs_IoRingLogDriver2"}},
+      MetricLabel{Token{"log_name"}, Token{this->options_.name}},
+  };
+
+  this->metrics_.export_to(global_metric_registry(), labels);
+
+  global_metric_registry()  //
+      .add("trim_target_pos", this->observed_watch_[Self::kTargetTrimPos], batt::make_copy(labels))
+      .add("commit_pos", this->observed_watch_[Self::kCommitPos], batt::make_copy(labels))
+      .add("trim_pos", this->trim_pos_, batt::make_copy(labels))
+      .add("flush_pos", this->flush_pos_, batt::make_copy(labels));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename StorageT>
+inline IoRingLogDriver2<StorageT>::~IoRingLogDriver2() noexcept
+{
+  this->metrics_.unexport_from(global_metric_registry());
+
+  global_metric_registry()  //
+      .remove(this->observed_watch_[Self::kTargetTrimPos])
+      .remove(this->observed_watch_[Self::kCommitPos])
+      .remove(this->trim_pos_)
+      .remove(this->flush_pos_);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -292,7 +325,7 @@ inline void IoRingLogDriver2<StorageT>::wait_for_slot_offset_change(T observed_v
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <typename StorageT>
-inline void IoRingLogDriver2<StorageT>::start_flush(CommitPos observed_commit_pos)
+inline void IoRingLogDriver2<StorageT>::start_flush(const CommitPos observed_commit_pos)
 {
   // Unflushed data comes after flushed.
   //
@@ -350,20 +383,37 @@ inline void IoRingLogDriver2<StorageT>::start_flush(CommitPos observed_commit_po
       }
     }
 
+    // If burst mode optimization is enabled, then round slot_range.upper_bound *down* to get the
+    // aligned upper bound (instead of up, the default); this way, we are less likely to need to
+    // issue another I/O to fill in partial data in flush_tail_.
+    //
+    if (this->flush_tail_ && this->options_.optimize_burst_mode) {
+      this->metrics_.burst_mode_checked.add(1);
+
+      const usize new_upper_bound = slot_max(
+          slot_range.lower_bound,
+          batt::round_down_bits(this->config_.data_alignment_log2, slot_range.upper_bound));
+
+      if (slot_range.upper_bound != new_upper_bound) {
+        this->metrics_.burst_mode_applied.add(1);
+      }
+
+      slot_range.upper_bound = new_upper_bound;
+    }
+
     // Align to 512-byte boundaries for direct I/O
     //
     SlotRange aligned_range = this->get_aligned_range(slot_range);
 
     // If this flush would overlap with an ongoing one (at the last device page) then trim the
-    // aligned_range so it doesn't.
+    // aligned_range (on the lower end) so it doesn't.
     //
-    if (this->flush_tail_) {
-      if (slot_less_than(aligned_range.lower_bound, this->flush_tail_->upper_bound)) {
-        aligned_range.lower_bound = this->flush_tail_->upper_bound;
-        if (aligned_range.empty()) {
-          flush_upper_bound = this->flush_tail_->upper_bound;
-          continue;
-        }
+    if (this->flush_tail_ &&
+        slot_less_than(aligned_range.lower_bound, this->flush_tail_->upper_bound)) {
+      aligned_range.lower_bound = this->flush_tail_->upper_bound;
+      if (aligned_range.empty()) {
+        flush_upper_bound = this->flush_tail_->upper_bound;
+        continue;
       }
     }
 
@@ -439,16 +489,20 @@ inline void IoRingLogDriver2<StorageT>::start_flush_write(const SlotRange& slot_
       resize_buffer(this->context_.buffer_.get(aligned_range.lower_bound), aligned_range.size());
 
   BATT_CHECK_LE(write_offset + (i64)buffer.size(), this->data_end_)
-      << "Data to flush extends beyond the end of the storage extent; forgot to handle wrap-around "
+      << "Data to flush extends beyond the end of the storage extent; forgot to handle "
+         "wrap-around "
          "case?";
 
   LLFS_VLOG(1) << " -- async_write_some(offset=" << write_offset << ".."
                << write_offset + buffer.size() << ", size=" << buffer.size() << ")";
 
   ++this->writes_pending_;
-  this->writes_max_ = std::max(this->writes_max_, this->writes_pending_);
+  this->metrics_.max_concurrent_writes.clamp_min(this->writes_pending_);
 
   BATT_CHECK_LE(this->writes_pending_, this->options_.max_concurrent_writes);
+
+  this->metrics_.total_write_count.add(1);
+  this->metrics_.flush_write_count.add(1);
 
   this->storage_.async_write_some(write_offset, buffer,
                                   this->make_write_handler([this, slot_range, aligned_range](
@@ -501,6 +555,9 @@ inline void IoRingLogDriver2<StorageT>::handle_flush_write(const SlotRange& slot
       .upper_bound = slot_min(aligned_range.lower_bound + bytes_written, slot_range.upper_bound),
   };
   BATT_CHECK(!flushed_range.empty());
+
+  this->metrics_.bytes_written.add(bytes_written);
+  this->metrics_.bytes_flushed.add(flushed_range.size());
 
   LLFS_DVLOG(1) << BATT_INSPECT(flushed_range);
 
@@ -625,6 +682,9 @@ void IoRingLogDriver2<StorageT>::start_control_block_update(
 
   this->writing_control_block_ = true;
 
+  this->metrics_.total_write_count.add(1);
+  this->metrics_.control_block_write_count.add(1);
+
   this->storage_.async_write_some_fixed(
       this->config_.control_block_offset, this->control_block_buffer_, /*buf_index=*/0,
       this->make_write_handler([](Self* this_, StatusOr<i32> result) {
@@ -648,7 +708,11 @@ void IoRingLogDriver2<StorageT>::handle_control_block_update(StatusOr<i32> resul
     return;
   }
 
-  if (BATT_CHECKED_CAST(usize, *result) != this->control_block_buffer_.size()) {
+  const usize bytes_written = BATT_CHECKED_CAST(usize, *result);
+
+  this->metrics_.bytes_written.add(bytes_written);
+
+  if (bytes_written != this->control_block_buffer_.size()) {
     LLFS_LOG_ERROR() << "Failed to write entire log control block!";
     this->context_.update_error_status(batt::StatusCode::kInternal);
     return;

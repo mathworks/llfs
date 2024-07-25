@@ -488,35 +488,29 @@ TEST_F(IoringLogDevice2SimTest, Simulation)
 //
 TEST(IoringLogDevice2Test, Benchmark)
 {
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+  // Set configuration and options.
+  //
+  llfs::LogDeviceRuntimeOptions options{
+      .name = "test log",
+      .flush_delay_threshold = 128 * kKiB,
+      .max_concurrent_writes = 64,
+      .optimize_burst_mode = llfs::read_test_var<int>("LLFS_LOG_DEVICE_BURST", /*default=*/0) != 0,
+  };
+
+  const char* file_name =  //
+      std::getenv("LLFS_LOG_DEVICE_FILE");
+
+  if (!file_name) {
+    LLFS_LOG_INFO() << "LLFS_LOG_DEVICE_FILE not specified; skipping benchmark test";
+    return;
+  }
+
+  std::cout << "LLFS_LOG_DEVICE_FILE=" << batt::c_str_literal(file_name) << std::endl;
+
+  LLFS_LOG_INFO() << BATT_INSPECT(file_name);
+
   llfs::run_log_device_benchmark([&](usize log_size, bool create, auto&& workload_fn) {
-    //+++++++++++-+-+--+----- --- -- -  -  -   -
-    // Set configuration and options.
-    //
-    llfs::IoRingLogConfig2 config{
-        .control_block_offset = 0,
-        .log_capacity = log_size,
-        .device_page_size_log2 = 9,
-        .data_alignment_log2 = 12,
-    };
-
-    llfs::LogDeviceRuntimeOptions options{
-        .name = "test log",
-        .flush_delay_threshold = 2 * kMiB,
-        .max_concurrent_writes = 64,
-    };
-
-    const char* file_name =  //
-        std::getenv("LLFS_LOG_DEVICE_FILE");
-
-    if (!file_name) {
-      LLFS_LOG_INFO() << "LLFS_LOG_DEVICE_FILE not specified; skipping benchmark test";
-      return;
-    }
-
-    std::cout << "LLFS_LOG_DEVICE_FILE=" << batt::c_str_literal(file_name) << std::endl;
-
-    LLFS_LOG_INFO() << BATT_INSPECT(file_name);
-
     //+++++++++++-+-+--+----- --- -- -  -  -   -
     // Erase any existing file.
     //
@@ -531,6 +525,13 @@ TEST(IoringLogDevice2Test, Benchmark)
     //+++++++++++-+-+--+----- --- -- -  -  -   -
     // Create a new log file and size it to the configured capacity.
     //
+    llfs::IoRingLogConfig2 config{
+        .control_block_offset = 0,
+        .log_capacity = log_size,
+        .device_page_size_log2 = 9,
+        .data_alignment_log2 = 12,
+    };
+
     llfs::StatusOr<int> status_or_fd = [&] {
       if (create) {
         return llfs::create_file_read_write(file_name, llfs::OpenForAppend{false});
@@ -588,6 +589,11 @@ TEST(IoringLogDevice2Test, Benchmark)
     // Run the passed workload.
     //
     workload_fn(log_device);
+
+    const double write_amplification =
+        double(log_device.metrics().bytes_written) / double(log_device.metrics().bytes_flushed);
+
+    LLFS_LOG_INFO() << log_device.metrics() << BATT_INSPECT(write_amplification);
   });
 }
 

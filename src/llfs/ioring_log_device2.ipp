@@ -467,48 +467,68 @@ inline void IoRingLogDriver2<StorageT>::handle_flush_write(const SlotRange& slot
 {
   LLFS_VLOG(1) << "handle_flush_result(result=" << result << ")" << BATT_INSPECT(slot_range);
 
-  const usize bytes_written = result.ok() ? *result : 0;
-
-  SlotRange aligned_tail = this->get_aligned_tail(aligned_range);
-
-  SlotRange flushed_range{
-      .lower_bound = slot_max(slot_range.lower_bound, aligned_range.lower_bound),
-      .upper_bound = slot_min(aligned_range.lower_bound + bytes_written, slot_range.upper_bound),
-  };
-
-  const bool is_tail = (this->flush_tail_ && *this->flush_tail_ == aligned_tail);
+  // Determine whether this write is the current flush_tail_, and clear it if so.
+  //
+  const bool is_tail = [&] {
+    SlotRange aligned_tail = this->get_aligned_tail(aligned_range);
+    return (this->flush_tail_ && *this->flush_tail_ == aligned_tail);
+  }();
   LLFS_DVLOG(1) << BATT_INSPECT(is_tail);
+
   if (is_tail) {
     this->flush_tail_ = None;
-    this->unflushed_lower_bound_ = flushed_range.upper_bound;
   }
 
-  LLFS_DVLOG(1) << BATT_INSPECT(flushed_range);
-
+  // Write errors are fatal.
+  //
   if (!result.ok()) {
     LLFS_VLOG(1) << "(handle_flush_write) error: " << result.status();
     this->handle_write_error(result.status());
     return;
   }
 
+  // Calculate the (non-aligned) offset range of flushed data.
+  //
+  const usize bytes_written = *result;
+
+  SlotRange flushed_range{
+      // Use the logical (non-aligned) lower bound.
+      //
+      .lower_bound = slot_max(slot_range.lower_bound, aligned_range.lower_bound),
+
+      // Take minimum here to account for short writes.
+      //
+      .upper_bound = slot_min(aligned_range.lower_bound + bytes_written, slot_range.upper_bound),
+  };
   BATT_CHECK(!flushed_range.empty());
 
+  LLFS_DVLOG(1) << BATT_INSPECT(flushed_range);
+
+  // Update this->known_flush_pos_ and this->known_flushed_commit_pos_ to reflect the write.
+  //
   this->update_known_flush_pos(flushed_range);
 
-  const CommitPos observed_commit_pos = this->observe(CommitPos{});
-
-  // If is_tail is false, then there was a write initiated *after* this portion of the log.  In this
-  // case, if the write was short, this function needs to initiate writing the remainder of the
-  // data.
+  // If there was no write after this one and the write was short, then we must adjust
+  // this->unflushed_lower_bound_ down to the actual end of flushed data so that when we call
+  // poll(), the remainder of `slot_range` is written.
   //
-  if (!is_tail) {
-    SlotRange updated_range{
+  if (is_tail) {
+    this->unflushed_lower_bound_ = flushed_range.upper_bound;
+
+  } else {
+    // If is_tail is false, then there was a write initiated *after* this portion of the log.  In
+    // this case, if the write was short, this function needs to initiate writing the remainder of
+    // the data.
+    //
+    const CommitPos observed_commit_pos = this->observe(CommitPos{});
+
+    SlotRange unflushed_remainder{
         .lower_bound = flushed_range.upper_bound,
         .upper_bound = slot_min(aligned_range.upper_bound, observed_commit_pos),
     };
 
-    if (!updated_range.empty()) {
-      this->start_flush_write(updated_range, this->get_aligned_range(updated_range));
+    if (!unflushed_remainder.empty()) {
+      this->start_flush_write(unflushed_remainder, this->get_aligned_range(unflushed_remainder));
     }
   }
 

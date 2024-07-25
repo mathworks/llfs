@@ -423,10 +423,12 @@ class IoRingLogDriver2
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-/** \brief An emphemeral LogDevice that stores data in memory only.
+/** \brief A LogDevice impl that flushes data on durable media asynchronously using an io_uring-like
+ * I/O layer.
  *
- * The commit pos and flush pos are always in sync, so there is no difference between
- * LogReadMode::kSpeculative and LogReadMode::kDurable for this log device type.
+ * This template is parameterized on the StorageT type, which implements the low-level async I/O
+ * methods and the async event threading model.  IoRingLogDevice2 is type alias that instantiates
+ * this template with the default storage type, DefaultIoRingLogDeviceStorage.
  */
 template <typename StorageT>
 class BasicIoRingLogDevice2
@@ -448,6 +450,8 @@ class BasicIoRingLogDevice2
   }
 };
 
+/** \brief A fast, durable LogDevice implementation.
+ */
 using IoRingLogDevice2 = BasicIoRingLogDevice2<DefaultIoRingLogDeviceStorage>;
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

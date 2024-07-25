@@ -489,8 +489,7 @@ inline void IoRingLogDriver2<StorageT>::start_flush_write(const SlotRange& slot_
       resize_buffer(this->context_.buffer_.get(aligned_range.lower_bound), aligned_range.size());
 
   BATT_CHECK_LE(write_offset + (i64)buffer.size(), this->data_end_)
-      << "Data to flush extends beyond the end of the storage extent; forgot to handle "
-         "wrap-around "
+      << "Data to flush extends beyond the end of the storage extent; forgot to handle wrap-around "
          "case?";
 
   LLFS_VLOG(1) << " -- async_write_some(offset=" << write_offset << ".."

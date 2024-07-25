@@ -11,6 +11,7 @@
 #define LLFS_PACKED_PAGE_USER_SLOT_HPP
 
 #include <llfs/int_types.hpp>
+#include <llfs/packed_slot_offset.hpp>
 
 #include <batteries/static_assert.hpp>
 
@@ -19,8 +20,6 @@
 #include <ostream>
 
 namespace llfs {
-
-using PackedSlotOffset = little_u64;
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 // Represents a user-specified logical timestamp for a page.  The `user` here isn't necessarily an

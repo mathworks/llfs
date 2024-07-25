@@ -94,6 +94,34 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
           //----- --- -- -  -  -   -
           [&](const LinkToExistingLogDevice& link_to_existing) -> StatusOr<boost::uuids::uuid> {
             return link_to_existing.uuid;
+          },
+
+          //----- --- -- -  -  -   -
+          [&](const CreateNewLogDevice2& create_new) -> StatusOr<boost::uuids::uuid> {
+            if (create_new.options.log_size < minimum_log_size) {
+              return {batt::StatusCode::kInvalidArgument};
+            }
+
+            BATT_ASSIGN_OK_RESULT(
+                const FileOffsetPtr<const PackedLogDeviceConfig2&> p_log_device_config,
+                txn.add_object(create_new.options));
+
+            return p_log_device_config->uuid;
+          },
+
+          //----- --- -- -  -  -   -
+          [&](const CreateNewLogDevice2WithDefaultSize& log_options)
+              -> StatusOr<boost::uuids::uuid> {
+            BATT_ASSIGN_OK_RESULT(
+                const FileOffsetPtr<const PackedLogDeviceConfig2&> p_log_device_config,
+                txn.add_object(LogDeviceConfigOptions2{
+                    .uuid = log_options.uuid,
+                    .log_size = minimum_log_size,
+                    .device_page_size_log2 = LogDeviceConfigOptions2::kDefaultDevicePageSizeLog2,
+                    .data_alignment_log2 = LogDeviceConfigOptions2::kDefaultDataAlignmentLog2,
+                }));
+
+            return p_log_device_config->uuid;
           }));
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -146,8 +174,8 @@ StatusOr<std::unique_ptr<PageAllocator>> recover_storage_object(
     const PageAllocatorRuntimeOptions& allocator_options,                       //
     const IoRingLogDriverOptions& log_options)
 {
-  StatusOr<std::unique_ptr<LogDeviceFactory>> log_factory = storage_context->recover_object(
-      batt::StaticType<PackedLogDeviceConfig>{}, p_allocator_config->log_device_uuid, log_options);
+  StatusOr<std::unique_ptr<LogDeviceFactory>> log_factory =
+      storage_context->recover_log_device(p_allocator_config->log_device_uuid, log_options);
 
   BATT_REQUIRE_OK(log_factory);
 

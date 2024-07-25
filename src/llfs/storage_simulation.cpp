@@ -200,8 +200,8 @@ void StorageSimulation::handle_events(bool main_fn_done)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-SimulatedLogDeviceStorage StorageSimulation::get_log_device_storage(const std::string& name,
-                                                                    Optional<u64> capacity)
+SimulatedLogDeviceStorage StorageSimulation::get_log_device_storage(
+    const std::string& name, Optional<u64> capacity, Optional<Interval<i64>> file_offset)
 {
   auto iter = this->log_storage_.find(name);
 
@@ -209,16 +209,10 @@ SimulatedLogDeviceStorage StorageSimulation::get_log_device_storage(const std::s
   //
   if (iter == this->log_storage_.end()) {
     BATT_CHECK(capacity.has_value());
+    BATT_CHECK(file_offset.has_value());
 
-    auto config = IoRingLogConfig::from_logical_size(*capacity);
-    auto durable_state = std::make_shared<SimulatedLogDeviceStorage::DurableState>(*this, config);
-
-    Status init_status =
-        initialize_ioring_log_device(*std::make_unique<SimulatedLogDeviceStorage::RawBlockFileImpl>(
-                                         batt::make_copy(durable_state)),
-                                     config, ConfirmThisWillEraseAllMyData::kYes);
-
-    BATT_CHECK_OK(init_status);
+    auto durable_state =
+        std::make_shared<SimulatedLogDeviceStorage::DurableState>(*this, *capacity, *file_offset);
 
     iter = this->log_storage_.emplace(name, std::move(durable_state)).first;
   }
@@ -235,8 +229,29 @@ std::unique_ptr<LogDevice> StorageSimulation::get_log_device(const std::string& 
                                                              Optional<u64> capacity)
 {
   if (this->low_level_log_devices_) {
-    SimulatedLogDeviceStorage storage = this->get_log_device_storage(name, capacity);
-    IoRingLogConfig config = storage.config();
+    auto file_offset = [&]() -> Optional<Interval<i64>> {
+      if (!capacity) {
+        return None;
+      }
+      auto config = IoRingLogConfig::from_logical_size(*capacity);
+      return Interval<i64>{
+          .lower_bound = BATT_CHECKED_CAST(i64, config.physical_offset),
+          .upper_bound = BATT_CHECKED_CAST(i64, config.physical_offset + config.physical_size),
+      };
+    }();
+    SimulatedLogDeviceStorage storage = this->get_log_device_storage(name, capacity, file_offset);
+
+    auto config = IoRingLogConfig::from_logical_size(storage.log_size());
+
+    if (!storage.is_initialized()) {
+      Status init_status = initialize_ioring_log_device(*storage.get_raw_block_file(), config,
+                                                        ConfirmThisWillEraseAllMyData::kYes);
+
+      BATT_CHECK_OK(init_status);
+
+      storage.set_initialized(true);
+    }
+
     auto options = IoRingLogDriverOptions::with_default_values();
     options.name = name;
     options.limit_queue_depth(config.block_count());

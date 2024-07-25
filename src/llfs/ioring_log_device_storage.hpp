@@ -12,9 +12,11 @@
 
 #include <llfs/config.hpp>
 //
+#include <llfs/filesystem.hpp>
 #include <llfs/ioring.hpp>
 #include <llfs/ioring_file.hpp>
 #include <llfs/optional.hpp>
+#include <llfs/raw_block_file.hpp>
 #include <llfs/status.hpp>
 
 #include <batteries/async/watch.hpp>
@@ -38,6 +40,10 @@ class DefaultIoRingLogDeviceStorage
    * DefaultIoRingLogDeviceStorage object.
    */
   class EventLoopTask;
+
+  /** \brief Implementation of RawBlockFile based on an instance of DefaultIoRingLogDeviceStorage.
+   */
+  class RawBlockFileImpl;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -97,6 +103,9 @@ class DefaultIoRingLogDeviceStorage
   }
 
   template <typename Handler>
+  void async_write_some(i64 file_offset, const ConstBuffer& data, Handler&& handler);
+
+  template <typename Handler>
   void async_write_some_fixed(i64 file_offset, const ConstBuffer& data, i32 buf_index,
                               Handler&& handler);
 
@@ -112,6 +121,18 @@ class DefaultIoRingLogDeviceStorage
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename Handler>
+inline void DefaultIoRingLogDeviceStorage::async_write_some(i64 file_offset,
+                                                            const ConstBuffer& data,
+                                                            Handler&& handler)
+{
+  this->file_.async_write_some(file_offset, data, BATT_FORWARD(handler));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 template <typename Handler>
 inline void DefaultIoRingLogDeviceStorage::async_write_some_fixed(i64 file_offset,
                                                                   const ConstBuffer& data,
@@ -143,6 +164,67 @@ class DefaultIoRingLogDeviceStorage::EventLoopTask
   std::thread thread_;
   batt::Watch<bool> done_{false};
   bool join_called_ = false;
+};
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+
+class DefaultIoRingLogDeviceStorage::RawBlockFileImpl : public RawBlockFile
+{
+ public:
+  explicit RawBlockFileImpl(DefaultIoRingLogDeviceStorage& storage) noexcept : storage_{storage}
+  {
+    this->storage_.on_work_started();
+    this->event_loop_task_.emplace(this->storage_, "RawBlockFileImpl");
+  }
+
+  ~RawBlockFileImpl() noexcept
+  {
+    BATT_CHECK(this->event_loop_task_);
+
+    this->storage_.on_work_finished();
+    this->event_loop_task_->join();
+  }
+
+  StatusOr<i64> write_some(i64 offset, const ConstBuffer& data) override
+  {
+    return batt::Task::await<batt::StatusOr<i64>>([&](auto&& handler) {
+      this->storage_.file_.async_write_some(offset, data, BATT_FORWARD(handler));
+    });
+  }
+
+  StatusOr<i64> read_some(i64 offset, const MutableBuffer& buffer) override
+  {
+    return batt::Task::await<batt::StatusOr<i64>>([&](auto&& handler) {
+      this->storage_.file_.async_read_some(offset, buffer, BATT_FORWARD(handler));
+    });
+  }
+
+  StatusOr<i64> get_size() override
+  {
+    return sizeof_fd(this->storage_.file_.get_fd());
+  }
+
+  Status truncate(i64 new_offset_upper_bound) override
+  {
+    return truncate_fd(this->storage_.file_.get_fd(),
+                       BATT_CHECKED_CAST(u64, new_offset_upper_bound));
+  }
+
+  Status truncate_at_least(i64 minimum_size) override
+  {
+    StatusOr<i64> current_size = this->get_size();
+    BATT_REQUIRE_OK(current_size);
+
+    if (*current_size < minimum_size) {
+      return this->truncate(minimum_size);
+    }
+
+    return batt::OkStatus();
+  }
+
+ private:
+  DefaultIoRingLogDeviceStorage& storage_;
+  Optional<EventLoopTask> event_loop_task_;
 };
 
 }  //namespace llfs

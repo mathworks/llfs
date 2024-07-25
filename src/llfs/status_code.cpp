@@ -13,10 +13,7 @@
 
 namespace llfs {
 
-#define CODE_WITH_MSG_(code, msg)                                                                  \
-  {                                                                                                \
-    code, msg " (" #code ")"                                                                       \
-  }
+#define CODE_WITH_MSG_(code, msg) {code, msg " (" #code ")"}
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
@@ -136,6 +133,9 @@ bool initialize_status_codes()
       CODE_WITH_MSG_(
           StatusCode::kIoRingShutDown,
           "The operation could not be completed because the IoRing was shut down"),  // 64,
+      CODE_WITH_MSG_(StatusCode::kLogControlBlockBadMagic,
+                     "Log device control block magic number is not correct (is this really a log "
+                     "device?)"),  // 65,
   });
   return initialized;
 }

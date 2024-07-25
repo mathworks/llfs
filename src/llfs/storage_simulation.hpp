@@ -15,6 +15,7 @@
 #include <llfs/testing/test_config.hpp>
 
 #include <llfs/int_types.hpp>
+#include <llfs/interval.hpp>
 #include <llfs/log_device.hpp>
 #include <llfs/optional.hpp>
 #include <llfs/page_cache.hpp>
@@ -191,7 +192,8 @@ class StorageSimulation
    * \param name A unique name used to identify the LogDevice storage in the context of this
    * simulation
    */
-  SimulatedLogDeviceStorage get_log_device_storage(const std::string& name, Optional<u64> capacity);
+  SimulatedLogDeviceStorage get_log_device_storage(const std::string& name, Optional<u64> capacity,
+                                                   Optional<Interval<i64>> file_offset);
 
   /** \brief Creates/accesses a simulated LogDevice.
    *

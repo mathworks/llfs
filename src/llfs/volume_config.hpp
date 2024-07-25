@@ -14,6 +14,7 @@
 #include <llfs/data_layout.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/log_device_config.hpp>
+#include <llfs/log_device_config2.hpp>
 #include <llfs/packed_config.hpp>
 #include <llfs/packed_pointer.hpp>
 #include <llfs/page_size.hpp>
@@ -25,6 +26,8 @@
 #include <boost/uuid/uuid.hpp>
 
 #include <batteries/static_assert.hpp>
+
+#include <variant>
 
 namespace llfs {
 
@@ -61,7 +64,7 @@ struct VolumeConfigOptions {
 
   // Options controlling the creation of the root log (WAL).
   //
-  LogDeviceConfigOptions root_log;
+  std::variant<LogDeviceConfigOptions, LogDeviceConfigOptions2> root_log;
 
   // Used to calculate the minimum recycler log size.
   //

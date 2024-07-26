@@ -13,6 +13,7 @@
 #include <llfs/config.hpp>
 //
 #include <llfs/basic_ring_buffer_log_device.hpp>
+#include <llfs/confirm.hpp>
 #include <llfs/ioring_log_config2.hpp>
 #include <llfs/ioring_log_device2_metrics.hpp>
 #include <llfs/ioring_log_device_storage.hpp>
@@ -39,7 +40,8 @@ BATT_STRONG_TYPEDEF(slot_offset_type, CommitPos);
 /** \brief Initializes an IoRingLogDevice2 using the given storage device and configuration (which
  * includes offset within the passed device).
  */
-Status initialize_log_device2(RawBlockFile& file, const IoRingLogConfig2& config);
+Status initialize_log_device2(RawBlockFile& file, const IoRingLogConfig2& config,
+                              ConfirmThisWillEraseAllMyData confirm);
 
 template <typename StorageT>
 class IoRingLogDriver2

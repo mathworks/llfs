@@ -85,8 +85,8 @@ class VolumeConfigTest : public ::testing::Test
   {
     return llfs::VolumeRuntimeOptions{
         .slot_visitor_fn = std::move(slot_visitor_fn),
-        .root_log_options = llfs::IoRingLogDriverOptions{},
-        .recycler_log_options = llfs::IoRingLogDriverOptions{},
+        .root_log_options = llfs::LogDeviceRuntimeOptions{},
+        .recycler_log_options = llfs::LogDeviceRuntimeOptions{},
         .trim_control = nullptr,
     };
   }
@@ -130,10 +130,13 @@ TEST_F(VolumeConfigTest, ConfigRestore)
                         .trim_delay_byte_count = llfs::TrimDelayByteCount{0},
                     },
                 .root_log =
-                    llfs::LogDeviceConfigOptions{
+                    llfs::LogDeviceConfigOptions2{
                         .uuid = llfs::None,
-                        .pages_per_block_log2 = llfs::None,
                         .log_size = 8 * kMiB,
+                        .device_page_size_log2 =
+                            llfs::LogDeviceConfigOptions2::kDefaultDevicePageSizeLog2,
+                        .data_alignment_log2 =
+                            llfs::LogDeviceConfigOptions2::kDefaultDataAlignmentLog2,
                     },
                 .recycler_max_buffered_page_count = llfs::None,
             });

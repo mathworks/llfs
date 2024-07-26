@@ -171,7 +171,8 @@ class IoringLogDevice2SimTest : public ::testing::Test
       ASSERT_FALSE(storage.is_initialized());
 
       Status init_status =
-          llfs::initialize_log_device2(*storage.get_raw_block_file(), this->log_config);
+          llfs::initialize_log_device2(*storage.get_raw_block_file(), this->log_config,
+                                       llfs::ConfirmThisWillEraseAllMyData::kYes);
 
       ASSERT_TRUE(init_status.ok()) << BATT_INSPECT(init_status);
 
@@ -643,7 +644,8 @@ TEST(IoringLogDevice2Test, Benchmark)
       //+++++++++++-+-+--+----- --- -- -  -  -   -
       // Write the initial contents of the file.
       //
-      llfs::Status init_status = llfs::initialize_log_device2(file, config);
+      llfs::Status init_status =
+          llfs::initialize_log_device2(file, config, llfs::ConfirmThisWillEraseAllMyData::kYes);
 
       ASSERT_TRUE(init_status.ok()) << BATT_INSPECT(init_status);
     }

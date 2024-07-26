@@ -7,8 +7,8 @@
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
 #pragma once
-#ifndef LLFS_PACKED_LOG_DEVICE_CONFIG2_HPP
-#define LLFS_PACKED_LOG_DEVICE_CONFIG2_HPP
+#ifndef LLFS_LOG_DEVICE_CONFIG2_HPP
+#define LLFS_LOG_DEVICE_CONFIG2_HPP
 
 #include <llfs/config.hpp>
 //
@@ -17,6 +17,7 @@
 
 #include <llfs/constants.hpp>
 #include <llfs/int_types.hpp>
+#include <llfs/ioring_log_config2.hpp>
 #include <llfs/ioring_log_device2.hpp>
 #include <llfs/log_device.hpp>
 #include <llfs/log_device_runtime_options.hpp>
@@ -52,8 +53,8 @@ StatusOr<std::unique_ptr<IoRingLogDevice2Factory>> recover_storage_object(
 struct LogDeviceConfigOptions2 {
   using PackedConfigType = PackedLogDeviceConfig2;
 
-  static constexpr u16 kDefaultDevicePageSizeLog2 = 9 /*=log2(512)*/;
-  static constexpr u16 kDefaultDataAlignmentLog2 = 12 /*=log2(4096)*/;
+  static constexpr u16 kDefaultDevicePageSizeLog2 = IoRingLogConfig2::kDefaultDevicePageSizeLog2;
+  static constexpr u16 kDefaultDataAlignmentLog2 = IoRingLogConfig2::kDefaultDataAlignmentLog2;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -129,4 +130,4 @@ std::ostream& operator<<(std::ostream& out, const PackedLogDeviceConfig2& t);
 
 #endif  // LLFS_DISABLE_IO_URING
 
-#endif  // LLFS_PACKED_LOG_DEVICE_CONFIG_HPP
+#endif  // LLFS_LOG_DEVICE_CONFIG2_HPP

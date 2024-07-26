@@ -6,7 +6,7 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-#include <llfs/log_device_config.hpp>
+#include <llfs/log_device_config2.hpp>
 //
 
 #ifndef LLFS_DISABLE_IO_URING
@@ -68,16 +68,16 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
 
   // Initialize the log page headers before flushing config slot.
   //
-  txn.require_pre_flush_action([config = IoRingLogConfig2::from_packed(p_config),
-                                blocks_offset](RawBlockFile& file) -> Status  //
-                               {
-                                 Status truncate_status =
-                                     file.truncate_at_least(blocks_offset.upper_bound);
+  txn.require_pre_flush_action(
+      [config = IoRingLogConfig2::from_packed(p_config),
+       blocks_offset](RawBlockFile& file) -> Status  //
+      {
+        Status truncate_status = file.truncate_at_least(blocks_offset.upper_bound);
 
-                                 BATT_REQUIRE_OK(truncate_status);
+        BATT_REQUIRE_OK(truncate_status);
 
-                                 return initialize_log_device2(file, config);
-                               });
+        return initialize_log_device2(file, config, llfs::ConfirmThisWillEraseAllMyData::kYes);
+      });
 
   return OkStatus();
 }

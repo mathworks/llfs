@@ -14,6 +14,7 @@
 //
 #include <llfs/basic_ring_buffer_log_device.hpp>
 #include <llfs/ioring_log_config2.hpp>
+#include <llfs/ioring_log_device2_metrics.hpp>
 #include <llfs/ioring_log_device_storage.hpp>
 #include <llfs/log_device.hpp>
 #include <llfs/log_device_runtime_options.hpp>
@@ -47,6 +48,9 @@ class IoRingLogDriver2
   using Self = IoRingLogDriver2;
   using AlignedUnit = std::aligned_storage_t<kLogAtomicWriteSize, kLogAtomicWriteSize>;
   using EventLoopTask = typename StorageT::EventLoopTask;
+  using Metrics = IoRingLogDevice2Metrics;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   static constexpr batt::StaticType<TargetTrimPos> kTargetTrimPos{};
   static constexpr batt::StaticType<CommitPos> kCommitPos{};
@@ -69,6 +73,8 @@ class IoRingLogDriver2
                             const LogDeviceRuntimeOptions& options,  //
                             StorageT&& storage                       //
                             ) noexcept;
+
+  ~IoRingLogDriver2() noexcept;
 
   //----
 
@@ -129,6 +135,11 @@ class IoRingLogDriver2
   void join();
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  const Metrics& metrics() const noexcept
+  {
+    return this->metrics_;
+  }
 
  private:
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -199,7 +210,7 @@ class IoRingLogDriver2
    * two writes may be initiated by this function, provided the conditions above are still met after
    * starting the first write.
    */
-  void start_flush(CommitPos observed_commit_pos);
+  void start_flush(const CommitPos observed_commit_pos);
 
   /** \brief Returns the passed slot range with the lower and upper bounds aligned to the nearest
    * data page boundary.
@@ -281,6 +292,10 @@ class IoRingLogDriver2
   void free_handler_memory(HandlerMemory* p_mem) noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief Diagnostic metrics for this object.
+   */
+  Metrics metrics_;
 
   /** \brief The context passed in at construction time; provides access to the ring buffer.
    */
@@ -374,10 +389,6 @@ class IoRingLogDriver2
    */
   usize writes_pending_ = 0;
 
-  /** \brief The maximum observed value of this->writes_pending_ (high water mark).
-   */
-  usize writes_max_ = 0;
-
   /** \brief Buffer containing the control block structure.
    */
   std::unique_ptr<AlignedUnit[]> control_block_memory_;
@@ -447,6 +458,11 @@ class BasicIoRingLogDevice2
       : Super{RingBuffer::TempFile{.byte_size = BATT_CHECKED_CAST(usize, config.log_capacity)},
               config, options, std::move(storage)}
   {
+  }
+
+  const IoRingLogDevice2Metrics& metrics() const noexcept
+  {
+    return this->driver().impl().metrics();
   }
 };
 

@@ -28,8 +28,9 @@ namespace llfs {
 struct LogDeviceRuntimeOptions {
   using Self = LogDeviceRuntimeOptions;
 
-  static constexpr usize kDefaultFlushDelayThreshold = 1 * kMiB;
+  static constexpr usize kDefaultFlushDelayThreshold = 128 * kKiB;
   static constexpr usize kDefaultMaxConcurrentWrites = 64;
+  static constexpr usize kDefaultOptimizeBurstMode = true;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -53,6 +54,8 @@ struct LogDeviceRuntimeOptions {
   usize flush_delay_threshold = kDefaultFlushDelayThreshold;
 
   usize max_concurrent_writes = kDefaultMaxConcurrentWrites;
+
+  bool optimize_burst_mode = kDefaultOptimizeBurstMode;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

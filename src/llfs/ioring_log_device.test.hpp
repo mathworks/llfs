@@ -103,9 +103,9 @@ inline void run_log_device_benchmark(
         const auto flushed_range = log_device.slot_range(LogReadMode::kDurable);
         const auto committed_range = log_device.slot_range(LogReadMode::kSpeculative);
 
-        LLFS_LOG_INFO() << BATT_INSPECT(flushed_range) << BATT_INSPECT(flushed_range.size())
-                        << BATT_INSPECT(committed_range) << BATT_INSPECT(committed_range.size())
-                        << BATT_INSPECT(last_iteration);
+        LLFS_VLOG(1) << BATT_INSPECT(flushed_range) << BATT_INSPECT(flushed_range.size())
+                     << BATT_INSPECT(committed_range) << BATT_INSPECT(committed_range.size())
+                     << BATT_INSPECT(last_iteration);
 
         log_device.halt();
       }};
@@ -121,14 +121,14 @@ inline void run_log_device_benchmark(
                               llfs::SlotUpperBoundAt{durable.lower_bound + trim_trigger});
 
           if (!sync_status.ok()) {
-            LLFS_LOG_INFO() << BATT_INSPECT(durable.lower_bound);
+            LLFS_VLOG(1) << BATT_INSPECT(durable.lower_bound);
             break;
           }
 
           llfs::Status trim_status = log_device.trim(durable.lower_bound + aligned_trim_size);
 
           if (!trim_status.ok()) {
-            LLFS_LOG_INFO() << BATT_INSPECT(durable.lower_bound);
+            LLFS_VLOG(1) << BATT_INSPECT(durable.lower_bound);
             break;
           }
 

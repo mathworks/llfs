@@ -52,6 +52,17 @@ class IoringLogDevice2SimTest : public ::testing::Test
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  /** \brief Conditions we hope to achieve in at least one test Scenario.
+   */
+  struct GlobalTestGoals {
+    std::atomic<bool> concurrent_writes{false};
+    std::atomic<bool> burst_mode_checked{false};
+    std::atomic<bool> burst_mode_applied{false};
+    std::atomic<bool> split_write{false};
+    std::atomic<bool> tail_collision{false};
+    std::atomic<bool> tail_rewrite{false};
+  };
+
   /** \brief A single simulation run.
    *
    * It is safe to run multiple Scenarios concurrently on separate threads.
@@ -65,6 +76,10 @@ class IoringLogDevice2SimTest : public ::testing::Test
         .device_page_size_log2 = batt::log2_ceil(kDevicePageSize),
         .data_alignment_log2 = batt::log2_ceil(kDataAlignment),
     };
+
+    /** \brief Reference to single shared goals struct; used to report achievement of various goals.
+     */
+    GlobalTestGoals& goals;
 
     /** \brief The RNG seed for this scenario.
      */
@@ -86,6 +101,10 @@ class IoringLogDevice2SimTest : public ::testing::Test
     /** \brief The LogDevice::Writer interface for `this->log_device`.
      */
     llfs::LogDevice::Writer* log_writer = nullptr;
+
+    /** \brief The metrics object associated with the log device under test.
+     */
+    const llfs::IoRingLogDevice2Metrics* log_device_metrics = nullptr;
 
     /** \brief The slot offset ranges of all appended slots that haven't been trimmed yet; these are
      * not necessarily flushed yet.
@@ -130,8 +149,9 @@ class IoringLogDevice2SimTest : public ::testing::Test
 
     /** \brief Constructs a new Scenario with the given RNG seed.
      */
-    explicit Scenario(usize seed) noexcept
-        : seed{seed}
+    explicit Scenario(usize seed, GlobalTestGoals& goals) noexcept
+        : goals{goals}
+        , seed{seed}
         , rng{this->seed}
         , sim{batt::StateMachineEntropySource{
               /*entropy_fn=*/[this](usize min_value, usize max_value) -> usize {
@@ -170,13 +190,20 @@ class IoringLogDevice2SimTest : public ::testing::Test
 
       ASSERT_TRUE(storage.is_initialized());
 
+      auto runtime_options = llfs::LogDeviceRuntimeOptions{
+          .name = "test_log",
+          .flush_delay_threshold = kTestMaxSlotSize * 3,
+          .max_concurrent_writes = 16,
+          .optimize_burst_mode = true,
+      };
+
       auto p_device =
           std::make_unique<llfs::BasicIoRingLogDevice2<llfs::SimulatedLogDeviceStorage>>(
-              this->log_config, llfs::LogDeviceRuntimeOptions::with_default_values(),
-              std::move(storage));
+              this->log_config, runtime_options, std::move(storage));
 
       BATT_CHECK_OK(p_device->open());
 
+      this->log_device_metrics = std::addressof(p_device->metrics());
       this->log_device = std::move(p_device);
       this->log_writer = std::addressof(this->log_device->writer());
     }
@@ -186,10 +213,38 @@ class IoringLogDevice2SimTest : public ::testing::Test
     void shutdown_log_device() noexcept
     {
       if (this->log_device) {
+        BATT_CHECK_NOT_NULLPTR(this->log_device_metrics);
+
+        // Check to see whether this scenario accomplished any global test goals.
+        //
+        if (this->log_device_metrics->max_concurrent_writes > 1) {
+          this->goals.concurrent_writes = true;
+        }
+        if (this->log_device_metrics->burst_mode_checked > 0) {
+          this->goals.burst_mode_checked = true;
+        }
+        if (this->log_device_metrics->burst_mode_applied > 0) {
+          BATT_CHECK_GE(this->log_device_metrics->burst_mode_checked,
+                        this->log_device_metrics->burst_mode_applied);
+          this->goals.burst_mode_applied = true;
+        }
+        if (this->log_device_metrics->flush_write_split_wrap_count > 0) {
+          this->goals.split_write = true;
+        }
+        if (this->log_device_metrics->flush_write_tail_collision_count > 0) {
+          this->goals.tail_collision = true;
+        }
+        if (this->log_device_metrics->flush_tail_rewrite_count > 0) {
+          this->goals.tail_rewrite = true;
+        }
+
+        // Shut down the device.
+        //
         this->log_device->halt();
         this->log_device->join();
         this->log_device.reset();
         this->log_writer = nullptr;
+        this->log_device_metrics = nullptr;
       }
     }
 
@@ -460,6 +515,15 @@ TEST_F(IoringLogDevice2SimTest, Simulation)
 
   LLFS_LOG_INFO() << BATT_INSPECT(kNumSeeds);
 
+  GlobalTestGoals goals;
+
+  EXPECT_FALSE(goals.concurrent_writes);
+  EXPECT_FALSE(goals.burst_mode_checked);
+  EXPECT_FALSE(goals.burst_mode_applied);
+  EXPECT_FALSE(goals.split_write);
+  EXPECT_FALSE(goals.tail_collision);
+  EXPECT_FALSE(goals.tail_rewrite);
+
   std::vector<std::thread> threads;
   usize start_seed = test_config.get_random_seed();
   usize seeds_remaining = kNumSeeds;
@@ -471,7 +535,7 @@ TEST_F(IoringLogDevice2SimTest, Simulation)
         LLFS_LOG_INFO_EVERY_N(kUpdateInterval)
             << "progress=" << (seed - start_seed) * 100 / (end_seed - start_seed) << "%";
 
-        Scenario scenario{seed};
+        Scenario scenario{seed, goals};
         ASSERT_NO_FATAL_FAILURE(scenario.run());
       }
     });
@@ -482,41 +546,42 @@ TEST_F(IoringLogDevice2SimTest, Simulation)
   for (std::thread& t : threads) {
     t.join();
   }
+
+  EXPECT_TRUE(goals.concurrent_writes);
+  EXPECT_TRUE(goals.burst_mode_checked);
+  EXPECT_TRUE(goals.burst_mode_applied);
+  EXPECT_TRUE(goals.split_write);
+  EXPECT_TRUE(goals.tail_collision);
+  EXPECT_TRUE(goals.tail_rewrite);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 TEST(IoringLogDevice2Test, Benchmark)
 {
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+  // Set configuration and options.
+  //
+  llfs::LogDeviceRuntimeOptions options{
+      .name = "test log",
+      .flush_delay_threshold = 128 * kKiB,
+      .max_concurrent_writes = 64,
+      .optimize_burst_mode = llfs::read_test_var<int>("LLFS_LOG_DEVICE_BURST", /*default=*/0) != 0,
+  };
+
+  const char* file_name =  //
+      std::getenv("LLFS_LOG_DEVICE_FILE");
+
+  if (!file_name) {
+    LLFS_LOG_INFO() << "LLFS_LOG_DEVICE_FILE not specified; skipping benchmark test";
+    return;
+  }
+
+  std::cout << "LLFS_LOG_DEVICE_FILE=" << batt::c_str_literal(file_name) << std::endl;
+
+  LLFS_LOG_INFO() << BATT_INSPECT(file_name);
+
   llfs::run_log_device_benchmark([&](usize log_size, bool create, auto&& workload_fn) {
-    //+++++++++++-+-+--+----- --- -- -  -  -   -
-    // Set configuration and options.
-    //
-    llfs::IoRingLogConfig2 config{
-        .control_block_offset = 0,
-        .log_capacity = log_size,
-        .device_page_size_log2 = 9,
-        .data_alignment_log2 = 12,
-    };
-
-    llfs::LogDeviceRuntimeOptions options{
-        .name = "test log",
-        .flush_delay_threshold = 2 * kMiB,
-        .max_concurrent_writes = 64,
-    };
-
-    const char* file_name =  //
-        std::getenv("LLFS_LOG_DEVICE_FILE");
-
-    if (!file_name) {
-      LLFS_LOG_INFO() << "LLFS_LOG_DEVICE_FILE not specified; skipping benchmark test";
-      return;
-    }
-
-    std::cout << "LLFS_LOG_DEVICE_FILE=" << batt::c_str_literal(file_name) << std::endl;
-
-    LLFS_LOG_INFO() << BATT_INSPECT(file_name);
-
     //+++++++++++-+-+--+----- --- -- -  -  -   -
     // Erase any existing file.
     //
@@ -531,6 +596,13 @@ TEST(IoringLogDevice2Test, Benchmark)
     //+++++++++++-+-+--+----- --- -- -  -  -   -
     // Create a new log file and size it to the configured capacity.
     //
+    llfs::IoRingLogConfig2 config{
+        .control_block_offset = 0,
+        .log_capacity = log_size,
+        .device_page_size_log2 = 9,
+        .data_alignment_log2 = 12,
+    };
+
     llfs::StatusOr<int> status_or_fd = [&] {
       if (create) {
         return llfs::create_file_read_write(file_name, llfs::OpenForAppend{false});
@@ -588,6 +660,11 @@ TEST(IoringLogDevice2Test, Benchmark)
     // Run the passed workload.
     //
     workload_fn(log_device);
+
+    const double write_amplification =
+        double(log_device.metrics().bytes_written) / double(log_device.metrics().bytes_flushed);
+
+    LLFS_LOG_INFO() << log_device.metrics() << BATT_INSPECT(write_amplification);
   });
 }
 

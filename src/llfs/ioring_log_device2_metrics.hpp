@@ -55,6 +55,21 @@ struct IoRingLogDevice2Metrics {
    */
   CountMetric<u64> control_block_write_count{0};
 
+  /** \brief The number of times the slot_range interval to write has required splitting due to
+   * wrap-around.
+   */
+  CountMetric<u64> flush_write_split_wrap_count{0};
+
+  /** \brief The number of times a flush write lower bound has been adjusted upwards to avoid
+   * overlapping a concurrent write.
+   */
+  CountMetric<u64> flush_write_tail_collision_count{0};
+
+  /** \brief The number of times the flush tail needs to be rewritten because a subsequent
+   * concurrent write was initiated.
+   */
+  CountMetric<u64> flush_tail_rewrite_count{0};
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   /** \brief Exports all collectors in this object to the passed registry, adding the passed labels.

@@ -19,9 +19,18 @@
 namespace llfs {
 
 BATT_OBJECT_PRINT_IMPL((), IoRingLogDevice2Metrics,
-                       (bytes_written, bytes_flushed, max_concurrent_writes, burst_mode_checked,
-                        burst_mode_applied, total_write_count, flush_write_count,
-                        control_block_write_count))
+                       (bytes_written,                     //
+                        bytes_flushed,                     //
+                        max_concurrent_writes,             //
+                        burst_mode_checked,                //
+                        burst_mode_applied,                //
+                        total_write_count,                 //
+                        flush_write_count,                 //
+                        control_block_write_count,         //
+                        flush_write_split_wrap_count,      //
+                        flush_write_tail_collision_count,  //
+                        flush_tail_rewrite_count           //
+                        ))
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
@@ -39,21 +48,28 @@ void IoRingLogDevice2Metrics::export_to(MetricRegistry& registry,
   LLFS_EXPORT_METRIC_(total_write_count);
   LLFS_EXPORT_METRIC_(flush_write_count);
   LLFS_EXPORT_METRIC_(control_block_write_count);
+  LLFS_EXPORT_METRIC_(flush_write_split_wrap_count);
+  LLFS_EXPORT_METRIC_(flush_write_tail_collision_count);
+  LLFS_EXPORT_METRIC_(flush_tail_rewrite_count);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 void IoRingLogDevice2Metrics::unexport_from(MetricRegistry& registry) noexcept
 {
-  registry  //
-      .remove(this->bytes_written)
-      .remove(this->bytes_flushed)
-      .remove(this->max_concurrent_writes)
-      .remove(this->burst_mode_checked)
-      .remove(this->burst_mode_applied)
-      .remove(this->total_write_count)
-      .remove(this->flush_write_count)
-      .remove(this->control_block_write_count);
+  registry                                             //
+      .remove(this->bytes_written)                     //
+      .remove(this->bytes_flushed)                     //
+      .remove(this->max_concurrent_writes)             //
+      .remove(this->burst_mode_checked)                //
+      .remove(this->burst_mode_applied)                //
+      .remove(this->total_write_count)                 //
+      .remove(this->flush_write_count)                 //
+      .remove(this->control_block_write_count)         //
+      .remove(this->flush_write_split_wrap_count)      //
+      .remove(this->flush_write_tail_collision_count)  //
+      .remove(this->flush_tail_rewrite_count)          //
+      ;
 }
 
 }  //namespace llfs

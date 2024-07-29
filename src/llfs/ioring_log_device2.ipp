@@ -380,6 +380,7 @@ inline void IoRingLogDriver2<StorageT>::start_flush(const CommitPos observed_com
                      << BATT_INSPECT(physical_lower_bound) << BATT_INSPECT(physical_upper_bound);
 
         slot_range.upper_bound = new_upper_bound;
+        this->metrics_.flush_write_split_wrap_count.add(1);
       }
     }
 
@@ -411,6 +412,8 @@ inline void IoRingLogDriver2<StorageT>::start_flush(const CommitPos observed_com
     if (this->flush_tail_ &&
         slot_less_than(aligned_range.lower_bound, this->flush_tail_->upper_bound)) {
       aligned_range.lower_bound = this->flush_tail_->upper_bound;
+      this->metrics_.flush_write_tail_collision_count.add(1);
+
       if (aligned_range.empty()) {
         flush_upper_bound = this->flush_tail_->upper_bound;
         continue;
@@ -584,6 +587,7 @@ inline void IoRingLogDriver2<StorageT>::handle_flush_write(const SlotRange& slot
     };
 
     if (!unflushed_remainder.empty()) {
+      this->metrics_.flush_tail_rewrite_count.add(1);
       this->start_flush_write(unflushed_remainder, this->get_aligned_range(unflushed_remainder));
     }
   }

@@ -136,12 +136,6 @@ class SlotWriter::WriterLock
  public:
   using Self = WriterLock;
 
-  static constexpr usize kBeginAtomicRangeTokenSize = 3;
-  static constexpr usize kEndAtomicRangeTokenSize = 2;
-
-  static Slice<const u8> begin_atomic_range_token() noexcept;
-  static Slice<const u8> end_atomic_range_token() noexcept;
-
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   /** \brief Acquires an exclusive lock on writing to the log managed by `slot_writer`, preparing
@@ -158,19 +152,6 @@ class SlotWriter::WriterLock
   WriterLock& operator=(const WriterLock&) = delete;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
-
-  /** \brief Appends special token to the log to indicate the start of a sequence of slots that
-   * must commit/recover atomically.
-   *
-   * The token commit is deferred, requiring later calls to end_atomic_range and commit.
-   */
-  Status begin_atomic_range(const batt::Grant& caller_grant) noexcept;
-
-  /** \brief Appends special sequence to the log indicating the end of the current atomic range.
-   *
-   * The token commit is deferred, requiring a later call to commit.
-   */
-  Status end_atomic_range(const batt::Grant& caller_grant) noexcept;
 
   /** \brief Verifies that the passed grant can accomodate a new slot with the passed payload size
    * (in addition to any currently deferred slots), then allocates space in the log and writes a
@@ -206,14 +187,6 @@ class SlotWriter::WriterLock
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
-  /** \brief Appends the specified byte range to the prepared data.  `token` is just a raw byte
-   * sequence, not a full slot.  This function is used to implement the `begin_atomic_range` and
-   * `end_atomic_range` tokens.
-   */
-  Status append_token_impl(const Slice<const u8>& token, const batt::Grant& caller_grant) noexcept;
-
-  //+++++++++++-+-+--+----- --- -- -  -  -   -
-
   /** \brief The SlotWriter object passed in at construction time.
    */
   SlotWriter& slot_writer_;
@@ -288,16 +261,6 @@ class TypedSlotWriter<PackedVariant<Ts...>> : public SlotWriter
     MultiAppend& operator=(const MultiAppend&) = delete;
 
     //----- --- -- -  -  -   -
-
-    Status begin_atomic_range(const batt::Grant& caller_grant) noexcept
-    {
-      return this->writer_lock_.begin_atomic_range(caller_grant);
-    }
-
-    Status end_atomic_range(const batt::Grant& caller_grant) noexcept
-    {
-      return this->writer_lock_.end_atomic_range(caller_grant);
-    }
 
     /** \brief Packs a single slot into the log device buffer.  Does not commit the slot; all slots
      * are committed atomically when this->finalize() is called.

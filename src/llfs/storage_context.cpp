@@ -107,12 +107,7 @@ StatusOr<std::unique_ptr<LogDeviceFactory>> StorageContext::recover_log_device(
   switch (info->p_config_slot->tag) {
       //----- --- -- -  -  -   -
     case PackedConfigSlotBase::Tag::kLogDevice:
-      return recover_storage_object(
-          batt::shared_ptr_from(this), info->storage_file->file_name(),
-          FileOffsetPtr<const PackedLogDeviceConfig&>{
-              config_slot_cast<PackedLogDeviceConfig>(info->p_config_slot.object),
-              info->p_config_slot.file_offset},
-          log_runtime_options);
+      return {::llfs::make_status(::llfs::StatusCode::kLogDeviceV1Deprecated)};
 
       //----- --- -- -  -  -   -
     case PackedConfigSlotBase::Tag::kLogDevice2:
@@ -161,7 +156,7 @@ StatusOr<batt::SharedPtr<PageCache>> StorageContext::get_page_cache()
               .name = batt::to_string(base_name, "_Allocator"),
           },
           [&] {
-            IoRingLogDriverOptions options;
+            LogDeviceRuntimeOptions options;
             options.name = batt::to_string(base_name, "_AllocatorLog");
             return options;
           }(),

@@ -47,12 +47,17 @@ struct LogDeviceRuntimeOptions {
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  // The debug name of this log.
-  //
+  /** \brief The debug name of this log.
+   */
   std::string name = batt::to_string("(anonymous log ", Self::next_id(), ")");
 
+  /** \brief If there is already a write-back flush operation going on, require at least this many
+   * unflushed bytes in order to start another concurrent write.
+   */
   usize flush_delay_threshold = kDefaultFlushDelayThreshold;
 
+  /** \brief The hard limit on number of concurrent flush writes operations.
+   */
   usize max_concurrent_writes = kDefaultMaxConcurrentWrites;
 
   bool optimize_burst_mode = kDefaultOptimizeBurstMode;

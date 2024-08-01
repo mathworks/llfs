@@ -13,8 +13,13 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status initialize_log_device2(RawBlockFile& file, const IoRingLogConfig2& config)
+Status initialize_log_device2(RawBlockFile& file, const IoRingLogConfig2& config,
+                              ConfirmThisWillEraseAllMyData confirm)
 {
+  if (confirm != ConfirmThisWillEraseAllMyData::kYes) {
+    return ::llfs::make_status(::llfs::StatusCode::kFileLogEraseNotConfirmed);
+  }
+
   using AlignedUnit = std::aligned_storage_t<kLogAtomicWriteSize, kLogAtomicWriteSize>;
 
   const usize device_page_size = usize{1} << config.device_page_size_log2;

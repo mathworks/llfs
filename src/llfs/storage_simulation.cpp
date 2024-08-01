@@ -11,10 +11,9 @@
 
 #include <llfs/basic_ring_buffer_log_device.hpp>
 #include <llfs/confirm.hpp>
-#include <llfs/ioring_log_driver.hpp>
-#include <llfs/ioring_log_driver_options.hpp>
-#include <llfs/ioring_log_flush_op.hpp>
-#include <llfs/ioring_log_initializer.hpp>
+#include <llfs/ioring_log_config2.hpp>
+#include <llfs/ioring_log_device2.hpp>
+#include <llfs/log_device_runtime_options.hpp>
 #include <llfs/simulated_log_device.hpp>
 #include <llfs/simulated_log_device_impl.hpp>
 #include <llfs/simulated_page_device.hpp>
@@ -80,12 +79,8 @@ void StorageSimulation::run_main_task(std::function<void()> main_fn)
 
   const bool was_running = this->is_running_.exchange(true);
 
-  const bool saved_quiet_logging =
-      default_ioring_quiet_failure_logging().exchange(this->low_level_log_devices_);
-
   auto on_scope_exit = batt::finally([&] {
     this->is_running_.store(was_running);
-    default_ioring_quiet_failure_logging().store(saved_quiet_logging);
     LLFS_LOG_SIM_EVENT() << "leaving run_main_task()";
   });
 
@@ -233,38 +228,27 @@ std::unique_ptr<LogDevice> StorageSimulation::get_log_device(const std::string& 
       if (!capacity) {
         return None;
       }
-      auto config = IoRingLogConfig::from_logical_size(*capacity);
-      return Interval<i64>{
-          .lower_bound = BATT_CHECKED_CAST(i64, config.physical_offset),
-          .upper_bound = BATT_CHECKED_CAST(i64, config.physical_offset + config.physical_size),
-      };
+      auto config = IoRingLogConfig2::from_logical_size(*capacity);
+      return config.offset_range();
     }();
     SimulatedLogDeviceStorage storage = this->get_log_device_storage(name, capacity, file_offset);
 
-    auto config = IoRingLogConfig::from_logical_size(storage.log_size());
+    auto config = IoRingLogConfig2::from_logical_size(storage.log_size());
 
     if (!storage.is_initialized()) {
-      Status init_status = initialize_ioring_log_device(*storage.get_raw_block_file(), config,
-                                                        ConfirmThisWillEraseAllMyData::kYes);
+      Status init_status = initialize_log_device2(*storage.get_raw_block_file(), config,
+                                                  ConfirmThisWillEraseAllMyData::kYes);
 
       BATT_CHECK_OK(init_status);
 
       storage.set_initialized(true);
     }
 
-    auto options = IoRingLogDriverOptions::with_default_values();
+    auto options = LogDeviceRuntimeOptions::with_default_values();
     options.name = name;
-    options.limit_queue_depth(config.block_count());
 
-    using DriverT = BasicIoRingLogDriver<BasicIoRingLogFlushOp, SimulatedLogDeviceStorage>;
-    using LogDeviceT = BasicRingBufferLogDevice<DriverT>;
-
-    batt::TaskScheduler& scheduler =
-        this->is_running() ? this->task_scheduler() : batt::Runtime::instance().default_scheduler();
-
-    auto log_device =
-        std::make_unique<LogDeviceT>(RingBuffer::TempFile{.byte_size = config.logical_size},
-                                     scheduler, std::move(storage), config, options);
+    auto log_device = std::make_unique<BasicIoRingLogDevice2<SimulatedLogDeviceStorage>>(
+        config, options, std::move(storage));
 
     BATT_CHECK_OK(log_device->open());
 

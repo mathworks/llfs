@@ -136,6 +136,9 @@ bool initialize_status_codes()
       CODE_WITH_MSG_(StatusCode::kLogControlBlockBadMagic,
                      "Log device control block magic number is not correct (is this really a log "
                      "device?)"),  // 65,
+      CODE_WITH_MSG_(StatusCode::kLogDeviceV1Deprecated,
+                     "IoRingLogDevice (aka LogDevice storage object) has been deprecated; use "
+                     "IoRingLogDevice2/LogDevice2 instead"),  // 66,
   });
   return initialized;
 }

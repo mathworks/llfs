@@ -14,7 +14,6 @@
 //
 
 #include <llfs/int_types.hpp>
-#include <llfs/log_device_config.hpp>
 #include <llfs/log_device_config2.hpp>
 #include <llfs/optional.hpp>
 #include <llfs/uuid.hpp>
@@ -27,42 +26,6 @@ namespace llfs {
 // These types are provided for the convenience of more complex configs that nest one or more
 // LogDevice configs.
 //
-
-//+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-struct CreateNewLogDevice {
-  LogDeviceConfigOptions options;
-};
-
-inline bool operator==(const CreateNewLogDevice& l, const CreateNewLogDevice& r)
-{
-  return l.options == r.options;
-}
-
-inline bool operator!=(const CreateNewLogDevice& l, const CreateNewLogDevice& r)
-{
-  return !(l == r);
-}
-
-//+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-struct CreateNewLogDeviceWithDefaultSize {
-  Optional<boost::uuids::uuid> uuid;
-  Optional<u16> pages_per_block_log2;
-};
-
-inline bool operator==(const CreateNewLogDeviceWithDefaultSize& l,
-                       const CreateNewLogDeviceWithDefaultSize& r)
-{
-  return l.uuid == r.uuid  //
-         && l.pages_per_block_log2 == r.pages_per_block_log2;
-}
-
-inline bool operator!=(const CreateNewLogDeviceWithDefaultSize& l,
-                       const CreateNewLogDeviceWithDefaultSize& r)
-{
-  return !(l == r);
-}
 
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 //
@@ -120,9 +83,10 @@ inline bool operator!=(const CreateNewLogDevice2WithDefaultSize& l,
 
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-using NestedLogDeviceConfig =
-    std::variant<CreateNewLogDevice, CreateNewLogDeviceWithDefaultSize, LinkToExistingLogDevice,
-                 CreateNewLogDevice2, CreateNewLogDevice2WithDefaultSize>;
+using NestedLogDeviceConfig = std::variant<LinkToExistingLogDevice,            //
+                                           CreateNewLogDevice2,                //
+                                           CreateNewLogDevice2WithDefaultSize  //
+                                           >;
 
 }  //namespace llfs
 

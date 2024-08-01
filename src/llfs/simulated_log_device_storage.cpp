@@ -8,22 +8,9 @@
 
 #include <llfs/simulated_log_device_storage.hpp>
 //
-#include <llfs/ioring_log_driver.hpp>
-#include <llfs/ioring_log_driver.ipp>
-#include <llfs/ioring_log_flush_op.hpp>
-#include <llfs/ioring_log_flush_op.ipp>
 #include <llfs/storage_simulation.hpp>
 
 namespace llfs {
-
-// Explicitly instantiate BasicIoRingLogDriver for the simulated LogDevice storage.
-//
-template class BasicIoRingLogDriver<BasicIoRingLogFlushOp, SimulatedLogDeviceStorage>;
-
-// BasicIoRingLogFlushOp is required by BasicIoRingLogDriver, so explicitly instantiate that too.
-//
-template class BasicIoRingLogFlushOp<
-    BasicIoRingLogDriver<BasicIoRingLogFlushOp, SimulatedLogDeviceStorage>>;
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 // class SimulatedLogDeviceStorage::DurableState

@@ -15,15 +15,34 @@
 
 #include <llfs/file_offset_ptr.hpp>
 #include <llfs/int_types.hpp>
-#include <llfs/ioring_log_config2.hpp>
+#include <llfs/interval.hpp>
 
 namespace llfs {
 
 struct PackedLogDeviceConfig2;
 
 struct IoRingLogConfig2 {
+  using Self = IoRingLogConfig2;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  static constexpr usize kDefaultDevicePageSize = 512;
+  static constexpr usize kDefaultDataAlignment = 4096;
+
+  static constexpr u16 kDefaultDevicePageSizeLog2 = 9 /*=log2(512)*/;
+  static constexpr u16 kDefaultDataAlignmentLog2 = 12 /*=log2(4096)*/;
+
+  static_assert((usize{1} << Self::kDefaultDevicePageSizeLog2) == Self::kDefaultDevicePageSize);
+  static_assert((usize{1} << Self::kDefaultDataAlignmentLog2) == Self::kDefaultDataAlignment);
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   static IoRingLogConfig2 from_packed(
       const FileOffsetPtr<const PackedLogDeviceConfig2&>& packed_config);
+
+  static IoRingLogConfig2 from_logical_size(u64 logical_size,
+                                            Optional<u64> opt_device_page_size = None,
+                                            Optional<u64> opt_data_alignment = None);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -37,6 +56,15 @@ struct IoRingLogConfig2 {
   i64 control_block_size() const noexcept
   {
     return i64{1} << this->data_alignment_log2;
+  }
+
+  Interval<i64> offset_range() const noexcept
+  {
+    return Interval<i64>{
+        .lower_bound = this->control_block_offset,
+        .upper_bound = this->control_block_offset + this->control_block_size() +
+                       static_cast<i64>(this->log_capacity),
+    };
   }
 };
 

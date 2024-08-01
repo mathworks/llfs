@@ -217,12 +217,12 @@ Status VolumeTrimmer::run()
     //+++++++++++-+-+--+----- --- -- -  -  -   -
     // Wait for the trim point to advance.
     //
-    BATT_DEBUG_INFO("waiting for trim target to advance; "
-                    << BATT_INSPECT(this->trim_control_.get_lower_bound())
-                    << BATT_INSPECT(least_upper_bound) << BATT_INSPECT(bytes_trimmed)
-                    << BATT_INSPECT(trim_lower_bound) << std::endl
-                    << BATT_INSPECT(this->trim_control_.debug_info()) << BATT_INSPECT(loop_counter)
-                    << BATT_INSPECT(this->trim_control_.is_closed()));
+    BATT_DEBUG_INFO(
+        "waiting for trim target to advance; "
+        << BATT_INSPECT(this->trim_control_.get_lower_bound()) << BATT_INSPECT(least_upper_bound)
+        << BATT_INSPECT(bytes_trimmed) << BATT_INSPECT(trim_lower_bound) << std::endl
+        << BATT_INSPECT(this->trim_control_.debug_info()) << BATT_INSPECT(loop_counter)
+        << BATT_INSPECT(this->trim_control_.is_closed()) << BATT_INSPECT(this->trim_delay_));
 
     StatusOr<slot_offset_type> trim_upper_bound = this->await_trim_target(least_upper_bound);
 

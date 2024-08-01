@@ -245,7 +245,11 @@ class BasicRingBufferLogDevice<Impl>::WriterImpl : public LogDevice::Writer
     const usize space_required = byte_count + head_room;
 
     if (this->space() < space_required) {
-      return ::llfs::make_status(StatusCode::kPrepareFailedTrimRequired);
+      BATT_REQUIRE_OK(::llfs::make_status(StatusCode::kPrepareFailedTrimRequired))
+          << BATT_INSPECT(space_required) << BATT_INSPECT(this->space())
+          << BATT_INSPECT(this->device_->driver_.get_trim_pos())
+          << BATT_INSPECT(this->device_->driver_.get_commit_pos())
+          << boost::stacktrace::stacktrace{};
     }
 
     const slot_offset_type commit_pos = this->device_->driver_.get_commit_pos();

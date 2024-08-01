@@ -36,7 +36,7 @@ using llfs::StatusOr;
 //     the confirmed trim and flush never go backwards, and that all confirmed flushed data can be
 //     read.
 //
-class IoringLogDevice2SimTest : public ::testing::Test
+class IoRingLogDevice2SimTest : public ::testing::Test
 {
  public:
   static constexpr usize kNumSeeds = 250 * 1000;
@@ -326,6 +326,8 @@ class IoringLogDevice2SimTest : public ::testing::Test
         if (!trim_status.ok()) {
           break;
         }
+        BATT_CHECK_EQ(this->log_device->slot_range(llfs::LogReadMode::kDurable).lower_bound,
+                      trimmed_slot.upper_bound);
 
         Status await_status = this->log_writer->await(llfs::BytesAvailable{
             .size = trimmed_slot.size() + observed_space,
@@ -503,11 +505,11 @@ class IoringLogDevice2SimTest : public ::testing::Test
 
   };  // struct Scenario
 
-};  // class IoringLogDevice2SimTest
+};  // class IoRingLogDevice2SimTest
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
-TEST_F(IoringLogDevice2SimTest, Simulation)
+TEST_F(IoRingLogDevice2SimTest, Simulation)
 {
   const usize kNumThreads = std::thread::hardware_concurrency();
   const usize kUpdateInterval = kNumSeeds / 20;
@@ -558,7 +560,7 @@ TEST_F(IoringLogDevice2SimTest, Simulation)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-TEST(IoringLogDevice2Test, Benchmark)
+TEST(IoRingLogDevice2Test, Benchmark)
 {
   //+++++++++++-+-+--+----- --- -- -  -  -   -
   // Set configuration and options.

@@ -35,8 +35,7 @@ class VolumeMultiAppend
    */
   static constexpr u64 calculate_grant_size(u64 slots_total_size) noexcept
   {
-    return slots_total_size + SlotWriter::WriterLock::kBeginAtomicRangeTokenSize +
-           SlotWriter::WriterLock::kEndAtomicRangeTokenSize;
+    return slots_total_size;
   }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -85,11 +84,6 @@ class VolumeMultiAppend
   {
     BATT_CHECK(!this->closed_);
 
-    if (this->first_) {
-      this->first_ = false;
-      BATT_REQUIRE_OK(this->op_.begin_atomic_range(grant));
-    }
-
     llfs::PackObjectAsRawData<const T&> packed_obj_as_raw{payload};
 
     return this->op_.append(grant, packed_obj_as_raw);
@@ -115,10 +109,6 @@ class VolumeMultiAppend
   {
     BATT_CHECK(!this->closed_);
 
-    if (!this->first_) {
-      BATT_REQUIRE_OK(this->op_.end_atomic_range(grant));
-    }
-
     StatusOr<SlotRange> result = this->op_.finalize(grant);
     BATT_REQUIRE_OK(result);
 
@@ -141,11 +131,6 @@ class VolumeMultiAppend
   // Implements the actual log appending.
   //
   TypedSlotWriter<VolumeEventVariant>::MultiAppend op_;
-
-  // true iff no call append has yet been made; used to determine when we should write a begin
-  // atomic range token to the log.
-  //
-  bool first_ = true;
 
   // true iff commit or cancel has been called.
   //

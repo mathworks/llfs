@@ -83,6 +83,7 @@ class IoRingLogDriver2
   Status set_trim_pos(slot_offset_type trim_pos)
   {
     this->observed_watch_[kTargetTrimPos].set_value(trim_pos);
+    BATT_REQUIRE_OK(this->await_trim_pos(trim_pos));
     return OkStatus();
   }
 

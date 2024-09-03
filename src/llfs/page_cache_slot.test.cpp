@@ -32,6 +32,8 @@ namespace {
 //     f. Valid + Filled + Pinned --(acquire_pin)-- >Valid + Filled + Pinned
 //     g. Valid + Filled + Pinned --(release_pin)-- >Valid + Filled + Pinned
 //     h. Valid + Filled + Pinned --(release_pin)-- >Valid + Filled
+//     i. Valid + Cleared --(acquire_pin)--> Valid + Cleared + Pinned
+//     j. Valid + Cleared + Pinned --(release_pin)--> Valid + Cleared
 //  4. extend_pin increases pin count
 //     a. success if already > 0
 //     b. panic otherwise
@@ -44,6 +46,7 @@ namespace {
 //     a. Valid + Filled
 //     b. Valid + Cleared
 //     c. Valid + Filled + Pinned
+//     d. Valid + Cleared + Pinned
 //  8. update_latest_use
 //  9. set_obsolete_hint
 //
@@ -76,7 +79,7 @@ TEST_F(PageCacheSlotTest, CreateSlotsDeath)
     EXPECT_FALSE(slot->is_valid());
 
     if (i == 0) {
-      EXPECT_DEATH(slot->value(), ".*Assert.*failed:.*this->value_.*==.*true.*");
+      EXPECT_EQ(slot->value(), nullptr);
     }
 
     EXPECT_FALSE(slot->key().is_valid());
@@ -131,6 +134,8 @@ TEST_F(PageCacheSlotTest, AddRemoveRefDeath)
 //     f. Valid + Filled + Pinned --(acquire_pin)-- >Valid + Filled + Pinned
 //     g. Valid + Filled + Pinned --(release_pin)-- >Valid + Filled + Pinned
 //     h. Valid + Filled + Pinned --(release_pin)-- >Valid + Filled
+//     i. Valid + Cleared --(acquire_pin)--> Valid + Cleared + Pinned
+//     j. Valid + Cleared + Pinned --(release_pin)--> Valid + Cleared
 //
 TEST_F(PageCacheSlotTest, StateTransitions)
 {
@@ -142,6 +147,20 @@ TEST_F(PageCacheSlotTest, StateTransitions)
   //
   slot->clear();
   EXPECT_TRUE(slot->is_valid());
+
+  //     i. Valid + Cleared --(acquire_pin)--> Valid + Cleared + Pinned
+  //
+  {
+    llfs::PageCacheSlot::PinnedRef valid_cleared_ref = slot->acquire_pin(llfs::PageId{}, /*ignore_key=*/true);
+    EXPECT_EQ(valid_cleared_ref.value(), nullptr);
+    EXPECT_EQ(slot->pin_count(), 1u);
+    EXPECT_EQ(slot->ref_count(), 1u);
+  }
+
+  //     j. Valid + Cleared + Pinned --(release_pin)--> Valid + Cleared
+  //
+  EXPECT_EQ(slot->pin_count(), 0);
+  EXPECT_EQ(slot->ref_count(), 0);
 
   //     c. Valid + Cleared --(evict)--> Invalid
   //
@@ -390,6 +409,7 @@ TEST_F(PageCacheSlotTest, FillFailureAlreadyFilledDeath)
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //  7. fill fails when state is not Invalid:
 //     b. Valid + Cleared
+//     d. Valid + Cleared + Pinned
 //
 TEST_F(PageCacheSlotTest, FillFailureClearedDeath)
 {
@@ -399,6 +419,13 @@ TEST_F(PageCacheSlotTest, FillFailureClearedDeath)
 
   slot->clear();
 
+  {
+    llfs::PageCacheSlot::PinnedRef valid_cleared_ref = slot->acquire_pin(llfs::PageId{}, /*ignore_key=*/true);
+    EXPECT_TRUE(slot->is_valid());
+    EXPECT_DEATH(slot->fill(llfs::PageId{2}), "Assert.*fail.*is.*valid");
+  }
+
+  EXPECT_EQ(slot->pin_count(), 0u);
   EXPECT_TRUE(slot->is_valid());
   EXPECT_DEATH(slot->fill(llfs::PageId{2}), "Assert.*fail.*is.*valid");
   EXPECT_DEATH(slot->clear(), "Assert.*fail.*is.*valid");

@@ -54,8 +54,10 @@ PageId PageCacheSlot::key() const
 //
 batt::Latch<std::shared_ptr<const PageView>>* PageCacheSlot::value() noexcept
 {
-  BATT_CHECK(this->value_);
-  return std::addressof(*this->value_);
+  if (this->value_) {
+    return std::addressof(*this->value_);
+  }
+  return nullptr;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -139,6 +141,13 @@ auto PageCacheSlot::acquire_pin(PageId key, bool ignore_key) noexcept -> PinnedR
   }
 
   BATT_UNSUPPRESS_IF_GCC()
+
+  // If we aren't ignoring the slot's key and are looking to use the slot's value,
+  // make sure that the value is in a valid state before creating a PinnedRef.
+  //
+  if (!ignore_key) {
+    BATT_CHECK(this->value_);
+  }
 
   return PinnedRef{this};
 }

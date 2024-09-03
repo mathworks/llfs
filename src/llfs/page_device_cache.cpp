@@ -181,9 +181,6 @@ void PageDeviceCache::erase(PageId key)
   // If the slot is still holding the passed id, then clear it out.
   //
   PageCacheSlot* slot = this->slot_pool_->get_slot(slot_index);
-  if (!slot->key().is_valid()) {
-    return;
-  }
   if (slot->evict_if_key_equals(key)) {
     invalidate_ref();
 
@@ -198,7 +195,7 @@ void PageDeviceCache::erase(PageId key)
     PageCacheSlot::PinnedRef pinned = slot->acquire_pin(PageId{}, /*ignore_key=*/true);
     if (pinned) {
       const PageId observed_key = pinned.key();
-      if (observed_key == key ||
+      if (!observed_key.is_valid() || observed_key == key ||
           PageIdFactory::get_device_id(observed_key) != this->page_ids_.get_device_id() ||
           this->page_ids_.get_physical_page(observed_key) != physical_page) {
         invalidate_ref();

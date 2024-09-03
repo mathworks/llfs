@@ -54,6 +54,7 @@ batt::StatusOr<PageCacheSlot::PinnedRef> PageDeviceCache::find_or_insert(
     PageId key, const std::function<void(const PageCacheSlot::PinnedRef&)>& initialize)
 {
   BATT_CHECK_EQ(PageIdFactory::get_device_id(key), this->page_ids_.get_device_id());
+  this->metrics().query_count.fetch_add(1);
 
   // Lookup the cache table entry for the given page id.
   //
@@ -104,8 +105,10 @@ batt::StatusOr<PageCacheSlot::PinnedRef> PageDeviceCache::find_or_insert(
 
         // Done! (Found existing value)
         //
+        this->metrics().hit_count.fetch_add(1);
         return {std::move(pinned)};
       }
+      this->metrics().stale_count.fetch_add(1);
     }
 
     // No existing value found, or pin failed; allocate a new slot, fill it, and attempt to CAS it
@@ -115,6 +118,7 @@ batt::StatusOr<PageCacheSlot::PinnedRef> PageDeviceCache::find_or_insert(
       new_slot.emplace();
       new_slot->p_slot = this->slot_pool_->allocate();
       if (!new_slot->p_slot) {
+        this->metrics().full_count.fetch_add(1);
         return ::llfs::make_status(StatusCode::kCacheSlotsFull);
       }
       BATT_CHECK(!new_slot->p_slot->is_valid());
@@ -142,6 +146,7 @@ batt::StatusOr<PageCacheSlot::PinnedRef> PageDeviceCache::find_or_insert(
 
   // Done! (Inserted new value)
   //
+  this->metrics().insert_count.fetch_add(1);
   return {std::move(new_slot->pinned_ref)};
 }
 
@@ -170,18 +175,21 @@ void PageDeviceCache::erase(PageId key)
         break;
       }
     } while (slot_index == slot_index_to_erase);
+    this->metrics().erase_count.fetch_add(1);
   };
 
   // If the slot is still holding the passed id, then clear it out.
   //
   PageCacheSlot* slot = this->slot_pool_->get_slot(slot_index);
+  if (!slot->key().is_valid()) {
+    return;
+  }
   if (slot->evict_if_key_equals(key)) {
     invalidate_ref();
 
     // Important!  Only clear the slot once we have invalidated our table entry.
     //
     slot->clear();
-
   } else {
     // If we weren't able to evict `key`, we can still try to read the slot to see if it contains
     // `key` but is non-evictable (because there are outstanding pins); if this is the case, then
@@ -191,7 +199,8 @@ void PageDeviceCache::erase(PageId key)
     if (pinned) {
       const PageId observed_key = pinned.key();
       if (observed_key == key ||
-          PageIdFactory::get_device_id(observed_key) != this->page_ids_.get_device_id()) {
+          PageIdFactory::get_device_id(observed_key) != this->page_ids_.get_device_id() ||
+          this->page_ids_.get_physical_page(observed_key) != physical_page) {
         invalidate_ref();
         if (observed_key == key) {
           slot->set_obsolete_hint();

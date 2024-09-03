@@ -93,7 +93,7 @@ class PageCacheSlot::Pool : public boost::intrusive_ref_counter<Pool>
 
   /** \brief Returns the metrics for this pool.
    */
-  Metrics& metrics() const
+  Metrics& metrics()
   {
     return this->metrics_;
   }

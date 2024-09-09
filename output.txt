@@ -1,0 +1,758 @@
+/home/gbornste/Desktop/Projects/MPS/llfs
+sending incremental file list
+output.txt
+deleting .vscode/tasks.json
+deleting .vscode/launch.json
+deleting .vscode/c_cpp_properties.json
+deleting src/CMakeUserPresets.json
+.vscode/
+src/
+src/llfs/page_cache.cpp
+
+sent 32,916 bytes  received 597 bytes  67,026.00 bytes/sec
+total size is 15,792,275  speedup is 471.23
+gbornste
+huponexit      	on
+Docker image: registry.gitlab.com/batteriescpp/batteries:v0.50.7.linux_gcc11_amd64
+CONAN_USER_HOME=/ssh:a8-build-host:/home/gbornste/.a8.conan
+XDG_CACHE_HOME=/ssh:a8-build-host:/home/gbornste/.a8.conan/.cache
+CONAN_HOME=/ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16
+default
+batteriesincluded: https://batteriesincluded.cc/artifactory/api/conan/conan-local [Verify SSL: True, Enabled: True]
+Setting Conan User... TODO [tastolfi 2023-08-10] fix these commands for Conan 2!
+(Setup DONE)
+conan-targets.mk: Detected Conan Version==2
+CONAN_CONFIG_FLAGS is --profile "/etc/conan_profile.default" -s build_type=RelWithDebInfo
+TCMALLOC_ENV=
+rm -rf "/ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/build/RelWithDebInfo"
+rm -rf "/ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/test_package/build"
+(test -f /setup-conan.sh && /setup-conan.sh || echo "Using ambient Conan config (/setup-conan.sh not found)")
+default
+batteriesincluded: https://batteriesincluded.cc/artifactory/api/conan/conan-local [Verify SSL: True, Enabled: True]
+mkdir -p "/ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/build/RelWithDebInfo"
+(cd "/ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/build/RelWithDebInfo" &&  BATT_BUILD_TESTS=1 conan install    --profile "/etc/conan_profile.default" -s build_type=RelWithDebInfo --build=missing   "/ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs")
+
+======== Input profiles ========
+Profile host:
+[settings]
+arch=x86_64
+build_type=RelWithDebInfo
+compiler=gcc
+compiler.cppstd=20
+compiler.libcxx=libstdc++11
+compiler.version=11
+os=Linux
+[tool_requires]
+&: cmake/3.26.4
+[buildenv]
+CXXFLAGS=-fno-omit-frame-pointer
+CFLAGS=-fno-omit-frame-pointer
+
+Profile build:
+[settings]
+arch=x86_64
+build_type=Release
+compiler=gcc
+compiler.cppstd=gnu17
+compiler.libcxx=libstdc++11
+compiler.version=11
+os=Linux
+
+
+======== Computing dependency graph ========
+Graph root
+    conanfile.py (llfs/0.1.0-devel): /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/conanfile.py
+Requirements
+    abseil/20240116.2#54f81a20ccd26a6558e18d57059847e2 - Cache
+    batteries/0.55.1#ea02793f9c1e7b3bc24b7ff99a9a0a34 - Cache
+    boost/1.83.0#fd341e07fe362c605d187ed592f2fce8 - Cache
+    bzip2/1.0.8#d00dac990f08d991998d624be81a9526 - Cache
+    cli11/2.3.2#1424b9b1d9e3682a7122f415b078b4d7 - Cache
+    gflags/2.2.2#48d1262ffac8d30c3224befb8275a533 - Cache
+    glog/0.6.0#f25568477a1100349c4c2959ce946717 - Cache
+    gtest/1.14.0#25e2a474b4d1aecf5ff4f0555dcdf72c - Cache
+    libbacktrace/cci.20210118#a7691bfccd8caaf66309df196790a5a1 - Cache
+    libfuse/3.16.2#b426f95ed62675cf8fb54bc407101696 - Cache
+    libunwind/1.7.2#4f36792edb3ed2c6c6525397f5643c66 - Cache
+    liburing/2.4#463d05ef1b3465d36eba39a7f2844df3 - Cache
+    openssl/3.2.0#d52f6cbf28a54701393831929f47dbbd - Cache
+    pcg-cpp/cci.20220409#b3c4e07c6ef6c2b5ddf2886f8a637bc7 - Cache
+    protobuf/5.27.0#ccce9aa25886556c6d66c77b2be4d806 - Cache
+    zlib/1.3#5c0f3a1a222eebb6bff34980bcd3e024 - Cache
+Test requirements
+    gtest/cci.20210126#dafbdf84b58cd687075ace7314651c1a - Cache
+Build requirements
+    b2/5.2.1#91bc73931a0acb655947a81569ed8b80 - Cache
+    cmake/3.26.4#0b40747e190e755932767f2ec4768ff5 - Cache
+    cmake/3.30.1#6d832cf2d46f6ec969ca5ed5b41f91eb - Cache
+    meson/1.2.0#68ba3b73f547af9c46816b2ef842a99d - Cache
+    ninja/1.12.1#fd583651bf0c6a901943495d49878803 - Cache
+Resolved version ranges
+    b2/[>=5.2 <6]: b2/5.2.1
+    cmake/[>=3.16 <4]: cmake/3.30.1
+    gtest/[>=1.14.0]: gtest/cci.20210126
+    ninja/[>=1.10.2 <2]: ninja/1.12.1
+    pcg-cpp/[>=cci.20220409]: pcg-cpp/cci.20220409
+    protobuf/[>=3.21.12]: protobuf/5.27.0
+Overrides
+    zlib/[>=1.2.11 <2]: ['zlib/1.3']
+    libunwind/1.8.0: ['libunwind/1.7.2']
+
+======== Computing necessary packages ========
+abseil/20240116.2: Checking 7 compatible configurations
+abseil/20240116.2: Main binary package '427ba685c637d4b02789cda2bd590c754eb03890' missing. Using compatible package 'e951c2cb74ff982f51710131ee36b3e28f8e4563': compiler.cppstd=17
+gflags/2.2.2: Checking 11 compatible configurations
+gflags/2.2.2: Main binary package '44eabc4771aeee384507fc08c863c6435178263c' missing. Using compatible package '3d216c4a794ad4ead4d22073c6f5e44018989263': compiler.cppstd=17
+gtest/1.14.0: Checking 7 compatible configurations
+gtest/1.14.0: Main binary package 'dec6797a53c8ee92bc1c6586540cd6f2972efe5b' missing. Using compatible package '8c79091f8481612ee4242f0f3ef3cc13a5a12800': compiler.cppstd=17
+gtest/cci.20210126: Checking 9 compatible configurations
+gtest/cci.20210126: Main binary package 'f4512038026b92eb5f53a1892437be6d7a527c40' missing. Using compatible package 'ad418b1d6effc6877f158337ee28e1f5cb0fc13a': compiler.cppstd=17
+protobuf/5.27.0: Checking 7 compatible configurations
+protobuf/5.27.0: Main binary package 'fe688174d9d3f9d41ff7419b12114d243c3f8481' missing. Using compatible package '5fe12e7b087c0c4e0ee89ed683371984f642bce4': compiler.cppstd=17
+glog/0.6.0: Checking 11 compatible configurations
+glog/0.6.0: Main binary package '00615d8b4cc96735b0723ca020d03b8b83bd7540' missing. Using compatible package 'b87780c0fc63b82ede7a99db267fd11711444420': compiler.cppstd=17
+batteries/0.55.1: Checking 11 compatible configurations
+batteries/0.55.1: Main binary package '9d861a1e8ed014810eb7ff93c7bc5679e59011bd' missing. Using compatible package 'd77d782ece1b8314e57db1b08eb99bf84b8ced68': compiler.cppstd=17
+Requirements
+    abseil/20240116.2#54f81a20ccd26a6558e18d57059847e2:e951c2cb74ff982f51710131ee36b3e28f8e4563#00d86a5fbcd989bb64c057f821f767a8 - Cache
+    batteries/0.55.1#ea02793f9c1e7b3bc24b7ff99a9a0a34:d77d782ece1b8314e57db1b08eb99bf84b8ced68#e21b5a821423d65308ac97cf15f3501a - Cache
+    boost/1.83.0#fd341e07fe362c605d187ed592f2fce8:f7b96315a752d5ea8ef3c2eec56915a9bd765c81#9c7df5af22e95b30dc8744ea52d5d940 - Cache
+    bzip2/1.0.8#d00dac990f08d991998d624be81a9526:d2fd0bf682562652eedb970d66e83aded80b3fb1#6cf5c17b419f33a0a925d1d8e281d3cd - Cache
+    cli11/2.3.2#1424b9b1d9e3682a7122f415b078b4d7:da39a3ee5e6b4b0d3255bfef95601890afd80709#e04bf357d9bd58bd3f1042ff121bf921 - Cache
+    gflags/2.2.2#48d1262ffac8d30c3224befb8275a533:3d216c4a794ad4ead4d22073c6f5e44018989263#908a0eb0138f96b6dc4ed65828b96779 - Cache
+    glog/0.6.0#f25568477a1100349c4c2959ce946717:b87780c0fc63b82ede7a99db267fd11711444420#207682f0e58e96330acab25ad6d79832 - Cache
+    gtest/1.14.0#25e2a474b4d1aecf5ff4f0555dcdf72c:8c79091f8481612ee4242f0f3ef3cc13a5a12800#c3336292a69ce58cecd28ce76179735c - Cache
+    libbacktrace/cci.20210118#a7691bfccd8caaf66309df196790a5a1:7141b46dc36f162c1999825c09b1ec68c17d6616#6e39386f8f08273ee4c765ac49c8dde2 - Cache
+    libfuse/3.16.2#b426f95ed62675cf8fb54bc407101696:7141b46dc36f162c1999825c09b1ec68c17d6616#1422880a721df66ec7d9a88e9f180972 - Cache
+    libunwind/1.7.2#4f36792edb3ed2c6c6525397f5643c66:76ad123c0b4672150480ad00bc8c5ebde5faacd0#bffcb69ae1800b801f12ab5f4201ad27 - Cache
+    liburing/2.4#463d05ef1b3465d36eba39a7f2844df3:893e43a1ce9cc27ea3549b60ceba7dccc92f04f9#4d36a32e2db28cd63a6f458013bf344a - Cache
+    openssl/3.2.0#d52f6cbf28a54701393831929f47dbbd:f7124f4882e8a147ba488837fa6a04d4bb37cbf7#f8082f47bb78718fa349b20379316359 - Cache
+    pcg-cpp/cci.20220409#b3c4e07c6ef6c2b5ddf2886f8a637bc7:da39a3ee5e6b4b0d3255bfef95601890afd80709#4703807cd2cb00aba979bcd262eff030 - Cache
+    protobuf/5.27.0#ccce9aa25886556c6d66c77b2be4d806:5fe12e7b087c0c4e0ee89ed683371984f642bce4#d806df8d48a82f04534cf590d741597c - Cache
+    zlib/1.3#5c0f3a1a222eebb6bff34980bcd3e024:7141b46dc36f162c1999825c09b1ec68c17d6616#3e28b9b20446b1f05240c36c569bb31d - Cache
+Test requirements
+Build requirements
+    cmake/3.26.4#0b40747e190e755932767f2ec4768ff5:63fead0844576fc02943e16909f08fcdddd6f44b#0e341efd7f3d724d3a793aacff5b86a3 - Cache
+Skipped binaries
+    gtest/cci.20210126, b2/5.2.1, cmake/3.30.1, meson/1.2.0, ninja/1.12.1
+
+======== Installing packages ========
+abseil/20240116.2: Already installed! (1 of 17)
+bzip2/1.0.8: Already installed! (2 of 17)
+cli11/2.3.2: Already installed! (3 of 17)
+cmake/3.26.4: Already installed! (4 of 17)
+cmake/3.26.4: Appending PATH environment variable: /ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/cmake5aa963403baef/p/bin
+gflags/2.2.2: Already installed! (5 of 17)
+gtest/1.14.0: Already installed! (6 of 17)
+libbacktrace/cci.20210118: Already installed! (7 of 17)
+liburing/2.4: Already installed! (8 of 17)
+pcg-cpp/cci.20220409: Already installed! (9 of 17)
+zlib/1.3: Already installed! (10 of 17)
+libfuse/3.16.2: Already installed! (11 of 17)
+boost/1.83.0: Already installed! (12 of 17)
+libunwind/1.7.2: Already installed! (13 of 17)
+openssl/3.2.0: Already installed! (14 of 17)
+protobuf/5.27.0: Already installed! (15 of 17)
+glog/0.6.0: Already installed! (16 of 17)
+batteries/0.55.1: Already installed! (17 of 17)
+WARN: deprecated: Usage of deprecated Conan 1.X features that will be removed in Conan 2.X:
+WARN: deprecated:     'cpp_info.names' used in: abseil/20240116.2, gtest/1.14.0, zlib/1.3, boost/1.83.0, bzip2/1.0.8, protobuf/5.27.0, openssl/3.2.0, batteries/0.55.1, cli11/2.3.2
+WARN: deprecated:     'cpp_info.build_modules' used in: abseil/20240116.2, gflags/2.2.2, protobuf/5.27.0, bzip2/1.0.8, openssl/3.2.0
+WARN: deprecated:     'env_info' used in: cmake/3.26.4, boost/1.83.0, protobuf/5.27.0, bzip2/1.0.8, openssl/3.2.0
+WARN: deprecated:     'cpp_info.filenames' used in: boost/1.83.0, protobuf/5.27.0
+WARN: deprecated:     'user_info' used in: boost/1.83.0
+
+======== Finalizing install (deploy, generators) ========
+conanfile.py (llfs/0.1.0-devel): Calling generate()
+conanfile.py (llfs/0.1.0-devel): Generators folder: /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/build/RelWithDebInfo/generators
+conanfile.py (llfs/0.1.0-devel): CMakeToolchain generated: conan_toolchain.cmake
+conanfile.py (llfs/0.1.0-devel): Preset 'conan-relwithdebinfo' added to CMakePresets.json. Invoke it manually using 'cmake --preset conan-relwithdebinfo' if using CMake>=3.23
+conanfile.py (llfs/0.1.0-devel): If your CMake version is not compatible with CMakePresets (<3.23) call cmake like: 'cmake <path> -G Ninja -DCMAKE_TOOLCHAIN_FILE=/ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/build/RelWithDebInfo/generators/conan_toolchain.cmake -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_BUILD_TYPE=RelWithDebInfo'
+conanfile.py (llfs/0.1.0-devel): CMakeToolchain generated: CMakePresets.json
+conanfile.py (llfs/0.1.0-devel): CMakeToolchain generated: ../../../src/CMakeUserPresets.json
+conanfile.py (llfs/0.1.0-devel): CMakeDeps necessary find_package() and targets for your CMakeLists.txt
+    find_package(batteries)
+    find_package(Boost)
+    find_package(CLI11)
+    find_package(glog)
+    find_package(GTest)
+    find_package(libbacktrace)
+    find_package(OpenSSL)
+    find_package(liburing)
+    find_package(libfuse)
+    target_link_libraries(... batteries::batteries boost::boost CLI11::CLI11 glog::glog gtest::gtest libbacktrace::libbacktrace openssl::openssl liburing::liburing libfuse::libfuse)
+
+======== Generating conan_find_requirements.cmake ========
+
+batteries/0.55.1, Traits: build=False, headers=True, libs=True, run=False, visible=True
+boost/1.83.0, Traits: build=False, headers=True, libs=True, run=False, visible=True
+cli11/2.3.2, Traits: build=False, headers=True, libs=False, run=False, visible=True
+glog/0.6.0, Traits: build=False, headers=True, libs=True, run=False, visible=True
+gtest/1.14.0, Traits: build=False, headers=True, libs=True, run=False, visible=True
+libbacktrace/cci.20210118, Traits: build=False, headers=True, libs=True, run=False, visible=True
+openssl/3.2.0, Traits: build=False, headers=True, libs=True, run=False, visible=True
+zlib/1.3, Traits: build=False, headers=True, libs=True, run=False, visible=True
+... skipping direct=False requirement
+liburing/2.4, Traits: build=False, headers=True, libs=True, run=False, visible=True
+libfuse/3.16.2, Traits: build=False, headers=True, libs=True, run=False, visible=True
+libunwind/1.7.2, Traits: build=False, headers=True, libs=True, run=False, visible=True
+... skipping direct=False requirement
+cmake/3.26.4, Traits: build=True, headers=False, libs=False, run=True, visible=False
+... skipping build=True requirement
+
+Saved file /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/build/RelWithDebInfo/conan_find_requirements.cmake
+
+conanfile.py (llfs/0.1.0-devel): Generating aggregated env files
+conanfile.py (llfs/0.1.0-devel): Generated aggregated env files: ['conanbuild.sh', 'conanrun.sh']
+Install finished successfully
+(cd "/ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/build/RelWithDebInfo" &&  BATT_BUILD_TESTS=1 conan build      --profile "/etc/conan_profile.default" -s build_type=RelWithDebInfo  "/ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs")
+
+======== Input profiles ========
+Profile host:
+[settings]
+arch=x86_64
+build_type=RelWithDebInfo
+compiler=gcc
+compiler.cppstd=20
+compiler.libcxx=libstdc++11
+compiler.version=11
+os=Linux
+[tool_requires]
+&: cmake/3.26.4
+[buildenv]
+CXXFLAGS=-fno-omit-frame-pointer
+CFLAGS=-fno-omit-frame-pointer
+
+Profile build:
+[settings]
+arch=x86_64
+build_type=Release
+compiler=gcc
+compiler.cppstd=gnu17
+compiler.libcxx=libstdc++11
+compiler.version=11
+os=Linux
+
+
+======== Computing dependency graph ========
+Graph root
+    conanfile.py (llfs/0.1.0-devel): /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/conanfile.py
+Requirements
+    abseil/20240116.2#54f81a20ccd26a6558e18d57059847e2 - Cache
+    batteries/0.55.1#ea02793f9c1e7b3bc24b7ff99a9a0a34 - Cache
+    boost/1.83.0#fd341e07fe362c605d187ed592f2fce8 - Cache
+    bzip2/1.0.8#d00dac990f08d991998d624be81a9526 - Cache
+    cli11/2.3.2#1424b9b1d9e3682a7122f415b078b4d7 - Cache
+    gflags/2.2.2#48d1262ffac8d30c3224befb8275a533 - Cache
+    glog/0.6.0#f25568477a1100349c4c2959ce946717 - Cache
+    gtest/1.14.0#25e2a474b4d1aecf5ff4f0555dcdf72c - Cache
+    libbacktrace/cci.20210118#a7691bfccd8caaf66309df196790a5a1 - Cache
+    libfuse/3.16.2#b426f95ed62675cf8fb54bc407101696 - Cache
+    libunwind/1.7.2#4f36792edb3ed2c6c6525397f5643c66 - Cache
+    liburing/2.4#463d05ef1b3465d36eba39a7f2844df3 - Cache
+    openssl/3.2.0#d52f6cbf28a54701393831929f47dbbd - Cache
+    pcg-cpp/cci.20220409#b3c4e07c6ef6c2b5ddf2886f8a637bc7 - Cache
+    protobuf/5.27.0#ccce9aa25886556c6d66c77b2be4d806 - Cache
+    zlib/1.3#5c0f3a1a222eebb6bff34980bcd3e024 - Cache
+Test requirements
+    gtest/cci.20210126#dafbdf84b58cd687075ace7314651c1a - Cache
+Build requirements
+    b2/5.2.1#91bc73931a0acb655947a81569ed8b80 - Cache
+    cmake/3.26.4#0b40747e190e755932767f2ec4768ff5 - Cache
+    cmake/3.30.1#6d832cf2d46f6ec969ca5ed5b41f91eb - Cache
+    meson/1.2.0#68ba3b73f547af9c46816b2ef842a99d - Cache
+    ninja/1.12.1#fd583651bf0c6a901943495d49878803 - Cache
+Resolved version ranges
+    b2/[>=5.2 <6]: b2/5.2.1
+    cmake/[>=3.16 <4]: cmake/3.30.1
+    gtest/[>=1.14.0]: gtest/cci.20210126
+    ninja/[>=1.10.2 <2]: ninja/1.12.1
+    pcg-cpp/[>=cci.20220409]: pcg-cpp/cci.20220409
+    protobuf/[>=3.21.12]: protobuf/5.27.0
+Overrides
+    zlib/[>=1.2.11 <2]: ['zlib/1.3']
+    libunwind/1.8.0: ['libunwind/1.7.2']
+
+======== Computing necessary packages ========
+abseil/20240116.2: Checking 7 compatible configurations
+abseil/20240116.2: Main binary package '427ba685c637d4b02789cda2bd590c754eb03890' missing. Using compatible package 'e951c2cb74ff982f51710131ee36b3e28f8e4563': compiler.cppstd=17
+gflags/2.2.2: Checking 11 compatible configurations
+gflags/2.2.2: Main binary package '44eabc4771aeee384507fc08c863c6435178263c' missing. Using compatible package '3d216c4a794ad4ead4d22073c6f5e44018989263': compiler.cppstd=17
+gtest/1.14.0: Checking 7 compatible configurations
+gtest/1.14.0: Main binary package 'dec6797a53c8ee92bc1c6586540cd6f2972efe5b' missing. Using compatible package '8c79091f8481612ee4242f0f3ef3cc13a5a12800': compiler.cppstd=17
+gtest/cci.20210126: Checking 9 compatible configurations
+gtest/cci.20210126: Main binary package 'f4512038026b92eb5f53a1892437be6d7a527c40' missing. Using compatible package 'ad418b1d6effc6877f158337ee28e1f5cb0fc13a': compiler.cppstd=17
+protobuf/5.27.0: Checking 7 compatible configurations
+protobuf/5.27.0: Main binary package 'fe688174d9d3f9d41ff7419b12114d243c3f8481' missing. Using compatible package '5fe12e7b087c0c4e0ee89ed683371984f642bce4': compiler.cppstd=17
+glog/0.6.0: Checking 11 compatible configurations
+glog/0.6.0: Main binary package '00615d8b4cc96735b0723ca020d03b8b83bd7540' missing. Using compatible package 'b87780c0fc63b82ede7a99db267fd11711444420': compiler.cppstd=17
+batteries/0.55.1: Checking 11 compatible configurations
+batteries/0.55.1: Main binary package '9d861a1e8ed014810eb7ff93c7bc5679e59011bd' missing. Using compatible package 'd77d782ece1b8314e57db1b08eb99bf84b8ced68': compiler.cppstd=17
+Requirements
+    abseil/20240116.2#54f81a20ccd26a6558e18d57059847e2:e951c2cb74ff982f51710131ee36b3e28f8e4563#00d86a5fbcd989bb64c057f821f767a8 - Cache
+    batteries/0.55.1#ea02793f9c1e7b3bc24b7ff99a9a0a34:d77d782ece1b8314e57db1b08eb99bf84b8ced68#e21b5a821423d65308ac97cf15f3501a - Cache
+    boost/1.83.0#fd341e07fe362c605d187ed592f2fce8:f7b96315a752d5ea8ef3c2eec56915a9bd765c81#9c7df5af22e95b30dc8744ea52d5d940 - Cache
+    bzip2/1.0.8#d00dac990f08d991998d624be81a9526:d2fd0bf682562652eedb970d66e83aded80b3fb1#6cf5c17b419f33a0a925d1d8e281d3cd - Cache
+    cli11/2.3.2#1424b9b1d9e3682a7122f415b078b4d7:da39a3ee5e6b4b0d3255bfef95601890afd80709#e04bf357d9bd58bd3f1042ff121bf921 - Cache
+    gflags/2.2.2#48d1262ffac8d30c3224befb8275a533:3d216c4a794ad4ead4d22073c6f5e44018989263#908a0eb0138f96b6dc4ed65828b96779 - Cache
+    glog/0.6.0#f25568477a1100349c4c2959ce946717:b87780c0fc63b82ede7a99db267fd11711444420#207682f0e58e96330acab25ad6d79832 - Cache
+    gtest/1.14.0#25e2a474b4d1aecf5ff4f0555dcdf72c:8c79091f8481612ee4242f0f3ef3cc13a5a12800#c3336292a69ce58cecd28ce76179735c - Cache
+    libbacktrace/cci.20210118#a7691bfccd8caaf66309df196790a5a1:7141b46dc36f162c1999825c09b1ec68c17d6616#6e39386f8f08273ee4c765ac49c8dde2 - Cache
+    libfuse/3.16.2#b426f95ed62675cf8fb54bc407101696:7141b46dc36f162c1999825c09b1ec68c17d6616#1422880a721df66ec7d9a88e9f180972 - Cache
+    libunwind/1.7.2#4f36792edb3ed2c6c6525397f5643c66:76ad123c0b4672150480ad00bc8c5ebde5faacd0#bffcb69ae1800b801f12ab5f4201ad27 - Cache
+    liburing/2.4#463d05ef1b3465d36eba39a7f2844df3:893e43a1ce9cc27ea3549b60ceba7dccc92f04f9#4d36a32e2db28cd63a6f458013bf344a - Cache
+    openssl/3.2.0#d52f6cbf28a54701393831929f47dbbd:f7124f4882e8a147ba488837fa6a04d4bb37cbf7#f8082f47bb78718fa349b20379316359 - Cache
+    pcg-cpp/cci.20220409#b3c4e07c6ef6c2b5ddf2886f8a637bc7:da39a3ee5e6b4b0d3255bfef95601890afd80709#4703807cd2cb00aba979bcd262eff030 - Cache
+    protobuf/5.27.0#ccce9aa25886556c6d66c77b2be4d806:5fe12e7b087c0c4e0ee89ed683371984f642bce4#d806df8d48a82f04534cf590d741597c - Cache
+    zlib/1.3#5c0f3a1a222eebb6bff34980bcd3e024:7141b46dc36f162c1999825c09b1ec68c17d6616#3e28b9b20446b1f05240c36c569bb31d - Cache
+Test requirements
+Build requirements
+    cmake/3.26.4#0b40747e190e755932767f2ec4768ff5:63fead0844576fc02943e16909f08fcdddd6f44b#0e341efd7f3d724d3a793aacff5b86a3 - Cache
+Skipped binaries
+    gtest/cci.20210126, b2/5.2.1, cmake/3.30.1, meson/1.2.0, ninja/1.12.1
+
+======== Installing packages ========
+
+======== Installing packages ========
+abseil/20240116.2: Already installed! (1 of 17)
+bzip2/1.0.8: Already installed! (2 of 17)
+cli11/2.3.2: Already installed! (3 of 17)
+cmake/3.26.4: Already installed! (4 of 17)
+cmake/3.26.4: Appending PATH environment variable: /ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/cmake5aa963403baef/p/bin
+gflags/2.2.2: Already installed! (5 of 17)
+gtest/1.14.0: Already installed! (6 of 17)
+libbacktrace/cci.20210118: Already installed! (7 of 17)
+liburing/2.4: Already installed! (8 of 17)
+pcg-cpp/cci.20220409: Already installed! (9 of 17)
+zlib/1.3: Already installed! (10 of 17)
+libfuse/3.16.2: Already installed! (11 of 17)
+boost/1.83.0: Already installed! (12 of 17)
+libunwind/1.7.2: Already installed! (13 of 17)
+openssl/3.2.0: Already installed! (14 of 17)
+protobuf/5.27.0: Already installed! (15 of 17)
+glog/0.6.0: Already installed! (16 of 17)
+batteries/0.55.1: Already installed! (17 of 17)
+WARN: deprecated: Usage of deprecated Conan 1.X features that will be removed in Conan 2.X:
+WARN: deprecated:     'cpp_info.names' used in: batteries/0.55.1, protobuf/5.27.0, zlib/1.3, boost/1.83.0, gtest/1.14.0, abseil/20240116.2, openssl/3.2.0, bzip2/1.0.8, cli11/2.3.2
+WARN: deprecated:     'cpp_info.build_modules' used in: protobuf/5.27.0, gflags/2.2.2, abseil/20240116.2, openssl/3.2.0, bzip2/1.0.8
+WARN: deprecated:     'env_info' used in: protobuf/5.27.0, boost/1.83.0, cmake/3.26.4, openssl/3.2.0, bzip2/1.0.8
+WARN: deprecated:     'cpp_info.filenames' used in: protobuf/5.27.0, boost/1.83.0
+WARN: deprecated:     'user_info' used in: boost/1.83.0
+
+======== Finalizing install (deploy, generators) ========
+conanfile.py (llfs/0.1.0-devel): Calling generate()
+conanfile.py (llfs/0.1.0-devel): Generators folder: /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/build/RelWithDebInfo/generators
+conanfile.py (llfs/0.1.0-devel): CMakeToolchain generated: conan_toolchain.cmake
+conanfile.py (llfs/0.1.0-devel): Preset 'conan-relwithdebinfo' added to CMakePresets.json. Invoke it manually using 'cmake --preset conan-relwithdebinfo' if using CMake>=3.23
+conanfile.py (llfs/0.1.0-devel): If your CMake version is not compatible with CMakePresets (<3.23) call cmake like: 'cmake <path> -G Ninja -DCMAKE_TOOLCHAIN_FILE=/ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/build/RelWithDebInfo/generators/conan_toolchain.cmake -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_BUILD_TYPE=RelWithDebInfo'
+conanfile.py (llfs/0.1.0-devel): CMakeToolchain generated: CMakePresets.json
+conanfile.py (llfs/0.1.0-devel): CMakeToolchain generated: ../../../src/CMakeUserPresets.json
+conanfile.py (llfs/0.1.0-devel): CMakeDeps necessary find_package() and targets for your CMakeLists.txt
+    find_package(batteries)
+    find_package(Boost)
+    find_package(CLI11)
+    find_package(glog)
+    find_package(GTest)
+    find_package(libbacktrace)
+    find_package(OpenSSL)
+    find_package(liburing)
+    find_package(libfuse)
+    target_link_libraries(... batteries::batteries boost::boost CLI11::CLI11 glog::glog gtest::gtest libbacktrace::libbacktrace openssl::openssl liburing::liburing libfuse::libfuse)
+
+======== Generating conan_find_requirements.cmake ========
+
+batteries/0.55.1, Traits: build=False, headers=True, libs=True, run=False, visible=True
+boost/1.83.0, Traits: build=False, headers=True, libs=True, run=False, visible=True
+cli11/2.3.2, Traits: build=False, headers=True, libs=False, run=False, visible=True
+glog/0.6.0, Traits: build=False, headers=True, libs=True, run=False, visible=True
+gtest/1.14.0, Traits: build=False, headers=True, libs=True, run=False, visible=True
+libbacktrace/cci.20210118, Traits: build=False, headers=True, libs=True, run=False, visible=True
+openssl/3.2.0, Traits: build=False, headers=True, libs=True, run=False, visible=True
+zlib/1.3, Traits: build=False, headers=True, libs=True, run=False, visible=True
+... skipping direct=False requirement
+liburing/2.4, Traits: build=False, headers=True, libs=True, run=False, visible=True
+libfuse/3.16.2, Traits: build=False, headers=True, libs=True, run=False, visible=True
+libunwind/1.7.2, Traits: build=False, headers=True, libs=True, run=False, visible=True
+... skipping direct=False requirement
+cmake/3.26.4, Traits: build=True, headers=False, libs=False, run=True, visible=False
+... skipping build=True requirement
+
+Saved file /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/build/RelWithDebInfo/conan_find_requirements.cmake
+
+conanfile.py (llfs/0.1.0-devel): Generating aggregated env files
+conanfile.py (llfs/0.1.0-devel): Generated aggregated env files: ['conanbuild.sh', 'conanrun.sh']
+
+======== Calling build() ========
+conanfile.py (llfs/0.1.0-devel): Calling build()
+conanfile.py (llfs/0.1.0-devel): Running CMake.configure()
+conanfile.py (llfs/0.1.0-devel): RUN: cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="/ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/build/RelWithDebInfo/generators/conan_toolchain.cmake" -DCMAKE_INSTALL_PREFIX="/ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs" -DCMAKE_POLICY_DEFAULT_CMP0091="NEW" -DCMAKE_BUILD_TYPE="RelWithDebInfo" "/ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/src"
+-- Using Conan toolchain: /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/build/RelWithDebInfo/generators/conan_toolchain.cmake
+-- Conan toolchain: C++ Standard 20 with extensions OFF
+-- Conan toolchain: Setting BUILD_SHARED_LIBS = OFF
+-- The CXX compiler identification is GNU 11.4.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+Enabled ccache builds
+-- Conan: Target declared 'batteries::batteries'
+-- Conan: Target declared 'pcg-cpp::pcg-cpp'
+-- Conan: Component target declared 'utf8_range::utf8_range'
+-- Conan: Component target declared 'utf8_range::utf8_validity'
+-- Conan: Component target declared 'protobuf::libprotobuf'
+-- Conan: Component target declared 'protobuf::libprotoc'
+-- Conan: Target declared 'protobuf::protobuf'
+-- Conan: Component target declared 'absl::config'
+-- Conan: Component target declared 'absl::dynamic_annotations'
+-- Conan: Component target declared 'absl::core_headers'
+-- Conan: Component target declared 'absl::pretty_function'
+-- Conan: Component target declared 'absl::fast_type_id'
+-- Conan: Component target declared 'absl::prefetch'
+-- Conan: Component target declared 'absl::algorithm'
+-- Conan: Component target declared 'absl::hashtable_debug_hooks'
+-- Conan: Component target declared 'absl::node_slot_policy'
+-- Conan: Component target declared 'absl::non_temporal_arm_intrinsics'
+-- Conan: Component target declared 'absl::non_temporal_memcpy'
+-- Conan: Component target declared 'absl::leak_check'
+-- Conan: Component target declared 'absl::flags_commandlineflag_internal'
+-- Conan: Component target declared 'absl::log_internal_config'
+-- Conan: Component target declared 'absl::log_internal_nullguard'
+-- Conan: Component target declared 'absl::log_internal_voidify'
+-- Conan: Component target declared 'absl::type_traits'
+-- Conan: Component target declared 'absl::meta'
+-- Conan: Component target declared 'absl::bits'
+-- Conan: Component target declared 'absl::int128'
+-- Conan: Component target declared 'absl::numeric'
+-- Conan: Component target declared 'absl::numeric_representation'
+-- Conan: Component target declared 'absl::exponential_biased'
+-- Conan: Component target declared 'absl::periodic_sampler'
+-- Conan: Component target declared 'absl::random_seed_gen_exception'
+-- Conan: Component target declared 'absl::random_internal_traits'
+-- Conan: Component target declared 'absl::random_internal_fast_uniform_bits'
+-- Conan: Component target declared 'absl::random_internal_iostream_state_saver'
+-- Conan: Component target declared 'absl::random_internal_wide_multiply'
+-- Conan: Component target declared 'absl::random_internal_fastmath'
+-- Conan: Component target declared 'absl::random_internal_pcg_engine'
+-- Conan: Component target declared 'absl::random_internal_platform'
+-- Conan: Component target declared 'absl::random_internal_randen_slow'
+-- Conan: Component target declared 'absl::random_internal_randen_hwaes_impl'
+-- Conan: Component target declared 'absl::random_internal_uniform_helper'
+-- Conan: Component target declared 'absl::has_ostream_operator'
+-- Conan: Component target declared 'absl::cordz_update_tracker'
+-- Conan: Component target declared 'absl::civil_time'
+-- Conan: Component target declared 'absl::time_zone'
+-- Conan: Component target declared 'absl::compare'
+-- Conan: Component target declared 'absl::if_constexpr'
+-- Conan: Component target declared 'absl::atomic_hook'
+-- Conan: Component target declared 'absl::errno_saver'
+-- Conan: Component target declared 'absl::log_severity'
+-- Conan: Component target declared 'absl::no_destructor'
+-- Conan: Component target declared 'absl::nullability'
+-- Conan: Component target declared 'absl::raw_logging_internal'
+-- Conan: Component target declared 'absl::base_internal'
+-- Conan: Component target declared 'absl::throw_delegate'
+-- Conan: Component target declared 'absl::scoped_set_env'
+-- Conan: Component target declared 'absl::strerror'
+-- Conan: Component target declared 'absl::algorithm_container'
+-- Conan: Component target declared 'absl::common_policy_traits'
+-- Conan: Component target declared 'absl::hashtable_debug'
+-- Conan: Component target declared 'absl::container_common'
+-- Conan: Component target declared 'absl::debugging_internal'
+-- Conan: Component target declared 'absl::overload'
+-- Conan: Component target declared 'absl::memory'
+-- Conan: Component target declared 'absl::random_internal_generate_real'
+-- Conan: Component target declared 'absl::random_internal_randen_hwaes'
+-- Conan: Component target declared 'absl::cordz_functions'
+-- Conan: Component target declared 'absl::bad_any_cast_impl'
+-- Conan: Component target declared 'absl::span'
+-- Conan: Component target declared 'absl::bad_optional_access'
+-- Conan: Component target declared 'absl::bad_variant_access'
+-- Conan: Component target declared 'absl::utility'
+-- Conan: Component target declared 'absl::spinlock_wait'
+-- Conan: Component target declared 'absl::base'
+-- Conan: Component target declared 'absl::endian'
+-- Conan: Component target declared 'absl::cleanup_internal'
+-- Conan: Component target declared 'absl::cleanup'
+-- Conan: Component target declared 'absl::compressed_tuple'
+-- Conan: Component target declared 'absl::fixed_array'
+-- Conan: Component target declared 'absl::inlined_vector_internal'
+-- Conan: Component target declared 'absl::inlined_vector'
+-- Conan: Component target declared 'absl::container_memory'
+-- Conan: Component target declared 'absl::hash_policy_traits'
+-- Conan: Component target declared 'absl::crc_cpu_detect'
+-- Conan: Component target declared 'absl::crc_internal'
+-- Conan: Component target declared 'absl::stacktrace'
+-- Conan: Component target declared 'absl::demangle_internal'
+-- Conan: Component target declared 'absl::debugging'
+-- Conan: Component target declared 'absl::any_invocable'
+-- Conan: Component target declared 'absl::bind_front'
+-- Conan: Component target declared 'absl::function_ref'
+-- Conan: Component target declared 'absl::city'
+-- Conan: Component target declared 'absl::low_level_hash'
+-- Conan: Component target declared 'absl::log_internal_conditions'
+-- Conan: Component target declared 'absl::random_internal_distribution_caller'
+-- Conan: Component target declared 'absl::random_internal_randen'
+-- Conan: Component target declared 'absl::string_view'
+-- Conan: Component target declared 'absl::charset'
+-- Conan: Component target declared 'absl::strings_internal'
+-- Conan: Component target declared 'absl::bad_any_cast'
+-- Conan: Component target declared 'absl::optional'
+-- Conan: Component target declared 'absl::variant'
+-- Conan: Component target declared 'absl::malloc_internal'
+-- Conan: Component target declared 'absl::random_bit_gen_ref'
+-- Conan: Component target declared 'absl::random_internal_mock_helpers'
+-- Conan: Component target declared 'absl::random_internal_randen_engine'
+-- Conan: Component target declared 'absl::strings'
+-- Conan: Component target declared 'absl::str_format_internal'
+-- Conan: Component target declared 'absl::graphcycles_internal'
+-- Conan: Component target declared 'absl::time'
+-- Conan: Component target declared 'absl::any'
+-- Conan: Component target declared 'absl::layout'
+-- Conan: Component target declared 'absl::symbolize'
+-- Conan: Component target declared 'absl::examine_stack'
+-- Conan: Component target declared 'absl::failure_signal_handler'
+-- Conan: Component target declared 'absl::flags_path_util'
+-- Conan: Component target declared 'absl::flags_commandlineflag'
+-- Conan: Component target declared 'absl::flags_private_handle_accessor'
+-- Conan: Component target declared 'absl::hash'
+-- Conan: Component target declared 'absl::log_internal_globals'
+-- Conan: Component target declared 'absl::log_internal_proto'
+-- Conan: Component target declared 'absl::log_internal_nullstream'
+-- Conan: Component target declared 'absl::log_internal_append_truncated'
+-- Conan: Component target declared 'absl::log_entry'
+-- Conan: Component target declared 'absl::log_sink'
+-- Conan: Component target declared 'absl::log_internal_fnmatch'
+-- Conan: Component target declared 'absl::random_distributions'
+-- Conan: Component target declared 'absl::random_internal_seed_material'
+-- Conan: Component target declared 'absl::random_internal_pool_urbg'
+-- Conan: Component target declared 'absl::random_internal_salted_seed_seq'
+-- Conan: Component target declared 'absl::random_internal_nonsecure_base'
+-- Conan: Component target declared 'absl::str_format'
+-- Conan: Component target declared 'absl::kernel_timeout_internal'
+-- Conan: Component target declared 'absl::synchronization'
+-- Conan: Component target declared 'absl::crc32c'
+-- Conan: Component target declared 'absl::crc_cord_state'
+-- Conan: Component target declared 'absl::flags_program_name'
+-- Conan: Component target declared 'absl::flags_config'
+-- Conan: Component target declared 'absl::flags_marshalling'
+-- Conan: Component target declared 'absl::flags_internal'
+-- Conan: Component target declared 'absl::log_internal_format'
+-- Conan: Component target declared 'absl::vlog_config_internal'
+-- Conan: Component target declared 'absl::absl_vlog_is_on'
+-- Conan: Component target declared 'absl::vlog_is_on'
+-- Conan: Component target declared 'absl::sample_recorder'
+-- Conan: Component target declared 'absl::random_seed_sequences'
+-- Conan: Component target declared 'absl::random_internal_distribution_test_util'
+-- Conan: Component target declared 'absl::cord_internal'
+-- Conan: Component target declared 'absl::cordz_statistics'
+-- Conan: Component target declared 'absl::cordz_handle'
+-- Conan: Component target declared 'absl::cordz_info'
+-- Conan: Component target declared 'absl::cordz_sample_token'
+-- Conan: Component target declared 'absl::cordz_update_scope'
+-- Conan: Component target declared 'absl::cord'
+-- Conan: Component target declared 'absl::btree'
+-- Conan: Component target declared 'absl::hash_function_defaults'
+-- Conan: Component target declared 'absl::hashtablez_sampler'
+-- Conan: Component target declared 'absl::raw_hash_set'
+-- Conan: Component target declared 'absl::log_globals'
+-- Conan: Component target declared 'absl::log_initialize'
+-- Conan: Component target declared 'absl::random_random'
+-- Conan: Component target declared 'absl::status'
+-- Conan: Component target declared 'absl::statusor'
+-- Conan: Component target declared 'absl::flat_hash_set'
+-- Conan: Component target declared 'absl::node_hash_set'
+-- Conan: Component target declared 'absl::raw_hash_map'
+-- Conan: Component target declared 'absl::log_internal_log_sink_set'
+-- Conan: Component target declared 'absl::log_sink_registry'
+-- Conan: Component target declared 'absl::flat_hash_map'
+-- Conan: Component target declared 'absl::node_hash_map'
+-- Conan: Component target declared 'absl::flags_reflection'
+-- Conan: Component target declared 'absl::flags'
+-- Conan: Component target declared 'absl::flags_usage_internal'
+-- Conan: Component target declared 'absl::flags_usage'
+-- Conan: Component target declared 'absl::flags_parse'
+-- Conan: Component target declared 'absl::log_internal_flags'
+-- Conan: Component target declared 'absl::log_internal_message'
+-- Conan: Component target declared 'absl::log_internal_strip'
+-- Conan: Component target declared 'absl::log_flags'
+-- Conan: Component target declared 'absl::log_internal_structured'
+-- Conan: Component target declared 'absl::log_structured'
+-- Conan: Component target declared 'absl::log_internal_check_op'
+-- Conan: Component target declared 'absl::log_internal_log_impl'
+-- Conan: Component target declared 'absl::absl_log'
+-- Conan: Component target declared 'absl::log'
+-- Conan: Component target declared 'absl::log_streamer'
+-- Conan: Component target declared 'absl::log_internal_check_impl'
+-- Conan: Component target declared 'absl::absl_check'
+-- Conan: Component target declared 'absl::check'
+-- Conan: Component target declared 'absl::die_if_null'
+-- Conan: Target declared 'abseil::abseil'
+-- Conan: Including build module from '/ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/b/abseib7b4792619b83/p/lib/cmake/conan_trick/cxx_std.cmake'
+-- Conan: Target declared 'ZLIB::ZLIB'
+-- Conan: Including build module from '/ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/b/protoffae71f0f7658/p/lib/cmake/protobuf/protobuf-generate.cmake'
+-- Conan: Including build module from '/ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/b/protoffae71f0f7658/p/lib/cmake/protobuf/protobuf-module.cmake'
+-- Conan: Including build module from '/ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/b/protoffae71f0f7658/p/lib/cmake/protobuf/protobuf-options.cmake'
+-- Conan: Including build module from '/ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/b/protoffae71f0f7658/p/lib/cmake/protobuf/protobuf-conan-protoc-target.cmake'
+-- Conan: Component target declared 'Boost::diagnostic_definitions'
+-- Conan: Component target declared 'Boost::disable_autolinking'
+-- Conan: Component target declared 'Boost::dynamic_linking'
+-- Conan: Component target declared 'Boost::headers'
+-- Conan: Component target declared 'Boost::boost'
+-- Conan: Component target declared 'boost::_libboost'
+-- Conan: Component target declared 'Boost::atomic'
+-- Conan: Component target declared 'Boost::container'
+-- Conan: Component target declared 'Boost::context'
+-- Conan: Component target declared 'Boost::date_time'
+-- Conan: Component target declared 'Boost::exception'
+-- Conan: Component target declared 'Boost::math'
+-- Conan: Component target declared 'Boost::math_c99'
+-- Conan: Component target declared 'Boost::math_c99f'
+-- Conan: Component target declared 'Boost::math_c99l'
+-- Conan: Component target declared 'Boost::math_tr1'
+-- Conan: Component target declared 'Boost::math_tr1f'
+-- Conan: Component target declared 'Boost::math_tr1l'
+-- Conan: Component target declared 'Boost::program_options'
+-- Conan: Component target declared 'Boost::regex'
+-- Conan: Component target declared 'Boost::serialization'
+-- Conan: Component target declared 'Boost::stacktrace'
+-- Conan: Component target declared 'Boost::stacktrace_addr2line'
+-- Conan: Component target declared 'Boost::stacktrace_backtrace'
+-- Conan: Component target declared 'Boost::stacktrace_basic'
+-- Conan: Component target declared 'Boost::stacktrace_noop'
+-- Conan: Component target declared 'Boost::system'
+-- Conan: Component target declared 'Boost::timer'
+-- Conan: Component target declared 'Boost::url'
+-- Conan: Component target declared 'Boost::wserialization'
+-- Conan: Component target declared 'Boost::chrono'
+-- Conan: Component target declared 'Boost::coroutine'
+-- Conan: Component target declared 'Boost::filesystem'
+-- Conan: Component target declared 'Boost::json'
+-- Conan: Component target declared 'Boost::nowide'
+-- Conan: Component target declared 'Boost::random'
+-- Conan: Component target declared 'Boost::thread'
+-- Conan: Component target declared 'Boost::type_erasure'
+-- Conan: Component target declared 'Boost::wave'
+-- Conan: Component target declared 'Boost::contract'
+-- Conan: Component target declared 'Boost::fiber'
+-- Conan: Component target declared 'Boost::fiber_numa'
+-- Conan: Component target declared 'Boost::graph'
+-- Conan: Component target declared 'Boost::iostreams'
+-- Conan: Component target declared 'Boost::locale'
+-- Conan: Component target declared 'Boost::log'
+-- Conan: Component target declared 'Boost::log_setup'
+-- Conan: Target declared 'boost::boost'
+-- Conan: Target declared 'BZip2::BZip2'
+-- Conan: Including build module from '/ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/b/bzip29e24ccc6c8ead/p/lib/cmake/conan-official-bzip2-variables.cmake'
+-- Conan: Target declared 'libbacktrace::libbacktrace'
+-- Conan: Target declared 'glog::glog'
+-- Conan: Target declared 'gflags::gflags'
+-- Conan: Component target declared 'libunwind::unwind'
+-- Conan: Component target declared 'libunwind::generic'
+-- Conan: Component target declared 'libunwind::ptrace'
+-- Conan: Component target declared 'libunwind::setjmp'
+-- Conan: Component target declared 'libunwind::coredump'
+-- Conan: Target declared 'libunwind::libunwind'
+-- Conan: Target declared 'CLI11::CLI11'
+-- Conan: Component target declared 'GTest::gtest'
+-- Conan: Component target declared 'GTest::gtest_main'
+-- Conan: Component target declared 'GTest::gmock'
+-- Conan: Component target declared 'GTest::gmock_main'
+-- Conan: Target declared 'gtest::gtest'
+-- Conan: Component target declared 'OpenSSL::Crypto'
+-- Conan: Component target declared 'OpenSSL::SSL'
+-- Conan: Target declared 'openssl::openssl'
+-- Conan: Including build module from '/ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/b/opensdc5d99b668034/p/lib/cmake/conan-official-openssl-variables.cmake'
+-- Conan: Target declared 'liburing::liburing'
+-- Conan: Target declared 'libfuse::libfuse'
+-- Configuring done (0.3s)
+-- Generating done (0.1s)
+-- Build files have been written to: /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/build/RelWithDebInfo
+
+conanfile.py (llfs/0.1.0-devel): Running CMake.build()
+conanfile.py (llfs/0.1.0-devel): RUN: cmake --build "/ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/build/RelWithDebInfo" -- -j32
+[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/appendable_job.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/bloom_filter.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/buffered_log_data_reader.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/committable_page_cache_job.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/crc.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/data_layout.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/data_packer.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/data_packer_arena.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/data_reader.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/file_log_driver.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/file_log_driver/active_file.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/file_log_driver/concurrent_shared_state.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/file_log_driver/config.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/file_log_driver/flush_task_main.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/file_log_driver/location.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/file_log_driver/segment_file.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/file_segment_ref.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/filesystem.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/filesystem_page_device.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/finalized_job_tracker.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/finalized_page_cache_job.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/fuse.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_buffer_pool.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_buffer_view.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_file.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_file_runtime_options.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_impl.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_log_config2.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_log_device2.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_log_device2_metrics.cpp.o[K[0/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_log_device_storage.cpp.o[K[1/200] Building CXX object CMakeFiles/llfs.dir/llfs/crc.cpp.o[K[1/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_page_file_device.cpp.o[K[2/200] Building CXX object CMakeFiles/llfs.dir/llfs/data_layout.cpp.o[K[2/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_stream_buffer.cpp.o[K[3/200] Building CXX object CMakeFiles/llfs.dir/llfs/data_reader.cpp.o[K[3/200] Building CXX object CMakeFiles/llfs.dir/llfs/latching_bit_set.cpp.o[K[4/200] Building CXX object CMakeFiles/llfs.dir/llfs/filesystem.cpp.o[K[4/200] Building CXX object CMakeFiles/llfs.dir/llfs/log_device_config2.cpp.o[K[5/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_impl.cpp.o[K[5/200] Building CXX object CMakeFiles/llfs.dir/llfs/log_device_snapshot.cpp.o[K[6/200] Building CXX object CMakeFiles/llfs.dir/llfs/bloom_filter.cpp.o[K[6/200] Building CXX object CMakeFiles/llfs.dir/llfs/lru_clock.cpp.o[K[7/200] Building CXX object CMakeFiles/llfs.dir/llfs/data_packer_arena.cpp.o[K[7/200] Building CXX object CMakeFiles/llfs.dir/llfs/mem_fuse.cpp.o[K[8/200] Building CXX object CMakeFiles/llfs.dir/llfs/file_segment_ref.cpp.o[K[8/200] Building CXX object CMakeFiles/llfs.dir/llfs/mem_inode.cpp.o[K[9/200] Building CXX object CMakeFiles/llfs.dir/llfs/buffered_log_data_reader.cpp.o[K[9/200] Building CXX object CMakeFiles/llfs.dir/llfs/memory_log_device.cpp.o[K[10/200] Building CXX object CMakeFiles/llfs.dir/llfs/file_log_driver/active_file.cpp.o[K[10/200] Building CXX object CMakeFiles/llfs.dir/llfs/memory_page_arena.cpp.o[K[11/200] Building CXX object CMakeFiles/llfs.dir/llfs/file_log_driver/concurrent_shared_state.cpp.o[K[11/200] Building CXX object CMakeFiles/llfs.dir/llfs/memory_page_cache.cpp.o[K[12/200] Building CXX object CMakeFiles/llfs.dir/llfs/file_log_driver/segment_file.cpp.o[K[12/200] Building CXX object CMakeFiles/llfs.dir/llfs/memory_page_device.cpp.o[K[13/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_buffer_view.cpp.o[K[13/200] Building CXX object CMakeFiles/llfs.dir/llfs/null_worker_task_fuse_impl.cpp.o[K[14/200] Building CXX object CMakeFiles/llfs.dir/llfs/data_packer.cpp.o[K[14/200] Building CXX object CMakeFiles/llfs.dir/llfs/opaque_page_view.cpp.o[K[15/200] Building CXX object CMakeFiles/llfs.dir/llfs/file_log_driver/config.cpp.o[K[15/200] Building CXX object CMakeFiles/llfs.dir/llfs/pack_as_raw.cpp.o[K[16/200] Building CXX object CMakeFiles/llfs.dir/llfs/file_log_driver/flush_task_main.cpp.o[K[16/200] Building CXX object CMakeFiles/llfs.dir/llfs/packable_ref.cpp.o[K[17/200] Building CXX object CMakeFiles/llfs.dir/llfs/file_log_driver/location.cpp.o[K[17/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_bytes.cpp.o[K[18/200] Building CXX object CMakeFiles/llfs.dir/llfs/filesystem_page_device.cpp.o[K[18/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_config.cpp.o[K[19/200] Building CXX object CMakeFiles/llfs.dir/llfs/finalized_job_tracker.cpp.o[K[19/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_float.cpp.o[K[20/200] Building CXX object CMakeFiles/llfs.dir/llfs/fuse.cpp.o[K[20/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_interval.cpp.o[K[21/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring.cpp.o[K[21/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_log_page_header.cpp.o[K[22/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_buffer_pool.cpp.o[K[22/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_page_header.cpp.o[K[23/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_file.cpp.o[K[23/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_page_id.cpp.o[K[24/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_file_runtime_options.cpp.o[K[24/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_page_ref_count.cpp.o[K[25/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_log_device_storage.cpp.o[K[25/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_slot_range.cpp.o[K[26/200] Building CXX object CMakeFiles/llfs.dir/llfs/appendable_job.cpp.o[K[26/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_status.cpp.o[K[27/200] Building CXX object CMakeFiles/llfs.dir/llfs/committable_page_cache_job.cpp.o[K[27/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_status_or.cpp.o[K[28/200] Building CXX object CMakeFiles/llfs.dir/llfs/file_log_driver.cpp.o[K[28/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_allocator.cpp.o[K[29/200] Building CXX object CMakeFiles/llfs.dir/llfs/finalized_page_cache_job.cpp.o[K[29/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_allocator_config.cpp.o[K[30/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_log_config2.cpp.o[K[30/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_allocator_events.cpp.o[K[31/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_log_device2.cpp.o[K[31/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_events.cpp.o[K[32/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_log_device2_metrics.cpp.o[K[32/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_allocator_state.cpp.o[K[33/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_page_file_device.cpp.o[K[33/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_allocator_state_no_lock.cpp.o[K[34/200] Building CXX object CMakeFiles/llfs.dir/llfs/ioring_stream_buffer.cpp.o[K[34/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_arena_config.cpp.o[K[35/200] Building CXX object CMakeFiles/llfs.dir/llfs/latching_bit_set.cpp.o[K[35/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_buffer.cpp.o[K[36/200] Building CXX object CMakeFiles/llfs.dir/llfs/log_device_snapshot.cpp.o[K[36/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_cache.cpp.o[K[37/200] Building CXX object CMakeFiles/llfs.dir/llfs/lru_clock.cpp.o[K[37/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_cache_config_file.cpp.o[K[38/200] Building CXX object CMakeFiles/llfs.dir/llfs/log_device_config2.cpp.o[K[38/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_cache_job.cpp.o[K[39/200] Building CXX object CMakeFiles/llfs.dir/llfs/mem_fuse.cpp.o[K[39/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_cache_options.cpp.o[K[40/200] Building CXX object CMakeFiles/llfs.dir/llfs/mem_inode.cpp.o[K[40/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_cache_slot.cpp.o[K[41/200] Building CXX object CMakeFiles/llfs.dir/llfs/memory_log_device.cpp.o[K[41/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_cache_slot_pool.cpp.o[K[42/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_config.cpp.o[K[42/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_device.cpp.o[K[43/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_float.cpp.o[K[43/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_device_cache.cpp.o[K[44/200] Building CXX object CMakeFiles/llfs.dir/llfs/memory_page_device.cpp.o[K[44/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_device_config.cpp.o[K[45/200] Building CXX object CMakeFiles/llfs.dir/llfs/null_worker_task_fuse_impl.cpp.o[K[45/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_filter.cpp.o[K[46/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_log_page_header.cpp.o[K[46/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_graph_node.cpp.o[K[47/200] Building CXX object CMakeFiles/llfs.dir/llfs/memory_page_arena.cpp.o[K[47/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_id_slot.cpp.o[K[48/200] Building CXX object CMakeFiles/llfs.dir/llfs/pack_as_raw.cpp.o[K[48/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_layout.cpp.o[K[49/200] Building CXX object CMakeFiles/llfs.dir/llfs/packable_ref.cpp.o[K[49/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_layout_id.cpp.o[K[50/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_bytes.cpp.o[K[50/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_loader.cpp.o[K[51/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_page_header.cpp.o[K[51/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_recycler.cpp.o[K[52/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_page_id.cpp.o[K[52/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_recycler_events.cpp.o[K[53/200] Building CXX object CMakeFiles/llfs.dir/llfs/memory_page_cache.cpp.o[K[53/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_recycler_options.cpp.o[K[54/200] Building CXX object CMakeFiles/llfs.dir/llfs/opaque_page_view.cpp.o[K[54/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_recycler_recovery_visitor.cpp.o[K[55/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_page_ref_count.cpp.o[K[55/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_recycler_state.cpp.o[K[56/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_interval.cpp.o[K[56/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_ref_count.cpp.o[K[57/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_status.cpp.o[K[57/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_view.cpp.o[K[58/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_slot_range.cpp.o[K[58/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_write_op.cpp.o[K[59/200] Building CXX object CMakeFiles/llfs.dir/llfs/packed_status_or.cpp.o[K[59/200] Building CXX object CMakeFiles/llfs.dir/llfs/pinned_page.cpp.o[K[60/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_cache_options.cpp.o[K[60/200] Building CXX object CMakeFiles/llfs.dir/llfs/raw_block_file.cpp.o[K[61/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_allocator_events.cpp.o[K[61/200] Building CXX object CMakeFiles/llfs.dir/llfs/raw_block_file_impl.cpp.o[K[62/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_layout_id.cpp.o[K[62/200] Building CXX object CMakeFiles/llfs.dir/llfs/raw_volume_log_data_parser.cpp.o[K[63/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_cache_config_file.cpp.o[K[63/200] Building CXX object CMakeFiles/llfs.dir/llfs/ring_buffer.cpp.o[K[64/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_buffer.cpp.o[K[64/200] Building CXX object CMakeFiles/llfs.dir/llfs/sha256.cpp.o[K[65/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_allocator_state_no_lock.cpp.o[K[65/200] Building CXX object CMakeFiles/llfs.dir/llfs/simulated_log_device.cpp.o[K[66/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_allocator_state.cpp.o[K[66/200] Building CXX object CMakeFiles/llfs.dir/llfs/simulated_log_device_impl.cpp.o[K[67/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_events.cpp.o[K[67/200] Building CXX object CMakeFiles/llfs.dir/llfs/simulated_log_device_reader_impl.cpp.o[K[68/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_device.cpp.o[K[68/200] Building CXX object CMakeFiles/llfs.dir/llfs/simulated_log_device_storage.cpp.o[K[69/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_allocator.cpp.o[K[69/200] Building CXX object CMakeFiles/llfs.dir/llfs/simulated_log_device_writer_impl.cpp.o[K[70/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_allocator_config.cpp.o[K[70/200] Building CXX object CMakeFiles/llfs.dir/llfs/simulated_page_device.cpp.o[K[71/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_ref_count.cpp.o[K[71/200] Building CXX object CMakeFiles/llfs.dir/llfs/simulated_page_device_impl.cpp.o[K[72/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_arena_config.cpp.o[K[72/200] Building CXX object CMakeFiles/llfs.dir/llfs/slot.cpp.o[K[73/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_cache_slot.cpp.o[K[73/200] Building CXX object CMakeFiles/llfs.dir/llfs/slot_interval_map.cpp.o[K[74/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_device_cache.cpp.o[K[74/200] Building CXX object CMakeFiles/llfs.dir/llfs/slot_lock_manager.cpp.o[K[75/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_layout.cpp.o[K[75/200] Building CXX object CMakeFiles/llfs.dir/llfs/slot_parse.cpp.o[K[76/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_cache_job.cpp.o[K[76/200] Building CXX object CMakeFiles/llfs.dir/llfs/slot_reader.cpp.o[K[77/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_filter.cpp.o[K[77/200] Building CXX object CMakeFiles/llfs.dir/llfs/slot_sequencer.cpp.o[K[78/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_id_slot.cpp.o[K[78/200] Building CXX object CMakeFiles/llfs.dir/llfs/slot_writer.cpp.o[K[79/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_recycler_events.cpp.o[K[79/200] Building CXX object CMakeFiles/llfs.dir/llfs/status_code.cpp.o[K[80/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_recycler_options.cpp.o[K[80/200] Building CXX object CMakeFiles/llfs.dir/llfs/storage_context.cpp.o[K[81/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_device_config.cpp.o[K[81/200] Building CXX object CMakeFiles/llfs.dir/llfs/storage_file.cpp.o[K[82/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_graph_node.cpp.o[K[82/200] Building CXX object CMakeFiles/llfs.dir/llfs/storage_file_builder.cpp.o[K[83/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_loader.cpp.o[K[83/200] Building CXX object CMakeFiles/llfs.dir/llfs/storage_file_config_block.cpp.o[K[84/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_view.cpp.o[K[84/200] Building CXX object CMakeFiles/llfs.dir/llfs/storage_object_info.cpp.o[K[85/200] Building CXX object CMakeFiles/llfs.dir/llfs/raw_block_file.cpp.o[K[85/200] Building CXX object CMakeFiles/llfs.dir/llfs/storage_simulation.cpp.o[K[86/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_recycler_recovery_visitor.cpp.o[K[86/200] Building CXX object CMakeFiles/llfs.dir/llfs/strings.cpp.o[K[87/200] Building CXX object CMakeFiles/llfs.dir/llfs/ring_buffer.cpp.o[K[87/200] Building CXX object CMakeFiles/llfs.dir/llfs/system_config.cpp.o[K[88/200] Building CXX object CMakeFiles/llfs.dir/llfs/sha256.cpp.o[K[88/200] Building CXX object CMakeFiles/llfs.dir/llfs/testing/fake_log_device.cpp.o[K[89/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_cache_slot_pool.cpp.o[K[89/200] Building CXX object CMakeFiles/llfs.dir/llfs/testing/fake_page_device.cpp.o[K[90/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_recycler_state.cpp.o[K[90/200] Building CXX object CMakeFiles/llfs.dir/llfs/testing/test_config.cpp.o[K[91/200] Building CXX object CMakeFiles/llfs.dir/llfs/pinned_page.cpp.o[K[91/200] Building CXX object CMakeFiles/llfs.dir/llfs/testing/util.cpp.o[K[92/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_recycler.cpp.o[K[92/200] Building CXX object CMakeFiles/llfs.dir/llfs/track_fds.cpp.o[K[93/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_write_op.cpp.o[K[93/200] Building CXX object CMakeFiles/llfs.dir/llfs/trie.cpp.o[K[94/200] Building CXX object CMakeFiles/llfs.dir/llfs/raw_block_file_impl.cpp.o[K[94/200] Building CXX object CMakeFiles/llfs.dir/llfs/user_data.cpp.o[K[95/200] Building CXX object CMakeFiles/llfs.dir/llfs/raw_volume_log_data_parser.cpp.o[K[95/200] Building CXX object CMakeFiles/llfs.dir/llfs/varint.cpp.o[K[96/200] Building CXX object CMakeFiles/llfs.dir/llfs/status_code.cpp.o[K[96/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume.cpp.o[K[97/200] Building CXX object CMakeFiles/llfs.dir/llfs/slot_interval_map.cpp.o[K[97/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_config.cpp.o[K[98/200] Building CXX object CMakeFiles/llfs.dir/llfs/simulated_log_device.cpp.o[K[98/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_job_recovery_visitor.cpp.o[K[99/200] Building CXX object CMakeFiles/llfs.dir/llfs/simulated_log_device_impl.cpp.o[K[99/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_metadata_recovery_visitor.cpp.o[K[100/200] Building CXX object CMakeFiles/llfs.dir/llfs/slot.cpp.o[K[100/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_metadata_refresher.cpp.o[K[101/200] Building CXX object CMakeFiles/llfs.dir/llfs/slot_parse.cpp.o[K[101/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_reader.cpp.o[K[102/200] Building CXX object CMakeFiles/llfs.dir/llfs/system_config.cpp.o[K[102/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_runtime_options.cpp.o[K[103/200] Building CXX object CMakeFiles/llfs.dir/llfs/simulated_log_device_reader_impl.cpp.o[K[103/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_trimmed_region_visitor.cpp.o[K[104/200] Building CXX object CMakeFiles/llfs.dir/llfs/simulated_page_device.cpp.o[K[104/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_trimmer.cpp.o[K[105/200] Building CXX object CMakeFiles/llfs.dir/llfs/slot_lock_manager.cpp.o[K[105/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_trimmer_recovery_visitor.cpp.o[K[106/200] Building CXX object CMakeFiles/llfs.dir/llfs/slot_reader.cpp.o[K[106/200] Building CXX object CMakeFiles/llfs.dir/llfs/worker_task.cpp.o[K[107/200] Building CXX object CMakeFiles/llfs.dir/llfs/slot_sequencer.cpp.o[K[107/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/data_packer.test.cpp.o[K[108/200] Building CXX object CMakeFiles/llfs.dir/llfs/strings.cpp.o[K[108/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/filesystem_page_device.test.cpp.o[K[109/200] Building CXX object CMakeFiles/llfs.dir/llfs/testing/util.cpp.o[K[109/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/cache.test.cpp.o[K[110/200] Building CXX object CMakeFiles/llfs.dir/llfs/track_fds.cpp.o[K[110/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/buffered_log_data_reader.test.cpp.o[K[111/200] Building CXX object CMakeFiles/llfs.dir/llfs/simulated_log_device_storage.cpp.o[K[111/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/buffer.test.cpp.o[K[112/200] Building CXX object CMakeFiles/llfs.dir/llfs/simulated_log_device_writer_impl.cpp.o[K[112/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/bloom_filter.test.cpp.o[K[113/200] Building CXX object CMakeFiles/llfs.dir/llfs/slot_writer.cpp.o[K[113/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/file_log_driver.test.cpp.o[K[114/200] Building CXX object CMakeFiles/llfs.dir/llfs/storage_file.cpp.o[K[114/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/fuse.test.cpp.o[K[115/200] Building CXX object CMakeFiles/llfs.dir/llfs/storage_file_config_block.cpp.o[K[115/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/ioring.test.cpp.o[K[116/200] Building CXX object CMakeFiles/llfs.dir/llfs/storage_object_info.cpp.o[K[116/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/ioring_buffer_pool.test.cpp.o[K[117/200] Building CXX object CMakeFiles/llfs.dir/llfs/testing/fake_log_device.cpp.o[K[117/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/ioring_buffer_view.test.cpp.o[K[118/200] Building CXX object CMakeFiles/llfs.dir/llfs/testing/fake_page_device.cpp.o[K[118/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/ioring_file.test.cpp.o[K[119/200] Building CXX object CMakeFiles/llfs.dir/llfs/testing/test_config.cpp.o[K[119/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/ioring_log_device2.test.cpp.o[K[120/200] Building CXX object CMakeFiles/llfs.dir/llfs/user_data.cpp.o[K[120/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/ioring_stream_buffer.test.cpp.o[K[121/200] Building CXX object CMakeFiles/llfs.dir/llfs/varint.cpp.o[K[121/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/key.test.cpp.o[K[122/200] Building CXX object CMakeFiles/llfs.dir/llfs/simulated_page_device_impl.cpp.o[K[122/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/latching_bit_set.test.cpp.o[K[123/200] Building CXX object CMakeFiles/llfs.dir/llfs/storage_context.cpp.o[K[123/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/log_device.test.cpp.o[K[124/200] Building CXX object CMakeFiles/llfs.dir/llfs/storage_file_builder.cpp.o[K[124/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/lru_clock.test.cpp.o[K[125/200] Building CXX object CMakeFiles/llfs.dir/llfs/trie.cpp.o[K[125/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/mem_fuse.test.cpp.o[K[126/200] Building CXX object CMakeFiles/llfs.dir/llfs/storage_simulation.cpp.o[K[126/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/memory_page_device.test.cpp.o[K[127/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume.cpp.o[K[127/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/pack_as_raw.test.cpp.o[K[128/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_metadata_recovery_visitor.cpp.o[K[128/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/packed_array.test.cpp.o[K[129/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_config.cpp.o[K[129/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/packed_bytes.test.cpp.o[K[130/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/buffer.test.cpp.o[K[130/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/packed_float.test.cpp.o[K[131/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_metadata_refresher.cpp.o[K[131/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/packed_interval.test.cpp.o[K[132/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_runtime_options.cpp.o[K[132/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/packed_slot_range.test.cpp.o[K[133/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_job_recovery_visitor.cpp.o[K[133/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/packed_status.test.cpp.o[K[134/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_reader.cpp.o[K[134/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/packed_status_or.test.cpp.o[K[135/200] Building CXX object CMakeFiles/llfs.dir/llfs/worker_task.cpp.o[K[135/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/packed_variant.test.cpp.o[K[136/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/data_packer.test.cpp.o[K[136/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/page_allocator.test.cpp.o[K[137/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_trimmed_region_visitor.cpp.o[K[137/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/page_cache_slot.test.cpp.o[K[138/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/buffered_log_data_reader.test.cpp.o[K[138/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/page_recycler.test.cpp.o[K[139/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_trimmer_recovery_visitor.cpp.o[K[139/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/raw_volume_log_data_parser.test.cpp.o[K[140/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/filesystem_page_device.test.cpp.o[K[140/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/ring_buffer.test.cpp.o[K[141/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/key.test.cpp.o[K[141/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/sha256.test.cpp.o[K[142/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/latching_bit_set.test.cpp.o[K[142/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/slot.test.cpp.o[K[143/200] Building CXX object CMakeFiles/llfs.dir/llfs/volume_trimmer.cpp.o[K[143/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/slot_interval_map.test.cpp.o[K[144/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/lru_clock.test.cpp.o[K[144/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/slot_lock_manager.test.cpp.o[K[145/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/cache.test.cpp.o[K[145/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/slot_read_lock.test.cpp.o[K[146/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/ioring_buffer_view.test.cpp.o[K[146/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/slot_sequencer.test.cpp.o[K[147/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/fuse.test.cpp.o[K[147/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/slot_test.cpp.o[K[148/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/bloom_filter.test.cpp.o[K[148/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/slot_writer.test.cpp.o[K[149/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/ioring_file.test.cpp.o[K[149/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/storage_context.test.cpp.o[K[150/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/ioring_stream_buffer.test.cpp.o[K[150/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/storage_file_builder.test.cpp.o[K[151/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/ioring.test.cpp.o[K[151/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/strings.test.cpp.o[K[152/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/ioring_buffer_pool.test.cpp.o[K[152/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/track_fds.test.cpp.o[K[153/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/packed_float.test.cpp.o[K[153/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/trie.test.cpp.o[K[154/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/file_log_driver.test.cpp.o[K[154/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/unpack_cast.test.cpp.o[K[155/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/log_device.test.cpp.o[K[155/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/varint.test.cpp.o[K[156/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/memory_page_device.test.cpp.o[K[156/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/volume.test.cpp.o[K[157/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/pack_as_raw.test.cpp.o[K[157/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/volume_config.test.cpp.o[K[158/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/mem_fuse.test.cpp.o[K[158/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/volume_events.test.cpp.o[K[159/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/packed_bytes.test.cpp.o[K[159/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/volume_multi_append.test.cpp.o[K[160/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/ioring_log_device2.test.cpp.o[K[160/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/volume_trimmer.test.cpp.o[K[161/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/packed_array.test.cpp.o[K[161/200] Building CXX object CMakeFiles/llfs_Test.dir/common/test_environment.cpp.o[K[162/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/packed_interval.test.cpp.o[K[162/200] Building CXX object CMakeFiles/llfs_cli.dir/llfs_cli/main.cpp.o[K[163/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/ring_buffer.test.cpp.o[K[163/200] Building CXX object CMakeFiles/llfs_cli.dir/llfs_cli/list_command.cpp.o[K[164/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/packed_slot_range.test.cpp.o[K[164/200] Building CXX object CMakeFiles/llfs_fuse.dir/llfs_fuse/main.cpp.o[K[165/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/packed_status.test.cpp.o[K[166/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/sha256.test.cpp.o[K[167/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/packed_status_or.test.cpp.o[K[168/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/packed_variant.test.cpp.o[K[169/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/slot.test.cpp.o[K[170/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/strings.test.cpp.o[K[171/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/slot_interval_map.test.cpp.o[K[172/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/page_cache_slot.test.cpp.o[K[173/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/slot_lock_manager.test.cpp.o[K[174/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/unpack_cast.test.cpp.o[K[175/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/slot_test.cpp.o[K[176/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/varint.test.cpp.o[K[177/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/slot_writer.test.cpp.o[K[178/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/track_fds.test.cpp.o[K[179/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/slot_sequencer.test.cpp.o[K[180/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/slot_read_lock.test.cpp.o[K[181/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/trie.test.cpp.o[K[182/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/raw_volume_log_data_parser.test.cpp.o[K[183/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/page_recycler.test.cpp.o[K[184/200] Building CXX object CMakeFiles/llfs_Test.dir/common/test_environment.cpp.o[K[185/200] Building CXX object CMakeFiles/llfs_cli.dir/llfs_cli/main.cpp.o[K[186/200] Building CXX object CMakeFiles/llfs_cli.dir/llfs_cli/list_command.cpp.o[K[187/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/volume_events.test.cpp.o[K[188/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/page_allocator.test.cpp.o[K[189/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/storage_file_builder.test.cpp.o[K[190/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/volume_multi_append.test.cpp.o[K[191/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/storage_context.test.cpp.o[K[192/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/volume_config.test.cpp.o[K[193/200] Building CXX object CMakeFiles/llfs_fuse.dir/llfs_fuse/main.cpp.o[K[194/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/volume_trimmer.test.cpp.o[K[195/200] Building CXX object CMakeFiles/llfs_Test.dir/llfs/volume.test.cpp.o[K[196/200] Building CXX object CMakeFiles/llfs.dir/llfs/page_cache.cpp.o[K[196/200] Linking CXX static library libllfs.a[K[197/200] Linking CXX static library libllfs.a[K[197/200] Linking CXX executable llfs[K[197/200] Linking CXX executable llfs_Test[K[197/200] Linking CXX executable llfs_fuse[K[198/200] Linking CXX executable llfs_fuse[K[199/200] Linking CXX executable llfs[K[200/200] Linking CXX executable llfs_Test[K
+
+"/ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/script/generate-vscode-config.sh"
+vscode_config_dir is /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/.vscode
+project_dir is /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs
+checking for /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/build/Release/compile_commands.json
+checking for /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/build/RelWithDebInfo/compile_commands.json
+checking for /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/build/Debug/compile_commands.json
+(cd "/ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/build/RelWithDebInfo" && GTEST_OUTPUT='xml:../test-results.xml'  ./llfs_Test)
+Running main() from /ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/b/gtest97ac6ae44faba/b/src/googletest/src/gtest_main.cc
+Note: Google Test filter = StorageContextTest*
+[==========] Running 3 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 3 tests from StorageContextTest
+[ RUN      ] StorageContextTest.GetPageCache
+WARNING: Logging before InitGoogleLogging() is written to STDERR
+I20240909 15:20:12.000912   567 page_cache.cpp:525] Are we calling add_page_devices twice?
+I20240909 15:20:12.000965   567 page_cache.cpp:541] max_page_device_id found: 1
+I20240909 15:20:12.000975   567 page_cache.cpp:548] Arena has device_id: 1
+I20240909 15:20:12.001009   567 page_cache.cpp:548] Arena has device_id: 1
+E20240909 15:20:12.001017   567 page_cache.cpp:564] FATAL: /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/src/llfs/page_cache.cpp:564: Assertion failed: state->page_devices[device_id] == nullptr
+ (in `batt::Status llfs::PageCache::add_page_devices(std::vector<llfs::PageArena>&)`)
+
+  state->page_devices[device_id] == 0x5640536ca4f0
+
+  nullptr == nullptr
+
+Duplicate entries found for the same device id! device_id == 1
+E20240909 15:20:12.001060   567 assert_impl.hpp:14] 
+
+FATAL: signal 6 (Aborted):
+[[raw stack]]
+./llfs_Test(+0xe878f)[0x564050b5978f]
+/lib/x86_64-linux-gnu/libc.so.6(+0x45495)[0x7f1ab2e65495]
+/lib/x86_64-linux-gnu/libc.so.6(on_exit+0x0)[0x7f1ab2e65610]
+./llfs_Test(+0xdb465)[0x564050b4c465]
+/lib/x86_64-linux-gnu/libc.so.6(+0x42520)[0x7f1ab2e62520]
+/lib/x86_64-linux-gnu/libc.so.6(pthread_kill+0x12c)[0x7f1ab2eb69fc]
+/lib/x86_64-linux-gnu/libc.so.6(raise+0x16)[0x7f1ab2e62476]
+/lib/x86_64-linux-gnu/libc.so.6(abort+0xd3)[0x7f1ab2e487f3]
+./llfs_Test(+0x566cec)[0x564050fd7cec]
+./llfs_Test(+0x44f791)[0x564050ec0791]
+./llfs_Test(+0x452649)[0x564050ec3649]
+./llfs_Test(+0x452e63)[0x564050ec3e63]
+./llfs_Test(+0x4ce936)[0x564050f3f936]
+./llfs_Test(+0x2e4b58)[0x564050d55b58]
+./llfs_Test(+0x715f97)[0x564051186f97]
+./llfs_Test(+0x706d31)[0x564051177d31]
+./llfs_Test(+0x706f75)[0x564051177f75]
+./llfs_Test(+0x7094a1)[0x56405117a4a1]
+./llfs_Test(+0x70d27a)[0x56405117e27a]
+./llfs_Test(+0x71657f)[0x56405118757f]
+./llfs_Test(+0x707035)[0x564051178035]
+./llfs_Test(+0xd4747)[0x564050b45747]
+/lib/x86_64-linux-gnu/libc.so.6(+0x29d90)[0x7f1ab2e49d90]
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x80)[0x7f1ab2e49e40]
+./llfs_Test(+0xd4d95)[0x564050b45d95]
+
+ 0# batt::print_stack_trace() at /ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/b/batte897795ee12239/b/src/batteries/segv.hpp:54
+ 1# __run_exit_handlers at ./stdlib/exit.c:114
+ 2# on_exit at ./stdlib/on_exit.c:26
+ 3# 0x0000564050B4C465 in ./llfs_Test
+ 4# 0x00007F1AB2E62520 in /lib/x86_64-linux-gnu/libc.so.6
+ 5# pthread_kill at ./nptl/pthread_kill.c:89
+ 6# raise at ../sysdeps/posix/raise.c:27
+ 7# abort at ./stdlib/abort.c:81
+ 8# batt::fail_check_exit() at /ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/b/batte897795ee12239/b/src/batteries/assert_impl.hpp:15
+ 9# llfs::PageCache::add_page_devices(std::vector<llfs::PageArena, std::allocator<llfs::PageArena> >&) at /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/src/llfs/page_cache.cpp:564
+10# llfs::PageCache::PageCache(std::vector<llfs::PageArena, std::allocator<llfs::PageArena> >&&, llfs::PageCacheOptions const&) at /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/src/llfs/page_cache.cpp:110
+11# llfs::PageCache::make_shared(std::vector<llfs::PageArena, std::allocator<llfs::PageArena> >&&, llfs::PageCacheOptions const&) at /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/src/llfs/page_cache.cpp:92
+12# llfs::StorageContext::get_page_cache() at /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/src/llfs/storage_context.cpp:350
+13# (anonymous namespace)::StorageContextTest::SetUp() at /ssh:a8-build-host:/home/gbornste/Desktop/Projects/MPS/llfs/src/llfs/storage_context.test.cpp:132
+14# void testing::internal::HandleExceptionsInMethodIfSupported<testing::Test, void>(testing::Test*, void (testing::Test::*)(), char const*) at /ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/b/gtest97ac6ae44faba/b/src/googletest/src/gtest.cc:2672
+15# testing::Test::Run() at /ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/b/gtest97ac6ae44faba/b/src/googletest/src/gtest.cc:2677
+16# testing::TestInfo::Run() at /ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/b/gtest97ac6ae44faba/b/src/googletest/src/gtest.cc:2836
+17# testing::TestSuite::Run() at /ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/b/gtest97ac6ae44faba/b/src/googletest/src/gtest.cc:2968
+18# testing::internal::UnitTestImpl::RunAllTests() at /ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/b/gtest97ac6ae44faba/b/src/googletest/src/gtest.cc:5921
+19# bool testing::internal::HandleExceptionsInMethodIfSupported<testing::internal::UnitTestImpl, bool>(testing::internal::UnitTestImpl*, bool (testing::internal::UnitTestImpl::*)(), char const*) at /ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/b/gtest97ac6ae44faba/b/src/googletest/src/gtest.cc:2672
+20# testing::UnitTest::Run() at /ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/b/gtest97ac6ae44faba/b/src/googletest/src/gtest.cc:5487
+21# main at /ssh:a8-build-host:/home/gbornste/.a8.conan/.conan_2.0.16/p/b/gtest97ac6ae44faba/b/src/googletest/src/gtest_main.cc:65
+22# __libc_start_call_main at ../sysdeps/nptl/libc_start_call_main.h:58
+23# __libc_start_main at ../csu/libc-start.c:379
+24# _start in ./llfs_Test
+
+make: *** [Makefile:32: test] Error 6

@@ -32,6 +32,7 @@ struct PackedConfigSlotBase {
     static constexpr u16 kLogDevice = 3;      //
     static constexpr u16 kPageDevice = 4;     //
     static constexpr u16 kPageAllocator = 5;  //
+    static constexpr u16 kLogDevice2 = 6;     // Simpler, optimized version of kLogDevice
 
     // The range [0x1000..0x1fff] is reserved for continuation slots.
 

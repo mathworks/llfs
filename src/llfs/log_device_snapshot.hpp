@@ -46,8 +46,9 @@ class LogDeviceSnapshot : public boost::equality_comparable<LogDeviceSnapshot>
       return device.driver().get_commit_pos();
     }();
 
-    ConstBuffer src = batt::resize_buffer(device.buffer_.get(snapshot.trim_pos_),
-                                          slot_distance(snapshot.trim_pos_, snapshot.commit_pos_));
+    ConstBuffer src =
+        batt::resize_buffer(device.buffer_.get(snapshot.trim_pos_),
+                            LLFS_CHECKED_SLOT_DISTANCE(snapshot.trim_pos_, snapshot.commit_pos_));
 
     snapshot.byte_storage_.reset(new u8[src.size()]);
 
@@ -87,7 +88,7 @@ class LogDeviceSnapshot : public boost::equality_comparable<LogDeviceSnapshot>
 
   usize size() const
   {
-    return slot_distance(this->trim_pos(), this->commit_pos());
+    return LLFS_CHECKED_SLOT_DISTANCE(this->trim_pos(), this->commit_pos());
   }
 
   const u8* bytes() const

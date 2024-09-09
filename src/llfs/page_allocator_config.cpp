@@ -27,7 +27,7 @@ namespace llfs {
       .uuid = None,
       .max_attachments = 64,
       .page_count = PageCount{0},
-      .log_device = CreateNewLogDeviceWithDefaultSize{},
+      .log_device = CreateNewLogDevice2WithDefaultSize{},
       .page_size_log2 = PageSizeLog2{0},
       .page_device = LinkToNewPageDevice{},
   };
@@ -64,36 +64,36 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
           options.log_device,
 
           //----- --- -- -  -  -   -
-          [&](const CreateNewLogDevice& create_new) -> StatusOr<boost::uuids::uuid> {
+          [&](const LinkToExistingLogDevice& link_to_existing) -> StatusOr<boost::uuids::uuid> {
+            return link_to_existing.uuid;
+          },
+
+          //----- --- -- -  -  -   -
+          [&](const CreateNewLogDevice2& create_new) -> StatusOr<boost::uuids::uuid> {
             if (create_new.options.log_size < minimum_log_size) {
-              // TODO [tastolfi 2022-07-27] custom code
               return {batt::StatusCode::kInvalidArgument};
             }
 
             BATT_ASSIGN_OK_RESULT(
-                const FileOffsetPtr<const PackedLogDeviceConfig&> p_log_device_config,
+                const FileOffsetPtr<const PackedLogDeviceConfig2&> p_log_device_config,
                 txn.add_object(create_new.options));
 
             return p_log_device_config->uuid;
           },
 
           //----- --- -- -  -  -   -
-          [&](const CreateNewLogDeviceWithDefaultSize& log_options)
+          [&](const CreateNewLogDevice2WithDefaultSize& log_options)
               -> StatusOr<boost::uuids::uuid> {
             BATT_ASSIGN_OK_RESULT(
-                const FileOffsetPtr<const PackedLogDeviceConfig&> p_log_device_config,
-                txn.add_object(LogDeviceConfigOptions{
+                const FileOffsetPtr<const PackedLogDeviceConfig2&> p_log_device_config,
+                txn.add_object(LogDeviceConfigOptions2{
                     .uuid = log_options.uuid,
-                    .pages_per_block_log2 = log_options.pages_per_block_log2,
                     .log_size = minimum_log_size,
+                    .device_page_size_log2 = LogDeviceConfigOptions2::kDefaultDevicePageSizeLog2,
+                    .data_alignment_log2 = LogDeviceConfigOptions2::kDefaultDataAlignmentLog2,
                 }));
 
             return p_log_device_config->uuid;
-          },
-
-          //----- --- -- -  -  -   -
-          [&](const LinkToExistingLogDevice& link_to_existing) -> StatusOr<boost::uuids::uuid> {
-            return link_to_existing.uuid;
           }));
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -144,10 +144,10 @@ StatusOr<std::unique_ptr<PageAllocator>> recover_storage_object(
     const std::string& /*file_name*/,                                           //
     const FileOffsetPtr<const PackedPageAllocatorConfig&>& p_allocator_config,  //
     const PageAllocatorRuntimeOptions& allocator_options,                       //
-    const IoRingLogDriverOptions& log_options)
+    const LogDeviceRuntimeOptions& log_options)
 {
-  StatusOr<std::unique_ptr<LogDeviceFactory>> log_factory = storage_context->recover_object(
-      batt::StaticType<PackedLogDeviceConfig>{}, p_allocator_config->log_device_uuid, log_options);
+  StatusOr<std::unique_ptr<LogDeviceFactory>> log_factory =
+      storage_context->recover_log_device(p_allocator_config->log_device_uuid, log_options);
 
   BATT_REQUIRE_OK(log_factory);
 

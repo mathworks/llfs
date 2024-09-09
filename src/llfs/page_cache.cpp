@@ -522,6 +522,7 @@ void PageCache::purge(PageId page_id, u64 callers, u64 job_id)
 //
 batt::Status PageCache::add_page_devices(std::vector<PageArena>& arenas)
 {
+  LOG(INFO) << "Are we calling add_page_devices twice?";
   {
     batt::ScopedWriteLock<State> state(this->state_);
     // TODO: [Gabe Bornstein 6/6/24] Read over this function and make sure it won't break anything
@@ -537,11 +538,14 @@ batt::Status PageCache::add_page_devices(std::vector<PageArena>& arenas)
       max_page_device_id = std::max(max_page_device_id, arena.device().get_id());
     }
 
+    LOG(INFO) << "max_page_device_id found: " << max_page_device_id;
+
     // Populate state.page_devices.
     //
     state->page_devices.resize(max_page_device_id + 1);
     for (PageArena& arena : arenas) {
       const page_device_id_int device_id = arena.device().get_id();
+      LOG(INFO) << "Arena has device_id: " << device_id;
       const auto page_size_log2 = batt::log2_ceil(arena.device().page_size());
 
       BATT_CHECK_EQ(PageSize{1} << page_size_log2, arena.device().page_size())

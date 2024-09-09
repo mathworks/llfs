@@ -12,6 +12,7 @@
 #ifndef LLFS_DISABLE_IO_URING
 
 #include <llfs/logging.hpp>
+#include <llfs/track_fds.hpp>
 
 #include <batteries/finally.hpp>
 
@@ -57,7 +58,7 @@ StatusOr<i32> status_or_i32_from_uring_retval(int retval)
     BATT_CHECK_EQ(impl->event_fd_, -1);
 
     LLFS_VLOG(1) << "Creating eventfd";
-    impl->event_fd_.store(eventfd(0, /*flags=*/EFD_SEMAPHORE));
+    impl->event_fd_.store(maybe_track_fd(eventfd(0, /*flags=*/EFD_SEMAPHORE)));
     if (impl->event_fd_ < 0) {
       LLFS_LOG_ERROR() << "failed to create eventfd: " << std::strerror(errno);
       return batt::status_from_retval(impl->event_fd_.load());

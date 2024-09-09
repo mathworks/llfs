@@ -33,9 +33,9 @@ namespace llfs {
 {
   const int fd = batt::syscall_retry([&] {
     if (mode) {
-      return ::open(file_name, flags, *mode);
+      return system_open3(file_name, flags, *mode);
     } else {
-      return ::open(file_name, flags);
+      return system_open2(file_name, flags);
     }
   });
   BATT_REQUIRE_OK(batt::status_from_retval(fd));

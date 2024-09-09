@@ -10,7 +10,6 @@
 //
 
 #include <llfs/crc.hpp>
-#include <llfs/ioring_log_device.hpp>
 #include <llfs/page_allocator.hpp>
 #include <llfs/uuid.hpp>
 
@@ -173,7 +172,7 @@ StatusOr<PageArena> recover_storage_object(
     const std::string& /*file_name*/,                             //
     const FileOffsetPtr<const PackedPageArenaConfig&>& p_config,  //
     const PageAllocatorRuntimeOptions& allocator_options,         //
-    const IoRingLogDriverOptions& allocator_log_options,          //
+    const LogDeviceRuntimeOptions& allocator_log_options,         //
     const IoRingFileRuntimeOptions& page_device_file_options)
 {
   StatusOr<std::unique_ptr<PageAllocator>> page_allocator = storage_context->recover_object(

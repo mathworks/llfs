@@ -18,7 +18,8 @@
 #include <llfs/page_allocator_runtime_options.hpp>
 
 #include <llfs/int_types.hpp>
-#include <llfs/log_device_config.hpp>
+#include <llfs/log_device_runtime_options.hpp>
+#include <llfs/nested_log_device_config.hpp>
 #include <llfs/optional.hpp>
 #include <llfs/packed_config.hpp>
 #include <llfs/packed_pointer.hpp>
@@ -49,7 +50,7 @@ StatusOr<std::unique_ptr<PageAllocator>> recover_storage_object(
     const std::string& file_name,                                     //
     const FileOffsetPtr<const PackedPageAllocatorConfig&>& p_config,  //
     const PageAllocatorRuntimeOptions& options,                       //
-    const IoRingLogDriverOptions& log_options);
+    const LogDeviceRuntimeOptions& log_options);
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //

@@ -10,7 +10,6 @@
 //
 
 #include <llfs/crc.hpp>
-#include <llfs/ioring_log_device.hpp>
 #include <llfs/page_allocator.hpp>
 #include <llfs/page_recycler.hpp>
 

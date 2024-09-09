@@ -10,7 +10,9 @@
 #ifndef LLFS_VOLUME_RUNTIME_OPTIONS_HPP
 #define LLFS_VOLUME_RUNTIME_OPTIONS_HPP
 
-#include <llfs/ioring_log_driver_options.hpp>
+#include <llfs/config.hpp>
+//
+#include <llfs/log_device_runtime_options.hpp>
 #include <llfs/slot_lock_manager.hpp>
 #include <llfs/volume_reader.hpp>
 
@@ -32,11 +34,11 @@ struct VolumeRuntimeOptions {
 
   // Runtime options used to tune the behavior of the root log driver.
   //
-  IoRingLogDriverOptions root_log_options;
+  LogDeviceRuntimeOptions root_log_options;
 
   // Runtime options used to tune the behavior of the recycler log driver.
   //
-  IoRingLogDriverOptions recycler_log_options;
+  LogDeviceRuntimeOptions recycler_log_options;
 
   // (Optional) The SlotLockManager to use for trimming the recovered Volume's root log.  If
   // `nullptr`, a new SlotLockManager will be created.

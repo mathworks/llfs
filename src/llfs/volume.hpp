@@ -88,6 +88,10 @@ class Volume
   //
   const VolumeOptions& options() const;
 
+  /** \brief The name for this Volume, as specified by the VolumeOptions.
+   */
+  const std::string& name() const noexcept;
+
   // Returns the UUID for this volume.
   //
   const boost::uuids::uuid& get_volume_uuid() const;

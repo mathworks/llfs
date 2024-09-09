@@ -11,7 +11,7 @@
 #define LLFS_PAGE_ARENA_CONFIG_HPP
 
 #include <llfs/int_types.hpp>
-#include <llfs/ioring_log_flush_op.hpp>
+#include <llfs/log_device_runtime_options.hpp>
 #include <llfs/packed_config.hpp>
 #include <llfs/page_allocator_config.hpp>
 #include <llfs/page_arena.hpp>
@@ -36,7 +36,7 @@ StatusOr<PageArena> recover_storage_object(                       //
     const std::string& file_name,                                 //
     const FileOffsetPtr<const PackedPageArenaConfig&>& p_config,  //
     const PageAllocatorRuntimeOptions& allocator_options,         //
-    const IoRingLogDriverOptions& allocator_log_options,          //
+    const LogDeviceRuntimeOptions& allocator_log_options,         //
     const IoRingFileRuntimeOptions& page_device_file_options);
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

@@ -136,9 +136,10 @@ Status StorageContext::increase_storage_capacity(
                                     .max_attachments = max_attachments,
                                     .page_count = node_page_count,
                                     .log_device =
-                                        llfs::CreateNewLogDeviceWithDefaultSize{
+                                        llfs::CreateNewLogDevice2WithDefaultSize{
                                             .uuid = llfs::None,
-                                            .pages_per_block_log2 = 1,
+                                            .device_page_size_log2=None,
+                                            .data_alignment_log2=None,
                                         },
                                     .page_size_log2 = node_size_log2,
                                     .page_device = llfs::LinkToNewPageDevice{},
@@ -172,9 +173,10 @@ Status StorageContext::increase_storage_capacity(
                                     .max_attachments = max_attachments,
                                     .page_count = leaf_page_count,
                                     .log_device =
-                                        llfs::CreateNewLogDeviceWithDefaultSize{
+                                        llfs::CreateNewLogDevice2WithDefaultSize{
                                             .uuid = llfs::None,
-                                            .pages_per_block_log2 = 1,
+                                            .device_page_size_log2=None,
+                                            .data_alignment_log2=None,
                                         },
                                     .page_size_log2 = leaf_size_log2,
                                     .page_device = llfs::LinkToNewPageDevice{},
@@ -201,6 +203,36 @@ Status StorageContext::increase_storage_capacity(
   BATT_CHECK_NE(this->page_cache_, nullptr);
   BATT_CHECK_OK(this->page_cache_->add_page_devices(arenas));
   return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<std::unique_ptr<LogDeviceFactory>> StorageContext::recover_log_device(
+    const boost::uuids::uuid& uuid, const LogDeviceRuntimeOptions& log_runtime_options)
+{
+  batt::SharedPtr<StorageObjectInfo> info = this->find_object_by_uuid(uuid);
+  if (!info) {
+    return {batt::StatusCode::kNotFound};
+  }
+
+  switch (info->p_config_slot->tag) {
+      //----- --- -- -  -  -   -
+    case PackedConfigSlotBase::Tag::kLogDevice:
+      return {::llfs::make_status(::llfs::StatusCode::kLogDeviceV1Deprecated)};
+
+      //----- --- -- -  -  -   -
+    case PackedConfigSlotBase::Tag::kLogDevice2:
+      return recover_storage_object(
+          batt::shared_ptr_from(this), info->storage_file->file_name(),
+          FileOffsetPtr<const PackedLogDeviceConfig2&>{
+              config_slot_cast<PackedLogDeviceConfig2>(info->p_config_slot.object),
+              info->p_config_slot.file_offset},
+          log_runtime_options);
+
+      //----- --- -- -  -  -   -
+    default:
+      return ::llfs::make_status(::llfs::StatusCode::kStorageObjectTypeError);
+  }
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -235,7 +267,7 @@ Status StorageContext::recover_arena(std::vector<PageArena>& arenas, boost::uuid
             .name = batt::to_string(base_name, "_Allocator"),
         },
         [&] {
-          IoRingLogDriverOptions options;
+          LogDeviceRuntimeOptions options;
           options.name = batt::to_string(base_name, "_AllocatorLog");
           return options;
         }(),
@@ -280,7 +312,35 @@ StatusOr<batt::SharedPtr<PageCache>> StorageContext::get_page_cache()
 
   for (const auto& [uuid, p_object_info] : this->index_) {
     if (p_object_info->p_config_slot->tag == PackedConfigSlotBase::Tag::kPageArena) {
-      BATT_CHECK_OK(this->recover_arena(storage_pool, uuid, p_object_info));
+        BATT_CHECK_OK(this->recover_arena(storage_pool, uuid, p_object_info));
+
+      const auto& packed_arena_config =
+          config_slot_cast<PackedPageArenaConfig>(p_object_info->p_config_slot.object);
+
+      const std::string base_name =
+          batt::to_string("PageDevice_", packed_arena_config.page_device_uuid);
+
+      StatusOr<PageArena> arena = this->recover_object(
+          batt::StaticType<PackedPageArenaConfig>{}, uuid,
+          PageAllocatorRuntimeOptions{
+              .scheduler = this->scheduler_,
+              .name = batt::to_string(base_name, "_Allocator"),
+          },
+          [&] {
+            LogDeviceRuntimeOptions options;
+            options.name = batt::to_string(base_name, "_AllocatorLog");
+            return options;
+          }(),
+          IoRingFileRuntimeOptions{
+              .io_ring = *this->io_ring_,
+              .use_raw_io = true,
+              .allow_read = true,
+              .allow_write = true,
+          });
+
+      BATT_REQUIRE_OK(arena);
+
+      storage_pool.emplace_back(std::move(*arena));
     }
   }
 

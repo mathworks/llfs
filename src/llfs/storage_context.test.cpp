@@ -14,7 +14,7 @@
 #include <gtest/gtest.h>
 
 #include <llfs/constants.hpp>
-#include <llfs/ioring_log_device.hpp>
+#include <llfs/ioring_log_device2.hpp>
 #include <llfs/opaque_page_view.hpp>
 #include <llfs/page_arena_config.hpp>
 #include <llfs/page_cache_job.hpp>
@@ -68,10 +68,10 @@ class StorageContextTest : public ::testing::Test
                                   .max_attachments = 32,
                                   .page_count = llfs::PageCount{32},
                                   .log_device =
-                                      llfs::CreateNewLogDeviceWithDefaultSize{
+                                      llfs::CreateNewLogDevice2WithDefaultSize{
                                           .uuid = llfs::None,
-                                          .pages_per_block_log2 =
-                                              llfs::IoRingLogConfig::kDefaultPagesPerBlockLog2 + 1,
+                                          .device_page_size_log2 = llfs::None,
+                                          .data_alignment_log2 = llfs::None,
                                       },
                                   .page_size_log2 = llfs::PageSizeLog2{12},
                                   .page_device = llfs::LinkToNewPageDevice{},
@@ -101,10 +101,10 @@ class StorageContextTest : public ::testing::Test
                                   .max_attachments = 32,
                                   .page_count = llfs::PageCount{1},
                                   .log_device =
-                                      llfs::CreateNewLogDeviceWithDefaultSize{
+                                      llfs::CreateNewLogDevice2WithDefaultSize{
                                           .uuid = llfs::None,
-                                          .pages_per_block_log2 =
-                                              llfs::IoRingLogConfig::kDefaultPagesPerBlockLog2 + 1,
+                                          .device_page_size_log2 = llfs::None,
+                                          .data_alignment_log2 = llfs::None,
                                       },
                                   .page_size_log2 = llfs::PageSizeLog2{21},
                                   .page_device = llfs::LinkToNewPageDevice{},

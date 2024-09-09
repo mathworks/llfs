@@ -12,8 +12,9 @@
 
 #include <llfs/config.hpp>
 //
-#include <llfs/ioring_log_config.hpp>
+#include <llfs/interval.hpp>
 #include <llfs/packed_log_page_buffer.hpp>
+#include <llfs/raw_block_file.hpp>
 #include <llfs/simulated_storage_object.hpp>
 #include <llfs/status.hpp>
 
@@ -54,9 +55,11 @@ class SimulatedLogDeviceStorage
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-    explicit DurableState(StorageSimulation& simulation, const IoRingLogConfig& config) noexcept
+    explicit DurableState(StorageSimulation& simulation, usize log_size,
+                          const Interval<i64>& file_offset) noexcept
         : simulation_{simulation}
-        , config_{config}
+        , log_size_{log_size}
+        , file_offset_{file_offset}
     {
     }
 
@@ -72,9 +75,24 @@ class SimulatedLogDeviceStorage
       return this->simulation_;
     }
 
-    const IoRingLogConfig& config() const noexcept
+    usize log_size() const noexcept
     {
-      return this->config_;
+      return this->log_size_;
+    }
+
+    const Interval<i64>& file_offset() const noexcept
+    {
+      return this->file_offset_;
+    }
+
+    bool is_initialized() const noexcept
+    {
+      return this->is_initialized_;
+    }
+
+    void set_initialized(bool b) noexcept
+    {
+      this->is_initialized_ = b;
     }
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -120,14 +138,57 @@ class SimulatedLogDeviceStorage
     //+++++++++++-+-+--+----- --- -- -  -  -   -
 
     const i64 id_{SimulatedLogDeviceStorage::new_id()};
+
     StorageSimulation& simulation_;
-    const IoRingLogConfig config_;
+
+    /** \brief The maximum capacity (bytes) of the log.
+     */
+    const usize log_size_;
+
+    /** \brief The valid range of offsets for this log device on the storage media.
+     */
+    const Interval<i64> file_offset_;
+
+    /** \brief Whether the simulated storage media has been initialized for this device.  This is
+     * set by the StorageSimulation (or other external user) code.
+     */
+    bool is_initialized_ = false;
+
     batt::Mutex<Impl> impl_;
   };
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief RawBlockFile interface view of the DurableState.
+   *
+   * Used for initialization of the simulated media.
+   */
+  class RawBlockFileImpl : public RawBlockFile
+  {
+   public:
+    explicit RawBlockFileImpl(std::shared_ptr<DurableState>&& durable_state) noexcept;
+
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+    StatusOr<i64> write_some(i64 offset, const ConstBuffer& buffer_arg) override;
+
+    StatusOr<i64> read_some(i64 offset, const MutableBuffer& buffer_arg) override;
+
+    StatusOr<i64> get_size() override;
+
+    //+++++++++++-+-+--+----- --- -- -  -  -   -
+   private:
+    const std::shared_ptr<DurableState> durable_state_;
+    const u64 creation_step_;
+  };
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   class EphemeralState : public batt::RefCounted<EphemeralState>
   {
    public:
+    // Index values for this->work_count_per_caller_ array (see below).
+    //
     enum : usize {
       PUBLIC_API = 0,
       POST_TO_EVENT_LOOP,
@@ -148,10 +209,32 @@ class SimulatedLogDeviceStorage
       return this->id_;
     }
 
-    const IoRingLogConfig& config() const noexcept
+    usize log_size() const noexcept
     {
-      return this->durable_state_->config();
+      return this->durable_state_->log_size();
     }
+
+    const Interval<i64>& file_offset() const noexcept
+    {
+      return this->durable_state_->file_offset();
+    }
+
+    bool is_initialized() const noexcept
+    {
+      return this->durable_state_->is_initialized();
+    }
+
+    void set_initialized(bool b) noexcept
+    {
+      this->durable_state_->set_initialized(b);
+    }
+
+    std::unique_ptr<RawBlockFileImpl> get_raw_block_file()
+    {
+      return std::make_unique<RawBlockFileImpl>(batt::make_copy(this->durable_state_));
+    }
+
+    //----- --- -- -  -  -   -
 
     Status close();
 
@@ -210,25 +293,6 @@ class SimulatedLogDeviceStorage
     std::atomic<bool> stopped_{false};
   };
 
-  class RawBlockFileImpl : public RawBlockFile
-  {
-   public:
-    explicit RawBlockFileImpl(std::shared_ptr<DurableState>&& durable_state) noexcept;
-
-    //+++++++++++-+-+--+----- --- -- -  -  -   -
-
-    StatusOr<i64> write_some(i64 offset, const ConstBuffer& buffer_arg) override;
-
-    StatusOr<i64> read_some(i64 offset, const MutableBuffer& buffer_arg) override;
-
-    StatusOr<i64> get_size() override;
-
-    //+++++++++++-+-+--+----- --- -- -  -  -   -
-   private:
-    const std::shared_ptr<DurableState> durable_state_;
-    const u64 creation_step_;
-  };
-
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   class EventLoopTask
@@ -267,10 +331,27 @@ class SimulatedLogDeviceStorage
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  const IoRingLogConfig& config() const noexcept
+  usize log_size() const noexcept
   {
-    return this->impl_->config();
+    return this->impl_->log_size();
   }
+
+  bool is_initialized() const noexcept
+  {
+    return this->impl_->is_initialized();
+  }
+
+  void set_initialized(bool b) noexcept
+  {
+    this->impl_->set_initialized(b);
+  }
+
+  std::unique_ptr<SimulatedLogDeviceStorage::RawBlockFileImpl> get_raw_block_file()
+  {
+    return this->impl_->get_raw_block_file();
+  }
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   Status register_fd()
   {
@@ -316,6 +397,12 @@ class SimulatedLogDeviceStorage
   Status read_all(i64 offset, MutableBuffer buffer)
   {
     return this->impl_->read_all(offset, buffer);
+  }
+
+  template <typename Handler>
+  void async_write_some(i64 file_offset, const ConstBuffer& data, Handler&& handler)
+  {
+    this->impl_->async_write_some(file_offset, data, BATT_FORWARD(handler));
   }
 
   // The buf_index arg here isn't used by the simulated impl, but it is needed by the other type

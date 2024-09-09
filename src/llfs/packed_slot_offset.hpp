@@ -6,17 +6,16 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-#include <llfs/ioring_log_driver.hpp>
-//
+#pragma once
+#ifndef LLFS_PACKED_SLOT_OFFSET_HPP
+#define LLFS_PACKED_SLOT_OFFSET_HPP
 
-#ifndef LLFS_DISABLE_IO_URING
-
-#include <llfs/ioring_log_driver.ipp>
+#include <llfs/int_types.hpp>
 
 namespace llfs {
 
-template class BasicIoRingLogDriver<BasicIoRingLogFlushOp, DefaultIoRingLogDeviceStorage>;
+using PackedSlotOffset = little_u64;
 
-}  // namespace llfs
+}  //namespace llfs
 
-#endif  // LLFS_DISABLE_IO_URING
+#endif  // LLFS_PACKED_SLOT_OFFSET_HPP

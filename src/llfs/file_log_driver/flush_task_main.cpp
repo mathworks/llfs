@@ -31,7 +31,7 @@ void FileLogDriver::FlushTaskMain::operator()()
     auto local_flush_pos = this->shared_state_.flush_pos.get_value();
     for (;;) {
       ConstBuffer bytes_to_flush{this->buffer_.get(local_flush_pos).data(),
-                                 slot_distance(local_flush_pos, local_commit_pos)};
+                                 slot_clamp_distance(local_flush_pos, local_commit_pos)};
 
       if (bytes_to_flush.size() == 0) {
         // We've caught up!  Put this task to sleep awaiting more data to flush.

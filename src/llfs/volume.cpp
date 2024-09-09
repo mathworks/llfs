@@ -41,6 +41,13 @@ const VolumeOptions& Volume::options() const
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+const std::string& Volume::name() const noexcept
+{
+  return this->options().name;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 const boost::uuids::uuid& Volume::get_volume_uuid() const
 {
   return this->volume_uuid_;
@@ -374,7 +381,7 @@ void Volume::start()
           Status result = this->trimmer_->run();
           LLFS_VLOG(1) << "Volume::trimmer_task_ exited with status=" << result;
         },
-        "Volume::trimmer_task_");
+        /*task_name=*/batt::to_string(this->name(), "_Volume.trimmer_task"));
   }
 }
 

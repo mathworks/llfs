@@ -244,6 +244,11 @@ bool PageCacheSlot::evict_if_key_equals(PageId key) noexcept
   const auto old_state = this->state_.fetch_add(kPinCountDelta, std::memory_order_acquire);
   auto observed_state = old_state + kPinCountDelta;
 
+  const bool newly_pinned = !this->is_pinned(old_state);
+  if (newly_pinned) {
+    this->add_ref();
+  }
+
   BATT_CHECK_EQ(observed_state & Self::kOverflowMask, 0);
 
   // Use a CAS loop here to guarantee an atomic transition from Valid + Filled (unpinned) state to
@@ -267,6 +272,7 @@ bool PageCacheSlot::evict_if_key_equals(PageId key) noexcept
 
     if (this->state_.compare_exchange_weak(observed_state, target_state)) {
       BATT_CHECK(!Self::is_valid());
+      this->remove_ref();
       return true;
     }
   }

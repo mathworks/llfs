@@ -313,34 +313,6 @@ StatusOr<batt::SharedPtr<PageCache>> StorageContext::get_page_cache()
   for (const auto& [uuid, p_object_info] : this->index_) {
     if (p_object_info->p_config_slot->tag == PackedConfigSlotBase::Tag::kPageArena) {
         BATT_CHECK_OK(this->recover_arena(storage_pool, uuid, p_object_info));
-
-      const auto& packed_arena_config =
-          config_slot_cast<PackedPageArenaConfig>(p_object_info->p_config_slot.object);
-
-      const std::string base_name =
-          batt::to_string("PageDevice_", packed_arena_config.page_device_uuid);
-
-      StatusOr<PageArena> arena = this->recover_object(
-          batt::StaticType<PackedPageArenaConfig>{}, uuid,
-          PageAllocatorRuntimeOptions{
-              .scheduler = this->scheduler_,
-              .name = batt::to_string(base_name, "_Allocator"),
-          },
-          [&] {
-            LogDeviceRuntimeOptions options;
-            options.name = batt::to_string(base_name, "_AllocatorLog");
-            return options;
-          }(),
-          IoRingFileRuntimeOptions{
-              .io_ring = *this->io_ring_,
-              .use_raw_io = true,
-              .allow_read = true,
-              .allow_write = true,
-          });
-
-      BATT_REQUIRE_OK(arena);
-
-      storage_pool.emplace_back(std::move(*arena));
     }
   }
 

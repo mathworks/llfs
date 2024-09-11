@@ -52,6 +52,11 @@ class PageDeviceCache
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  const PageCacheSlot::Pool::Metrics& metrics() const noexcept
+  {
+    return this->slot_pool_->metrics();
+  }
+
   PageCacheSlot::Pool::Metrics& metrics()
   {
     return this->slot_pool_->metrics();

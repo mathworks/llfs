@@ -259,7 +259,7 @@ bool PageCacheSlot::evict_if_key_equals(PageId key) noexcept
     //
     if (!(Self::get_pin_count(observed_state) == 1 && this->is_valid(observed_state) &&
           this->key_ == key)) {
-      this->state_.fetch_sub(kPinCountDelta, std::memory_order_release);
+      this->release_pin();
       return false;
     }
 
@@ -272,6 +272,10 @@ bool PageCacheSlot::evict_if_key_equals(PageId key) noexcept
 
     if (this->state_.compare_exchange_weak(observed_state, target_state)) {
       BATT_CHECK(!Self::is_valid());
+      // At this point, we always expect to be going from pinned to unpinned.
+      // In order to successfully evict the slot, we must be holding the only pin,
+      // as guarenteed by the first if statement in the for loop.
+      //
       this->remove_ref();
       return true;
     }

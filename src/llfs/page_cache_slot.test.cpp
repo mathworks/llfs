@@ -49,6 +49,7 @@ namespace {
 //     d. Valid + Cleared + Pinned
 //  8. update_latest_use
 //  9. set_obsolete_hint
+//  10. concurrent ref and pin count testing
 //
 
 using namespace llfs::int_types;
@@ -449,6 +450,54 @@ TEST_F(PageCacheSlotTest, LatestUse)
   i64 t2 = slot->get_latest_use();
 
   EXPECT_LT(t2 - t1, 0);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//  10. Concurrent ref and pin count testing
+//
+TEST_F(PageCacheSlotTest, RefCounting)
+{
+  // The slot will start off in an Invalid state with a pin count and ref count of 0.
+  //
+  llfs::PageCacheSlot* slot = this->pool_->allocate();
+  EXPECT_FALSE(slot->is_valid());
+  EXPECT_EQ(slot->pin_count(), 0);
+  EXPECT_EQ(slot->ref_count(), 0);
+
+  u64 numThreads = std::thread::hardware_concurrency();
+  std::vector<std::thread> threads;
+  std::atomic<bool> start{false};
+  for (u64 i = 0; i < numThreads; ++i) {
+    threads.emplace_back([&slot, &start, i]() {
+      while (!start.load()) {
+        continue;
+      }
+
+      // Split the workload: let half the threads perform acquire_pin calls and 
+      // let the other half perform evictions.
+      //
+      if (i % 2) {
+        {
+          llfs::PageCacheSlot::PinnedRef pinned = slot->acquire_pin(llfs::PageId{}, /*ignore_key=*/true);
+        }
+      } else {
+        slot->evict_if_key_equals(llfs::PageId{1});
+      }
+    });
+  }
+
+  start.store(true);
+
+  for (std::thread &t : threads) {
+    t.join();
+  }
+
+  // By the end of this test, both the pin count and ref count should still be 0,
+  // since evict_if_key_equals and acquire_pin/release_pin ensure that these values are
+  // incremented and decremented symmetrically, accounting for new pinning and new unpinning.
+  //
+  EXPECT_EQ(slot->pin_count(), 0);
+  EXPECT_EQ(slot->ref_count(), 0);
 }
 
 }  // namespace

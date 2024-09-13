@@ -57,6 +57,11 @@ class PageDeviceCache
     return this->slot_pool_->metrics();
   }
 
+  PageCacheSlot::Pool::Metrics& metrics()
+  {
+    return this->slot_pool_->metrics();
+  }
+
   /** \brief Returns the PageDevice id factory passed in at construction time.
    */
   const PageIdFactory& page_ids() const noexcept;

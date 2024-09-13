@@ -54,8 +54,10 @@ PageId PageCacheSlot::key() const
 //
 batt::Latch<std::shared_ptr<const PageView>>* PageCacheSlot::value() noexcept
 {
-  BATT_CHECK(this->value_);
-  return std::addressof(*this->value_);
+  if (this->value_) {
+    return std::addressof(*this->value_);
+  }
+  return nullptr;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -139,6 +141,13 @@ auto PageCacheSlot::acquire_pin(PageId key, bool ignore_key) noexcept -> PinnedR
   }
 
   BATT_UNSUPPRESS_IF_GCC()
+
+  // If we aren't ignoring the slot's key and are looking to use the slot's value,
+  // make sure that the value is in a valid state before creating a PinnedRef.
+  //
+  if (!ignore_key) {
+    BATT_CHECK(this->value_);
+  }
 
   return PinnedRef{this};
 }
@@ -235,6 +244,11 @@ bool PageCacheSlot::evict_if_key_equals(PageId key) noexcept
   const auto old_state = this->state_.fetch_add(kPinCountDelta, std::memory_order_acquire);
   auto observed_state = old_state + kPinCountDelta;
 
+  const bool newly_pinned = !this->is_pinned(old_state);
+  if (newly_pinned) {
+    this->add_ref();
+  }
+
   BATT_CHECK_EQ(observed_state & Self::kOverflowMask, 0);
 
   // Use a CAS loop here to guarantee an atomic transition from Valid + Filled (unpinned) state to
@@ -245,7 +259,7 @@ bool PageCacheSlot::evict_if_key_equals(PageId key) noexcept
     //
     if (!(Self::get_pin_count(observed_state) == 1 && this->is_valid(observed_state) &&
           this->key_ == key)) {
-      this->state_.fetch_sub(kPinCountDelta, std::memory_order_release);
+      this->release_pin();
       return false;
     }
 
@@ -258,6 +272,11 @@ bool PageCacheSlot::evict_if_key_equals(PageId key) noexcept
 
     if (this->state_.compare_exchange_weak(observed_state, target_state)) {
       BATT_CHECK(!Self::is_valid());
+      // At this point, we always expect to be going from pinned to unpinned.
+      // In order to successfully evict the slot, we must be holding the only pin,
+      // as guarenteed by the first if statement in the for loop.
+      //
+      this->remove_ref();
       return true;
     }
   }

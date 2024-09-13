@@ -64,14 +64,15 @@ class PageAllocator
   static u64 calculate_log_size(u64 physical_page_count, u64 max_attachments);
 
   static StatusOr<std::unique_ptr<PageAllocator>> recover(
-      const PageAllocatorRuntimeOptions& options, const PageIdFactory& page_ids,
+      const PageAllocatorRuntimeOptions& options, PageSize page_size, const PageIdFactory& page_ids,
       LogDeviceFactory& log_device_factory);
 
   static std::unique_ptr<PageAllocator> recover_or_die(const PageAllocatorRuntimeOptions& options,
+                                                       PageSize page_size,
                                                        const PageIdFactory& page_ids,
                                                        LogDeviceFactory& log_device_factory)
   {
-    auto result = PageAllocator::recover(options, page_ids, log_device_factory);
+    auto result = PageAllocator::recover(options, page_size, page_ids, log_device_factory);
     BATT_CHECK(result.ok()) << result.status();
     return std::move(*result);
   }
@@ -166,14 +167,24 @@ class PageAllocator
   auto debug_info()
   {
     return [this](std::ostream& out) {
-      out << "PageAllocator{.free=" << this->state_.no_lock().free_pool_size() << "/"
-          << this->state_.no_lock().page_device_capacity() << ",}";
+      out << "PageAllocator{.page_size=" << batt::dump_size(this->page_size())
+          << ", .free=" << this->free_pool_size() << "/" << this->page_device_capacity() << ",}";
     };
+  }
+
+  u64 page_size() const
+  {
+    return this->page_size_;
   }
 
   u64 free_pool_size() const
   {
     return this->state_.no_lock().free_pool_size();
+  }
+
+  u64 page_device_capacity() const
+  {
+    return this->state_.no_lock().page_device_capacity();
   }
 
   page_device_id_int get_device_id() const
@@ -207,7 +218,7 @@ class PageAllocator
   }
 
  private:  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-  explicit PageAllocator(batt::TaskScheduler& scheduler, std::string_view name,
+  explicit PageAllocator(batt::TaskScheduler& scheduler, std::string_view name, PageSize page_size,
                          std::unique_ptr<LogDevice> log_device,
                          std::unique_ptr<State> recovered_state) noexcept;
 
@@ -232,6 +243,10 @@ class PageAllocator
   // Make a thread-safe slot writer to append new events to the log.
   //
   TypedSlotWriter<PackedPageAllocatorEvent> slot_writer_{*this->log_device_};
+
+  // The page size for the associated PageDevice.
+  //
+  const PageSize page_size_;
 
   // This is the target state for the PageAllocator; it is used to validate incoming proposals
   // (events) and determine which ones are invalid, valid but already processed, and valid in need
@@ -373,6 +388,16 @@ inline StatusOr<slot_offset_type> PageAllocator::update_page_ref_counts(
   });
 
   LLFS_VLOG(2) << "updating ref counts: " << batt::dump_range(txn->ref_counts, batt::Pretty::True);
+
+  static std::atomic<usize> sample_count{0};
+  static std::atomic<usize> prc_count{0};
+
+  sample_count.fetch_add(1);
+  prc_count.fetch_add(txn->ref_counts.size());
+
+  LLFS_LOG_INFO_EVERY_T(5.0 /*seconds*/)
+      << "Average pages per allocator update: "
+      << ((double)prc_count.load() / (double)sample_count.load());
 
   StatusOr<slot_offset_type> update_status = this->update(*txn);
   BATT_REQUIRE_OK(update_status);

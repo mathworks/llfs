@@ -67,58 +67,70 @@ constexpr auto Reset = "\033[0m";
 
 }  //namespace termxx
 
-void CustomPrefix(std::ostream& s, const google::LogMessageInfo& l, void*)
-{
-  switch (l.severity[0]) {
-    case 'E':
-      s << termxx::color::Red;
-      break;
+struct CustomLogSink : google::LogSink {
+  void send(google::LogSeverity severity, const char* full_filename, const char* base_filename,
+            int line, const google::LogMessageTime& time, const char* message,
+            std::size_t message_len) override
+  {
+    auto& s = std::cerr;
 
-    case 'W':
-      s << termxx::color::Yellow;
-      break;
+    switch (severity) {
+      case google::GLOG_ERROR:
+        s << termxx::color::Red;
+        break;
 
-    case 'I':
-      s << termxx::color::Blue;
-      break;
+      case google::GLOG_WARNING:
+        s << termxx::color::Yellow;
+        break;
+
+      case google::GLOG_INFO:
+        s << termxx::color::Blue;
+        break;
+
+      case google::GLOG_FATAL:  // fall-through
+      default:
+        break;
+    }
+
+    s << google::GetLogSeverityName(severity)
+      << " ["  //
+
+      //----- --- -- -  -  -   -
+      << termxx::color::Green                     //
+      << std::setw(4) << 1900 + time.year()       //
+      << "/" << std::setw(2) << 1 + time.month()  //
+      << "/" << std::setw(2)
+      << time.day()  //
+
+      //----- --- -- -  -  -   -
+      << termxx::color::White << termxx::style::Bold  //
+      << ' ' << std::setw(2) << time.hour()           //
+      << ':' << std::setw(2) << time.min()            //
+      << ':' << std::setw(2) << time.sec()            //
+      << "." << std::setw(6) << time.usec()           //
+      << termxx::Reset                                //
+
+      //----- --- -- -  -  -   -
+      << termxx::color::Cyan  //
+      << ' ' << std::setfill(' ') << std::setw(5) << std::this_thread::get_id() << std::setfill('0')
+      << ' '
+
+      //----- --- -- -  -  -   -
+      << termxx::color::Blue << termxx::style::Underline  //
+      << base_filename << ':' << line
+      << "]"  //
+
+      //----- --- -- -  -  -   -
+      << termxx::Reset;
   }
-
-  s << l.severity
-    << " ["  //
-
-    //----- --- -- -  -  -   -
-    << termxx::color::Green                       //
-    << std::setw(4) << 1900 + l.time.year()       //
-    << "/" << std::setw(2) << 1 + l.time.month()  //
-    << "/" << std::setw(2)
-    << l.time.day()  //
-
-    //----- --- -- -  -  -   -
-    << termxx::color::White << termxx::style::Bold  //
-    << ' ' << std::setw(2) << l.time.hour()         //
-    << ':' << std::setw(2) << l.time.min()          //
-    << ':' << std::setw(2) << l.time.sec()          //
-    << "." << std::setw(6) << l.time.usec()         //
-    << termxx::Reset                                //
-
-    //----- --- -- -  -  -   -
-    << termxx::color::Cyan  //
-    << ' ' << std::setfill(' ') << std::setw(5) << l.thread_id << std::setfill('0')
-    << ' '
-
-    //----- --- -- -  -  -   -
-    << termxx::color::Blue << termxx::style::Underline  //
-    << l.filename << ':' << l.line_number
-    << "]"  //
-
-    //----- --- -- -  -  -   -
-    << termxx::Reset;
-}
+};
 
 int main(int argc, char* argv[])
 {
-  google::InitGoogleLogging(argv[0], google::CustomPrefixCallback{CustomPrefix},
-                            /*prefix_callback_data=*/nullptr);
+  google::InitGoogleLogging(argv[0]);
+
+  CustomLogSink sink;
+  google::AddLogSink(&sink);
 
   struct stat st;
   std::memset(&st, 0, sizeof(st));

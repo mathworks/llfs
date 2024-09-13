@@ -69,10 +69,10 @@ class LlfsConan(ConanFile):
 
 
     def requirements(self):
-        self.requires("batteries/0.55.1", **VISIBLE)
-        self.requires("boost/1.83.0", **VISIBLE)
+        self.requires("batteries/0.56.7", **VISIBLE)
+        self.requires("boost/1.85.0", **VISIBLE, **OVERRIDE)
         self.requires("cli11/2.3.2", **VISIBLE)
-        self.requires("glog/0.6.0", **VISIBLE)
+        self.requires("glog/0.7.0", **VISIBLE, **OVERRIDE)
         self.requires("gtest/1.14.0", **VISIBLE)
         self.requires("libbacktrace/cci.20210118", **VISIBLE)
         self.requires("openssl/3.2.0", **VISIBLE)

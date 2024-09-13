@@ -151,12 +151,14 @@ StatusOr<std::unique_ptr<PageAllocator>> recover_storage_object(
 
   BATT_REQUIRE_OK(log_factory);
 
+  const auto page_size = PageSize{PageSize{1} << p_allocator_config->page_size_log2};
+
   const auto page_ids = PageIdFactory{
       PageCount{BATT_CHECKED_CAST(PageCount::value_type, p_allocator_config->page_count.value())},
       p_allocator_config->page_device_id,
   };
 
-  return PageAllocator::recover(allocator_options, page_ids, **log_factory);
+  return PageAllocator::recover(allocator_options, page_size, page_ids, **log_factory);
 }
 
 }  // namespace llfs

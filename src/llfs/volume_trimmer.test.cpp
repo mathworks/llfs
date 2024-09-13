@@ -802,6 +802,7 @@ void VolumeTrimmerTest::TrimmerSession::initialize(const Config& config, SimRun&
 
     LLFS_VLOG(1) << "initialize_trimmer(): " << (void*)std::addressof(**new_trimmer);
     this->trimmer = std::move(*new_trimmer);
+    this->trimmer->set_error_log_level(batt::LogLevel::kVerbose);
 
     EXPECT_EQ(this->trimmer->uuid(), this->config->volume_ids.trimmer_uuid);
   }

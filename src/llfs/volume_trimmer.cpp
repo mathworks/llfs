@@ -137,8 +137,8 @@ const usize kTrimEventGrantSize =
     // Finish the partially completed trim.
     //
     BATT_REQUIRE_OK(trim_volume_log(trimmer_uuid, slot_writer, grant, std::move(*trim_event_info),
-                                    std::move(*trimmed_region_info), metadata_refresher,
-                                    drop_roots));
+                                    std::move(*trimmed_region_info), metadata_refresher, drop_roots,
+                                    batt::LogLevel::kWarning));
   }
 
   // The trim state is now clean!  Create and return the VolumeTrimmer.
@@ -226,7 +226,7 @@ Status VolumeTrimmer::run()
 
     StatusOr<slot_offset_type> trim_upper_bound = this->await_trim_target(least_upper_bound);
 
-    BATT_REQUIRE_OK(trim_upper_bound);
+    BATT_REQUIRE_OK(trim_upper_bound) << this->error_log_level_.load();
 
     LLFS_VLOG(1) << BATT_INSPECT(trim_upper_bound) << BATT_INSPECT(this->trim_control_.is_closed())
                  << BATT_INSPECT_STR(this->name_);
@@ -278,14 +278,15 @@ Status VolumeTrimmer::run()
                    << BATT_INSPECT(this->metadata_refresher_.grant_required())
                    << BATT_INSPECT(this->metadata_refresher_.grant_size());
 
-      BATT_REQUIRE_OK(this->metadata_refresher_.invalidate(*trim_upper_bound));
+      BATT_REQUIRE_OK(this->metadata_refresher_.invalidate(*trim_upper_bound))
+          << this->error_log_level_.load();
 
       //+++++++++++-+-+--+----- --- -- -  -  -   -
       // Make sure all Volume metadata has been refreshed.
       //
       if (this->metadata_refresher_.needs_flush()) {
         StatusOr<SlotRange> metadata_slots = this->metadata_refresher_.flush();
-        BATT_REQUIRE_OK(metadata_slots);
+        BATT_REQUIRE_OK(metadata_slots) << this->error_log_level_.load();
 
         clamp_min_slot(&sync_point, metadata_slots->upper_bound);
       }
@@ -313,7 +314,8 @@ Status VolumeTrimmer::run()
                      << BATT_INSPECT(trimmed_region_info->slot_range);
         //
         BATT_REQUIRE_OK(
-            this->slot_writer_.sync(LogReadMode::kDurable, SlotUpperBoundAt{*sync_point}));
+            this->slot_writer_.sync(LogReadMode::kDurable, SlotUpperBoundAt{*sync_point}))
+            << this->error_log_level_.load();
       }
     }
 
@@ -325,13 +327,14 @@ Status VolumeTrimmer::run()
     BATT_DEBUG_INFO("VolumeTrimmer -> trim_volume_log;" << BATT_INSPECT(this->name_));
 
     LLFS_VLOG(1) << "[VolumeTrimmer] trim_volume_log";
-    Status trim_result = trim_volume_log(
-        this->trimmer_uuid_, this->slot_writer_, this->trimmer_grant_, std::move(trim_event_info),
-        std::move(*trimmed_region_info), this->metadata_refresher_, this->drop_roots_);
+    Status trim_result = trim_volume_log(this->trimmer_uuid_, this->slot_writer_,
+                                         this->trimmer_grant_, std::move(trim_event_info),
+                                         std::move(*trimmed_region_info), this->metadata_refresher_,
+                                         this->drop_roots_, this->error_log_level_.load());
 
     this->trim_count_.fetch_add(1);
 
-    BATT_REQUIRE_OK(trim_result);
+    BATT_REQUIRE_OK(trim_result) << this->error_log_level_.load();
 
     // Update the trim position and repeat the loop.
     //
@@ -350,7 +353,7 @@ StatusOr<slot_offset_type> VolumeTrimmer::await_trim_target(slot_offset_type min
   StatusOr<slot_offset_type> trim_upper_bound =
       this->trim_control_.await_lower_bound(min_offset + this->trim_delay_);
 
-  BATT_REQUIRE_OK(trim_upper_bound);
+  BATT_REQUIRE_OK(trim_upper_bound) << this->error_log_level_.load();
 
   const slot_offset_type new_trim_target = *trim_upper_bound - this->trim_delay_;
 
@@ -399,7 +402,7 @@ Status trim_volume_log(const boost::uuids::uuid& trimmer_uuid,
                        Optional<VolumeTrimEventInfo>&& trim_event,
                        VolumeTrimmedRegionInfo&& trimmed_region,
                        VolumeMetadataRefresher& metadata_refresher,
-                       const VolumeDropRootsFn& drop_roots)
+                       const VolumeDropRootsFn& drop_roots, batt::LogLevel error_log_level)
 {
   LLFS_VLOG(1) << "trim_volume_log()" << BATT_INSPECT(trimmed_region.slot_range);
 
@@ -416,18 +419,23 @@ Status trim_volume_log(const boost::uuids::uuid& trimmer_uuid,
     std::vector<PageId> roots_to_trim;
     std::swap(roots_to_trim, trimmed_region.obsolete_roots);
     BATT_REQUIRE_OK(
-        drop_roots(trimmer_uuid, trim_event->trim_event_slot.lower_bound, as_slice(roots_to_trim)));
+        drop_roots(trimmer_uuid, trim_event->trim_event_slot.lower_bound, as_slice(roots_to_trim)))
+        << error_log_level;
   }
   // ** IMPORTANT ** It is only safe to trim the log after `commit(PageCacheJob, ...)` (which is
   // called inside `drop_roots`) returns; otherwise we will lose information about which root set
   // page references to remove!
 
+  const usize in_use_size = slot_writer.in_use_size();
+
   StatusOr<batt::Grant> trimmed_space = [&slot_writer, &trimmed_region] {
     BATT_DEBUG_INFO("[VolumeTrimmer] SlotWriter::trim_and_reserve("
                     << trimmed_region.slot_range.upper_bound << ")");
+
     return slot_writer.trim_and_reserve(trimmed_region.slot_range.upper_bound);
   }();
-  BATT_REQUIRE_OK(trimmed_space);
+  BATT_REQUIRE_OK(trimmed_space) << error_log_level << BATT_INSPECT(in_use_size)
+                                 << BATT_INSPECT(trimmed_region.slot_range);
 
   // Take some of the trimmed space and retain it to cover the trim event that was just written.
   //
@@ -436,8 +444,9 @@ Status trim_volume_log(const boost::uuids::uuid& trimmer_uuid,
         trimmed_space->spend(kTrimEventGrantSize - grant.size(), batt::WaitForResource::kFalse);
 
     BATT_REQUIRE_OK(trim_event_grant)
-        << BATT_INSPECT(slot_writer.log_size()) << BATT_INSPECT(slot_writer.log_capacity())
-        << BATT_INSPECT(slot_writer.pool_size()) << BATT_INSPECT(grant.size());
+        << error_log_level << BATT_INSPECT(slot_writer.log_size())
+        << BATT_INSPECT(slot_writer.log_capacity()) << BATT_INSPECT(slot_writer.pool_size())
+        << BATT_INSPECT(grant.size());
 
     grant.subsume(std::move(*trim_event_grant));
   }
@@ -449,7 +458,7 @@ Status trim_volume_log(const boost::uuids::uuid& trimmer_uuid,
                  << BATT_INSPECT(metadata_refresher.grant_required())
                  << BATT_INSPECT(trimmed_space->size());
 
-    BATT_REQUIRE_OK(metadata_refresher.update_grant_partial(*trimmed_space));
+    BATT_REQUIRE_OK(metadata_refresher.update_grant_partial(*trimmed_space)) << error_log_level;
   }
 
   return batt::OkStatus();

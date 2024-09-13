@@ -350,6 +350,10 @@ class Volume
   // Tracks the latest job that is durable (will-commit).
   //
   batt::Watch<slot_offset_type> durable_user_slot_{0};
+
+  // Set to true when pre-halt method is called.
+  //
+  std::atomic<bool> pre_halt_{false};
 };
 
 }  // namespace llfs

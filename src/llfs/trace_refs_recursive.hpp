@@ -26,7 +26,7 @@ namespace llfs {
 
 template <typename IdTypePairSeq, typename Pred, typename Fn>
 inline batt::Status trace_refs_recursive(PageLoader& page_loader, IdTypePairSeq&& roots,
-                                         Pred&& should_recursively_trace, Fn&& fn)
+                                         Pred&& should_recursively_trace, Fn&& fn, Optional<std::function<void(PageId)>>&& traced_page_fn = None)
 {
   static_assert(std::is_convertible_v<std::decay_t<SeqItem<IdTypePairSeq>>, PageId>,
                 "`roots` arg must be a Seq of PageViewId");
@@ -51,6 +51,10 @@ inline batt::Status trace_refs_recursive(PageLoader& page_loader, IdTypePairSeq&
     BATT_CHECK_NOT_NULLPTR(page);
     page->trace_refs() | seq::for_each([&](const PageId& id) {
       fn(id);
+      if (traced_page_fn) {
+        (*traced_page_fn)(next);
+      }
+
       if (!pushed.count(id) && should_recursively_trace(id)) {
         pushed.insert(id);
         pending.push_back(id);

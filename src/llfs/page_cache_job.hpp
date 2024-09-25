@@ -254,7 +254,7 @@ class PageCacheJob : public PageLoader
   StatusOr<usize> prune(u64 callers);
 
   template <typename PageIdFn>
-  Status trace_new_roots(PageLoader& page_loader, PageIdFn&& page_id_fn) const
+  Status trace_new_roots(PageLoader& page_loader, PageIdFn&& page_id_fn, Optional<std::function<void(PageId)>>&& traced_page_fn = None) const
   {
     return trace_refs_recursive(
         page_loader,
@@ -278,7 +278,11 @@ class PageCacheJob : public PageLoader
 
         // Action per traced page id
         //
-        BATT_FORWARD(page_id_fn));
+        BATT_FORWARD(page_id_fn),
+
+        // Action per page that has its outgoing refs being traced.
+        //
+        BATT_FORWARD(traced_page_fn));
   }
 
   usize new_page_count() const

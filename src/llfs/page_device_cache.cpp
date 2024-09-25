@@ -32,6 +32,7 @@ struct NewSlot {
     : page_ids_{page_ids}
     , slot_pool_{std::move(slot_pool)}
     , cache_(this->page_ids_.get_physical_page_count(), kInvalidIndex)
+    , no_outgoing_refs_cache_(this->page_ids_.get_physical_page_count(), 0u)
 {
 }
 
@@ -187,6 +188,7 @@ void PageDeviceCache::erase(PageId key)
     // Important!  Only clear the slot once we have invalidated our table entry.
     //
     slot->clear();
+    slot->set_obsolete_hint();
   } else {
     // If we weren't able to evict `key`, we can still try to read the slot to see if it contains
     // `key` but is non-evictable (because there are outstanding pins); if this is the case, then
@@ -223,6 +225,34 @@ std::atomic<usize>& PageDeviceCache::get_slot_index_ref(i64 physical_page)
   BATT_CHECK_LT((usize)physical_page, this->cache_.size());
 
   return reinterpret_cast<std::atomic<usize>&>(this->cache_[physical_page]);
+}
+
+void PageDeviceCache::set_outgoing_refs_info(PageId page_id, u64 num_outgoing_refs)
+{
+  u8 mask = 0b10;
+  if (!num_outgoing_refs) {
+    mask |= ref_mask_;
+  }
+  
+  const i64 physical_page_id = this->page_ids_.get_physical_page(page_id);
+  BATT_CHECK_LT((usize)physical_page_id, this->no_outgoing_refs_cache_.size());
+  this->no_outgoing_refs_cache_[physical_page_id].fetch_or(mask, std::memory_order_release);
+}
+
+void PageDeviceCache::clear_outgoing_refs_info(PageId page_id)
+{
+  u8 mask = ~0b11;
+  const i64 physical_page_id = this->page_ids_.get_physical_page(page_id);
+  BATT_CHECK_LT((usize)physical_page_id, this->no_outgoing_refs_cache_.size());
+  this->no_outgoing_refs_cache_[physical_page_id].fetch_and(mask, std::memory_order_release);
+}
+
+bool PageDeviceCache::has_outgoing_refs(PageId page_id)
+{
+  const i64 physical_page_id = this->page_ids_.get_physical_page(page_id);
+  BATT_CHECK_LT((usize)physical_page_id, this->no_outgoing_refs_cache_.size());
+  u8 data = this->no_outgoing_refs_cache_[physical_page_id].load(std::memory_order_acquire);
+  return (data & ref_mask_) != 0;
 }
 
 }  //namespace llfs

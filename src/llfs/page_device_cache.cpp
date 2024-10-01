@@ -32,7 +32,6 @@ struct NewSlot {
     : page_ids_{page_ids}
     , slot_pool_{std::move(slot_pool)}
     , cache_(this->page_ids_.get_physical_page_count(), kInvalidIndex)
-    , no_outgoing_refs_cache_(this->page_ids_.get_physical_page_count(), 0u)
 {
 }
 
@@ -227,7 +226,7 @@ std::atomic<usize>& PageDeviceCache::get_slot_index_ref(i64 physical_page)
   return reinterpret_cast<std::atomic<usize>&>(this->cache_[physical_page]);
 }
 
-void PageDeviceCache::set_outgoing_refs_info(PageId page_id, u64 num_outgoing_refs)
+/*void PageDeviceCache::set_outgoing_refs_info(PageId page_id, u64 num_outgoing_refs)
 {
   u8 mask = 0b10;
   if (!num_outgoing_refs) {
@@ -247,12 +246,12 @@ void PageDeviceCache::clear_outgoing_refs_info(PageId page_id)
   this->no_outgoing_refs_cache_[physical_page_id].fetch_and(mask, std::memory_order_release);
 }
 
-bool PageDeviceCache::has_outgoing_refs(PageId page_id)
+bool PageDeviceCache::has_no_outgoing_refs(PageId page_id)
 {
   const i64 physical_page_id = this->page_ids_.get_physical_page(page_id);
   BATT_CHECK_LT((usize)physical_page_id, this->no_outgoing_refs_cache_.size());
   u8 data = this->no_outgoing_refs_cache_[physical_page_id].load(std::memory_order_acquire);
   return (data & ref_mask_) != 0;
-}
+} */
 
 }  //namespace llfs

@@ -30,6 +30,7 @@
 #include <llfs/page_loader.hpp>
 #include <llfs/page_reader.hpp>
 #include <llfs/page_recycler.hpp>
+#include <llfs/page_tracer.hpp>
 #include <llfs/page_view.hpp>
 #include <llfs/pinned_page.hpp>
 #include <llfs/seq.hpp>
@@ -94,7 +95,7 @@ inline std::ostream& operator<<(std::ostream& out, const NewPageTracker& t)
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-class PageCache : public PageLoader
+class PageCache : public PageLoader, public PageTracer
 {
  public:
   struct PageReaderFromFile {
@@ -257,6 +258,16 @@ class PageCache : public PageLoader
     return this->cache_slot_pool_by_page_size_log2_[page_size_log2]->metrics();
   }
 
+  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+  // PageTracer interface
+  //
+
+  void set_outgoing_refs_info(PageId page_id, OutgoingRefsStatus outgoing_refs_status) override;
+
+  void clear_outgoing_refs_info(PageId page_id) override;
+
+  OutgoingRefsStatus get_outgoing_refs_info(PageId page_id) override;
+
  private:
   //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
@@ -359,6 +370,7 @@ class PageCache : public PageLoader
   //  Task page_filter_builder_;
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  std::unique_ptr<NoOutgoingRefsCache> no_outgoing_refs_cache_;
   std::array<NewPageTracker, 16384> history_;
   std::atomic<isize> history_end_{0};
 

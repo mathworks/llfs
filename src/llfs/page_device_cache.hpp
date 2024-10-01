@@ -39,7 +39,6 @@ class PageDeviceCache
 {
  public:
   static constexpr usize kInvalidIndex = ~usize{0};
-  static constexpr u8 ref_mask_ = 0b01;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -79,10 +78,6 @@ class PageDeviceCache
    */
   void erase(PageId key);
 
-  void set_outgoing_refs_info(PageId page_id, u64 num_outgoing_refs);
-  void clear_outgoing_refs_info(PageId page_id);
-  bool has_outgoing_refs(PageId page_id);
-
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
   /** \brief Returns a reference to the atomic cache slot index integer for the given physical page
@@ -95,7 +90,6 @@ class PageDeviceCache
   const PageIdFactory page_ids_;
   boost::intrusive_ptr<PageCacheSlot::Pool> slot_pool_;
   std::vector<usize> cache_;
-  std::vector<std::atomic<u8>> no_outgoing_refs_cache_;
 };
 
 }  //namespace llfs

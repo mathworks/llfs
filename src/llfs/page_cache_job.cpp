@@ -356,6 +356,14 @@ Status PageCacheJob::delete_page(PageId page_id)
   if (!page_id) {
     return OkStatus();
   }
+
+  if (this->cache_->has_no_outgoing_refs(page_id)) {
+    this->pruned_ = false;
+    this->deleted_pages_.emplace(page_id, PinnedPage{});
+    this->root_set_delta_[page_id] = kRefCount_1_to_0;
+    return OkStatus();
+  }
+
   StatusOr<PinnedPage> page_view = this->get_page(page_id, OkIfNotFound{true});
   if (page_view.ok()) {
     this->pruned_ = false;

@@ -486,7 +486,6 @@ auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/) const
     -> StatusOr<PageRefCountUpdates>
 {
   std::unordered_map<PageId, i32, PageId::Hash> ref_count_delta = this->job_->get_root_set_delta();
-  std::unordered_map<PageId, u64, PageId::Hash> new_page_outgoing_refs;
 
   // New pages start with a ref count value of 2; 1 for the client doing the allocation, and 1 for
   // the future garabage collector that will release any references held by that page.
@@ -495,7 +494,6 @@ auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/) const
     const PageId& id = p.first;
     if (id) {
       ref_count_delta[id] += 1;
-      new_page_outgoing_refs[id] = 0;
     }
   }
 
@@ -504,31 +502,21 @@ auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/) const
   // Trace any new pages reachable from the root set and increment their ref count; existing pages
   // are already accounted for existing ref counts (because pages are write-once).
   //
-  Status trace_add_ref_status = this->job_->trace_new_roots(
-    loader, 
-    [&ref_count_delta](PageId id) {
-      if (id) {
-        ref_count_delta[id] += 1;
-      }
-    },
-    [&new_page_outgoing_refs](PageId id) {
-      if (id) {
-        new_page_outgoing_refs[id]++;
-      }
+  Status trace_add_ref_status = this->job_->trace_new_roots(loader, [&ref_count_delta](PageId id) {
+    if (id) {
+      ref_count_delta[id] += 1;
     }
-  );
+  });
   BATT_REQUIRE_OK(trace_add_ref_status);
-
-  for (const auto& [page_id, outgoing_ref_count] : new_page_outgoing_refs) {
-    //PageDeviceEntry* const entry = this->job_->
-    //BATT_CHECK_NOT_NULLPTR(entry);
-    this->job_->cache().arena_for_page_id(page_id).device().
-  }
 
   // Trace deleted pages non-recursively, decrementing the ref counts of all pages they directly
   // reference.
   //
   for (const auto& p : this->job_->get_deleted_pages()) {
+    if (!p.second) {
+      continue;
+    }
+
     // Sanity check; deleted pages should have a ref_count_delta of kRefCount_1_to_0.
     //
     const PageId deleted_page_id = p.first;
@@ -539,6 +527,7 @@ auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/) const
     }
 
     // Decrement ref counts.
+    // TODO [vsilai 2024-09-30] what should we do with this?
     //
     p.second->trace_refs() | seq::for_each([&ref_count_delta, deleted_page_id](PageId id) {
       if (id) {

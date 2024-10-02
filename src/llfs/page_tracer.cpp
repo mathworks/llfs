@@ -45,7 +45,7 @@ namespace llfs {
 
       PinnedPage& page = *status_or_page;
       BATT_CHECK_NOT_NULLPTR(page);
-  
+
       auto outgoing_refs = page->trace_refs();
 
       // If outgoing_refs_status has any other status, we must call trace_refs and set

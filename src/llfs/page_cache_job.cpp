@@ -357,7 +357,13 @@ Status PageCacheJob::delete_page(PageId page_id)
     return OkStatus();
   }
 
+  // If the page does not have any outgoing refs, we do not need to load it and later
+  // call trace_refs because there are no pages that would need their ref counts decremented
+  // because of this page.
+  //
   if (this->cache_->has_no_outgoing_refs(page_id)) {
+    LLFS_VLOG(2) << "[PageCacheJob::delete_page] page to be deleted: " << page_id
+                 << " has no outgoing refs... will not load it to trace refs.";
     this->pruned_ = false;
     this->deleted_pages_.emplace(page_id, PinnedPage{});
     this->root_set_delta_[page_id] = kRefCount_1_to_0;

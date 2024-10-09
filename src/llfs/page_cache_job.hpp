@@ -257,7 +257,7 @@ class PageCacheJob : public PageLoader
   Status trace_new_roots(PageLoader& page_loader, PageIdFn&& page_id_fn) const
   {
     return this->cache_->trace_refs_recursively(
-      page_loader,
+        page_loader,
 
         // Trace all new pages in the root set.
         //
@@ -268,8 +268,8 @@ class PageCacheJob : public PageLoader
             | seq::filter([this](const PageId& id) {
                 auto iter = this->root_set_delta_.find(id);
                 return iter != this->root_set_delta_.end() && iter->second > 0;
-              }) 
-            | seq::boxed(),
+              }) |
+            seq::boxed(),
 
         // Recursion predicate
         //
@@ -279,7 +279,7 @@ class PageCacheJob : public PageLoader
 
         // Action per traced page id
         //
-        BATT_FORWARD(page_id_fn));     
+        BATT_FORWARD(page_id_fn));
   }
 
   usize new_page_count() const

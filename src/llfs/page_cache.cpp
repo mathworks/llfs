@@ -114,8 +114,6 @@ PageCache::PageCache(std::vector<PageArena>&& storage_pool,
   // Populate this->page_devices_.
   //
   this->page_devices_.resize(max_page_device_id + 1);
-  std::vector<u64> device_capacities;
-  device_capacities.resize(max_page_device_id + 1);
   for (PageArena& arena : storage_pool) {
     const page_device_id_int device_id = arena.device().get_id();
     const auto page_size_log2 = batt::log2_ceil(arena.device().page_size());
@@ -124,8 +122,6 @@ PageCache::PageCache(std::vector<PageArena>&& storage_pool,
         << "Page sizes must be powers of 2!";
 
     BATT_CHECK_LT(page_size_log2, kMaxPageSizeLog2);
-
-    device_capacities[device_id] = arena.device().capacity();
 
     // Create a slot pool for this page size if we haven't already done so.
     //
@@ -166,10 +162,6 @@ PageCache::PageCache(std::vector<PageArena>&& storage_pool,
                      std::distance(this->page_devices_by_page_size_.begin(), iter_pair.first),
                  as_range(iter_pair).size());
   }
-
-  this->no_outgoing_refs_cache_ = std::make_unique<NoOutgoingRefsCache>(
-    device_capacities
-  );
 
   // Register metrics.
   //
@@ -732,35 +724,28 @@ BoxedSeq<NewPageTracker> PageCache::find_new_page_events(PageId page_id) const
 
 void PageCache::set_outgoing_refs_info(PageId page_id, OutgoingRefsStatus outgoing_refs_status)
 {
-  page_device_id_int device_id = PageIdFactory::get_device_id(page_id);
-  BATT_CHECK_LT(device_id, this->page_devices_.size());
-  
-  i64 physical_page_id = this->arena_for_device_id(device_id).device().page_ids().get_physical_page(page_id);
-  BATT_CHECK_LT(physical_page_id, this->arena_for_device_id(device_id).device().capacity());
+  LLFS_VLOG(2) << "[PageCache::set_outgoing_refs_info] setting outgoing refs info for page "
+               << page_id << " to value: " << static_cast<u8>(outgoing_refs_status);
 
-  this->no_outgoing_refs_cache_->set_page_bits(device_id, physical_page_id, outgoing_refs_status);  
+  const PageArena& arena = this->arena_for_page_id(page_id);
+  i64 physical_page_id = arena.device().page_ids().get_physical_page(page_id);
+  BATT_CHECK_LT(physical_page_id, arena.device().capacity());
+
+  arena.allocator().no_outgoing_refs_cache()->set_page_bits(physical_page_id, outgoing_refs_status);
 }
 
-void PageCache::clear_outgoing_refs_info(PageId page_id)
+void PageCache::clear_outgoing_refs_info([[maybe_unused]] PageId page_id)
 {
-  page_device_id_int device_id = PageIdFactory::get_device_id(page_id);
-  BATT_CHECK_LT(device_id, this->page_devices_.size());
-  
-  i64 physical_page_id = this->arena_for_device_id(device_id).device().page_ids().get_physical_page(page_id);
-  BATT_CHECK_LT(physical_page_id, this->arena_for_device_id(device_id).device().capacity());
-
-  this->no_outgoing_refs_cache_->clear_page_bits(device_id, physical_page_id);
 }
 
-OutgoingRefsStatus PageCache::get_outgoing_refs_info(PageId page_id)
+OutgoingRefsStatus PageCache::get_outgoing_refs_info(PageId page_id) const
 {
-  page_device_id_int device_id = PageIdFactory::get_device_id(page_id);
-  BATT_CHECK_LT(device_id, this->page_devices_.size());
-  
-  i64 physical_page_id = this->arena_for_device_id(device_id).device().page_ids().get_physical_page(page_id);
-  BATT_CHECK_LT(physical_page_id, this->arena_for_device_id(device_id).device().capacity());
+  const PageArena& arena = this->arena_for_page_id(page_id);
+  i64 physical_page_id = arena.device().page_ids().get_physical_page(page_id);
+  BATT_CHECK_LT(physical_page_id, arena.device().capacity());
 
-  return static_cast<OutgoingRefsStatus>(this->no_outgoing_refs_cache_->get_page_bits(device_id, physical_page_id));
+  return static_cast<OutgoingRefsStatus>(
+      arena.allocator().no_outgoing_refs_cache()->get_page_bits(physical_page_id));
 }
 
 }  // namespace llfs

@@ -16,6 +16,9 @@ namespace llfs {
 PageAllocatorStateNoLock::PageAllocatorStateNoLock(const PageIdFactory& ids) noexcept
     : page_ids_{ids}
 {
+  this->no_outgoing_refs_cache_ = std::make_unique<NoOutgoingRefsCache>(
+    this->page_ids_.get_physical_page_count().value()
+  );
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

@@ -200,6 +200,9 @@ void PageAllocatorState::deallocate_page(PageId page_id)
   //
   ref_count_obj.revert_generation();
 
+  LLFS_VLOG(2) << "[deallocate_page] deallocating page " << page_id
+               << " and clearing outgoing refs info for physical page " << physical_page;
+  this->no_outgoing_refs_cache_->clear_page_bits(physical_page);
   this->free_pool_.push_back(ref_count_obj);
   this->free_pool_size_.fetch_add(1);
 }
@@ -720,6 +723,11 @@ void PageAllocatorState::update_free_pool_status(PageAllocatorRefCount* obj)
 {
   if (obj->get_count() == 0) {
     if (!obj->PageAllocatorFreePoolHook::is_linked()) {
+      const page_id_int physical_page = this->index_of(obj);
+      LLFS_VLOG(2) << "[update_free_pool_status] clearing outgoing refs info for page "
+                   << physical_page;
+      this->no_outgoing_refs_cache_->clear_page_bits(physical_page);
+
       this->free_pool_.push_back(*obj);
       this->free_pool_size_.fetch_add(1);
     }

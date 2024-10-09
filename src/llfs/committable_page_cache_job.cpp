@@ -513,6 +513,8 @@ auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/) const
   // reference.
   //
   for (const auto& p : this->job_->get_deleted_pages()) {
+    // Skip over pages that have no outgoing refs.
+    //
     if (!p.second) {
       continue;
     }
@@ -527,7 +529,13 @@ auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/) const
     }
 
     // Decrement ref counts.
-    // TODO [vsilai 2024-09-30] what should we do with this?
+    // TODO [vsilai 2024-09-30] can we take this for loop over the deleted pages and each trace_ref
+    // call and make it a call to PageTracer::trace_refs_recursively? Here, the recursion predicate
+    // would simply be a function that always returns false and our traced_page_fn would be the
+    // lambda below. Additionally, the logic in PageCacheJob::delete_page would be taken care of
+    // automatically, eliminating the need for even calling delete_page. However, there may be
+    // implications to doing that...
+    //
     //
     p.second->trace_refs() | seq::for_each([&ref_count_delta, deleted_page_id](PageId id) {
       if (id) {

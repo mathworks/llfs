@@ -54,7 +54,6 @@ Status parallel_drop_pages(const std::vector<PageId>& deleted_pages, PageCache& 
     for (const PageId page_id : deleted_pages) {
       ops[i].page_id = page_id;
       cache.arena_for_page_id(page_id).device().drop(page_id, ops[i].get_handler());
-      cache.clear_outgoing_refs_info(page_id);
       ++i;
 
       cache.track_new_page_event(NewPageTracker{

@@ -53,7 +53,9 @@ class PageAllocatorStateNoLock
 
   NoOutgoingRefsCache* no_outgoing_refs_cache()
   {
-    return this->no_outgoing_refs_cache_.get();
+    NoOutgoingRefsCache* cache_ptr = this->no_outgoing_refs_cache_.get();
+    BATT_CHECK_NOT_NULLPTR(cache_ptr);
+    return cache_ptr;
   }
 
  protected:

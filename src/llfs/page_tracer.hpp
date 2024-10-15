@@ -106,7 +106,7 @@ class PageTracer
 class NoOutgoingRefsCache
 {
  public:
-  explicit NoOutgoingRefsCache(const u64 physical_page_count) noexcept;
+  explicit NoOutgoingRefsCache(u64 physical_page_count) noexcept;
 
   NoOutgoingRefsCache(const NoOutgoingRefsCache&) = delete;
   NoOutgoingRefsCache& operator=(const NoOutgoingRefsCache&) = delete;
@@ -133,6 +133,10 @@ class NoOutgoingRefsCache
   //----- --- -- -  -  -   -
   /** \brief Computes the index into the cache vector and the starting offset for the two state bits
    * in the 64-bit cache vector element for the given `physical_page_id`.
+   *
+   * \return A pair, where the first element is the index into the cache_ vector, and the second
+   * element is the bit offset into that vector element. The bit offset is always a value between 0
+   * and 63, inclusive.
    */
   std::pair<u64, u8> compute_cache_index_and_bit_offset(i64 physical_page_id) const
   {
@@ -142,8 +146,8 @@ class NoOutgoingRefsCache
   }
 
   std::vector<std::atomic<u64>> cache_;
-  static constexpr u8 pages_per_index_ = 32;
   static constexpr u64 bit_mask_ = 0b11;
+  static constexpr u8 pages_per_index_ = 32;
 };
 
 }  // namespace llfs

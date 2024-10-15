@@ -86,8 +86,10 @@ batt::Status PageTracer::trace_refs_recursively(
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 
-NoOutgoingRefsCache::NoOutgoingRefsCache(const u64 physical_page_count) noexcept
-    : cache_((physical_page_count + this->pages_per_index_ - 1) / this->pages_per_index_)
+NoOutgoingRefsCache::NoOutgoingRefsCache(u64 physical_page_count) noexcept
+    : cache_((physical_page_count + this->pages_per_index_ - 1) /
+             this->pages_per_index_)  // Round up for the number of elements we need in the vevctor
+                                      // when performing this division
 {
 }
 
@@ -95,7 +97,7 @@ void NoOutgoingRefsCache::set_page_bits(i64 physical_page_id, OutgoingRefsStatus
 {
   const auto [cache_index, bit_offset] = this->compute_cache_index_and_bit_offset(physical_page_id);
 
-  // Set the two bits for the page. The upper bit of the two is always set to 1 in this function.
+  // Set the two bits for the page. The upper of the two bits is always set to 1 in this function.
   //
   u64 mask = u64{1} << (bit_offset + 1);
   if (has_out_going_refs == OutgoingRefsStatus::kNoOutgoingRefs) {

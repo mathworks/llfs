@@ -51,7 +51,6 @@ inline batt::Status trace_refs_recursive(PageLoader& page_loader, IdTypePairSeq&
     BATT_CHECK_NOT_NULLPTR(page);
     page->trace_refs() | seq::for_each([&](const PageId& id) {
       fn(id);
-
       if (!pushed.count(id) && should_recursively_trace(id)) {
         pushed.insert(id);
         pending.push_back(id);

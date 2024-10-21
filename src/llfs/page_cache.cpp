@@ -721,4 +721,5 @@ BoxedSeq<NewPageTracker> PageCache::find_new_page_events(PageId page_id) const
                })  //
          | seq::boxed();
 }
+
 }  // namespace llfs

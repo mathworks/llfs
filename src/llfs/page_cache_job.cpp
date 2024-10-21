@@ -356,7 +356,6 @@ Status PageCacheJob::delete_page(PageId page_id)
   if (!page_id) {
     return OkStatus();
   }
-
   StatusOr<PinnedPage> page_view = this->get_page(page_id, OkIfNotFound{true});
   if (page_view.ok()) {
     this->pruned_ = false;

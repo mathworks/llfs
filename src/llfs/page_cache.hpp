@@ -94,9 +94,7 @@ inline std::ostream& operator<<(std::ostream& out, const NewPageTracker& t)
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-class PageCache
-    : public PageLoader
-    , public PageTracer
+class PageCache : public PageLoader
 {
  public:
   struct PageReaderFromFile {
@@ -258,21 +256,6 @@ class PageCache
 
     return this->cache_slot_pool_by_page_size_log2_[page_size_log2]->metrics();
   }
-
-  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-  // PageTracer interface
-  // PageCache implements the PageTracer interface, storing the outgoing refs data in a
-  // NoOutgoingRefsCache object in each PageDevice's PageAllocator. The PageCache helps set and get
-  // the info by accessing the correct device's allocator. The PageAllocator is responsible for
-  // clearing the info, hence why we leave the clear_outgoing_refs_info implementation empty here in
-  // PageCache.
-  //
-
-  void set_outgoing_refs_info(PageId page_id, OutgoingRefsStatus outgoing_refs_status) override;
-
-  void clear_outgoing_refs_info(PageId page_id) override;
-
-  OutgoingRefsStatus get_outgoing_refs_info(PageId page_id) const override;
 
  private:
   //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

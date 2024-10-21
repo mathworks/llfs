@@ -721,31 +721,4 @@ BoxedSeq<NewPageTracker> PageCache::find_new_page_events(PageId page_id) const
                })  //
          | seq::boxed();
 }
-
-void PageCache::set_outgoing_refs_info(PageId page_id, OutgoingRefsStatus outgoing_refs_status)
-{
-  LLFS_VLOG(2) << "[PageCache::set_outgoing_refs_info] setting outgoing refs info for page "
-               << page_id << " to value: " << static_cast<u8>(outgoing_refs_status);
-
-  const PageArena& arena = this->arena_for_page_id(page_id);
-  i64 physical_page_id = arena.device().page_ids().get_physical_page(page_id);
-  BATT_CHECK_LT(physical_page_id, arena.device().capacity());
-
-  arena.allocator().no_outgoing_refs_cache()->set_page_bits(physical_page_id, outgoing_refs_status);
-}
-
-void PageCache::clear_outgoing_refs_info([[maybe_unused]] PageId page_id)
-{
-}
-
-OutgoingRefsStatus PageCache::get_outgoing_refs_info(PageId page_id) const
-{
-  const PageArena& arena = this->arena_for_page_id(page_id);
-  i64 physical_page_id = arena.device().page_ids().get_physical_page(page_id);
-  BATT_CHECK_LT(physical_page_id, arena.device().capacity());
-
-  return static_cast<OutgoingRefsStatus>(
-      arena.allocator().no_outgoing_refs_cache()->get_page_bits(physical_page_id));
-}
-
 }  // namespace llfs

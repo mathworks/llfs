@@ -14,7 +14,6 @@
 
 #include <llfs/int_types.hpp>
 #include <llfs/page_id_factory.hpp>
-#include <llfs/page_tracer.hpp>
 #include <llfs/slot.hpp>
 #include <llfs/status.hpp>
 
@@ -51,13 +50,6 @@ class PageAllocatorStateNoLock
 
   void halt() noexcept;
 
-  NoOutgoingRefsCache* no_outgoing_refs_cache()
-  {
-    NoOutgoingRefsCache* cache_ptr = this->no_outgoing_refs_cache_.get();
-    BATT_CHECK_NOT_NULLPTR(cache_ptr);
-    return cache_ptr;
-  }
-
  protected:
   // Returns the index of `ref_count` in the `page_ref_counts_` array (which is also the physical
   // page number for that page's device).  Panic if `ref_count` is not in our ref counts array.
@@ -80,11 +72,6 @@ class PageAllocatorStateNoLock
   //
   const std::unique_ptr<PageAllocatorRefCount[]> page_ref_counts_{
       new PageAllocatorRefCount[this->page_device_capacity()]};
-
-  // The cache maintained by PageCache and PageAllocator to store outgoing refs information for
-  // pages.
-  //
-  std::unique_ptr<NoOutgoingRefsCache> no_outgoing_refs_cache_;
 };
 
 }  // namespace llfs

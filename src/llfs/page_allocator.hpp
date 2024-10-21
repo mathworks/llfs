@@ -192,11 +192,6 @@ class PageAllocator
     return this->state_.no_lock().page_ids().get_device_id();
   }
 
-  NoOutgoingRefsCache* no_outgoing_refs_cache()
-  {
-    return this->state_.no_lock().no_outgoing_refs_cache();
-  }
-
   u64 total_log_bytes_committed() const
   {
     return this->log_device_->slot_range(LogReadMode::kSpeculative).upper_bound;

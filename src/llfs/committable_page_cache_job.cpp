@@ -513,12 +513,6 @@ auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/) const
   // reference.
   //
   for (const auto& p : this->job_->get_deleted_pages()) {
-    // Skip over pages that have no outgoing refs.
-    //
-    if (!p.second) {
-      continue;
-    }
-
     // Sanity check; deleted pages should have a ref_count_delta of kRefCount_1_to_0.
     //
     const PageId deleted_page_id = p.first;

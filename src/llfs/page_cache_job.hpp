@@ -16,6 +16,7 @@
 #include <llfs/page_id.hpp>
 #include <llfs/page_loader.hpp>
 #include <llfs/page_size.hpp>
+#include <llfs/page_tracer.hpp>
 #include <llfs/pinned_page.hpp>
 
 #include <batteries/async/backoff.hpp>
@@ -256,8 +257,9 @@ class PageCacheJob : public PageLoader
   template <typename PageIdFn>
   Status trace_new_roots(PageLoader& page_loader, PageIdFn&& page_id_fn) const
   {
-    return this->cache_->trace_refs_recursively(
-        page_loader,
+    LoadingPageTracer loading_tracer{page_loader};
+    return trace_refs_recursive(
+        loading_tracer,
 
         // Trace all new pages in the root set.
         //
@@ -268,8 +270,7 @@ class PageCacheJob : public PageLoader
             | seq::filter([this](const PageId& id) {
                 auto iter = this->root_set_delta_.find(id);
                 return iter != this->root_set_delta_.end() && iter->second > 0;
-              }) |
-            seq::boxed(),
+              }),
 
         // Recursion predicate
         //

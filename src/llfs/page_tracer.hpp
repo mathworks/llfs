@@ -12,7 +12,6 @@
 
 #include <llfs/page_loader.hpp>
 #include <llfs/pinned_page.hpp>
-#include <llfs/ref.hpp>
 
 #include <batteries/seq.hpp>
 #include <batteries/status.hpp>
@@ -30,6 +29,11 @@ class PageTracer
 
   virtual ~PageTracer() = default;
 
+  /** \brief Traces the outgoing references of the page with id `from_page_id`.
+   * \return A sequence of page ids for the pages referenced from the page `from_page_id`. The
+   * `BoxedSeq` returned will remain valid until the `PageTracer` object calling `trace_page_refs`
+   * goes out of scope, or until the next call to this function (whichever comes first).
+   */
   virtual batt::StatusOr<batt::BoxedSeq<PageId>> trace_page_refs(PageId from_page_id) noexcept = 0;
 
  protected:
@@ -58,7 +62,12 @@ class LoadingPageTracer : public PageTracer
  private:
   /** \brief The PageLoader used to load the page being traced.
    */
-  Ref<PageLoader> page_loader_;
+  PageLoader& page_loader_;
+
+  /** \brief The PinnedPage for the page with id `from_page_id` that is loaded in the
+   * `trace_page_refs` function.
+   */
+  PinnedPage pinned_page_;
 };
 
 }  // namespace llfs

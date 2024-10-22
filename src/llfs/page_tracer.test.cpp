@@ -39,7 +39,7 @@ TEST(PageTracerTest, TraceRefsRecursiveTest)
   // we create edges.
   //
   std::unordered_set<llfs::PageId, llfs::PageId::Hash> roots;
-  u16 num_nodes = 100;
+  usize num_nodes = 100;
   std::mt19937 rng{num_nodes};
 
   for (u16 u = 1; u <= num_nodes; ++u) {
@@ -47,9 +47,9 @@ TEST(PageTracerTest, TraceRefsRecursiveTest)
   }
 
   u64 expected_total_num_edges = 0;
-  for (u16 u = 1; u <= num_nodes; ++u) {
+  for (usize u = 1; u <= num_nodes; ++u) {
     std::vector<llfs::PageId> outgoing_refs;
-    for (u16 v = u + 1; v <= num_nodes; ++v) {
+    for (usize v = u + 1; v <= num_nodes; ++v) {
       // Randomly create edges. PageId{1} will always be a root, and all nodes (pages) can have
       // outgoing edges/refs to pages with a greater id value.
       //
@@ -81,6 +81,7 @@ TEST(PageTracerTest, TraceRefsRecursiveTest)
       });
 
   ASSERT_TRUE(status.ok());
+
   // Ensure that all edges were traced correctly in trace_refs_recursive.
   //
   EXPECT_EQ(expected_total_num_edges, calculated_num_edges);

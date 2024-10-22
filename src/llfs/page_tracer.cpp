@@ -9,16 +9,21 @@
 #include <llfs/page_tracer.hpp>
 
 namespace llfs {
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 LoadingPageTracer::LoadingPageTracer(PageLoader& page_loader) noexcept : page_loader_{page_loader}
 {
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 LoadingPageTracer::~LoadingPageTracer()
 {
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 batt::StatusOr<batt::BoxedSeq<PageId>> LoadingPageTracer::trace_page_refs(
     PageId from_page_id) noexcept
 {

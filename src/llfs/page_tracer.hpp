@@ -30,9 +30,11 @@ class PageTracer
   virtual ~PageTracer() = default;
 
   /** \brief Traces the outgoing references of the page with id `from_page_id`.
-   * \return A sequence of page ids for the pages referenced from the page `from_page_id`. The
-   * `BoxedSeq` returned will remain valid until the `PageTracer` object calling `trace_page_refs`
+   * 
+   * The returned `BoxedSeq` will remain valid until the `PageTracer` object calling `trace_page_refs`
    * goes out of scope, or until the next call to this function (whichever comes first).
+   * 
+   * \return A sequence of page ids for the pages referenced from the page `from_page_id`.
    */
   virtual batt::StatusOr<batt::BoxedSeq<PageId>> trace_page_refs(PageId from_page_id) noexcept = 0;
 

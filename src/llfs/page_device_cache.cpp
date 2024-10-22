@@ -187,7 +187,6 @@ void PageDeviceCache::erase(PageId key)
     // Important!  Only clear the slot once we have invalidated our table entry.
     //
     slot->clear();
-    slot->set_obsolete_hint();
   } else {
     // If we weren't able to evict `key`, we can still try to read the slot to see if it contains
     // `key` but is non-evictable (because there are outstanding pins); if this is the case, then

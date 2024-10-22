@@ -16,6 +16,7 @@
 #include <llfs/page_id.hpp>
 #include <llfs/page_loader.hpp>
 #include <llfs/page_size.hpp>
+#include <llfs/page_tracer.hpp>
 #include <llfs/pinned_page.hpp>
 
 #include <batteries/async/backoff.hpp>
@@ -256,8 +257,9 @@ class PageCacheJob : public PageLoader
   template <typename PageIdFn>
   Status trace_new_roots(PageLoader& page_loader, PageIdFn&& page_id_fn) const
   {
+    LoadingPageTracer loading_tracer{page_loader};
     return trace_refs_recursive(
-        page_loader,
+        loading_tracer,
 
         // Trace all new pages in the root set.
         //

@@ -11,7 +11,7 @@
 #define LLFS_TRACE_REFS_RECURSIVE_HPP
 
 #include <llfs/page_id.hpp>
-#include <llfs/page_loader.hpp>
+#include <llfs/page_tracer.hpp>
 #include <llfs/pinned_page.hpp>
 
 #include <batteries/seq.hpp>
@@ -25,7 +25,7 @@
 namespace llfs {
 
 template <typename IdTypePairSeq, typename Pred, typename Fn>
-inline batt::Status trace_refs_recursive(PageLoader& page_loader, IdTypePairSeq&& roots,
+inline batt::Status trace_refs_recursive(PageTracer& page_tracer, IdTypePairSeq&& roots,
                                          Pred&& should_recursively_trace, Fn&& fn)
 {
   static_assert(std::is_convertible_v<std::decay_t<SeqItem<IdTypePairSeq>>, PageId>,
@@ -44,12 +44,10 @@ inline batt::Status trace_refs_recursive(PageLoader& page_loader, IdTypePairSeq&
     const PageId next = pending.back();
     pending.pop_back();
 
-    batt::StatusOr<PinnedPage> status_or_page = page_loader.get_page(next, OkIfNotFound{false});
-    BATT_REQUIRE_OK(status_or_page);
+    batt::StatusOr<batt::BoxedSeq<PageId>> outgoing_refs_status = page_tracer.trace_page_refs(next);
+    BATT_REQUIRE_OK(outgoing_refs_status);
 
-    PinnedPage& page = *status_or_page;
-    BATT_CHECK_NOT_NULLPTR(page);
-    page->trace_refs() | seq::for_each([&](const PageId& id) {
+    *outgoing_refs_status | seq::for_each([&](const PageId& id) {
       fn(id);
       if (!pushed.count(id) && should_recursively_trace(id)) {
         pushed.insert(id);

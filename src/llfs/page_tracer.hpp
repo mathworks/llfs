@@ -10,6 +10,7 @@
 #ifndef LLFS_PAGE_TRACER_HPP
 #define LLFS_PAGE_TRACER_HPP
 
+#include <llfs/page_device_entry.hpp>
 #include <llfs/page_loader.hpp>
 #include <llfs/pinned_page.hpp>
 
@@ -30,10 +31,11 @@ class PageTracer
   virtual ~PageTracer() = default;
 
   /** \brief Traces the outgoing references of the page with id `from_page_id`.
-   * 
-   * The returned `BoxedSeq` will remain valid until the `PageTracer` object calling `trace_page_refs`
-   * goes out of scope, or until the next call to this function (whichever comes first).
-   * 
+   *
+   * The returned `BoxedSeq` will remain valid until the `PageTracer` object calling
+   * `trace_page_refs` goes out of scope, or until the next call to this function (whichever comes
+   * first).
+   *
    * \return A sequence of page ids for the pages referenced from the page `from_page_id`.
    */
   virtual batt::StatusOr<batt::BoxedSeq<PageId>> trace_page_refs(PageId from_page_id) noexcept = 0;
@@ -49,7 +51,8 @@ class PageTracer
 class LoadingPageTracer : public PageTracer
 {
  public:
-  explicit LoadingPageTracer(PageLoader& page_loader) noexcept;
+  explicit LoadingPageTracer(PageLoader& page_loader,
+                             batt::Optional<bool> ok_if_not_found = false) noexcept;
 
   ~LoadingPageTracer();
 
@@ -70,6 +73,33 @@ class LoadingPageTracer : public PageTracer
    * `trace_page_refs` function.
    */
   PinnedPage pinned_page_;
+
+  bool ok_if_not_found_;
+};
+
+enum struct OutgoingRefsStatus : u8 {
+  kNotTraced = 0,        // bit state 00, invalid
+  kHasOutgoingRefs = 2,  // bit state 10, valid with outgoing refs
+  kNoOutgoingRefs = 3,   // bit state 11, valid with no outgoing refs
+};
+
+class CachingPageTracer : public PageTracer
+{
+ public:
+  explicit CachingPageTracer(
+      const std::vector<std::unique_ptr<PageDeviceEntry>>& page_devices,
+      PageTracer& loader) noexcept;
+
+  CachingPageTracer(const CachingPageTracer&) = delete;
+  CachingPageTracer operator=(const CachingPageTracer&) = delete;
+
+  ~CachingPageTracer();
+
+  batt::StatusOr<batt::BoxedSeq<PageId>> trace_page_refs(PageId from_page_id) noexcept override;
+
+ private:
+  const std::vector<std::unique_ptr<PageDeviceEntry>>& page_devices_;
+  PageTracer& loader_;
 };
 
 }  // namespace llfs

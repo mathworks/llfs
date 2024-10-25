@@ -7,16 +7,23 @@
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
 #include <llfs/page_tracer.hpp>
+
+#include <llfs/memory_log_device.hpp>
+#include <llfs/memory_page_cache.hpp>
+#include <llfs/page_graph_node.hpp>
 #include <llfs/trace_refs_recursive.hpp>
+#include <llfs/volume.hpp>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <unordered_set>
 #include <vector>
 
 namespace {
-using namespace batt::int_types;
+using namespace llfs::constants;
+using namespace llfs::int_types;
 
 class MockPageTracer : public llfs::PageTracer
 {
@@ -30,7 +37,7 @@ class MockPageTracer : public llfs::PageTracer
 //  1. Mock a PageTracer and test its integration with trace_refs_recursive by creating a DAG of
 //  PageIds.
 
-TEST(PageTracerTest, TraceRefsRecursiveTest)
+TEST(PageTracerMockTest, TraceRefsRecursiveTest)
 {
   MockPageTracer mock_tracer;
 
@@ -42,7 +49,7 @@ TEST(PageTracerTest, TraceRefsRecursiveTest)
   usize num_nodes = 100;
   std::mt19937 rng{num_nodes};
 
-  for (u16 u = 1; u <= num_nodes; ++u) {
+  for (usize u = 1; u <= num_nodes; ++u) {
     roots.insert(llfs::PageId{u});
   }
 

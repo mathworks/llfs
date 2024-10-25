@@ -19,12 +19,11 @@
 #include <llfs/metrics.hpp>
 #include <llfs/optional.hpp>
 #include <llfs/page_allocator.hpp>
-#include <llfs/page_arena.hpp>
 #include <llfs/page_buffer.hpp>
 #include <llfs/page_cache_metrics.hpp>
 #include <llfs/page_cache_options.hpp>
 #include <llfs/page_device.hpp>
-#include <llfs/page_device_cache.hpp>
+#include <llfs/page_device_entry.hpp>
 #include <llfs/page_filter.hpp>
 #include <llfs/page_id_slot.hpp>
 #include <llfs/page_loader.hpp>
@@ -103,26 +102,6 @@ class PageCache : public PageLoader
     int line;
   };
 
-  /** \brief All the per-PageDevice state for a single device in the storage pool.
-   */
-  struct PageDeviceEntry {
-    explicit PageDeviceEntry(PageArena&& arena,
-                             boost::intrusive_ptr<PageCacheSlot::Pool>&& slot_pool) noexcept
-        : arena{std::move(arena)}
-        , cache{this->arena.device().page_ids(), std::move(slot_pool)}
-    {
-    }
-
-    /** \brief The PageDevice and PageAllocator.
-     */
-    PageArena arena;
-
-    /** \brief A per-device page cache; shares a PageCacheSlot::Pool with all other PageDeviceEntry
-     * objects that have the same page size.
-     */
-    PageDeviceCache cache;
-  };
-
   class PageDeleterImpl : public PageDeleter
   {
    public:
@@ -194,6 +173,8 @@ class PageCache : public PageLoader
   Slice<PageDeviceEntry* const> devices_with_page_size(usize size) const;
 
   Slice<PageDeviceEntry* const> all_devices() const;
+
+  const std::vector<std::unique_ptr<PageDeviceEntry>>& devices_by_id() const;
 
   const PageArena& arena_for_page_id(PageId id_val) const;
 

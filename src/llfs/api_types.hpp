@@ -81,6 +81,8 @@ BATT_STRONG_TYPEDEF(usize, BufferCount);
  */
 BATT_STRONG_TYPEDEF(usize, BufferSize);
 
+BATT_STRONG_TYPEDEF(bool, HasNoOutgoingRefs);
+
 }  // namespace llfs
 
 #endif  // LLFS_API_TYPES_HPP

@@ -42,4 +42,4 @@ struct PageDeviceEntry {
 };
 }  // namespace llfs
 
-#endif // LLFS_PAGE_DEVICE_ENTRY_HPP
+#endif  // LLFS_PAGE_DEVICE_ENTRY_HPP

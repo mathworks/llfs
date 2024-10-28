@@ -177,9 +177,7 @@ class PageCacheJob : public PageLoader
   Status recover_page(PageId page_id, const boost::uuids::uuid& caller_uuid,
                       slot_offset_type caller_slot);
 
-  // Mark the page as deleted in this job.  Will load the page as a side-effect, in order to access
-  // the set of pages referenced by the page contents.  Returns `true` if the page is being deleted;
-  // `false` if it doesn't exist (i.e., it was already deleted).
+  // Mark the page as deleted in this job.
   //
   Status delete_page(PageId page_id);
 

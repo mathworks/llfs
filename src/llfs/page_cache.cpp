@@ -418,6 +418,8 @@ void PageCache::prefetch_hint(PageId page_id)
   (void)this->find_page_in_cache(page_id, /*require_tag=*/None, OkIfNotFound{false});
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 const std::vector<std::unique_ptr<PageDeviceEntry>>& PageCache::devices_by_id() const
 {
   return this->page_devices_;
@@ -442,8 +444,7 @@ Slice<PageDeviceEntry* const> PageCache::devices_with_page_size(usize size) cons
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Slice<PageDeviceEntry* const> PageCache::devices_with_page_size_log2(
-    usize size_log2) const
+Slice<PageDeviceEntry* const> PageCache::devices_with_page_size_log2(usize size_log2) const
 {
   BATT_CHECK_LT(size_log2, kMaxPageSizeLog2);
 

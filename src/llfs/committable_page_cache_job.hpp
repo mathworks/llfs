@@ -193,7 +193,7 @@ class CommittablePageCacheJob
 
   Status write_new_pages();
 
-  StatusOr<PageRefCountUpdates> get_page_ref_count_updates(u64 callers) const;
+  StatusOr<PageRefCountUpdates> get_page_ref_count_updates(u64 callers);
 
   StatusOr<DeadPages> start_ref_count_updates(const JobCommitParams& params,
                                               PageRefCountUpdates& updates, u64 callers);
@@ -206,12 +206,15 @@ class CommittablePageCacheJob
 
   Status drop_deleted_pages(u64 callers);
 
+  BoxedSeq<PageId> finalized_deleted_page_ids() const;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   std::shared_ptr<const PageCacheJob> job_;
   boost::intrusive_ptr<FinalizedJobTracker> tracker_;
   PageRefCountUpdates ref_count_updates_;
   std::unique_ptr<WriteNewPagesContext> write_new_pages_context_;
+  std::unordered_set<PageId, PageId::Hash> finalized_deleted_pages_;
 };
 
 /** \brief Write all changes in `job` to durable storage.  This is guaranteed to be atomic.

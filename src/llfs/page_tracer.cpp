@@ -51,17 +51,20 @@ batt::StatusOr<batt::BoxedSeq<PageId>> LoadingPageTracer::trace_page_refs(
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 CachingPageTracer::CachingPageTracer(
-    const std::vector<std::unique_ptr<PageDeviceEntry>>& page_devices,
-    PageTracer& loader_) noexcept
+    const std::vector<std::unique_ptr<PageDeviceEntry>>& page_devices, PageTracer& loader) noexcept
     : page_devices_{page_devices}
-    , loader_{loader_}
+    , loader_{loader}
 {
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 CachingPageTracer::~CachingPageTracer()
 {
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 batt::StatusOr<batt::BoxedSeq<PageId>> CachingPageTracer::trace_page_refs(
     PageId from_page_id) noexcept
 {

@@ -18,13 +18,13 @@
 
 namespace llfs {
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-/** \brief A cache to store outgoing refs information. Can be used by an implementer of PageTracer
- * as a way to organize and look up this information on the PageDevice level. This cache is
- * implemented as a vector of unsigned 64-bit integers, where every element of the vector
- * represents the outgoing refs state of a physical page in a PageDevice. The lowest bit in an
- * element represents if the page has no outgoing refs. The second lowest bit represents the
- * validity of the page's state. the remaining upper 62 bits is used to store the generation of
- * the physical page.
+/** \brief A cache to store information about a page's outgoing references to other pages. Can be
+ * used by an implementer of PageTracer as a way to organize and look up this information on the
+ * PageDevice level. This cache is implemented as a vector of unsigned 64-bit integers, where every
+ * element of the vector represents the outgoing refs "state" of a physical page in a PageDevice.
+ * The lowest bit in an element represents if the page has no outgoing refs. The second lowest bit
+ * represents the validity of the page's state to help determine if a page's outgoing refs have ever
+ * been traced. The remaining upper 62 bits are used to store the generation of the physical page.
  */
 class NoOutgoingRefsCache
 {
@@ -55,4 +55,4 @@ class NoOutgoingRefsCache
 };
 }  // namespace llfs
 
-#endif // LLFS_NO_OUTGOING_REFS_CACHE_HPP
+#endif  // LLFS_NO_OUTGOING_REFS_CACHE_HPP

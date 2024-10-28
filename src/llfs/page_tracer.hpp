@@ -74,6 +74,8 @@ class LoadingPageTracer : public PageTracer
    */
   PinnedPage pinned_page_;
 
+  /** \brief A boolean to pass into the PageLoader's `get_page` function.
+   */
   bool ok_if_not_found_;
 };
 
@@ -83,22 +85,42 @@ enum struct OutgoingRefsStatus : u8 {
   kNoOutgoingRefs = 3,   // bit state 11, valid with no outgoing refs
 };
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+/** \brief A PageTracer with the ability to load a page and trace its outgoing references to other
+ * pages, as well as look up cached information about a page's outgoing references to other pages.
+ * If this PageTracer can find valid cached information stating that a page does not have any
+ * outgoing refs, it will not need to load the page like LoadingPageTracer always does. The
+ * accessibility of any cached information occurs through a PageDeviceEntry object.
+ */
 class CachingPageTracer : public PageTracer
 {
  public:
-  explicit CachingPageTracer(
-      const std::vector<std::unique_ptr<PageDeviceEntry>>& page_devices,
-      PageTracer& loader) noexcept;
+  explicit CachingPageTracer(const std::vector<std::unique_ptr<PageDeviceEntry>>& page_devices,
+                             PageTracer& loader) noexcept;
 
   CachingPageTracer(const CachingPageTracer&) = delete;
   CachingPageTracer operator=(const CachingPageTracer&) = delete;
 
   ~CachingPageTracer();
 
+  /** \brief Traces the outgoing references of the page with page id `from_page_id`. First, this
+   * function will attempt to see if there exists any cached information about the page's outgoing
+   * refs status. If it cannot find any valid information, or if it finds that there are outgoing
+   * refs, it will fall back on its wrapped PageTracer to load and trace the outgoing refs.
+   *
+   * \return A sequence of page ids for the pages referenced from the page `from_page_id`.
+   */
   batt::StatusOr<batt::BoxedSeq<PageId>> trace_page_refs(PageId from_page_id) noexcept override;
 
  private:
+  /** \brief A vector of page device entries used to access cached information about a page's
+   * outgoing refs status.
+   */
   const std::vector<std::unique_ptr<PageDeviceEntry>>& page_devices_;
+
+  /** \brief The "wrapped" PageTracer that this CachingPageTracer instance falls back on in the
+   * event that no cached information is found about a page.
+   */
   PageTracer& loader_;
 };
 

@@ -51,10 +51,9 @@ class PageTracer
 class LoadingPageTracer : public PageTracer
 {
  public:
-  explicit LoadingPageTracer(PageLoader& page_loader,
-                             batt::Optional<bool> ok_if_not_found = false) noexcept;
+  explicit LoadingPageTracer(PageLoader& page_loader, bool ok_if_not_found = false) noexcept;
 
-  ~LoadingPageTracer();
+  ~LoadingPageTracer() noexcept;
 
   LoadingPageTracer(const LoadingPageTracer&) = delete;
   LoadingPageTracer& operator=(const LoadingPageTracer&) = delete;
@@ -79,12 +78,6 @@ class LoadingPageTracer : public PageTracer
   bool ok_if_not_found_;
 };
 
-enum struct OutgoingRefsStatus : u8 {
-  kNotTraced = 0,        // bit state 00, invalid
-  kHasOutgoingRefs = 2,  // bit state 10, valid with outgoing refs
-  kNoOutgoingRefs = 3,   // bit state 11, valid with no outgoing refs
-};
-
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 /** \brief A PageTracer with the ability to load a page and trace its outgoing references to other
  * pages, as well as look up cached information about a page's outgoing references to other pages.
@@ -101,7 +94,7 @@ class CachingPageTracer : public PageTracer
   CachingPageTracer(const CachingPageTracer&) = delete;
   CachingPageTracer operator=(const CachingPageTracer&) = delete;
 
-  ~CachingPageTracer();
+  ~CachingPageTracer() noexcept;
 
   /** \brief Traces the outgoing references of the page with page id `from_page_id`. First, this
    * function will attempt to see if there exists any cached information about the page's outgoing

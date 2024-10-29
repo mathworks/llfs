@@ -245,13 +245,19 @@ class PageTracerTest : public ::testing::Test
     const std::vector<std::unique_ptr<llfs::PageDeviceEntry>>& page_devices =
         this->page_cache->devices_by_id();
     llfs::page_device_id_int device = llfs::PageIdFactory::get_device_id(page_id);
-    u64 physical_page = page_devices[device]->arena.device().page_ids().get_physical_page(page_id);
-    llfs::page_generation_int generation =
-        page_devices[device]->arena.device().page_ids().get_generation(page_id);
-    llfs::OutgoingRefsStatus actual_status = static_cast<llfs::OutgoingRefsStatus>(
-        page_devices[device]->no_outgoing_refs_cache.get_page_bits(physical_page, generation));
 
-    return actual_status;
+    batt::BoolStatus has_outgoing_refs =
+        page_devices[device]->no_outgoing_refs_cache.has_outgoing_refs(page_id);
+    switch (has_outgoing_refs) {
+      case batt::BoolStatus::kFalse:
+        return llfs::OutgoingRefsStatus::kNoOutgoingRefs;
+      case batt::BoolStatus::kTrue:
+        return llfs::OutgoingRefsStatus::kHasOutgoingRefs;
+      case batt::BoolStatus::kUnknown:
+        return llfs::OutgoingRefsStatus::kNotTraced;
+      default:
+        return llfs::OutgoingRefsStatus::kNotTraced;
+    }
   }
 
   /** \brief A utility function that triggers a call to `trace_refs_recursive` with the PageCache as
@@ -305,31 +311,38 @@ TEST_F(PageTracerTest, NoOutgoingRefsCacheDeath)
 {
   const std::unique_ptr<llfs::PageDeviceEntry>& page_device1 = this->page_cache->devices_by_id()[0];
 
+  batt::BoolStatus no_outgoing_refs = batt::bool_status_from(llfs::HasOutgoingRefs{false});
   llfs::PageId page = page_device1->arena.device().page_ids().make_page_id(1, 1);
 
-  // Create a page with physical page id 1 and generation 1, then get and set its page bits in the
-  // PageDevice's NoOutgoingRefsCache.
+  // Create a page with physical page id 1 and generation 1, then set and get its page bits in the
+  // PageDevice's NoOutgoingRefsCache. The first get will return an unknown status.
   //
-  page_device1->no_outgoing_refs_cache.set_page_bits(1, 1, llfs::HasNoOutgoingRefs{true});
-  u64 page_bits = page_device1->no_outgoing_refs_cache.get_page_bits(1, 1);
-  // When a page has no outgoing refs, its state bits in the cache are set to 11 (the value 3).
-  //
-  EXPECT_EQ(page_bits, 3);
+  EXPECT_EQ(page_device1->no_outgoing_refs_cache.has_outgoing_refs(page),
+            batt::BoolStatus::kUnknown);
+  page_device1->no_outgoing_refs_cache.set_page_state(page, no_outgoing_refs);
+  batt::BoolStatus has_outgoing_refs = page_device1->no_outgoing_refs_cache.has_outgoing_refs(page);
 
-  // We can't set the page bits for the same generation of a page twice!
+  // When a page has no outgoing refs, its BoolStatus will be kFalse.
   //
-  EXPECT_DEATH(
-      page_device1->no_outgoing_refs_cache.set_page_bits(1, 1, llfs::HasNoOutgoingRefs{true}),
-      "Assertion failed: generation != old_generation");
+  EXPECT_EQ(has_outgoing_refs, batt::BoolStatus::kFalse);
+
+  // We can't set the outgoing refs bits for the same generation of a page twice!
+  //
+  EXPECT_DEATH(page_device1->no_outgoing_refs_cache.set_page_state(page, no_outgoing_refs),
+               "Assertion failed: generation != old_generation");
 
   page = page_device1->arena.device().page_ids().make_page_id(2, 1);
-  page_device1->no_outgoing_refs_cache.set_page_bits(2, 1, llfs::HasNoOutgoingRefs{true});
-  page_device1->no_outgoing_refs_cache.set_page_bits(2, 2, llfs::HasNoOutgoingRefs{true});
-  page_bits = page_device1->no_outgoing_refs_cache.get_page_bits(2, 1);
-  // Since we just queried for a previous generation's page state bits, we will be returned a value
-  // of 00 for the state bits.
+  page_device1->no_outgoing_refs_cache.set_page_state(page, no_outgoing_refs);
+
+  llfs::PageId new_generation_page =
+      page_device1->arena.device().page_ids().advance_generation(page);
+  page_device1->no_outgoing_refs_cache.set_page_state(new_generation_page, no_outgoing_refs);
+  has_outgoing_refs = page_device1->no_outgoing_refs_cache.has_outgoing_refs(page);
+
+  // Since we just queried for a previous generation's page state bits, we will be returned a
+  // BoolStatus of value kUnknown.
   //
-  EXPECT_EQ(page_bits, 0);
+  EXPECT_EQ(has_outgoing_refs, batt::BoolStatus::kUnknown);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

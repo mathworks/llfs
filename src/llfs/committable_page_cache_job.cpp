@@ -509,11 +509,9 @@ auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/)
   // Trace deleted pages non-recursively, decrementing the ref counts of all pages they directly
   // reference.
   //
-  LoadingPageTracer loading_tracer{loader, true};
+  LoadingPageTracer loading_tracer{loader, /*ok_if_not_found=*/true};
   CachingPageTracer caching_tracer{this->job_->cache().devices_by_id(), loading_tracer};
-  for (const auto& p : this->job_->get_deleted_pages()) {
-    const PageId deleted_page_id = p;
-
+  for (const PageId& deleted_page_id : this->job_->get_deleted_pages()) {
     // Decrement ref counts.
     //
     batt::StatusOr<batt::BoxedSeq<PageId>> outgoing_refs =
@@ -523,7 +521,7 @@ auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/)
     }
     BATT_REQUIRE_OK(outgoing_refs);
 
-    ref_count_delta[p] = kRefCount_1_to_0;
+    ref_count_delta[deleted_page_id] = kRefCount_1_to_0;
     // TODO [vsilai 2024-10-28] not sure if finalized_deleted_pages_ is needed. Given how we
     // restructured this function and `delete_page` in PageCacheJob, I think that we have to
     // ensure that we don't accidentally drop a page that wasn't found when `trace_page_refs` was
@@ -533,7 +531,7 @@ auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/)
     // should be idempotent (as described by the comment on line 275 of this file), we may not need
     // this...
     //
-    this->finalized_deleted_pages_.insert(p);
+    this->finalized_deleted_pages_.insert(deleted_page_id);
 
     *outgoing_refs | seq::for_each([&ref_count_delta, deleted_page_id](PageId id) {
       if (id) {

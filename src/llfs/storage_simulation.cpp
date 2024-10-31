@@ -51,6 +51,18 @@ class StorageSimulation::TaskSchedulerImpl : public batt::TaskScheduler
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+/*explicit*/ StorageSimulation::StorageSimulation(RandomSeed seed) noexcept
+    : StorageSimulation{batt::StateMachineEntropySource{
+          /*entropy_fn=*/[rng = std::make_shared<std::default_random_engine>(seed)](
+                             usize min_value, usize max_value) -> usize {
+            std::uniform_int_distribution<usize> pick_value{min_value, max_value};
+            return pick_value(*rng);
+          }}}
+{
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 /*explicit*/ StorageSimulation::StorageSimulation(
     batt::StateMachineEntropySource&& entropy_source) noexcept
     : entropy_source_{std::move(entropy_source)}
@@ -421,6 +433,16 @@ const batt::SharedPtr<PageCache>& StorageSimulation::init_cache() noexcept
     }
   }
   return this->cache_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+std::unique_ptr<LogDeviceFactory> StorageSimulation::get_log_device_factory(const std::string& name,
+                                                                            Optional<u64> capacity)
+{
+  return std::make_unique<BasicLogDeviceFactory>([this, name, capacity] {
+    return this->get_log_device(name, capacity);
+  });
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

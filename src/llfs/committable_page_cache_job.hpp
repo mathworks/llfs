@@ -206,15 +206,13 @@ class CommittablePageCacheJob
 
   Status drop_deleted_pages(u64 callers);
 
-  BoxedSeq<PageId> finalized_deleted_page_ids() const;
-
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   std::shared_ptr<const PageCacheJob> job_;
   boost::intrusive_ptr<FinalizedJobTracker> tracker_;
   PageRefCountUpdates ref_count_updates_;
   std::unique_ptr<WriteNewPagesContext> write_new_pages_context_;
-  std::unordered_set<PageId, PageId::Hash> finalized_deleted_pages_;
+  std::unordered_set<PageId, PageId::Hash> not_found_deleted_pages_;
 };
 
 /** \brief Write all changes in `job` to durable storage.  This is guaranteed to be atomic.

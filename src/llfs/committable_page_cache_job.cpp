@@ -517,21 +517,12 @@ auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/)
     batt::StatusOr<batt::BoxedSeq<PageId>> outgoing_refs =
         caching_tracer.trace_page_refs(deleted_page_id);
     if (outgoing_refs.status() == batt::StatusCode::kNotFound) {
+      this->not_found_deleted_pages_.insert(deleted_page_id);
       continue;
     }
     BATT_REQUIRE_OK(outgoing_refs);
 
     ref_count_delta[deleted_page_id] = kRefCount_1_to_0;
-    // TODO [vsilai 2024-10-28] not sure if finalized_deleted_pages_ is needed. Given how we
-    // restructured this function and `delete_page` in PageCacheJob, I think that we have to
-    // ensure that we don't accidentally drop a page that wasn't found when `trace_page_refs` was
-    // called above, because we keep this page id in the job's deleted_pages_ set and simply call
-    // continue in the loop. Before, `drop_pages` looked into the job's deleted_pages_ set to create
-    // a vector of all the ids to drop, which may cause this accidental drop. However, since drops
-    // should be idempotent (as described by the comment on line 275 of this file), we may not need
-    // this...
-    //
-    this->finalized_deleted_pages_.insert(deleted_page_id);
 
     *outgoing_refs | seq::for_each([&ref_count_delta, deleted_page_id](PageId id) {
       if (id) {
@@ -601,19 +592,17 @@ Status CommittablePageCacheJob::recycle_dead_pages(const JobCommitParams& params
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-BoxedSeq<PageId> CommittablePageCacheJob::finalized_deleted_page_ids() const
-{
-  return BoxedSeq<PageId>{
-      as_seq(this->finalized_deleted_pages_.begin(), this->finalized_deleted_pages_.end())};
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
 Status CommittablePageCacheJob::drop_deleted_pages(u64 callers)
 {
   LLFS_VLOG(1) << "commit(PageCacheJob): dropping deleted pages";
 
-  return parallel_drop_pages(this->finalized_deleted_page_ids() | seq::collect_vec(),
+  // From the set of all deleted pages, filter out those that were not found during the attempt to
+  // trace their outgoing refs.
+  //
+  return parallel_drop_pages(this->deleted_page_ids() | seq::filter([this](const PageId& id) {
+                               auto iter = this->not_found_deleted_pages_.find(id);
+                               return iter == this->not_found_deleted_pages_.end();
+                             }) | seq::collect_vec(),
                              this->job_->cache(), this->job_->job_id, callers);
 }
 

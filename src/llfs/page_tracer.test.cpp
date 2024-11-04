@@ -237,10 +237,10 @@ class PageTracerTest : public ::testing::Test
 
   /** \brief Get the outgoing reference status of the given page with id `page_id`.
    *
-   * \return An OutgoingRefsStatus value telling the caller if the page has outgoing references to
+   * \return An u64 value telling the caller if the page has outgoing references to
    * other pages, does not have any outgoing references, or has never been traced yet.
    */
-  llfs::OutgoingRefsStatus get_outgoing_refs_status(llfs::PageId page_id)
+  batt::BoolStatus get_outgoing_refs_status(llfs::PageId page_id)
   {
     const std::vector<std::unique_ptr<llfs::PageDeviceEntry>>& page_devices =
         this->page_cache->devices_by_id();
@@ -248,16 +248,7 @@ class PageTracerTest : public ::testing::Test
 
     batt::BoolStatus has_outgoing_refs =
         page_devices[device]->no_outgoing_refs_cache.has_outgoing_refs(page_id);
-    switch (has_outgoing_refs) {
-      case batt::BoolStatus::kFalse:
-        return llfs::OutgoingRefsStatus::kNoOutgoingRefs;
-      case batt::BoolStatus::kTrue:
-        return llfs::OutgoingRefsStatus::kHasOutgoingRefs;
-      case batt::BoolStatus::kUnknown:
-        return llfs::OutgoingRefsStatus::kNotTraced;
-      default:
-        return llfs::OutgoingRefsStatus::kNotTraced;
-    }
+    return has_outgoing_refs;
   }
 
   /** \brief A utility function that triggers a call to `trace_refs_recursive` with the PageCache as
@@ -311,7 +302,7 @@ TEST_F(PageTracerTest, NoOutgoingRefsCacheDeath)
 {
   const std::unique_ptr<llfs::PageDeviceEntry>& page_device1 = this->page_cache->devices_by_id()[0];
 
-  batt::BoolStatus no_outgoing_refs = batt::bool_status_from(llfs::HasOutgoingRefs{false});
+  llfs::HasOutgoingRefs no_outgoing_refs{false};
   llfs::PageId page = page_device1->arena.device().page_ids().make_page_id(1, 1);
 
   // Create a page with physical page id 1 and generation 1, then set and get its page bits in the
@@ -326,10 +317,11 @@ TEST_F(PageTracerTest, NoOutgoingRefsCacheDeath)
   //
   EXPECT_EQ(has_outgoing_refs, batt::BoolStatus::kFalse);
 
-  // We can't set the outgoing refs bits for the same generation of a page twice!
+  // We can't set different outgoing refs bits for the same generation of a page!
   //
-  EXPECT_DEATH(page_device1->no_outgoing_refs_cache.set_page_state(page, no_outgoing_refs),
-               "Assertion failed: generation != old_generation");
+  EXPECT_DEATH(
+      page_device1->no_outgoing_refs_cache.set_page_state(page, llfs::HasOutgoingRefs{true}),
+      "Assertion failed: new_cache_entry == old_cache_entry");
 
   page = page_device1->arena.device().page_ids().make_page_id(2, 1);
   page_device1->no_outgoing_refs_cache.set_page_state(page, no_outgoing_refs);
@@ -355,7 +347,11 @@ TEST_F(PageTracerTest, CachingPageTracerTest)
   //
   std::unordered_set<llfs::PageId, llfs::PageId::Hash> not_traced_set;
   std::vector<llfs::PageId> leaves;
-  std::unordered_map<llfs::PageId, llfs::OutgoingRefsStatus, llfs::PageId::Hash>
+
+  // BoolStatus kFalse: page has no outgoing refs.
+  // BoolStatus kTrue: page has outgoing refs.
+  //
+  std::unordered_map<llfs::PageId, batt::BoolStatus, llfs::PageId::Hash>
       expected_outgoing_refs_status;
 
   // Use half of the PageDevice's capacity to make leaf pages, i.e. pages with no outgoing refs.
@@ -366,7 +362,7 @@ TEST_F(PageTracerTest, CachingPageTracerTest)
     ASSERT_TRUE(leaf.ok()) << BATT_INSPECT(leaf.status());
     not_traced_set.insert(*leaf);
     leaves.emplace_back(*leaf);
-    expected_outgoing_refs_status[*leaf] = llfs::OutgoingRefsStatus::kNoOutgoingRefs;
+    expected_outgoing_refs_status[*leaf] = batt::BoolStatus::kFalse;
   }
 
   // Use (half of PageDevice's capacity - 1) number of pages for pages with outgoing refs.
@@ -381,7 +377,7 @@ TEST_F(PageTracerTest, CachingPageTracerTest)
     batt::StatusOr<llfs::PageId> root =
         this->build_page_with_refs_to(outgoing_refs, llfs::PageSize{256}, *job);
     job->new_root(*root);
-    expected_outgoing_refs_status[*root] = llfs::OutgoingRefsStatus::kHasOutgoingRefs;
+    expected_outgoing_refs_status[*root] = batt::BoolStatus::kTrue;
     ++num_pages_with_outgoing_refs;
 
     // Those leaves that were initially placed in the not_traced set are now traceable since they
@@ -399,7 +395,10 @@ TEST_F(PageTracerTest, CachingPageTracerTest)
       this->build_page_with_refs_to({}, llfs::PageSize{256}, *job);
   not_traced_set.insert(*island);
   for (const llfs::PageId& id : not_traced_set) {
-    expected_outgoing_refs_status[id] = llfs::OutgoingRefsStatus::kNotTraced;
+    // All non traceable pages will never has their outgoing refs information set, so their status
+    // will be kUnknown.
+    //
+    expected_outgoing_refs_status[id] = batt::BoolStatus::kUnknown;
   }
 
   batt::Status trace_status = job->trace_new_roots(/*page_loader=*/*job, /*page_id_fn=*/
@@ -411,7 +410,7 @@ TEST_F(PageTracerTest, CachingPageTracerTest)
   // Verify the OutgoingRefsStatus for each page.
   //
   for (const auto& [page_id, expected_status] : expected_outgoing_refs_status) {
-    llfs::OutgoingRefsStatus actual_status = this->get_outgoing_refs_status(page_id);
+    batt::BoolStatus actual_status = this->get_outgoing_refs_status(page_id);
     EXPECT_EQ(actual_status, expected_status);
   }
 
@@ -436,8 +435,11 @@ TEST_F(PageTracerTest, VolumeAndRecyclerTest)
         return llfs::OkStatus();
       });
 
-  std::unordered_map<llfs::PageId, llfs::OutgoingRefsStatus, llfs::PageId::Hash>
-      expected_outgoing_refs;
+  // BoolStatus kFalse: page has no outgoing refs.
+  // BoolStatus kTrue: page has outgoing refs.
+  //
+  std::unordered_map<llfs::PageId, batt::BoolStatus, llfs::PageId::Hash> expected_outgoing_refs;
+  u64 num_pages_created = 0;
 
   // Create the first job with some new pages and commit it.
   //
@@ -446,14 +448,18 @@ TEST_F(PageTracerTest, VolumeAndRecyclerTest)
   batt::StatusOr<llfs::PageId> leaf1 =
       this->build_page_with_refs_to({}, llfs::PageSize{256}, *job1);
   ASSERT_TRUE(leaf1.ok()) << BATT_INSPECT(leaf1.status());
+  ++num_pages_created;
 
   batt::StatusOr<llfs::PageId> leaf2 =
       this->build_page_with_refs_to({}, llfs::PageSize{256}, *job1);
   ASSERT_TRUE(leaf2.ok()) << BATT_INSPECT(leaf2.status());
+  ++num_pages_created;
 
   batt::StatusOr<llfs::PageId> root1 =
       this->build_page_with_refs_to({*leaf1, *leaf2}, llfs::PageSize{256}, *job1);
   ASSERT_TRUE(root1.ok()) << BATT_INSPECT(root1.status());
+  ++num_pages_created;
+
   llfs::StatusOr<llfs::SlotRange> commit_root1 =
       this->commit_job(*test_volume, std::move(job1), *root1);
   ASSERT_TRUE(commit_root1.ok()) << BATT_INSPECT(commit_root1.status());
@@ -465,24 +471,27 @@ TEST_F(PageTracerTest, VolumeAndRecyclerTest)
   batt::StatusOr<llfs::PageId> root2 =
       this->build_page_with_refs_to({*leaf1}, llfs::PageSize{256}, *job2);
   ASSERT_TRUE(root2.ok()) << BATT_INSPECT(root2.status());
+  ++num_pages_created;
+
   llfs::StatusOr<llfs::SlotRange> commit_root2 =
       this->commit_job(*test_volume, std::move(job2), *root2);
   ASSERT_TRUE(commit_root2.ok()) << BATT_INSPECT(commit_root2.status());
 
-  expected_outgoing_refs[*leaf1] = llfs::OutgoingRefsStatus::kNoOutgoingRefs;
-  expected_outgoing_refs[*leaf2] = llfs::OutgoingRefsStatus::kNoOutgoingRefs;
-  expected_outgoing_refs[*root1] = llfs::OutgoingRefsStatus::kHasOutgoingRefs;
-  expected_outgoing_refs[*root2] = llfs::OutgoingRefsStatus::kHasOutgoingRefs;
+  expected_outgoing_refs[*leaf1] = batt::BoolStatus::kFalse;
+  expected_outgoing_refs[*leaf2] = batt::BoolStatus::kFalse;
+  expected_outgoing_refs[*root1] = batt::BoolStatus::kTrue;
+  expected_outgoing_refs[*root2] = batt::BoolStatus::kTrue;
 
   // Create the last job to fill up the PageDevice.
   //
   std::unique_ptr<llfs::PageCacheJob> job3 = test_volume->new_job();
   batt::StatusOr<llfs::PageId> page = this->build_page_with_refs_to({}, llfs::PageSize{256}, *job3);
-  expected_outgoing_refs[*page] = llfs::OutgoingRefsStatus::kNoOutgoingRefs;
-  for (usize i = 0; i < (this->page_device_capacity - 5); ++i) {
+  ++num_pages_created;
+  expected_outgoing_refs[*page] = batt::BoolStatus::kFalse;
+  for (usize i = 0; i < (this->page_device_capacity - num_pages_created); ++i) {
     llfs::PageId prev_page{*page};
     page = this->build_page_with_refs_to({prev_page}, llfs::PageSize{256}, *job3);
-    expected_outgoing_refs[*page] = llfs::OutgoingRefsStatus::kHasOutgoingRefs;
+    expected_outgoing_refs[*page] = batt::BoolStatus::kTrue;
   }
   llfs::StatusOr<llfs::SlotRange> commit_remaining =
       this->commit_job(*test_volume, std::move(job3), *page);
@@ -495,7 +504,7 @@ TEST_F(PageTracerTest, VolumeAndRecyclerTest)
   // Verify the outgoing refs status.
   //
   for (const auto& [page_id, expected_status] : expected_outgoing_refs) {
-    llfs::OutgoingRefsStatus actual_status = this->get_outgoing_refs_status(page_id);
+    batt::BoolStatus actual_status = this->get_outgoing_refs_status(page_id);
     EXPECT_EQ(actual_status, expected_status);
   }
 

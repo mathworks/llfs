@@ -93,7 +93,7 @@ batt::StatusOr<batt::BoxedSeq<PageId>> CachingPageTracer::trace_page_refs(
       new_status_has_refs = true;
     }
     this->page_devices_[device_id]->no_outgoing_refs_cache.set_page_state(
-        from_page_id, batt::bool_status_from(HasOutgoingRefs{new_status_has_refs}));
+        from_page_id, HasOutgoingRefs{new_status_has_refs});
   }
 
   return outgoing_refs;

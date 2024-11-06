@@ -81,6 +81,10 @@ BATT_STRONG_TYPEDEF(usize, BufferCount);
  */
 BATT_STRONG_TYPEDEF(usize, BufferSize);
 
+/** \brief True if a page contains outgoing references to other pages.
+ */
+BATT_STRONG_TYPEDEF(bool, HasOutgoingRefs);
+
 }  // namespace llfs
 
 #endif  // LLFS_API_TYPES_HPP

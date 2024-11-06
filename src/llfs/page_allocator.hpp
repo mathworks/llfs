@@ -395,7 +395,7 @@ inline StatusOr<slot_offset_type> PageAllocator::update_page_ref_counts(
   sample_count.fetch_add(1);
   prc_count.fetch_add(txn->ref_counts.size());
 
-  LLFS_LOG_INFO_EVERY_T(5.0 /*seconds*/)
+  LLFS_LOG_INFO_EVERY_T(100.0 /*seconds*/)
       << "Average pages per allocator update: "
       << ((double)prc_count.load() / (double)sample_count.load());
 

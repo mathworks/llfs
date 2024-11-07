@@ -18,6 +18,7 @@
 #include <batteries/async/worker_pool.hpp>
 #include <batteries/math.hpp>
 
+#include <batteries/math.hpp>
 #include <batteries/seq/loop_control.hpp>
 #include <batteries/static_assert.hpp>
 #include <batteries/suppress.hpp>
@@ -29,13 +30,24 @@
 
 namespace llfs {
 
+/** \brief Parameters used to build a Bloom filter.
+ *
+ * If instead of bits-per-item, one wants to set a given false positive (error) rate, then the
+ * function optimal_bloom_filter_bit_rate may be used to calculate the required bit rate.
+ */
 struct BloomFilterParams {
   usize bits_per_item;
 };
 
-namespace bloom_filter_impl {
-namespace {
-constexpr std::array<u64, 64> kSeeds = {
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+// Implementation details - NOT FOR EXTERNAL USE
+//
+namespace detail {
+
+/** \brief A set of randomly chosen (by hardware entropy generator) seeds for up to 64 different
+ * hash functions to use for building and querying Bloom filters.
+ */
+inline constexpr std::array<u64, 64> kBloomFilterHashSeeds = {
     0xce3a9eb8b885d5afull, 0x33d9975b8a739ac6ull, 0xe65d0fff49425f03ull, 0x10bb3a132ec4fabcull,
     0x88d476f6e7f2c53cull, 0xcb4905c588217f44ull, 0x54eb7b8b55ac05d6ull, 0xac0de731d7f3f97cull,
     0x998963e5d908c156ull, 0x0bdf939d3b7c1cd6ull, 0x2cf7007c36b2c966ull, 0xb53c35171f25ccceull,
@@ -53,18 +65,33 @@ constexpr std::array<u64, 64> kSeeds = {
     0xf378bc6c41606bf9ull, 0xa4c36401cf7a557full, 0x0b0a5bdd27f682afull, 0x3fbe0f66ef4777c1ull,
     0x0ed678ccbd246356ull, 0xc2d3489afc4edcd6ull, 0xc482a884240966c6ull, 0x19b952db37267518ull,
 };
-}
 
-inline u64 get_nth_hash_for_bloom(usize hash_val, usize n)
+// Validate assumption that the number of seeds above is a power of 2.
+//
+BATT_STATIC_ASSERT_EQ(u64{1} << (batt::log2_ceil(kBloomFilterHashSeeds.size())),
+                      kBloomFilterHashSeeds.size());
+
+/** \brief Returns the n-th hash function for the given integer value.
+ */
+inline u64 get_nth_hash_for_bloom(usize int_value, usize n)
 {
-  return XXH64(&hash_val, sizeof(hash_val), kSeeds[n & 0x3f]);
+  return XXH64(&int_value, sizeof(int_value),
+               kBloomFilterHashSeeds[n & (kBloomFilterHashSeeds.size() - 1)]);
 }
 
+/** \brief Returns the n-th hash function for the given string value.
+ */
 inline u64 get_nth_hash_for_bloom(const std::string_view& str, usize n)
 {
-  return XXH64(str.data(), str.size(), kSeeds[n & 0x3f]);
+  return XXH64(str.data(), str.size(),
+               kBloomFilterHashSeeds[n & (kBloomFilterHashSeeds.size() - 1)]);
 }
 
+/** \brief Returns the n-th hash function for the given value.
+ *
+ * This is the generic overload of this function; it uses std::hash<T> to calculate a hash value,
+ * then hashes that value again using xxhash to obtain the n-th hash function (for Bloom filters).
+ */
 template <typename T,
           typename = std::enable_if_t<!std::is_convertible_v<const T&, usize> &&
                                       !std::is_convertible_v<const T&, std::string_view>>>
@@ -73,15 +100,24 @@ inline u64 get_nth_hash_for_bloom(const T& item, usize n)
   return get_nth_hash_for_bloom(std::hash<T>{}(item), n);
 }
 
-}  //namespace bloom_filter_impl
+}  //namespace detail
+//
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
-template <typename T, typename Fn>
+/** \brief Invokes `fn` `count` times, each time with a unique hash function applied to `item`.
+ *
+ * `fn` may return either `void` or `seq::LoopControl`.  If it returns `seq::LoopControl`, then the
+ * returned value is used to decide wither to continue calculating hash functions and calling `fn`,
+ * or break out of the loop and return early.
+ *
+ * \return seq::LoopControl::kBreak if `fn` requested that this function return early; otherwise
+ * seq::LoopControl::kContinue, indicating that `fn` was called `count` times.
+ */
+template <typename T, typename Fn = seq::LoopControl(u64)>
 inline seq::LoopControl hash_for_bloom(const T& item, u64 count, Fn&& fn)
 {
-  using namespace bloom_filter_impl;
-
   for (u64 i = 0; i < count; ++i) {
-    if (seq::run_loop_fn(fn, get_nth_hash_for_bloom(item, i)) == seq::LoopControl::kBreak) {
+    if (seq::run_loop_fn(fn, detail::get_nth_hash_for_bloom(item, i)) == seq::LoopControl::kBreak) {
       return seq::LoopControl::kBreak;
     }
   }

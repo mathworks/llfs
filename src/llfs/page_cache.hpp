@@ -96,6 +96,8 @@ inline std::ostream& operator<<(std::ostream& out, const NewPageTracker& t)
 class PageCache : public PageLoader
 {
  public:
+  using PageDeviceEntry = ::llfs::PageDeviceEntry;
+
   struct PageReaderFromFile {
     PageReader page_reader;
     const char* file;

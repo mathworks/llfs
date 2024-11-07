@@ -23,12 +23,11 @@
 #include <llfs/optional.hpp>
 #include <llfs/packed_config.hpp>
 #include <llfs/packed_pointer.hpp>
+#include <llfs/packed_uuid.hpp>
 #include <llfs/page_device_config.hpp>
 #include <llfs/page_size.hpp>
 
 #include <batteries/static_assert.hpp>
-
-#include <boost/uuid/uuid.hpp>
 
 #include <iostream>
 #include <variant>
@@ -156,7 +155,7 @@ struct PackedPageAllocatorConfig : PackedConfigSlotHeader {
 
   // The PageAllocator log config.
   //
-  boost::uuids::uuid log_device_uuid;
+  PackedUUID log_device_uuid;
 
   // The page size (log2) of the page device managed by this allocator (for sanity checking).
   //

@@ -149,10 +149,23 @@ TEST(BloomFilterTest, RandomItems)
   }
 
   for (const auto& s : stats) {
-    EXPECT_LT(s.second.actual_rate() / s.second.expected_rate, 1.01)
-        << BATT_INSPECT(s.second.actual_rate()) << BATT_INSPECT(s.second.expected_rate);
+    const u64 word_count = s.first.first;
+    const u16 hash_count = s.first.second;
 
-    LLFS_LOG_INFO() << BATT_INSPECT(s.second.actual_rate() / s.second.expected_rate);
+    // fpr == false positive rate
+    //
+    const double actual_fpr = s.second.actual_rate();
+    const double expected_fpr = s.second.expected_rate;
+
+    EXPECT_LT(actual_fpr / expected_fpr, 1.02)
+        << BATT_INSPECT(actual_fpr) << BATT_INSPECT(expected_fpr);
+
+    EXPECT_GT(expected_fpr / actual_fpr, 0.98)
+        << BATT_INSPECT(actual_fpr) << BATT_INSPECT(expected_fpr);
+
+    LLFS_LOG_INFO() << BATT_INSPECT(actual_fpr / expected_fpr) << BATT_INSPECT(word_count)
+                    << BATT_INSPECT(hash_count) << BATT_INSPECT(actual_fpr)
+                    << BATT_INSPECT(expected_fpr);
   }
 
   EXPECT_LT(false_positive_rate_total / false_positive_rate_count, 1.01);

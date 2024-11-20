@@ -96,16 +96,16 @@ class PageView
 
   /** \brief Retrieves at most `key_buffer_size` number of keys contained in this page.
    *
-   * @param lower_bound This parameter allows for "skipping" to an arbitrary place in the page's key
+   * \param lower_bound This parameter allows for "skipping" to an arbitrary place in the page's key
    * set. The caller can provide either a `KeyView` value or an index into the key set, which
    * represents the starting key from which this function will collect keys from to return.
    *
-   * @param key_buffer_out The output buffer that will be filled by this function with the requested
+   * \param key_buffer_out The output buffer that will be filled by this function with the requested
    * keys.
    *
-   * @param key_buffer_size The size of the output buffer holding the returned keys.
+   * \param key_buffer_size The size of the output buffer holding the returned keys.
    *
-   * @param storage A `StableStringStore` instance that the caller can provide so that the returned
+   * \param storage A `StableStringStore` instance that the caller can provide so that the returned
    * keys can still be a list of `KeyView` even if the keys in the page are stored in a way that
    * isn't contiguous or are compressed. Specific implementations of `PageView` will choose to use
    * this based on their key storage.
@@ -115,8 +115,8 @@ class PageView
    * whichever is smaller. In the event that the `lower_bound` parameter provided does not exist in
    * the key set (or is out of the range of the key set), this function will return 0.
    */
-  virtual usize get_keys(LowerBoundParam lower_bound, KeyView* key_buffer_out,
-                         usize key_buffer_size, StableStringStore& storage) const = 0;
+  virtual StatusOr<usize> get_keys(LowerBoundParam lower_bound, KeyView* key_buffer_out,
+                                   usize key_buffer_size, StableStringStore& storage) const;
 
   // Builds a key-based approximate member query (AMQ) filter for the page, to answer the question
   // whether a given key *might* be contained by the page.

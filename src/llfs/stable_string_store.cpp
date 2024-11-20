@@ -30,7 +30,7 @@ MutableBuffer StableStringStore::allocate(usize n)
   // dynamically allocate a new chunk.
   //
   if (this->free_chunk_.size() < n) {
-    // Allocate new chunk, add it to the list of dynamicaly allocated chunks, and point free_chunk_
+    // Allocate new chunk, add it to the list of dynamically allocated chunks, and point free_chunk_
     // to this new chunk.
     //
     const usize new_chunk_size = batt::round_up_bits(batt::log2_ceil(kDynamicAllocSize), n);

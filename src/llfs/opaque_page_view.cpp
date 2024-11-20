@@ -78,16 +78,6 @@ Optional<KeyView> OpaquePageView::max_key() const /*override*/
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-usize OpaquePageView::get_keys([[maybe_unused]] LowerBoundParam lower_bound,
-                               [[maybe_unused]] KeyView* key_buffer_out,
-                               [[maybe_unused]] usize key_buffer_size,
-                               [[maybe_unused]] StableStringStore& storage) const /*override*/
-{
-  return 0;
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
 std::shared_ptr<PageFilter> OpaquePageView::build_filter() const /*override*/
 {
   return std::make_shared<NullPageFilter>(this->page_id());

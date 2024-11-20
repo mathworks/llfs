@@ -22,9 +22,10 @@
 #include <vector>
 
 namespace llfs {
+
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-/** \brief A class that allows the user to store and copy string data in an efficient and stable
- * manner.
+/** \brief A class that allows the user to efficiently allocate and copy string data in memory that
+ * is scoped to the lifetime of the object itself.
  */
 class StableStringStore
 {
@@ -42,7 +43,8 @@ class StableStringStore
   MutableBuffer allocate(usize n);
 
   /** \brief Copies the given `string_view` into a memory location managed by this
-   * `StableStringStore` instance, and returns a `string_view` pointing to the stored data.
+   * `StableStringStore` instance, and returns a `string_view` pointing to the stored data. The
+   * `worker_pool`, if provided, is used the parallelize the copying process if necessary.
    */
   std::string_view store(const std::string_view& s,
                          batt::WorkerPool& worker_pool = batt::WorkerPool::null_pool());
@@ -55,7 +57,7 @@ class StableStringStore
                     batt::WorkerPool& worker_pool = batt::WorkerPool::null_pool())
   {
     const std::string_view s = this->store(
-        std::string_view{reinterpret_cast<const char*>(buffer.data()), buffer.size()}, worker_pool);
+        std::string_view{static_cast<const char*>(buffer.data()), buffer.size()}, worker_pool);
 
     return ConstBuffer{s.data(), s.size()};
   }

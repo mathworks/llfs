@@ -37,4 +37,12 @@ Status PageView::validate(PageId expected_id)
   return OkStatus();
 }
 
+StatusOr<usize> PageView::get_keys([[maybe_unused]] LowerBoundParam lower_bound,
+                                   [[maybe_unused]] KeyView* key_buffer_out,
+                                   [[maybe_unused]] usize key_buffer_size,
+                                   [[maybe_unused]] StableStringStore& storage) const
+{
+  return StatusOr<usize>{batt::StatusCode::kUnimplemented};
+}
+
 }  // namespace llfs

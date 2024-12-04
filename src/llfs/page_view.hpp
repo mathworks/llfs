@@ -113,7 +113,7 @@ class PageView
    * whichever is smaller. In the event that the `lower_bound` parameter provided is out of the
    * range of the key set, this function will return 0.
    */
-  virtual StatusOr<usize> get_keys(ItemOffset lower_bound, Slice<KeyView>& key_buffer_out,
+  virtual StatusOr<usize> get_keys(ItemOffset lower_bound, const Slice<KeyView>& key_buffer_out,
                                    StableStringStore& storage) const;
 
   // Builds a key-based approximate member query (AMQ) filter for the page, to answer the question

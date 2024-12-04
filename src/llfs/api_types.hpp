@@ -85,6 +85,10 @@ BATT_STRONG_TYPEDEF(usize, BufferSize);
  */
 BATT_STRONG_TYPEDEF(bool, HasOutgoingRefs);
 
+/** \brief An index into a collection of items.
+ */
+BATT_STRONG_TYPEDEF(usize, ItemOffset);
+
 }  // namespace llfs
 
 #endif  // LLFS_API_TYPES_HPP

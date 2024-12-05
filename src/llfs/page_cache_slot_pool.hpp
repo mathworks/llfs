@@ -98,6 +98,13 @@ class PageCacheSlot::Pool : public boost::intrusive_ref_counter<Pool>
     return this->metrics_;
   }
 
+  /** \brief Returns the metrics for this pool.
+   */
+  Metrics& metrics()
+  {
+    return this->metrics_;
+  }
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
   /** \brief Constructs a new Pool with capacity for `n_slots` cached pages.

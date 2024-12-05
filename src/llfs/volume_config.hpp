@@ -10,19 +10,20 @@
 #ifndef LLFS_VOLUME_CONFIG_HPP
 #define LLFS_VOLUME_CONFIG_HPP
 
+#include <llfs/config.hpp>
+//
 #include <llfs/constants.hpp>
 #include <llfs/data_layout.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/log_device_config2.hpp>
 #include <llfs/packed_config.hpp>
 #include <llfs/packed_pointer.hpp>
+#include <llfs/packed_uuid.hpp>
 #include <llfs/page_size.hpp>
 #include <llfs/storage_file_builder.hpp>
 #include <llfs/volume.hpp>
 #include <llfs/volume_options.hpp>
 #include <llfs/volume_runtime_options.hpp>
-
-#include <boost/uuid/uuid.hpp>
 
 #include <batteries/static_assert.hpp>
 
@@ -81,11 +82,11 @@ struct PackedVolumeConfig : PackedConfigSlotHeader {
 
   // The root log configuration.
   //
-  boost::uuids::uuid root_log_uuid;
+  PackedUUID root_log_uuid;
 
   // The recycler log configuration.
   //
-  boost::uuids::uuid recycler_log_uuid;
+  PackedUUID recycler_log_uuid;
 
   u8 pad0_[4];
 

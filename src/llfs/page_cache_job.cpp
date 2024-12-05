@@ -356,17 +356,10 @@ Status PageCacheJob::delete_page(PageId page_id)
   if (!page_id) {
     return OkStatus();
   }
-  StatusOr<PinnedPage> page_view = this->get_page(page_id, OkIfNotFound{true});
-  if (page_view.ok()) {
-    this->pruned_ = false;
-    this->deleted_pages_.emplace(page_id, *page_view);
-    this->root_set_delta_[page_id] = kRefCount_1_to_0;
-    return OkStatus();
-  }
-  if (page_view.status() == batt::StatusCode::kNotFound) {
-    return OkStatus();
-  }
-  return page_view.status();
+
+  this->deleted_pages_.insert(page_id);
+  this->pruned_ = false;
+  return OkStatus();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

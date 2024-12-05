@@ -13,12 +13,11 @@
 #include <llfs/crc.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/packed_array.hpp>
+#include <llfs/packed_uuid.hpp>
 #include <llfs/version.hpp>
 
 #include <batteries/static_assert.hpp>
 #include <batteries/suppress.hpp>
-
-#include <boost/uuid/uuid.hpp>
 
 #include <cstddef>
 
@@ -60,7 +59,7 @@ BATT_STATIC_ASSERT_EQ(sizeof(PackedConfigSlotBase), 4);
 struct PackedConfigSlotHeader : PackedConfigSlotBase {
   // The globally unique identifier of this object.
   //
-  boost::uuids::uuid uuid;
+  PackedUUID uuid;
 };
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedConfigSlotHeader), 20);

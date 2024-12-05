@@ -22,7 +22,7 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-usize get_page_size(const PageCache::PageDeviceEntry* entry)
+usize get_page_size(const PageDeviceEntry* entry)
 {
   return entry ? get_page_size(entry->arena) : 0;
 }
@@ -420,14 +420,21 @@ void PageCache::prefetch_hint(PageId page_id)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Slice<PageCache::PageDeviceEntry* const> PageCache::all_devices() const
+const std::vector<std::unique_ptr<PageDeviceEntry>>& PageCache::devices_by_id() const
+{
+  return this->page_devices_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Slice<PageDeviceEntry* const> PageCache::all_devices() const
 {
   return as_slice(this->page_devices_by_page_size_);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Slice<PageCache::PageDeviceEntry* const> PageCache::devices_with_page_size(usize size) const
+Slice<PageDeviceEntry* const> PageCache::devices_with_page_size(usize size) const
 {
   const usize size_log2 = batt::log2_ceil(size);
   BATT_CHECK_EQ(size, usize{1} << size_log2) << "page size must be a power of 2";
@@ -437,8 +444,7 @@ Slice<PageCache::PageDeviceEntry* const> PageCache::devices_with_page_size(usize
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Slice<PageCache::PageDeviceEntry* const> PageCache::devices_with_page_size_log2(
-    usize size_log2) const
+Slice<PageDeviceEntry* const> PageCache::devices_with_page_size_log2(usize size_log2) const
 {
   BATT_CHECK_LT(size_log2, kMaxPageSizeLog2);
 
@@ -533,7 +539,7 @@ void PageCache::purge(PageId page_id, u64 callers, u64 job_id)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-PageCache::PageDeviceEntry* PageCache::get_device_for_page(PageId page_id)
+PageDeviceEntry* PageCache::get_device_for_page(PageId page_id)
 {
   const page_device_id_int device_id = PageIdFactory::get_device_id(page_id);
   if (BATT_HINT_FALSE(device_id >= this->page_devices_.size())) {

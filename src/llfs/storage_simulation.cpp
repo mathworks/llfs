@@ -395,18 +395,19 @@ const batt::SharedPtr<PageCache>& StorageSimulation::init_cache() noexcept
       //----- --- -- -  -  -   -
       std::unique_ptr<PageDevice> page_device = this->get_page_device(arena.page_device_name);
 
+      const PageSize page_size = page_device->page_size();
       const PageIdFactory page_ids = page_device->page_ids();
 
-      arenas.emplace_back(
-          PageArena{std::move(page_device),
-                    PageAllocator::recover_or_die(
-                        PageAllocatorRuntimeOptions{
-                            .scheduler = this->task_scheduler(),
-                            .name = arena.allocator_log_device_name,
-                        },
-                        page_ids, *std::make_unique<BasicLogDeviceFactory>([this, &arena] {
-                          return this->get_log_device(arena.allocator_log_device_name);
-                        }))});
+      arenas.emplace_back(PageArena{
+          std::move(page_device),
+          PageAllocator::recover_or_die(
+              PageAllocatorRuntimeOptions{
+                  .scheduler = this->task_scheduler(),
+                  .name = arena.allocator_log_device_name,
+              },
+              page_size, page_ids, *std::make_unique<BasicLogDeviceFactory>([this, &arena] {
+                return this->get_log_device(arena.allocator_log_device_name);
+              }))});
     }
     this->cache_ = BATT_OK_RESULT_OR_PANIC(PageCache::make_shared(std::move(arenas)));
 

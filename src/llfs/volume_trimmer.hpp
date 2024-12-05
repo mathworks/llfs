@@ -62,7 +62,7 @@ Status trim_volume_log(const boost::uuids::uuid& trimmer_uuid,
                        Optional<VolumeTrimEventInfo>&& trim_event,
                        VolumeTrimmedRegionInfo&& trimmed_region,
                        VolumeMetadataRefresher& metadata_refresher,
-                       const VolumeDropRootsFn& drop_roots);
+                       const VolumeDropRootsFn& drop_roots, batt::LogLevel error_log_level);
 
 // Forward-declaration.
 //
@@ -116,6 +116,14 @@ class VolumeTrimmer
     return this->name_;
   }
 
+  void pre_halt() noexcept
+  {
+    const bool previously_pre_halted = this->pre_halt_.exchange(true);
+    if (!previously_pre_halted) {
+      this->error_log_level_.store(batt::LogLevel::kVerbose);
+    }
+  }
+
   void halt();
 
   Status run();
@@ -128,6 +136,11 @@ class VolumeTrimmer
   u64 trim_count() const noexcept
   {
     return this->trim_count_.load();
+  }
+
+  void set_error_log_level(batt::LogLevel log_level) noexcept
+  {
+    this->error_log_level_.store(log_level);
   }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -196,6 +209,15 @@ class VolumeTrimmer
   /** \brief The number of trim operations completed.
    */
   std::atomic<u64> trim_count_{0};
+
+  /** \brief Set to true when pre_halt() is called; when pre_halt is true, errors are logged at a
+   * less severe level than during normal operation.
+   */
+  std::atomic<bool> pre_halt_{false};
+
+  /** \brief The default level to log failed BATT_REQUIRE_OK statements.
+   */
+  std::atomic<batt::LogLevel> error_log_level_{batt::LogLevel::kError};
 };
 
 }  // namespace llfs

@@ -137,6 +137,7 @@ macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
     Boost::context
     Boost::stacktrace_backtrace
     libbacktrace::libbacktrace
+    xxHash::xxhash
     dl
     stdc++fs)
 
@@ -170,7 +171,8 @@ endmacro()
 LLFS_DefineLibrary(llfs ./llfs
   batteries::batteries
   liburing::liburing
-    OpenSSL::Crypto
+  OpenSSL::Crypto
+  xxHash::xxhash
   )
 
 #=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

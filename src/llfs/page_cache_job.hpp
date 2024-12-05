@@ -16,6 +16,7 @@
 #include <llfs/page_id.hpp>
 #include <llfs/page_loader.hpp>
 #include <llfs/page_size.hpp>
+#include <llfs/page_tracer.hpp>
 #include <llfs/pinned_page.hpp>
 
 #include <batteries/async/backoff.hpp>
@@ -176,9 +177,7 @@ class PageCacheJob : public PageLoader
   Status recover_page(PageId page_id, const boost::uuids::uuid& caller_uuid,
                       slot_offset_type caller_slot);
 
-  // Mark the page as deleted in this job.  Will load the page as a side-effect, in order to access
-  // the set of pages referenced by the page contents.  Returns `true` if the page is being deleted;
-  // `false` if it doesn't exist (i.e., it was already deleted).
+  // Mark the page as deleted in this job.
   //
   Status delete_page(PageId page_id);
 
@@ -256,8 +255,10 @@ class PageCacheJob : public PageLoader
   template <typename PageIdFn>
   Status trace_new_roots(PageLoader& page_loader, PageIdFn&& page_id_fn) const
   {
+    LoadingPageTracer loading_tracer{page_loader};
+    CachingPageTracer caching_tracer{this->cache().devices_by_id(), loading_tracer};
     return trace_refs_recursive(
-        page_loader,
+        caching_tracer,
 
         // Trace all new pages in the root set.
         //
@@ -301,7 +302,7 @@ class PageCacheJob : public PageLoader
     return this->new_pages_;
   }
 
-  const std::unordered_map<PageId, PinnedPage, PageId::Hash>& get_deleted_pages() const
+  const std::unordered_set<PageId, PageId::Hash>& get_deleted_pages() const
   {
     return this->deleted_pages_;
   }
@@ -325,7 +326,7 @@ class PageCacheJob : public PageLoader
   PageCache* const cache_;
   std::unordered_map<PageId, PinnedPage, PageId::Hash> pinned_;
   std::unordered_map<PageId, NewPage, PageId::Hash> new_pages_;
-  std::unordered_map<PageId, PinnedPage, PageId::Hash> deleted_pages_;
+  std::unordered_set<PageId, PageId::Hash> deleted_pages_;
   std::unordered_map<PageId, i32, PageId::Hash> root_set_delta_;
   std::unordered_map<PageId, std::function<auto()->std::shared_ptr<PageView>>, PageId::Hash>
       deferred_new_pages_;

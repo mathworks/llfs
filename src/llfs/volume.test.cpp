@@ -1373,6 +1373,11 @@ class VolumeSimTest : public ::testing::Test
      */
     auto get_slot_visitor();
 
+    /** \brief Returns a slot visitor function for use when recovering/verifying the Volume,
+     * post-crash for dead page ref count testing.
+     */
+    auto get_slot_visitor_for_dead_pages();
+
     /** \brief Resets all member data that might have been modified by the slot visitor.
      */
     void reset_visitor_outputs();
@@ -1401,6 +1406,40 @@ class VolumeSimTest : public ::testing::Test
    */
   void run_recovery_sim(u32 seed);
 
+  /** \brief Runs dead page ref count recovery test where recycler does the recovery and retry the
+   * dead page recycling task.
+   *
+   * \param seed Used to initialize the pseudo-random number generator that drives the simulation.
+   * \param yield_count Used to specify number of times task::yield() needs to be run.
+   */
+  void run_dead_page_recovery_test(const u32 seed, u32 yield_count);
+
+  /** \brief Runs dead page ref count recovery test where both recycler and volume-trimmer does the
+   * recovery/retry of dead page recycling.
+   *
+   * \param seed Used to initialize the pseudo-random number generator that drives the simulation.
+   * \param yield_count_pre_halt Used to specify # of times task::yield() needs to be run pre-halt.
+   * \param yield_count_post_halt Used to specify # of times task::yield() needs to be run
+   * post-halt.
+   */
+  void run_dead_page_recovery_test_variant(const u32 seed, u32 yield_count_pre_halt,
+                                           u32 yield_count_post_halt);
+
+  /** \brief This allocates a page and writes a slot to log with the page info.
+   */
+  void alloc_one_page_and_commit(RecoverySimState& state, llfs::StorageSimulation& sim,
+                                 llfs::Volume& volume, llfs::SlotRange& slot_offset);
+
+  /** \brief This handles the pre-halt writing tasks for the volume (which include volume trim).
+   */
+  void pre_halt_processing(RecoverySimState& state, llfs::StorageSimulation& sim, u32 yield_count,
+                           const std::function<void(llfs::Volume&, llfs::SlotRange&)>& funct);
+
+  /** \brief This handles the post-halt volme reopening of the volume.
+   */
+  void post_halt_processing(RecoverySimState& state, llfs::StorageSimulation& sim, u32 yield_count,
+                            const std::function<void(llfs::Volume&)>& funct);
+
   /** \brief Commit one job with a page from the 1kb device.
    */
   void commit_first_job(RecoverySimState& state, llfs::StorageSimulation& sim,
@@ -1421,7 +1460,7 @@ class VolumeSimTest : public ::testing::Test
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  const llfs::PageCount pages_per_device = llfs::PageCount{4};
+  const llfs::PageCount pages_per_device = llfs::PageCount{10};
 };
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -2084,6 +2123,354 @@ TEST_F(VolumeTest, AppendableJobGrantSize)
 
   ASSERT_NE(packed_commit_job, nullptr);
   EXPECT_EQ(llfs::packed_sizeof_slot(*packed_commit_job), commit_slot_size);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(VolumeSimTest, DeadPageRefCountSimulation)
+{
+  const u32 max_seeds = batt::getenv_as<int>("MAX_SEEDS").value_or(100);
+  const u32 yield_count = batt::getenv_as<int>("YIELD_COUNT").value_or(37);
+
+  for (u32 current_seed = 0; current_seed < max_seeds; ++current_seed) {
+    LOG_EVERY_N(INFO, 20) << BATT_INSPECT(current_seed) << BATT_INSPECT(max_seeds)
+                          << BATT_INSPECT(yield_count);
+    ASSERT_NO_FATAL_FAILURE(this->run_dead_page_recovery_test(current_seed, yield_count));
+  }
+}
+
+using DeathTestVolumeSimTest = VolumeSimTest;
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(DeathTestVolumeSimTest, DeadPageRefCountSimulationSureDeath)
+{
+  const u32 max_seeds = batt::getenv_as<int>("MAX_SEEDS").value_or(5);
+  const u32 yield_count_pre_halt = batt::getenv_as<int>("YIELD_COUNT").value_or(50);
+  const u32 yield_count_post_halt = batt::getenv_as<int>("YIELD_COUNT_POST_HALT").value_or(40);
+
+  // Note that this test fails 100% of the time if pre_halt and post_halt yield values are 50
+  // and 40 respectively. Since this test is to fail everytime we should not change these values.
+
+  ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+  LLFS_LOG_INFO() << "Running death-test for DeadPage recovery...";
+
+  for (u32 current_seed = 0; current_seed < max_seeds; ++current_seed) {
+    EXPECT_EXIT(this->run_dead_page_recovery_test_variant(current_seed, yield_count_pre_halt,
+                                                          yield_count_post_halt),
+                testing::ExitedWithCode(6), "FATAL.*");
+  }
+  ::testing::FLAGS_gtest_death_test_style = "fast";
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST_F(VolumeSimTest, DISABLED_DeadPageRefCountVariantSimulation)
+{
+  const u32 max_seeds = batt::getenv_as<int>("MAX_SEEDS").value_or(100);
+
+  for (u32 current_seed = 0; current_seed < max_seeds; ++current_seed) {
+    LOG_EVERY_N(INFO, 20) << BATT_INSPECT(current_seed) << BATT_INSPECT(max_seeds);
+    ASSERT_NO_FATAL_FAILURE(
+        this->run_dead_page_recovery_test_variant(current_seed, current_seed, current_seed));
+  }
+}
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void VolumeSimTest::alloc_one_page_and_commit(RecoverySimState& state, llfs::StorageSimulation& sim,
+                                              llfs::Volume& volume, llfs::SlotRange& slot_offset)
+{
+  std::unique_ptr<llfs::PageCacheJob> job = volume.new_job();
+
+  ASSERT_NE(job, nullptr);
+
+  batt::StatusOr<llfs::PageId> new_page_id =
+      this->build_page_with_refs_to({}, llfs::PageSize{1 * kKiB}, *job, sim);
+
+  ASSERT_TRUE(new_page_id.ok()) << BATT_INSPECT(new_page_id.status());
+
+  // Save the page_id so we can use it later.
+  //
+  state.first_page_id = *new_page_id;
+
+  // Write the page and slot to the Volume.
+  //
+  batt::StatusOr<llfs::SlotRange> slot_range =
+      this->commit_job_to_root_log(std::move(job), *new_page_id, volume, sim);
+
+  ASSERT_TRUE(slot_range.ok()) << BATT_INSPECT(slot_range.status());
+
+  sim.log_event("first job successfully appended! slot_range=", *slot_range);
+  slot_offset = *slot_range;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+auto VolumeSimTest::RecoverySimState::get_slot_visitor_for_dead_pages()
+{
+  return [this](const llfs::SlotParse /*slot*/, const llfs::PageId& page_id) {
+    if (page_id == this->first_page_id) {
+      this->recovered_first_page = true;
+    } else {
+      this->no_unknown_pages = false;
+    }
+    return batt::OkStatus();
+  };
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void display_metric_data(llfs::Volume& volume)
+{
+  LLFS_VLOG(1) << "PageRecycler metrics: "
+               << BATT_INSPECT(volume.page_recycler_metrics().insert_count);
+  LLFS_VLOG(1) << "PageRecycler metrics: "
+               << BATT_INSPECT(volume.page_recycler_metrics().remove_count);
+  LLFS_VLOG(1) << "PageRecycler metrics: "
+               << BATT_INSPECT(volume.page_recycler_metrics().page_drop_ok_count);
+  LLFS_VLOG(1) << "PageRecycler metrics: "
+               << BATT_INSPECT(volume.page_recycler_metrics().page_drop_error_count);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void batt_task_yield(u32 count)
+{
+  for (uint32_t idx = 0; idx < count; idx++) {
+    batt::Task::yield();
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void VolumeSimTest::pre_halt_processing(
+    RecoverySimState& state, llfs::StorageSimulation& sim, u32 yield_count,
+    const std::function<void(llfs::Volume&, llfs::SlotRange&)>& funct)
+{
+  llfs::SlotRange saved_slot_range;
+
+  LLFS_VLOG(1) << "Creating local simulation volume";
+  batt::StatusOr<std::unique_ptr<llfs::Volume>> recovered_volume = sim.get_volume(
+      "TestVolume", /*slot_visitor_fn=*/
+      [](auto&&...) {
+        return batt::OkStatus();
+      },
+      /*root_log_capacity=*/64 * kKiB);
+
+  LLFS_VLOG(1) << "volume recovery status=" << recovered_volume.status();
+
+  ASSERT_TRUE(recovered_volume.ok()) << recovered_volume.status();
+
+  llfs::Volume& volume = **recovered_volume;
+
+  llfs::SlotRange slot_range;
+  constexpr u32 max_page_count = 10;
+  constexpr u32 num_pages_to_trim = 7;
+  for (u32 page = 1; page <= max_page_count; ++page) {
+    this->alloc_one_page_and_commit(state, sim, volume, slot_range);
+
+    if (page == num_pages_to_trim) {
+      saved_slot_range = slot_range;
+    }
+  }
+
+  auto status = volume.trim(saved_slot_range.upper_bound);
+  ASSERT_TRUE(status.ok()) << "trim failed...";
+
+  batt_task_yield(yield_count);
+
+  display_metric_data(volume);
+
+  funct(volume, saved_slot_range);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void VolumeSimTest::post_halt_processing(RecoverySimState& state, llfs::StorageSimulation& sim,
+                                         const u32 yield_count,
+                                         const std::function<void(llfs::Volume&)>& funct)
+{
+  LLFS_VLOG(1) << "About to do recovery()" << BATT_INSPECT(state.seed);
+
+  // Recover the Volume.
+  //
+  batt::StatusOr<std::unique_ptr<llfs::Volume>> recovered_volume =
+      sim.get_volume("TestVolume", llfs::TypedSlotReader<RecoverySimTestSlot>::make_slot_visitor(
+                                       state.get_slot_visitor_for_dead_pages()));
+
+  ASSERT_TRUE(recovered_volume.ok()) << recovered_volume.status();
+
+  llfs::Volume& volume = **recovered_volume;
+  batt_task_yield(yield_count);
+
+  display_metric_data(volume);
+  funct(volume);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/**
+ * @brief This test function is crafted to recreate a scenario where dead-page recycling happens
+ * around DB halt/shut-down.
+ *
+ * In this simulation test 10 pages are written to the Volume-Log and then first 7 pages are
+ * trimmed. Before halting the system we make sure volume-trim is completed.
+ *
+ * Following are the sequence of events
+ * 1. Write few pages (10) to the log.
+ * 2. Trim few couple (7) of pages from the log (trim).
+ * 3. Page recycler does the recycling for the pages (batch creation, commit etc).
+ * 4. We do await_trim() on the volume log before halting.
+ * 4. DB is halted.
+ * 5. DB is restarted.
+ * 6. Recycler finds a pending batch to recyle and hands over that to recycler main_task.
+ * 7. Recycler successfully processes the recycling task by ignoring it.
+ *
+ * @param seed for the simulation.
+ * @param yield_count for number of times we want to yield within the main test flow.
+ * @return NONE.
+ */
+void VolumeSimTest::run_dead_page_recovery_test(const u32 seed, u32 yield_count)
+{
+  RecoverySimState state;
+  state.seed = seed;
+
+  std::mt19937 rng{state.seed};
+
+  llfs::StorageSimulation sim{batt::StateMachineEntropySource{
+      /*entropy_fn=*/[&rng](usize min_value, usize max_value) -> usize {
+        std::uniform_int_distribution<usize> pick_value{min_value, max_value};
+        return pick_value(rng);
+      }}};
+
+  // Add pages here.
+  //
+  sim.add_page_arena(this->pages_per_device, llfs::PageSize{1 * kKiB});
+  sim.register_page_reader(llfs::PageGraphNodeView::page_layout_id(), __FILE__, __LINE__,
+                           llfs::PageGraphNodeView::page_reader());
+
+  const auto main_simulation_task = [&] {
+    sim.set_inject_failures_mode(false);
+
+    LLFS_VLOG(1) << "This is the main task: " << BATT_INSPECT(seed)
+                 << BATT_INSPECT(sim.is_running());
+
+    yield_count = seed;
+    // Create the simulated Volume and write to volume before initiating halt.
+    //
+    {
+      pre_halt_processing(
+          state, sim, yield_count, [](llfs::Volume& volume, llfs::SlotRange& slot_range) {
+            LLFS_VLOG(1) << "await_trim() start at offset " << BATT_INSPECT(slot_range.upper_bound);
+            EXPECT_TRUE(volume.await_trim(slot_range.upper_bound).ok());
+            LLFS_VLOG(1) << "await_trim() end";
+
+            volume.halt();
+            volume.join();
+          });
+    }
+
+    EXPECT_TRUE(state.first_page_id.is_valid()) << BATT_INSPECT(state.seed);
+
+    // After the crash recover DB state.
+    //
+    {
+      post_halt_processing(state, sim, yield_count, [](llfs::Volume& volume) {
+        // Check and make sure we have no drop errors.
+        //
+        EXPECT_EQ(volume.page_recycler_metrics().page_drop_error_count, 0);
+      });
+    }
+  };
+
+  sim.run_main_task(main_simulation_task);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/**
+ * @brief This test function is crafted to recreate a scenario where dead-page recycling happens
+ * around DB halt/shut-down.
+ *
+ * In this simulation test 10 pages are written to the Volume-Log and then first 7 pages are
+ * trimmed. Before halting the system we make sure volume-trim is completed.
+ *
+ *
+ * Following are the sequence of events
+ * 1. Write few pages to the log.
+ * 2. Trim first few pages from the log (trim).
+ * 3. Page recycler initiates the recycling for the pages (batch creation etc).
+ * 4. We want to make sure we halt the DB before trimmer trimes the log.
+ * 4. DB is halted.
+ * 5. DB is restarted.
+ * 6. Recycler finds a pending batch to recyle and hands over that to recycler main_task.
+ * 7. Recycler successfully processes the recycling task and decrements the ref count.
+ * 8. In the mean time volume-trimmer also post a dead-page recycling request to Recycler.
+ * 9. Trimmer request gets us into the situation where Recycler find the Page ref count to be
+ * already 0 and panics.
+ *
+ * @param seed for the simulation.
+ * @param yield_count_pre_halt for number of times we want to yield within the main test flow
+ * pre-halt.
+ * @param yield_count_post_halt for number of times we want to yield within the main test flow
+ * post-halt.
+ * @return NONE.
+ */
+void VolumeSimTest::run_dead_page_recovery_test_variant(const u32 seed, u32 yield_count_pre_halt,
+                                                        u32 yield_count_post_halt)
+{
+  RecoverySimState state;
+  std::mt19937 rng{state.seed};
+
+  state.seed = seed;
+
+  llfs::StorageSimulation sim{batt::StateMachineEntropySource{
+      /*entropy_fn=*/[&rng](usize min_value, usize max_value) -> usize {
+        std::uniform_int_distribution<usize> pick_value{min_value, max_value};
+        return pick_value(rng);
+      }}};
+
+  // Add pages here.
+  //
+  sim.add_page_arena(this->pages_per_device, llfs::PageSize{1 * kKiB});
+  sim.register_page_reader(llfs::PageGraphNodeView::page_layout_id(), __FILE__, __LINE__,
+                           llfs::PageGraphNodeView::page_reader());
+
+  const auto main_simulation_task = [&] {
+    sim.set_inject_failures_mode(false);
+
+    LLFS_VLOG(1) << "This is the main task: " << BATT_INSPECT(seed)
+                 << BATT_INSPECT(sim.is_running());
+
+    // Create the simulated Volume.
+    //
+    {
+      pre_halt_processing(state, sim, yield_count_pre_halt,
+                          [](llfs::Volume& volume, llfs::SlotRange& slot_range) {
+                            LLFS_VLOG(1) << "Offset " << BATT_INSPECT(slot_range);
+
+                            volume.halt();
+                            volume.join();
+                          });
+    }
+    EXPECT_TRUE(state.first_page_id.is_valid()) << BATT_INSPECT(state.seed);
+
+    // After the crash recover DB state.
+    //
+    {
+      post_halt_processing(state, sim, yield_count_pre_halt, [&](llfs::Volume& volume) {
+        // Make sure we leave enough time for VolumeRecycler and Trimmer to run through.
+        //
+        batt_task_yield(yield_count_post_halt);
+
+        // Check and make sure we have no drop errors.
+        //
+        EXPECT_EQ(volume.page_recycler_metrics().page_drop_error_count, 0);
+      });
+    }
+  };
+
+  sim.run_main_task(main_simulation_task);
 }
 
 }  // namespace

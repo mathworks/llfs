@@ -2122,12 +2122,13 @@ TEST_F(VolumeTest, AppendableJobGrantSize)
 //
 TEST_F(VolumeSimTest, DeadPageRefCountSimulation)
 {
-  const u32 max_seeds = batt::getenv_as<int>("MAX_SEEDS").value_or(100);
+  const u32 max_seeds = batt::getenv_as<int>("MAX_SEEDS").value_or(1000);
   const u32 yield_count = batt::getenv_as<int>("YIELD_COUNT").value_or(37);
 
+  LOG(INFO) << "Starting DeadPageRefCount test for " << max_seeds << " iterations...";
   for (u32 current_seed = 0; current_seed < max_seeds; ++current_seed) {
-    LOG_EVERY_N(INFO, 20) << BATT_INSPECT(current_seed) << BATT_INSPECT(max_seeds)
-                          << BATT_INSPECT(yield_count);
+    LOG_EVERY_N(INFO, 100) << BATT_INSPECT(current_seed) << BATT_INSPECT(max_seeds)
+                           << BATT_INSPECT(yield_count);
     ASSERT_NO_FATAL_FAILURE(this->run_dead_page_recovery_test(current_seed, yield_count));
   }
 }
@@ -2136,38 +2137,30 @@ using DeathTestVolumeSimTest = VolumeSimTest;
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-TEST_F(DeathTestVolumeSimTest, DeadPageRefCountSimulationSureDeath)
+TEST_F(DeathTestVolumeSimTest, DeadPageRefCountVariantSimulation)
 {
-  const u32 max_seeds = batt::getenv_as<int>("MAX_SEEDS").value_or(5);
-  const u32 yield_count_pre_halt = batt::getenv_as<int>("YIELD_COUNT").value_or(50);
-  const u32 yield_count_post_halt = batt::getenv_as<int>("YIELD_COUNT_POST_HALT").value_or(40);
+  const u32 max_seeds = batt::getenv_as<int>("MAX_SEEDS").value_or(1000);
 
-  // Note that this test fails 100% of the time if pre_halt and post_halt yield values are 50
-  // and 40 respectively. Since this test is to fail everytime we should not change these values.
+  // Note that this test fails few times times when pre_halt and post_halt yield values are around
+  // 50 and 40 respectively. To create a perfect failing test use 50 and 40 as the pre_halt and
+  // post_hatl values respectively. .
 
+  LOG(INFO) << "Starting DeadPageRefCountVariant test for " << max_seeds << " iterations...";
+
+  auto main_test_block = [&]() {
+    for (u32 current_seed = 0; current_seed < max_seeds; ++current_seed) {
+      LOG_EVERY_N(INFO, 100) << BATT_INSPECT(current_seed) << BATT_INSPECT(max_seeds);
+      ASSERT_NO_FATAL_FAILURE(
+          this->run_dead_page_recovery_test_variant(current_seed, current_seed, current_seed));
+    }
+  };
+  // Note that we are enabling thread-safe mode for Death-Test.
+  //
   ::testing::FLAGS_gtest_death_test_style = "threadsafe";
-  LLFS_LOG_INFO() << "Running death-test for DeadPage recovery...";
-
-  for (u32 current_seed = 0; current_seed < max_seeds; ++current_seed) {
-    EXPECT_EXIT(this->run_dead_page_recovery_test_variant(current_seed, yield_count_pre_halt,
-                                                          yield_count_post_halt),
-                testing::ExitedWithCode(6), "FATAL.*");
-  }
+  EXPECT_EXIT(main_test_block(), testing::ExitedWithCode(6), "FATAL.*");
   ::testing::FLAGS_gtest_death_test_style = "fast";
 }
 
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-TEST_F(VolumeSimTest, DISABLED_DeadPageRefCountVariantSimulation)
-{
-  const u32 max_seeds = batt::getenv_as<int>("MAX_SEEDS").value_or(100);
-
-  for (u32 current_seed = 0; current_seed < max_seeds; ++current_seed) {
-    LOG_EVERY_N(INFO, 20) << BATT_INSPECT(current_seed) << BATT_INSPECT(max_seeds);
-    ASSERT_NO_FATAL_FAILURE(
-        this->run_dead_page_recovery_test_variant(current_seed, current_seed, current_seed));
-  }
-}
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 void VolumeSimTest::alloc_one_page_and_commit(RecoverySimState& state, llfs::StorageSimulation& sim,

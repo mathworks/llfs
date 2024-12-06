@@ -224,12 +224,13 @@ Status VolumeTrimmer::run()
         << BATT_INSPECT(this->trim_control_.debug_info()) << BATT_INSPECT(loop_counter)
         << BATT_INSPECT(this->trim_control_.is_closed()) << BATT_INSPECT(this->trim_delay_));
 
+    LLFS_VLOG(1) << "VolumeTrimmer::run > await_trim_target: " << BATT_INSPECT(least_upper_bound);
     StatusOr<slot_offset_type> trim_upper_bound = this->await_trim_target(least_upper_bound);
 
     BATT_REQUIRE_OK(trim_upper_bound) << this->error_log_level_.load();
 
     LLFS_VLOG(1) << BATT_INSPECT(trim_upper_bound) << BATT_INSPECT(this->trim_control_.is_closed())
-                 << BATT_INSPECT_STR(this->name_);
+                 << BATT_INSPECT_STR(this->name_) << BATT_INSPECT(least_upper_bound);
 
     // Whenever we get a new trim_upper_bound, always check first to see if we are shutting down. If
     // so, don't start a new trim, as this creates race conditions with the current/former holders

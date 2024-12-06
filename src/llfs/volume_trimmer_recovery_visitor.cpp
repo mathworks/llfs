@@ -100,7 +100,7 @@ Status VolumeTrimmerRecoveryVisitor::on_volume_trim(const SlotParse& slot,
   LLFS_VLOG(1) << "VolumeTrimmerRecoveryVisitor::on_volume_trim(slot=" << slot.offset
                << ") trimmed_region == "
                << SlotRange{trim_event.old_trim_pos, trim_event.new_trim_pos}
-               << BATT_INSPECT(is_pending) << trim_event;
+               << BATT_INSPECT(is_pending) << BATT_INSPECT(this->log_trim_pos_) << trim_event;
 
   if (is_pending) {
     if (this->trim_event_info_ != None) {

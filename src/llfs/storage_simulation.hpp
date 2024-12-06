@@ -54,6 +54,11 @@ class StorageSimulation
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  /** \brief Creates a new StorageSimulation using a default random engine seeded with the passed
+   * value.
+   */
+  explicit StorageSimulation(RandomSeed seed) noexcept;
+
   /** \brief Creates a new StorageSimulation context that draws from the passed entropy source.
    */
   explicit StorageSimulation(batt::StateMachineEntropySource&& entropy_source) noexcept;
@@ -121,9 +126,38 @@ class StorageSimulation
    */
   batt::TaskScheduler& task_scheduler() noexcept;
 
+  /** \brief Convenience: invokes this->task_scheduler().schedule_task() and returns the resulting
+   * executor.
+   */
+  boost::asio::any_io_executor schedule_task() noexcept
+  {
+    return this->task_scheduler().schedule_task();
+  }
+
+  /** \brief Convenience: invokes this->entropy_source().pick_int(min_value, max_value).
+   */
+  usize pick_int(usize min_value, usize max_value) const
+  {
+    return this->entropy_source().pick_int(min_value, max_value);
+  }
+
+  /** \brief Convenience: invokes this->entropy_source().pick_branch().
+   */
+  bool pick_branch() const
+  {
+    return this->entropy_source().pick_branch();
+  }
+
   /** \brief Returns a reference to the entropy source passed in at construction time.
    */
   batt::StateMachineEntropySource& entropy_source() noexcept
+  {
+    return this->entropy_source_;
+  }
+
+  /** \brief Returns a reference to the entropy source passed in at construction time.
+   */
+  const batt::StateMachineEntropySource& entropy_source() const noexcept
   {
     return this->entropy_source_;
   }
@@ -203,6 +237,15 @@ class StorageSimulation
    */
   std::unique_ptr<LogDevice> get_log_device(const std::string& name, Optional<u64> capacity = None);
 
+  /** \brief Creates/accesses a simulated LogDevice via the LogDeviceFactory interface.
+   *
+   * \param name A unique name used to identify the LogDevice in the context of this simulation
+   * \param capacity The maximum size in bytes of the log; must be specified the first time this
+   * function is called for a given name (i.e., when the log is initially created)
+   */
+  std::unique_ptr<LogDeviceFactory> get_log_device_factory(const std::string& name,
+                                                           Optional<u64> capacity = None);
+
   /** \brief Creates/accesses a simulated PageDevice.
    *
    * The args `page_count` and `page_size` must be specified the first time this
@@ -251,6 +294,19 @@ class StorageSimulation
   u64 current_step() const noexcept
   {
     return this->step_.get_value();
+  }
+
+  /** \brief Blocks the calling task until the simulation step has reached or exceeded the specified
+   * value.
+   *
+   * \return the new step value, or error code if the simulation was interrupted/ended before
+   * the target step was reached.
+   */
+  StatusOr<u64> await_step(u64 minimum_step) noexcept
+  {
+    return this->step_.await_true([minimum_step](u64 observed_step) {
+      return observed_step >= minimum_step;
+    });
   }
 
   /** \brief Returns true if all blocks for a given page are present in a simulated PageDevice,

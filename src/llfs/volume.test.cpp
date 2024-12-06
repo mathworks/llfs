@@ -2345,7 +2345,7 @@ void VolumeSimTest::run_dead_page_recovery_test(const u32 seed, u32 yield_count)
     // Create the simulated Volume and write to volume before initiating halt.
     //
     {
-      pre_halt_processing(
+      this->pre_halt_processing(
           state, sim, yield_count, [](llfs::Volume& volume, llfs::SlotRange& slot_range) {
             LLFS_VLOG(1) << "await_trim() start at offset " << BATT_INSPECT(slot_range.upper_bound);
             EXPECT_TRUE(volume.await_trim(slot_range.upper_bound).ok());
@@ -2361,7 +2361,7 @@ void VolumeSimTest::run_dead_page_recovery_test(const u32 seed, u32 yield_count)
     // After the crash recover DB state.
     //
     {
-      post_halt_processing(state, sim, yield_count, [](llfs::Volume& volume) {
+      this->post_halt_processing(state, sim, yield_count, [](llfs::Volume& volume) {
         // Check and make sure we have no drop errors.
         //
         EXPECT_EQ(volume.page_recycler_metrics().page_drop_error_count, 0);
@@ -2431,20 +2431,20 @@ void VolumeSimTest::run_dead_page_recovery_test_variant(const u32 seed, u32 yiel
     // Create the simulated Volume.
     //
     {
-      pre_halt_processing(state, sim, yield_count_pre_halt,
-                          [](llfs::Volume& volume, llfs::SlotRange& slot_range) {
-                            LLFS_VLOG(1) << "Offset " << BATT_INSPECT(slot_range);
+      this->pre_halt_processing(state, sim, yield_count_pre_halt,
+                                [](llfs::Volume& volume, llfs::SlotRange& slot_range) {
+                                  LLFS_VLOG(1) << "Offset " << BATT_INSPECT(slot_range);
 
-                            volume.halt();
-                            volume.join();
-                          });
+                                  volume.halt();
+                                  volume.join();
+                                });
     }
     EXPECT_TRUE(state.first_page_id.is_valid()) << BATT_INSPECT(state.seed);
 
     // After the crash recover DB state.
     //
     {
-      post_halt_processing(state, sim, yield_count_pre_halt, [&](llfs::Volume& volume) {
+      this->post_halt_processing(state, sim, yield_count_pre_halt, [&](llfs::Volume& volume) {
         // Make sure we leave enough time for VolumeRecycler and Trimmer to run through.
         //
         batt_task_yield(yield_count_post_halt);

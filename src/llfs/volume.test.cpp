@@ -1412,7 +1412,7 @@ class VolumeSimTest : public ::testing::Test
    * \param seed Used to initialize the pseudo-random number generator that drives the simulation.
    * \param yield_count Used to specify number of times task::yield() needs to be run.
    */
-  void run_dead_page_recovery_test(const u32 seed, u32 yield_count);
+  void run_dead_page_recovery_test(u32 seed, u32 yield_count);
 
   /** \brief Runs dead page ref count recovery test where both recycler and volume-trimmer does the
    * recovery/retry of dead page recycling.
@@ -1422,7 +1422,7 @@ class VolumeSimTest : public ::testing::Test
    * \param yield_count_post_halt Used to specify # of times task::yield() needs to be run
    * post-halt.
    */
-  void run_dead_page_recovery_test_variant(const u32 seed, u32 yield_count_pre_halt,
+  void run_dead_page_recovery_test_variant(u32 seed, u32 yield_count_pre_halt,
                                            u32 yield_count_post_halt);
 
   /** \brief This allocates a page and writes a slot to log with the page info.
@@ -2223,7 +2223,7 @@ void display_metric_data(llfs::Volume& volume)
 //
 void batt_task_yield(u32 count)
 {
-  for (uint32_t idx = 0; idx < count; idx++) {
+  while (count--) {
     batt::Task::yield();
   }
 }
@@ -2317,7 +2317,7 @@ void VolumeSimTest::post_halt_processing(RecoverySimState& state, llfs::StorageS
  * @param yield_count for number of times we want to yield within the main test flow.
  * @return NONE.
  */
-void VolumeSimTest::run_dead_page_recovery_test(const u32 seed, u32 yield_count)
+void VolumeSimTest::run_dead_page_recovery_test(u32 seed, u32 yield_count)
 {
   RecoverySimState state;
   state.seed = seed;
@@ -2403,7 +2403,7 @@ void VolumeSimTest::run_dead_page_recovery_test(const u32 seed, u32 yield_count)
  * post-halt.
  * @return NONE.
  */
-void VolumeSimTest::run_dead_page_recovery_test_variant(const u32 seed, u32 yield_count_pre_halt,
+void VolumeSimTest::run_dead_page_recovery_test_variant(u32 seed, u32 yield_count_pre_halt,
                                                         u32 yield_count_post_halt)
 {
   RecoverySimState state;

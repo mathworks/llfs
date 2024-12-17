@@ -89,6 +89,10 @@ BATT_STRONG_TYPEDEF(bool, HasOutgoingRefs);
  */
 BATT_STRONG_TYPEDEF(usize, ItemOffset);
 
+/** \brief A pseudo-random number generator seed.
+ */
+BATT_STRONG_TYPEDEF(u32, RandomSeed);
+
 }  // namespace llfs
 
 #endif  // LLFS_API_TYPES_HPP

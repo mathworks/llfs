@@ -19,6 +19,8 @@
 #include <llfs/ioring_log_device.test.hpp>
 #include <llfs/storage_simulation.hpp>
 
+#include <llfs/testing/scenario_runner.hpp>
+
 namespace {
 
 using namespace llfs::constants;
@@ -511,9 +513,6 @@ class IoRingLogDevice2SimTest : public ::testing::Test
 
 TEST_F(IoRingLogDevice2SimTest, Simulation)
 {
-  const usize kNumThreads = std::thread::hardware_concurrency();
-  const usize kUpdateInterval = kNumSeeds / 20;
-
   llfs::testing::TestConfig test_config;
 
   LLFS_LOG_INFO() << BATT_INSPECT(kNumSeeds);
@@ -527,28 +526,10 @@ TEST_F(IoRingLogDevice2SimTest, Simulation)
   EXPECT_FALSE(goals.tail_collision);
   EXPECT_FALSE(goals.tail_rewrite);
 
-  std::vector<std::thread> threads;
-  usize start_seed = test_config.get_random_seed();
-  usize seeds_remaining = kNumSeeds;
-  for (usize i = 0; i < kNumThreads; ++i) {
-    usize n_seeds = seeds_remaining / (kNumThreads - i);
-    usize end_seed = start_seed + n_seeds;
-    threads.emplace_back([&, start_seed, end_seed] {
-      for (usize seed = start_seed; seed < end_seed; seed += 1) {
-        LLFS_LOG_INFO_EVERY_N(kUpdateInterval)
-            << "progress=" << (seed - start_seed) * 100 / (end_seed - start_seed) << "%";
-
-        Scenario scenario{seed, goals};
-        ASSERT_NO_FATAL_FAILURE(scenario.run());
-      }
-    });
-    start_seed += n_seeds;
-    seeds_remaining -= n_seeds;
-  }
-
-  for (std::thread& t : threads) {
-    t.join();
-  }
+  llfs::testing::ScenarioRunner{}  //
+      .n_seeds(kNumSeeds)
+      .n_updates(20)
+      .run(batt::StaticType<Scenario>{}, goals);
 
   EXPECT_TRUE(goals.concurrent_writes);
   EXPECT_TRUE(goals.burst_mode_checked);

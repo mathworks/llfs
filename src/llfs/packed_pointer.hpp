@@ -43,6 +43,7 @@ struct PackedPointer {
   const T* get() const
   {
     BATT_STATIC_ASSERT_EQ(sizeof(PackedPointer), sizeof(Offset));
+    BATT_CHECK_NE(this->offset, 0);
 
     return reinterpret_cast<const T*>(reinterpret_cast<const u8*>(this) + this->offset);
   }

@@ -68,7 +68,7 @@ class PageCacheSlotTest : public ::testing::Test
 //  1. Create slots with different index values in a Pool; verify index()
 //     - also verify initial is_valid state
 //
-TEST_F(PageCacheSlotTest, CreateSlotsDeath)
+TEST_F(PageCacheSlotTest, CreateSlots)
 {
   for (usize i = 0; i < kNumTestSlots; ++i) {
     llfs::PageCacheSlot* slot = this->pool_->allocate();
@@ -152,7 +152,8 @@ TEST_F(PageCacheSlotTest, StateTransitions)
   //     i. Valid + Cleared --(acquire_pin)--> Valid + Cleared + Pinned
   //
   {
-    llfs::PageCacheSlot::PinnedRef valid_cleared_ref = slot->acquire_pin(llfs::PageId{}, /*ignore_key=*/true);
+    llfs::PageCacheSlot::PinnedRef valid_cleared_ref =
+        slot->acquire_pin(llfs::PageId{}, /*ignore_key=*/true);
     EXPECT_EQ(valid_cleared_ref.value(), nullptr);
     EXPECT_EQ(slot->pin_count(), 1u);
     EXPECT_EQ(slot->ref_count(), 1u);
@@ -421,7 +422,8 @@ TEST_F(PageCacheSlotTest, FillFailureClearedDeath)
   slot->clear();
 
   {
-    llfs::PageCacheSlot::PinnedRef valid_cleared_ref = slot->acquire_pin(llfs::PageId{}, /*ignore_key=*/true);
+    llfs::PageCacheSlot::PinnedRef valid_cleared_ref =
+        slot->acquire_pin(llfs::PageId{}, /*ignore_key=*/true);
     EXPECT_TRUE(slot->is_valid());
     EXPECT_DEATH(slot->fill(llfs::PageId{2}), "Assert.*fail.*is.*valid");
   }
@@ -473,12 +475,13 @@ TEST_F(PageCacheSlotTest, RefCounting)
         continue;
       }
 
-      // Split the workload: let half the threads perform acquire_pin calls and 
+      // Split the workload: let half the threads perform acquire_pin calls and
       // let the other half perform evictions.
       //
       if (i % 2) {
         {
-          llfs::PageCacheSlot::PinnedRef pinned = slot->acquire_pin(llfs::PageId{}, /*ignore_key=*/true);
+          llfs::PageCacheSlot::PinnedRef pinned =
+              slot->acquire_pin(llfs::PageId{}, /*ignore_key=*/true);
         }
       } else {
         slot->evict_if_key_equals(llfs::PageId{1});

@@ -1376,7 +1376,7 @@ class VolumeSimTest : public ::testing::Test
     /** \brief Returns a slot visitor function for use when recovering/verifying the Volume,
      * post-crash for dead page ref count testing.
      */
-    auto get_slot_visitor_for_dead_pages();
+    auto get_slot_visitor_for_first_page_only();
 
     /** \brief Resets all member data that might have been modified by the slot visitor.
      */
@@ -2122,8 +2122,12 @@ TEST_F(VolumeTest, AppendableJobGrantSize)
 //
 TEST_F(VolumeSimTest, DeadPageRefCountSimulation)
 {
-  const u32 max_seeds = batt::getenv_as<int>("MAX_SEEDS").value_or(1000);
-  const u32 yield_count = batt::getenv_as<int>("YIELD_COUNT").value_or(37);
+  const u32 max_seeds = batt::getenv_as<u32>("MAX_SEEDS").value_or(1000);
+  const u32 yield_count = batt::getenv_as<u32>("YIELD_COUNT").value_or(37);
+
+  // Note that default yield_count is 37. At or around this value simulation ends up getting only
+  // one retry at the time of recovery, which happens in page recycler. This is the condition the
+  // test is shooting for thus the test is tuned to hit that with 100% certainty.
 
   LOG(INFO) << "Starting DeadPageRefCount test for " << max_seeds << " iterations...";
   for (u32 current_seed = 0; current_seed < max_seeds; ++current_seed) {
@@ -2139,19 +2143,20 @@ using DeathTestVolumeSimTest = VolumeSimTest;
 //
 TEST_F(DeathTestVolumeSimTest, DeadPageRefCountVariantSimulation)
 {
-  const u32 max_seeds = batt::getenv_as<int>("MAX_SEEDS").value_or(1000);
+  const u32 max_seeds = batt::getenv_as<u32>("MAX_SEEDS").value_or(1000);
 
   // Note that this test fails few times times when pre_halt and post_halt yield values are around
-  // 50 and 40 respectively. To create a perfect failing test use 50 and 40 as the pre_halt and
-  // post_hatl values respectively. .
+  // 50 and 40 respectively. To create a perfectly failing test use 50 and 40 as the pre_halt and
+  // post_halt values respectively.
 
   LOG(INFO) << "Starting DeadPageRefCountVariant test for " << max_seeds << " iterations...";
 
   auto main_test_block = [&]() {
     for (u32 current_seed = 0; current_seed < max_seeds; ++current_seed) {
       LOG_EVERY_N(INFO, 100) << BATT_INSPECT(current_seed) << BATT_INSPECT(max_seeds);
-      ASSERT_NO_FATAL_FAILURE(
-          this->run_dead_page_recovery_test_variant(current_seed, current_seed, current_seed));
+      ASSERT_NO_FATAL_FAILURE(this->run_dead_page_recovery_test_variant(
+          current_seed, current_seed /*yield_count_pre_halt*/,
+          current_seed /* yield_count_post_halt*/));
     }
   };
   // Note that we are enabling thread-safe mode for Death-Test.
@@ -2192,7 +2197,7 @@ void VolumeSimTest::alloc_one_page_and_commit(RecoverySimState& state, llfs::Sto
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-auto VolumeSimTest::RecoverySimState::get_slot_visitor_for_dead_pages()
+auto VolumeSimTest::RecoverySimState::get_slot_visitor_for_first_page_only()
 {
   return [this](const llfs::SlotParse /*slot*/, const llfs::PageId& page_id) {
     if (page_id == this->first_page_id) {
@@ -2208,14 +2213,10 @@ auto VolumeSimTest::RecoverySimState::get_slot_visitor_for_dead_pages()
 //
 void display_metric_data(llfs::Volume& volume)
 {
-  LLFS_VLOG(1) << "PageRecycler metrics: "
-               << BATT_INSPECT(volume.page_recycler_metrics().insert_count);
-  LLFS_VLOG(1) << "PageRecycler metrics: "
-               << BATT_INSPECT(volume.page_recycler_metrics().remove_count);
-  LLFS_VLOG(1) << "PageRecycler metrics: "
-               << BATT_INSPECT(volume.page_recycler_metrics().page_drop_ok_count);
-  LLFS_VLOG(1) << "PageRecycler metrics: "
-               << BATT_INSPECT(volume.page_recycler_metrics().page_drop_error_count);
+  LLFS_VLOG(1) << BATT_INSPECT(volume.page_recycler_metrics().insert_count);
+  LLFS_VLOG(1) << BATT_INSPECT(volume.page_recycler_metrics().remove_count);
+  LLFS_VLOG(1) << BATT_INSPECT(volume.page_recycler_metrics().page_drop_ok_count);
+  LLFS_VLOG(1) << BATT_INSPECT(volume.page_recycler_metrics().page_drop_error_count);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -2282,7 +2283,7 @@ void VolumeSimTest::post_halt_processing(RecoverySimState& state, llfs::StorageS
   //
   batt::StatusOr<std::unique_ptr<llfs::Volume>> recovered_volume =
       sim.get_volume("TestVolume", llfs::TypedSlotReader<RecoverySimTestSlot>::make_slot_visitor(
-                                       state.get_slot_visitor_for_dead_pages()));
+                                       state.get_slot_visitor_for_first_page_only()));
 
   ASSERT_TRUE(recovered_volume.ok()) << recovered_volume.status();
 

@@ -2145,18 +2145,28 @@ TEST_F(DeathTestVolumeSimTest, DeadPageRefCountVariantSimulation)
 {
   const u32 max_seeds = batt::getenv_as<u32>("MAX_SEEDS").value_or(1000);
 
-  // Note that this test fails few times times when pre_halt and post_halt yield values are around
+  // Note that this test fails few times when pre_halt and post_halt yield values are around
   // 50 and 40 respectively. To create a perfectly failing test use 50 and 40 as the pre_halt and
   // post_halt values respectively.
 
   LOG(INFO) << "Starting DeadPageRefCountVariant test for " << max_seeds << " iterations...";
 
+  // We will setup a two ranges to pick yield counts from.
+  std::vector<std::pair<usize, usize>> ranges{{30, 50}, {30, 100}};
+  std::mt19937 rng{0};
+  std::uniform_int_distribution<usize> pick_value1{ranges[0].first, ranges[0].second};
+  std::uniform_int_distribution<usize> pick_value2{ranges[1].first, ranges[1].second};
+  usize yield_pre_halt = 0, yield_post_halt = 0;
+
   auto main_test_block = [&]() {
     for (u32 current_seed = 0; current_seed < max_seeds; ++current_seed) {
       LOG_EVERY_N(INFO, 100) << BATT_INSPECT(current_seed) << BATT_INSPECT(max_seeds);
-      ASSERT_NO_FATAL_FAILURE(this->run_dead_page_recovery_test_variant(
-          current_seed, current_seed /*yield_count_pre_halt*/,
-          current_seed /* yield_count_post_halt*/));
+
+      yield_pre_halt = (yield_pre_halt % 2) ? pick_value1(rng) : pick_value2(rng);
+      yield_post_halt = (yield_post_halt % 2) ? pick_value1(rng) : pick_value2(rng);
+
+      ASSERT_NO_FATAL_FAILURE(
+          this->run_dead_page_recovery_test_variant(current_seed, yield_pre_halt, yield_post_halt));
     }
   };
   // Note that we are enabling thread-safe mode for Death-Test.

@@ -182,8 +182,7 @@ Status commit(std::unique_ptr<PageCacheJob> job, const JobCommitParams& params, 
 Status commit(CommittablePageCacheJob committable_job, const JobCommitParams& params, u64 callers,
               slot_offset_type prev_caller_slot, batt::Watch<slot_offset_type>* durable_caller_slot)
 {
-  auto stat = committable_job.commit_impl(params, callers, prev_caller_slot, durable_caller_slot);
-  return stat;
+  return committable_job.commit_impl(params, callers, prev_caller_slot, durable_caller_slot);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

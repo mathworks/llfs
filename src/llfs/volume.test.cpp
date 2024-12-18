@@ -2139,6 +2139,22 @@ TEST_F(VolumeSimTest, DeadPageRefCountSimulation)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+void display_histogram(u32 max_seeds, const std::vector<usize>& histogram)
+{
+  std::string hist_str;
+  usize current_seed = 0;
+  const usize div = max_seeds / histogram.size();
+
+  for (const auto entry : histogram) {
+    hist_str += std::to_string(current_seed) + ":" + std::to_string(entry) + " ";
+    current_seed += div;
+  }
+
+  LOG(INFO) << "Histogram: " << hist_str;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 TEST_F(VolumeSimTest, DeadPageRefCountVariantSimulation)
 {
   const u32 max_seeds = batt::getenv_as<u32>("MAX_SEEDS").value_or(1000);
@@ -2153,6 +2169,10 @@ TEST_F(VolumeSimTest, DeadPageRefCountVariantSimulation)
   std::uniform_int_distribution<usize> pick_value1{ranges[0].first, ranges[0].second};
   std::uniform_int_distribution<usize> pick_value2{ranges[1].first, ranges[1].second};
   usize yield_pre_halt = 0, yield_post_halt = 0;
+  std::vector<usize> histogram(10);
+  const usize div = max_seeds / histogram.size();
+
+  llfs::PageRecycler::metrics_export().page_id_deletion_reissue.set(0);
 
   for (u32 current_seed = 0; current_seed < max_seeds; ++current_seed) {
     LOG_EVERY_N(INFO, 100) << BATT_INSPECT(current_seed) << BATT_INSPECT(max_seeds);
@@ -2160,12 +2180,19 @@ TEST_F(VolumeSimTest, DeadPageRefCountVariantSimulation)
     yield_pre_halt = (yield_pre_halt % 2) ? pick_value1(rng) : pick_value2(rng);
     yield_post_halt = (yield_post_halt % 2) ? pick_value1(rng) : pick_value2(rng);
 
+    usize last_value = llfs::PageRecycler::metrics_export().page_id_deletion_reissue;
+
     ASSERT_NO_FATAL_FAILURE(
         this->run_dead_page_recovery_test_variant(current_seed, yield_pre_halt, yield_post_halt));
+
+    last_value = llfs::PageRecycler::metrics_export().page_id_deletion_reissue - last_value;
+    histogram[current_seed / div] += last_value;
   }
 
   LOG(INFO) << "Ran DeadPageRefCountVariant test for " << max_seeds << " iterations..."
             << BATT_INSPECT(llfs::PageRecycler::metrics_export().page_id_deletion_reissue);
+
+  display_histogram(max_seeds, histogram);
 
   // We need to have atleast one iteration hitting the issue.
   //

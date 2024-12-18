@@ -10,8 +10,11 @@
 #ifndef LLFS_PAGE_RECYCLER_EVENTS_HPP
 #define LLFS_PAGE_RECYCLER_EVENTS_HPP
 
+#include <llfs/config.hpp>
+//
 #include <llfs/data_layout.hpp>
 #include <llfs/data_reader.hpp>
+#include <llfs/packed_uuid.hpp>
 #include <llfs/page_layout.hpp>
 #include <llfs/slot.hpp>
 
@@ -88,7 +91,7 @@ using PageRecycleEvent = PackedVariant<  //
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
 struct PackedPageRecyclerInfo {
-  boost::uuids::uuid uuid;
+  PackedUUID uuid;
   little_u32 info_refresh_rate;
   little_u32 batch_size;
   little_u32 refresh_factor;

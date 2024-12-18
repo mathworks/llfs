@@ -69,16 +69,18 @@ class LlfsConan(ConanFile):
 
 
     def requirements(self):
-        self.requires("batteries/0.56.7", **VISIBLE)
-        self.requires("boost/1.85.0", **VISIBLE, **OVERRIDE)
-        self.requires("cli11/2.3.2", **VISIBLE)
-        self.requires("glog/0.7.0", **VISIBLE, **OVERRIDE)
-        self.requires("gtest/1.14.0", **VISIBLE)
+        self.requires("batteries/0.58.0", **VISIBLE)
+        self.requires("boost/1.86.0", **VISIBLE, **OVERRIDE)
+        self.requires("cli11/2.4.2", **VISIBLE)
+        self.requires("glog/0.7.1", **VISIBLE, **OVERRIDE)
         self.requires("libbacktrace/cci.20210118", **VISIBLE)
-        self.requires("openssl/3.2.0", **VISIBLE)
+        self.requires("openssl/3.3.2", **VISIBLE, **OVERRIDE)
+        self.requires("xxhash/0.8.2", **VISIBLE)
 
         self.requires("zlib/1.3", **OVERRIDE)
 
+        self.test_requires("gtest/1.15.0")
+        
         if platform.system() == "Linux":
             self.requires("liburing/2.4", **VISIBLE)
             self.requires("libfuse/3.16.2", **VISIBLE)

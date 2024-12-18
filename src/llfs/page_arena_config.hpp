@@ -10,15 +10,16 @@
 #ifndef LLFS_PAGE_ARENA_CONFIG_HPP
 #define LLFS_PAGE_ARENA_CONFIG_HPP
 
+#include <llfs/config.hpp>
+//
 #include <llfs/int_types.hpp>
 #include <llfs/log_device_runtime_options.hpp>
 #include <llfs/packed_config.hpp>
+#include <llfs/packed_uuid.hpp>
 #include <llfs/page_allocator_config.hpp>
 #include <llfs/page_arena.hpp>
 #include <llfs/page_device_config.hpp>
 #include <llfs/status.hpp>
-
-#include <boost/uuid/uuid.hpp>
 
 namespace llfs {
 
@@ -46,7 +47,7 @@ struct PageArenaConfigOptions {
 
   // The unique identifier for the arena; if None, a random UUID is generated.
   //
-  Optional<boost::uuids::uuid> uuid;
+  Optional<PackedUUID> uuid;
 
   // Config options or uuid of the PageAllocator to link to this arena.
   //
@@ -68,13 +69,13 @@ struct PackedPageArenaConfig : PackedConfigSlotHeader {
 
   // The PageAllocator config.
   //
-  boost::uuids::uuid page_allocator_uuid;
+  PackedUUID page_allocator_uuid;
 
   // byte 36 +++++++++++-+-+--+----- --- -- -  -  -   -
 
   // The PageDevice config.
   //
-  boost::uuids::uuid page_device_uuid;
+  PackedUUID page_device_uuid;
 
   // byte 52 +++++++++++-+-+--+----- --- -- -  -  -   -
 

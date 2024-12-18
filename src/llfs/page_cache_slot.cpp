@@ -76,7 +76,7 @@ bool PageCacheSlot::is_pinned() const noexcept
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-u32 PageCacheSlot::pin_count() const noexcept
+u64 PageCacheSlot::pin_count() const noexcept
 {
   return Self::get_pin_count(this->state_.load(std::memory_order_acquire));
 }
@@ -116,11 +116,11 @@ auto PageCacheSlot::acquire_pin(PageId key, bool ignore_key) noexcept -> PinnedR
 {
   const auto old_state = this->state_.fetch_add(kPinCountDelta, std::memory_order_acquire);
   const auto new_state = old_state + kPinCountDelta;
-  const bool newly_pinned = !this->is_pinned(old_state);
+  const bool newly_pinned = !Self::is_pinned(old_state);
 
   BATT_CHECK_EQ(new_state & Self::kOverflowMask, 0);
 
-  BATT_CHECK(this->is_pinned(new_state));
+  BATT_CHECK(Self::is_pinned(new_state));
 
   BATT_SUPPRESS_IF_GCC("-Wmaybe-uninitialized")
 
@@ -134,7 +134,7 @@ auto PageCacheSlot::acquire_pin(PageId key, bool ignore_key) noexcept -> PinnedR
   // If the pin_count > 1 (because of the fetch_add above) and the slot is valid, it is safe to read
   // the key.  If the key doesn't match, release the ref and return failure.
   //
-  if (!this->is_valid(old_state) ||
+  if (!Self::is_valid(old_state) ||
       (!ignore_key && (!this->key_.is_valid() || this->key_ != key))) {
     this->release_pin();
     return PinnedRef{};
@@ -149,7 +149,7 @@ auto PageCacheSlot::acquire_pin(PageId key, bool ignore_key) noexcept -> PinnedR
     BATT_CHECK(this->value_);
   }
 
-  return PinnedRef{this};
+  return PinnedRef{this, CallerPromisesTheyAcquiredPinCount{}};
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -199,7 +199,7 @@ void PageCacheSlot::release_pin() noexcept
       << BATT_INSPECT(old_state);
 
   const auto new_state = old_state - kPinCountDelta;
-  const bool newly_unpinned = !this->is_pinned(new_state);
+  const bool newly_unpinned = !Self::is_pinned(new_state);
 
   BATT_CHECK_EQ(new_state & Self::kOverflowMask, 0);
 
@@ -221,7 +221,7 @@ bool PageCacheSlot::evict() noexcept
   //
   auto observed_state = this->state_.load(std::memory_order_acquire);
   for (;;) {
-    if (Self::is_pinned(observed_state) || !this->is_valid(observed_state)) {
+    if (Self::is_pinned(observed_state) || !Self::is_valid(observed_state)) {
       return false;
     }
 
@@ -244,7 +244,7 @@ bool PageCacheSlot::evict_if_key_equals(PageId key) noexcept
   const auto old_state = this->state_.fetch_add(kPinCountDelta, std::memory_order_acquire);
   auto observed_state = old_state + kPinCountDelta;
 
-  const bool newly_pinned = !this->is_pinned(old_state);
+  const bool newly_pinned = !Self::is_pinned(old_state);
   if (newly_pinned) {
     this->add_ref();
   }
@@ -257,7 +257,7 @@ bool PageCacheSlot::evict_if_key_equals(PageId key) noexcept
   for (;;) {
     // To succeed, we must be holding the only pin, the slot must be valid, and the key must match.
     //
-    if (!(Self::get_pin_count(observed_state) == 1 && this->is_valid(observed_state) &&
+    if (!(Self::get_pin_count(observed_state) == 1 && Self::is_valid(observed_state) &&
           this->key_ == key)) {
       this->release_pin();
       return false;
@@ -300,7 +300,7 @@ auto PageCacheSlot::fill(PageId key) noexcept -> PinnedRef
   this->add_ref();
   this->set_valid();
 
-  return PinnedRef{this};
+  return PinnedRef{this, CallerPromisesTheyAcquiredPinCount{}};
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -333,7 +333,7 @@ void PageCacheSlot::notify_last_ref_released()
 void PageCacheSlot::set_valid()
 {
   const auto observed_state = this->state_.fetch_or(kValidMask, std::memory_order_release);
-  BATT_CHECK(!this->is_valid(observed_state)) << "Must go from an invalid state to valid!";
+  BATT_CHECK(!Self::is_valid(observed_state)) << "Must go from an invalid state to valid!";
 }
 
 }  //namespace llfs

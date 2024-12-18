@@ -88,11 +88,8 @@ usize CommittablePageCacheJob::new_page_count() const noexcept
 //
 BoxedSeq<PageId> CommittablePageCacheJob::deleted_page_ids() const
 {
-  return as_seq(this->job_->get_deleted_pages().begin(), this->job_->get_deleted_pages().end())  //
-         | seq::map([](const auto& kv_pair) -> PageId {
-             return kv_pair.first;
-           })  //
-         | seq::boxed();
+  return BoxedSeq<PageId>{
+      as_seq(this->job_->get_deleted_pages().begin(), this->job_->get_deleted_pages().end())};
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -488,7 +485,7 @@ Status CommittablePageCacheJob::await_ref_count_updates(const PageRefCountUpdate
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/) const
+auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/)
     -> StatusOr<PageRefCountUpdates>
 {
   std::unordered_map<PageId, i32, PageId::Hash> ref_count_delta = this->job_->get_root_set_delta();
@@ -518,19 +515,22 @@ auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/) const
   // Trace deleted pages non-recursively, decrementing the ref counts of all pages they directly
   // reference.
   //
-  for (const auto& p : this->job_->get_deleted_pages()) {
-    // Sanity check; deleted pages should have a ref_count_delta of kRefCount_1_to_0.
-    //
-    const PageId deleted_page_id = p.first;
-    {
-      auto iter = ref_count_delta.find(deleted_page_id);
-      BATT_CHECK_NE(iter, ref_count_delta.end());
-      BATT_CHECK_EQ(iter->second, kRefCount_1_to_0);
-    }
-
+  LoadingPageTracer loading_tracer{loader, /*ok_if_not_found=*/true};
+  CachingPageTracer caching_tracer{this->job_->cache().devices_by_id(), loading_tracer};
+  for (const PageId& deleted_page_id : this->job_->get_deleted_pages()) {
     // Decrement ref counts.
     //
-    p.second->trace_refs() | seq::for_each([&ref_count_delta, deleted_page_id](PageId id) {
+    batt::StatusOr<batt::BoxedSeq<PageId>> outgoing_refs =
+        caching_tracer.trace_page_refs(deleted_page_id);
+    if (outgoing_refs.status() == batt::StatusCode::kNotFound) {
+      this->not_found_deleted_pages_.insert(deleted_page_id);
+      continue;
+    }
+    BATT_REQUIRE_OK(outgoing_refs);
+
+    ref_count_delta[deleted_page_id] = kRefCount_1_to_0;
+
+    *outgoing_refs | seq::for_each([&ref_count_delta, deleted_page_id](PageId id) {
       if (id) {
         LLFS_VLOG(1) << " decrementing ref count for page " << id
                      << " (because it was referenced from deleted page " << deleted_page_id << ")";
@@ -603,13 +603,13 @@ Status CommittablePageCacheJob::drop_deleted_pages(u64 callers)
 {
   LLFS_VLOG(1) << "commit(PageCacheJob): dropping deleted pages";
 
-  const auto& deleted_pages = this->job_->get_deleted_pages();
-
-  return parallel_drop_pages(as_seq(deleted_pages.begin(), deleted_pages.end())  //
-                                 | seq::map([](const auto& kv_pair) -> PageId {
-                                     return kv_pair.first;
-                                   })  //
-                                 | seq::collect_vec(),
+  // From the set of all deleted pages, filter out those that were not found during the attempt to
+  // trace their outgoing refs.
+  //
+  return parallel_drop_pages(this->deleted_page_ids() | seq::filter([this](const PageId& id) {
+                               auto iter = this->not_found_deleted_pages_.find(id);
+                               return iter == this->not_found_deleted_pages_.end();
+                             }) | seq::collect_vec(),
                              this->job_->cache(), this->job_->job_id, callers);
 }
 

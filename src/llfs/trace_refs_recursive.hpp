@@ -11,7 +11,7 @@
 #define LLFS_TRACE_REFS_RECURSIVE_HPP
 
 #include <llfs/page_id.hpp>
-#include <llfs/page_loader.hpp>
+#include <llfs/page_tracer.hpp>
 #include <llfs/pinned_page.hpp>
 
 #include <batteries/seq.hpp>
@@ -24,8 +24,17 @@
 
 namespace llfs {
 
-template <typename IdTypePairSeq, typename Pred, typename Fn>
-inline batt::Status trace_refs_recursive(PageLoader& page_loader, IdTypePairSeq&& roots,
+/** \brief Do a depth-first search of the page reference graph starting at roots.
+ *
+ * Starting at roots, calls page_tracer.trace_page_refs to find the outgoing references (edges).
+ * These are filtered by `should_recursively_trace` before being added to a stack of pages to
+ * recursively trace.  Continues until the stack is empty.
+ *
+ * \return OkStatus if successful, otherwise the first error status code returned by
+ * page_tracer.trace_page_refs.
+ */
+template <typename IdTypePairSeq, typename Pred = bool(PageId), typename Fn = void(PageId)>
+inline batt::Status trace_refs_recursive(PageTracer& page_tracer, IdTypePairSeq&& roots,
                                          Pred&& should_recursively_trace, Fn&& fn)
 {
   static_assert(std::is_convertible_v<std::decay_t<SeqItem<IdTypePairSeq>>, PageId>,
@@ -44,12 +53,10 @@ inline batt::Status trace_refs_recursive(PageLoader& page_loader, IdTypePairSeq&
     const PageId next = pending.back();
     pending.pop_back();
 
-    batt::StatusOr<PinnedPage> status_or_page = page_loader.get_page(next, OkIfNotFound{false});
-    BATT_REQUIRE_OK(status_or_page);
+    batt::StatusOr<batt::BoxedSeq<PageId>> outgoing_refs_status = page_tracer.trace_page_refs(next);
+    BATT_REQUIRE_OK(outgoing_refs_status);
 
-    PinnedPage& page = *status_or_page;
-    BATT_CHECK_NOT_NULLPTR(page);
-    page->trace_refs() | seq::for_each([&](const PageId& id) {
+    *outgoing_refs_status | seq::for_each([&](const PageId& id) {
       fn(id);
       if (!pushed.count(id) && should_recursively_trace(id)) {
         pushed.insert(id);
@@ -59,6 +66,19 @@ inline batt::Status trace_refs_recursive(PageLoader& page_loader, IdTypePairSeq&
   }
 
   return batt::OkStatus();
+}
+
+/** \brief Convenience overload; creates a LoadingPageTracer to wrap the page_loader arg, then calls
+ * the PageTracer variant of trace_refs_recursive.
+ */
+template <typename IdTypePairSeq, typename Pred, typename Fn>
+inline batt::Status trace_refs_recursive(PageLoader& page_loader, IdTypePairSeq&& roots,
+                                         Pred&& should_recursively_trace, Fn&& fn)
+{
+  LoadingPageTracer tracer_impl{page_loader};
+
+  return trace_refs_recursive(tracer_impl, BATT_FORWARD(roots),
+                              BATT_FORWARD(should_recursively_trace), BATT_FORWARD(fn));
 }
 
 }  // namespace llfs

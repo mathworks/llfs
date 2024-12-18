@@ -12,6 +12,26 @@
 
 namespace llfs {
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+class CallerPromisesTheyAcquiredPinCount
+{
+ private:
+  CallerPromisesTheyAcquiredPinCount() = default;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+  // The following declared "friend" functions are the only places that should be acquiring a pin on
+  // a cache slot and using it to create a PinnedRef!
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  friend auto PageCacheSlot::acquire_pin(PageId key,
+                                         bool ignore_key) noexcept -> PageCacheSlot::PinnedRef;
+
+  friend auto PageCacheSlot::fill(PageId key) noexcept -> PageCacheSlot::PinnedRef;
+};
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 class PageCacheSlot::PinnedRef : public boost::equality_comparable<PageCacheSlot::PinnedRef>
 {
  public:
@@ -22,7 +42,7 @@ class PageCacheSlot::PinnedRef : public boost::equality_comparable<PageCacheSlot
   PinnedRef() = default;
 
  private:
-  explicit PinnedRef(PageCacheSlot* slot) noexcept
+  explicit PinnedRef(PageCacheSlot* slot, CallerPromisesTheyAcquiredPinCount) noexcept
       : slot_{slot}
       , value_{slot ? slot->value() : nullptr}
   {

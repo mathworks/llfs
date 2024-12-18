@@ -107,7 +107,7 @@ class PageCacheSlot
 
   /** \brief Returns the pin count bit field within the passed state integer.
    */
-  static constexpr u32 get_pin_count(u64 state)
+  static constexpr u64 get_pin_count(u64 state)
   {
     return state >> kPinCountShift;
   }
@@ -202,7 +202,7 @@ class PageCacheSlot
 
   /** \brief Returns the current pin count of the slot; if this is 0, the slot is not pinned.
    */
-  u32 pin_count() const noexcept;
+  u64 pin_count() const noexcept;
 
   /** \brief Conditionally pins the slot so it can't be evicted.
    *

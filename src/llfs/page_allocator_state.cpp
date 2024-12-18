@@ -458,14 +458,14 @@ PageAllocatorState::ProposalStatus PageAllocatorState::propose(PackedPageAllocat
   // If this is a valid proposal that will cause state change, go through and change the deltas to
   // the new ref count values.
   //
-  LOG(INFO) << "propose (start): txn-ref-count= " << txn->ref_counts.size();
+  LLFS_VLOG(1) << "propose (start): txn-ref-count= " << txn->ref_counts.size();
   if (status == ProposalStatus::kValid) {
     for (PackedPageRefCount& prc : txn->ref_counts) {
-      LOG(INFO) << "prc loop: " << prc;
+      LLFS_VLOG(1) << "reference count: " << prc;
       prc.ref_count = this->calculate_new_ref_count(prc, *user_index);
     }
   }
-  LOG(INFO) << "propose (end): txn-ref-count= " << txn->ref_counts.size();
+  LLFS_VLOG(1) << "propose (end): txn-ref-count= " << txn->ref_counts.size();
 
   return status;
 }

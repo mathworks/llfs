@@ -55,6 +55,11 @@ class PageRecycler
     CountMetric<u64> page_drop_error_count{0};
   };
 
+  struct MetricsExported {
+    CountMetric<u32> page_id_deletion_reissue{0};
+  };
+  static MetricsExported& metrics_export();
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   static PageCount default_max_buffered_page_count(const PageRecyclerOptions& options);
@@ -105,6 +110,7 @@ class PageRecycler
   // necessarily flushed (see `await_flush`).
   //
   StatusOr<slot_offset_type> recycle_pages(const Slice<const PageId>& page_ids,
+                                           llfs::slot_offset_type offset,
                                            batt::Grant* grant = nullptr, i32 depth = 0);
 
   // Schedule a single page to be recycled.  \see recycle_pages
@@ -198,7 +204,8 @@ class PageRecycler
   explicit PageRecycler(batt::TaskScheduler& scheduler, const std::string& name,
                         PageDeleter& page_deleter, std::unique_ptr<LogDevice>&& wal_device,
                         Optional<Batch>&& recovered_batch,
-                        std::unique_ptr<PageRecycler::State>&& state) noexcept;
+                        std::unique_ptr<PageRecycler::State>&& state,
+                        u64 largest_offset_as_unique_identifier_init) noexcept;
 
   void start_recycle_task();
 
@@ -209,6 +216,7 @@ class PageRecycler
   void refresh_grants();
 
   StatusOr<slot_offset_type> insert_to_log(batt::Grant& grant, PageId page_id, i32 depth,
+                                           slot_offset_type offset_as_unique_identifier,
                                            batt::Mutex<std::unique_ptr<State>>::Lock& locked_state);
 
   StatusOr<Batch> prepare_batch(std::vector<PageToRecycle>&& to_recycle);
@@ -250,6 +258,8 @@ class PageRecycler
   Optional<Batch> prepared_batch_;
 
   Optional<slot_offset_type> latest_batch_upper_bound_;
+
+  slot_offset_type largest_offset_as_unique_identifier_;
 };
 
 inline std::ostream& operator<<(std::ostream& out, const PageRecycler::Batch& t)

@@ -29,6 +29,7 @@ namespace llfs {
     , latest_batch_{}
     , recycler_uuid_{boost::uuids::random_generator{}()}
     , latest_info_refresh_slot_{}
+    , largest_offset_as_unique_identifier_{0}
 {
   initialize_status_codes();
   LLFS_VLOG(1) << "PageRecyclerRecoveryVisitor()";
@@ -113,6 +114,13 @@ Optional<SlotRange> PageRecyclerRecoveryVisitor::latest_info_refresh_slot() cons
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+u64 PageRecyclerRecoveryVisitor::largest_offset() const
+{
+  return this->largest_offset_as_unique_identifier_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
                                                const PageToRecycle& recovered)
 {
@@ -140,6 +148,13 @@ Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
 
     existing_record.batch_slot = recovered.batch_slot;
   }
+
+  // Save the largest unique offset identifier.
+  //
+  if (this->largest_offset_as_unique_identifier_ < recovered.offset_as_unique_identifier) {
+    this->largest_offset_as_unique_identifier_ = recovered.offset_as_unique_identifier;
+  }
+
   PageToRecycle& to_recycle = iter->second;
   to_recycle.refresh_slot = slot.offset.lower_bound;
 

@@ -36,6 +36,8 @@ struct PageToRecycle {
   //
   i32 depth;
 
+  slot_offset_type offset_as_unique_identifier;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   static PageToRecycle make_invalid()
@@ -45,6 +47,7 @@ struct PageToRecycle {
         .refresh_slot = None,
         .batch_slot = None,
         .depth = 0,
+        .offset_as_unique_identifier = 0,
     };
   }
 
@@ -129,12 +132,13 @@ struct PackedPageToRecycle {
 
   little_page_id_int page_id;
   little_u64 batch_slot;
+  u64 offset_as_unique_identifier;
   little_i32 depth;
   u8 flags;
   u8 reserved_[3];
 };
 
-BATT_STATIC_ASSERT_EQ(24, sizeof(PackedPageToRecycle));
+BATT_STATIC_ASSERT_EQ(32, sizeof(PackedPageToRecycle));
 
 inline std::size_t packed_sizeof(const PackedPageToRecycle&)
 {
@@ -161,6 +165,7 @@ inline bool pack_object_to(const PageToRecycle& from, PackedPageToRecycle* to, D
   } else {
     to->batch_slot = 0;
   }
+  to->offset_as_unique_identifier = from.offset_as_unique_identifier;
   return true;
 }
 
@@ -176,6 +181,7 @@ inline StatusOr<PageToRecycle> unpack_object(const PackedPageToRecycle& packed, 
         return None;
       }(),
       .depth = packed.depth,
+      .offset_as_unique_identifier = packed.offset_as_unique_identifier,
   };
 }
 

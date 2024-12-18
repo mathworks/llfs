@@ -136,6 +136,7 @@ const usize kTrimEventGrantSize =
 
     // Finish the partially completed trim.
     //
+    LLFS_VLOG(1) << "finishing partial trim...";
     BATT_REQUIRE_OK(trim_volume_log(trimmer_uuid, slot_writer, grant, std::move(*trim_event_info),
                                     std::move(*trimmed_region_info), metadata_refresher, drop_roots,
                                     batt::LogLevel::kWarning));
@@ -143,6 +144,7 @@ const usize kTrimEventGrantSize =
 
   // The trim state is now clean!  Create and return the VolumeTrimmer.
   //
+  LLFS_VLOG(1) << "creating the VolumeTrimmer object...";
   return std::make_unique<VolumeTrimmer>(trimmer_uuid, std::move(name), trim_control, trim_delay,
                                          std::move(log_reader), slot_writer, std::move(drop_roots),
                                          metadata_refresher);
@@ -405,7 +407,8 @@ Status trim_volume_log(const boost::uuids::uuid& trimmer_uuid,
                        VolumeMetadataRefresher& metadata_refresher,
                        const VolumeDropRootsFn& drop_roots, batt::LogLevel error_log_level)
 {
-  LLFS_VLOG(1) << "trim_volume_log()" << BATT_INSPECT(trimmed_region.slot_range);
+  LLFS_VLOG(1) << "trim_volume_log()" << BATT_INSPECT(trimmed_region.slot_range)
+               << BATT_INSPECT(trim_event);
 
   auto on_scope_exit = batt::finally([&] {
     BATT_CHECK_LE(grant.size(), kTrimEventGrantSize);

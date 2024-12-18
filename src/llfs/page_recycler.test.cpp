@@ -366,7 +366,7 @@ class FakePageDeleter : public PageDeleter
       // Recursively recycle any newly dead pages.  If we try to recycle the same page multiple
       // times, that is OK, since PageIds are never reused.
       //
-      result = this->test_->recycler_->recycle_pages(as_slice(dead_pages),  //
+      result = this->test_->recycler_->recycle_pages(as_slice(dead_pages), caller_slot,  //
                                                      &recycle_grant, depth + 1);
       BATT_REQUIRE_OK(result);
 
@@ -500,7 +500,7 @@ void PageRecyclerTest::run_crash_recovery_test()
         const std::array<PageId, 1> to_recycle = {root_id};
 
         BATT_DEBUG_INFO("Test - recycle_pages");
-        StatusOr<slot_offset_type> recycle_status = recycler.recycle_pages(to_recycle);
+        StatusOr<slot_offset_type> recycle_status = recycler.recycle_pages(to_recycle, 0);
         if (!recycle_status.ok()) {
           failed = true;
           break;

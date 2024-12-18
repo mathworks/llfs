@@ -208,7 +208,12 @@ Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 c
   const PageCacheJob* job = this->job_.get();
   BATT_CHECK_NOT_NULLPTR(job);
 
-  LLFS_VLOG(1) << "commit(PageCacheJob): entered";
+  if (durable_caller_slot) {
+    LLFS_VLOG(1) << "commit(PageCacheJob): entered" << BATT_INSPECT(prev_caller_slot)
+                 << BATT_INSPECT(*durable_caller_slot);
+  } else {
+    LLFS_VLOG(1) << "commit(PageCacheJob): entered" << BATT_INSPECT(prev_caller_slot);
+  }
 
   // Make sure the job is pruned!
   //
@@ -426,7 +431,7 @@ auto CommittablePageCacheJob::start_ref_count_updates(const JobCommitParams& par
                                                       PageRefCountUpdates& updates, u64 /*callers*/)
     -> StatusOr<DeadPages>
 {
-  LLFS_VLOG(1) << "commit(PageCacheJob): updating ref counts";
+  LLFS_VLOG(1) << "commit(PageCacheJob): updating ref counts" << BATT_INSPECT(params.caller_slot);
 
   DeadPages dead_pages;
 
@@ -579,10 +584,11 @@ Status CommittablePageCacheJob::recycle_dead_pages(const JobCommitParams& params
 
   BATT_ASSIGN_OK_RESULT(
       slot_offset_type recycler_sync_point,
-      params.recycler.recycle_pages(as_slice(dead_pages.ids), params.recycle_grant,
-                                    params.recycle_depth + 1));
+      params.recycler.recycle_pages(as_slice(dead_pages.ids), params.caller_slot,
+                                    params.recycle_grant, params.recycle_depth + 1));
 
-  LLFS_VLOG(1) << "commit(PageCacheJob): waiting for PageRecycler sync point";
+  LLFS_VLOG(1) << "commit(PageCacheJob): waiting for PageRecycler sync point"
+               << BATT_INSPECT(params.caller_slot);
 
   return params.recycler.await_flush(recycler_sync_point);
   //

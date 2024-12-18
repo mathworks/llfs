@@ -107,6 +107,7 @@ StatusOr<SlotRange> refresh_recycler_info_slot(TypedSlotWriter<PageRecycleEvent>
 {
   initialize_status_codes();
 
+  LLFS_VLOG(1) << "PageRecycler:recover() start" << BATT_INSPECT(name);
   PageRecyclerRecoveryVisitor visitor{default_options};
 
   // Read the log, scanning its contents.
@@ -153,9 +154,11 @@ StatusOr<SlotRange> refresh_recycler_info_slot(TypedSlotWriter<PageRecycleEvent>
 
   state->bulk_load(as_slice(visitor.recovered_pages()));
 
-  return std::unique_ptr<PageRecycler>{new PageRecycler(scheduler, std::string{name}, page_deleter,
-                                                        std::move(*recovered_log),
-                                                        std::move(latest_batch), std::move(state))};
+  LLFS_VLOG(1) << "PageRecycler:recover() end" << BATT_INSPECT(name);
+
+  return std::unique_ptr<PageRecycler>{
+      new PageRecycler(scheduler, std::string{name}, page_deleter, std::move(*recovered_log),
+                       std::move(latest_batch), std::move(state), visitor.largest_offset())};
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -163,7 +166,8 @@ StatusOr<SlotRange> refresh_recycler_info_slot(TypedSlotWriter<PageRecycleEvent>
 PageRecycler::PageRecycler(batt::TaskScheduler& scheduler, const std::string& name,
                            PageDeleter& page_deleter, std::unique_ptr<LogDevice>&& wal_device,
                            Optional<Batch>&& recovered_batch,
-                           std::unique_ptr<PageRecycler::State>&& state) noexcept
+                           std::unique_ptr<PageRecycler::State>&& state,
+                           u64 largest_offset_as_unique_identifier_init) noexcept
     : scheduler_{scheduler}
     , name_{name}
     , page_deleter_{page_deleter}
@@ -177,6 +181,7 @@ PageRecycler::PageRecycler(batt::TaskScheduler& scheduler, const std::string& na
     , recycle_task_{}
     , metrics_{}
     , prepared_batch_{std::move(recovered_batch)}
+    , largest_offset_as_unique_identifier_{largest_offset_as_unique_identifier_init}
 {
   const PageRecyclerOptions& options = this->state_.no_lock().options;
 
@@ -200,6 +205,34 @@ PageRecycler::PageRecycler(batt::TaskScheduler& scheduler, const std::string& na
   ADD_METRIC_(remove_count);
 
 #undef ADD_METRIC_
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+/** \brief This infrastructure is to collect metrics for PageRecycler submodule.
+ * This metric collection is currently used by test suit to assess execution behavior of internal
+ * flows. This is static metric infrastructure so that any user level code could access it.
+ *
+ */
+auto PageRecycler::metrics_export() -> MetricsExported&
+{
+  static MetricsExported& metrics_ = [&]() -> MetricsExported& {
+    static MetricsExported metrics_;
+
+    LOG(INFO) << "Registering PageRecycler metrics...";
+    const auto metric_name = [](std::string_view property) {
+      return batt::to_string("PageRecycler_", property);
+    };
+
+#define ADD_METRIC_(n) global_metric_registry().add(metric_name(#n), metrics_.n)
+
+    ADD_METRIC_(page_id_deletion_reissue);
+
+#undef ADD_METRIC_
+
+    return metrics_;
+  }();
+
+  return metrics_;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -270,19 +303,32 @@ void PageRecycler::join()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<slot_offset_type> PageRecycler::recycle_pages(const Slice<const PageId>& page_ids,
-                                                       batt::Grant* grant, i32 depth)
+StatusOr<slot_offset_type> PageRecycler::recycle_pages(
+    const Slice<const PageId>& page_ids, llfs::slot_offset_type offset_as_unique_identifier,
+    batt::Grant* grant, i32 depth)
 {
   BATT_CHECK_GE(depth, 0);
 
   LLFS_VLOG(1) << "PageRecycler::recycle_pages(page_ids=" << batt::dump_range(page_ids) << "["
                << page_ids.size() << "]"
                << ", grant=[" << (grant ? grant->size() : usize{0}) << "], depth=" << depth << ") "
-               << this->name_;
+               << this->name_ << BATT_INSPECT(offset_as_unique_identifier);
 
   if (page_ids.empty()) {
     return this->wal_device_->slot_range(LogReadMode::kDurable).upper_bound;
   }
+
+  // Check to see if we have already seen this or newer request.
+  //
+  if (this->largest_offset_as_unique_identifier_ >= offset_as_unique_identifier) {
+    this->metrics_export().page_id_deletion_reissue.fetch_add(1);
+
+    return this->wal_device_->slot_range(LogReadMode::kDurable).upper_bound;
+  }
+
+  // Update the largest unique identifier.
+  //
+  this->largest_offset_as_unique_identifier_ = offset_as_unique_identifier;
 
   Optional<slot_offset_type> sync_point = None;
 
@@ -297,6 +343,7 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(const Slice<const PageId>
 
     const PageRecyclerOptions& options = this->state_.no_lock().options;
 
+    LLFS_VLOG(1) << "recycle_pages entered grant==NULL case";
     for (PageId page_id : page_ids) {
       StatusOr<batt::Grant> local_grant = [&] {
         const usize needed_size = options.insert_grant_size();
@@ -319,8 +366,9 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(const Slice<const PageId>
       BATT_REQUIRE_OK(local_grant);
       {
         auto locked_state = this->state_.lock();
-        StatusOr<slot_offset_type> append_slot =
-            this->insert_to_log(*local_grant, page_id, depth, locked_state);
+        // Writing to recycler log.
+        StatusOr<slot_offset_type> append_slot = this->insert_to_log(
+            *local_grant, page_id, depth, offset_as_unique_identifier, locked_state);
         BATT_REQUIRE_OK(append_slot);
 
         clamp_min_slot(&sync_point, *append_slot);
@@ -329,10 +377,13 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(const Slice<const PageId>
   } else {
     BATT_CHECK_LT(depth, (i32)kMaxPageRefDepth) << BATT_INSPECT_RANGE(page_ids);
 
+    LLFS_VLOG(1) << "recycle_pages entered the valid grant case";
+
     auto locked_state = this->state_.lock();
     for (PageId page_id : page_ids) {
+      // Writing to recycler log.
       StatusOr<slot_offset_type> append_slot =
-          this->insert_to_log(*grant, page_id, depth, locked_state);
+          this->insert_to_log(*grant, page_id, depth, offset_as_unique_identifier, locked_state);
       BATT_REQUIRE_OK(append_slot);
 
       clamp_min_slot(&sync_point, *append_slot);
@@ -348,13 +399,13 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(const Slice<const PageId>
 StatusOr<slot_offset_type> PageRecycler::recycle_page(PageId page_id, batt::Grant* grant, i32 depth)
 {
   std::array<PageId, 1> page_ids{page_id};
-  return this->recycle_pages(batt::as_slice(page_ids), grant, depth);
+  return this->recycle_pages(batt::as_slice(page_ids), 0, grant, depth);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<slot_offset_type> PageRecycler::insert_to_log(
-    batt::Grant& grant, PageId page_id, i32 depth,
+    batt::Grant& grant, PageId page_id, i32 depth, slot_offset_type offset_as_unique_identifier,
     batt::Mutex<std::unique_ptr<State>>::Lock& locked_state)
 {
   BATT_CHECK(locked_state.is_held());
@@ -370,6 +421,7 @@ StatusOr<slot_offset_type> PageRecycler::insert_to_log(
               .refresh_slot = None,
               .batch_slot = None,
               .depth = depth,
+              .offset_as_unique_identifier = offset_as_unique_identifier,
           },
           [&](const batt::SmallVecBase<PageToRecycle*>& to_append) -> StatusOr<slot_offset_type> {
             if (to_append.empty()) {
@@ -387,7 +439,7 @@ StatusOr<slot_offset_type> PageRecycler::insert_to_log(
               BATT_REQUIRE_OK(append_slot);
               item->refresh_slot = append_slot->lower_bound;
               last_slot = slot_max(last_slot, append_slot->upper_bound);
-              LLFS_VLOG(1) << "Write " << item << " to the log; last_slot=" << last_slot;
+              LLFS_VLOG(1) << "Write " << *item << " to the log; last_slot=" << last_slot;
             }
             BATT_CHECK_NE(this->slot_writer_.slot_offset(), current_slot);
 

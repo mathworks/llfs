@@ -45,6 +45,8 @@ class PageRecyclerRecoveryVisitor
 
   Optional<SlotRange> latest_info_refresh_slot() const;
 
+  u64 largest_offset() const;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   Status operator()(const SlotParse&, const PageToRecycle& to_recycle);
@@ -79,6 +81,8 @@ class PageRecyclerRecoveryVisitor
   /** \brief The most recent slot at which recycler info was refreshed.
    */
   Optional<SlotRange> latest_info_refresh_slot_;
+
+  u64 largest_offset_as_unique_identifier_;
 };
 
 }  // namespace llfs

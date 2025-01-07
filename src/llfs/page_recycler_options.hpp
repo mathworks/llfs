@@ -22,7 +22,7 @@ class PageRecyclerOptions
  public:
   static constexpr usize kDefaultInfoRefreshRate = 4;
   static constexpr usize kDefaultMaxRefsPerPage = 1 * kMiB;
-  static constexpr usize kDefaultBatchSize = 24;
+  static constexpr usize kDefaultBatchSize = 20;
   static constexpr usize kDefaultRefreshFactor = 2;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -

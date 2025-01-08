@@ -73,14 +73,31 @@ StatusOr<SlotRange> refresh_recycler_info_slot(TypedSlotWriter<PageRecycleEvent>
 /*static*/ u64 PageRecycler::calculate_log_size(const PageRecyclerOptions& options,
                                                 Optional<PageCount> max_buffered_page_count)
 {
+  const usize log_size_raw = calculate_log_size_no_padding(options, max_buffered_page_count);
+  const usize padding_bytes = 1 * kKiB;
+
+  return round_up_to_page_size_multiple(log_size_raw + padding_bytes);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*static*/ u64 PageRecycler::calculate_log_size_no_padding(
+    const PageRecyclerOptions& options, Optional<PageCount> max_buffered_page_count)
+{
   static const PackedPageRecyclerInfo info = {};
 
-  return round_up_to_page_size_multiple(
-      options.total_page_grant_size() *
-          (1 + max_buffered_page_count.value_or(
-                   PageRecycler::default_max_buffered_page_count(options))) +
-      options.recycle_task_target() + packed_sizeof_slot(info) * (options.info_refresh_rate() + 1) +
-      1 * kKiB);
+  const usize bytes_per_buffered_page = options.total_page_grant_size();
+
+  const usize minimum_required_buffered_pages =
+      1 + max_buffered_page_count.value_or(PageRecycler::default_max_buffered_page_count(options));
+
+  const usize bytes_for_minimum_required_buffered_pages =
+      bytes_per_buffered_page * minimum_required_buffered_pages;
+
+  const usize fixed_size_overhead_bytes =
+      options.recycle_task_target() + packed_sizeof_slot(info) * (options.info_refresh_rate() + 1);
+
+  return bytes_for_minimum_required_buffered_pages + fixed_size_overhead_bytes;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -88,7 +105,7 @@ StatusOr<SlotRange> refresh_recycler_info_slot(TypedSlotWriter<PageRecycleEvent>
 /*static*/ PageCount PageRecycler::calculate_max_buffered_page_count(
     const PageRecyclerOptions& options, u64 log_size)
 {
-  const u64 required_log_size = PageRecycler::calculate_log_size(options, PageCount{0});
+  const u64 required_log_size = PageRecycler::calculate_log_size_no_padding(options, PageCount{0});
   if (log_size <= required_log_size) {
     return PageCount{0};
   }

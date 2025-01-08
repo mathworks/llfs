@@ -67,6 +67,9 @@ class PageRecycler
   static u64 calculate_log_size(const PageRecyclerOptions& options,
                                 Optional<PageCount> max_buffered_page_count = None);
 
+  static u64 calculate_log_size_no_padding(const PageRecyclerOptions& options,
+                                           Optional<PageCount> max_buffered_page_count = None);
+
   static PageCount calculate_max_buffered_page_count(const PageRecyclerOptions& options,
                                                      u64 log_size);
 

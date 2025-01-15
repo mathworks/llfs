@@ -235,7 +235,7 @@ auto PageRecycler::metrics_export() -> MetricsExported&
   static MetricsExported& metrics_ = [&]() -> MetricsExported& {
     static MetricsExported metrics_;
 
-    LOG(INFO) << "Registering PageRecycler metrics...";
+    LLFS_VLOG(1) << "Registering PageRecycler metrics...";
     const auto metric_name = [](std::string_view property) {
       return batt::to_string("PageRecycler_", property);
     };
@@ -335,7 +335,7 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
     return this->wal_device_->slot_range(LogReadMode::kDurable).upper_bound;
   }
 
-  // Check to see if we have already seen this or newer request.
+  // Check to see if we have already seen this or any newer request.
   //
   if (this->largest_offset_as_unique_identifier_ >= offset_as_unique_identifier) {
     this->metrics_export().page_id_deletion_reissue.fetch_add(1);

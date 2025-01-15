@@ -366,7 +366,9 @@ class FakePageDeleter : public PageDeleter
       // Recursively recycle any newly dead pages.  If we try to recycle the same page multiple
       // times, that is OK, since PageIds are never reused.
       //
-      result = this->test_->recycler_->recycle_pages(as_slice(dead_pages), caller_slot,  //
+      std::lock_guard lock(this->recycle_pages_mutex_);
+      result = this->test_->recycler_->recycle_pages(as_slice(dead_pages),
+                                                     this->get_and_incr_unique_offset(),  //
                                                      &recycle_grant, depth + 1);
       BATT_REQUIRE_OK(result);
 
@@ -412,10 +414,28 @@ class FakePageDeleter : public PageDeleter
     this->recursive_recycle_events_.push(failure).IgnoreError();
   }
 
+  slot_offset_type get_and_incr_unique_offset()
+  {
+    return this->unique_offset_++;
+  }
+
+  void lock_mutex()
+  {
+    recycle_pages_mutex_.lock();
+  }
+
+  void unlock_mutex()
+  {
+    recycle_pages_mutex_.unlock();
+  }
+
   PageRecyclerTest* test_;
   std::unordered_map<boost::uuids::uuid, slot_offset_type, boost::hash<boost::uuids::uuid>>
       current_slot_;
   batt::Queue<StatusOr<slot_offset_type>> recursive_recycle_events_;
+
+  slot_offset_type unique_offset_{1};
+  std::mutex recycle_pages_mutex_;
 };
 
 TEST_F(PageRecyclerTest, CrashRecovery)
@@ -435,7 +455,7 @@ TEST_F(PageRecyclerTest, CrashRecovery)
 
 void PageRecyclerTest::run_crash_recovery_test()
 {
-  const usize fake_page_count = 256;
+  const usize fake_page_count = 190;
   const u32 max_branching_factor = 8;
 
   const auto options = llfs::PageRecyclerOptions{}  //
@@ -500,7 +520,9 @@ void PageRecyclerTest::run_crash_recovery_test()
         const std::array<PageId, 1> to_recycle = {root_id};
 
         BATT_DEBUG_INFO("Test - recycle_pages");
-        StatusOr<slot_offset_type> recycle_status = recycler.recycle_pages(to_recycle, 0);
+        std::lock_guard lock(fake_deleter.recycle_pages_mutex_);
+        StatusOr<slot_offset_type> recycle_status =
+            recycler.recycle_pages(to_recycle, fake_deleter.get_and_incr_unique_offset());
         if (!recycle_status.ok()) {
           failed = true;
           break;

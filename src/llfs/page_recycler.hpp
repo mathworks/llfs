@@ -118,8 +118,8 @@ class PageRecycler
 
   // Schedule a single page to be recycled.  \see recycle_pages
   //
-  StatusOr<slot_offset_type> recycle_page(PageId page_id, batt::Grant* grant = nullptr,
-                                          i32 depth = 0);
+  StatusOr<slot_offset_type> recycle_page(PageId page_id, slot_offset_type unique_offset,
+                                          batt::Grant* grant = nullptr, i32 depth = 0);
 
   // Waits for the given slot to be flushed to durable storage.
   //

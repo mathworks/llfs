@@ -228,6 +228,11 @@ class PageRecyclerTest : public ::testing::Test
         });
   }
 
+  slot_offset_type get_and_incr_unique_offset()
+  {
+    return this->unique_offset_++;
+  }
+
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
   // Actual fake page data for crash recovery tetst.
@@ -266,6 +271,9 @@ class PageRecyclerTest : public ::testing::Test
   // The owning pointer for the recycler.
   //
   std::unique_ptr<llfs::PageRecycler> unique_page_recycler_;
+
+  slot_offset_type unique_offset_{1};
+  std::mutex recycle_pages_mutex_;
 };
 
 class FakePageDeleter : public PageDeleter
@@ -366,9 +374,9 @@ class FakePageDeleter : public PageDeleter
       // Recursively recycle any newly dead pages.  If we try to recycle the same page multiple
       // times, that is OK, since PageIds are never reused.
       //
-      std::lock_guard lock(this->recycle_pages_mutex_);
+      std::lock_guard lock(this->test_->recycle_pages_mutex_);
       result = this->test_->recycler_->recycle_pages(as_slice(dead_pages),
-                                                     this->get_and_incr_unique_offset(),  //
+                                                     this->test_->get_and_incr_unique_offset(),  //
                                                      &recycle_grant, depth + 1);
       BATT_REQUIRE_OK(result);
 
@@ -414,28 +422,10 @@ class FakePageDeleter : public PageDeleter
     this->recursive_recycle_events_.push(failure).IgnoreError();
   }
 
-  slot_offset_type get_and_incr_unique_offset()
-  {
-    return this->unique_offset_++;
-  }
-
-  void lock_mutex()
-  {
-    recycle_pages_mutex_.lock();
-  }
-
-  void unlock_mutex()
-  {
-    recycle_pages_mutex_.unlock();
-  }
-
   PageRecyclerTest* test_;
   std::unordered_map<boost::uuids::uuid, slot_offset_type, boost::hash<boost::uuids::uuid>>
       current_slot_;
   batt::Queue<StatusOr<slot_offset_type>> recursive_recycle_events_;
-
-  slot_offset_type unique_offset_{1};
-  std::mutex recycle_pages_mutex_;
 };
 
 TEST_F(PageRecyclerTest, CrashRecovery)
@@ -520,9 +510,9 @@ void PageRecyclerTest::run_crash_recovery_test()
         const std::array<PageId, 1> to_recycle = {root_id};
 
         BATT_DEBUG_INFO("Test - recycle_pages");
-        std::lock_guard lock(fake_deleter.recycle_pages_mutex_);
+        std::lock_guard lock(this->recycle_pages_mutex_);
         StatusOr<slot_offset_type> recycle_status =
-            recycler.recycle_pages(to_recycle, fake_deleter.get_and_incr_unique_offset());
+            recycler.recycle_pages(to_recycle, this->get_and_incr_unique_offset());
         if (!recycle_status.ok()) {
           failed = true;
           break;
@@ -676,16 +666,24 @@ TEST_F(PageRecyclerTest, DuplicatePageDeletion)
                                << BATT_INSPECT(this->p_mem_log_->driver().get_trim_pos());
 
                   BATT_CHECK_EQ(recycle_depth + 1, 1);
-                  BATT_CHECK_OK(this->recycler_->recycle_page(this->fake_page_id_.back(),
-                                                              &recycle_grant, recycle_depth + 1));
+                  {
+                    std::lock_guard lock(this->recycle_pages_mutex_);
+                    BATT_CHECK_OK(this->recycler_->recycle_page(this->fake_page_id_.back(),
+                                                                this->get_and_incr_unique_offset(),
+                                                                &recycle_grant, recycle_depth + 1));
+                  }
                   delete_count.fetch_add(1);
                   BATT_CHECK_OK(continue_count.await_equal(1));
                   return batt::OkStatus();
                 }));
 
         for (usize i = 0; i < this->fake_page_id_.size() - 2; ++i) {
-          batt::StatusOr<llfs::slot_offset_type> result =
-              this->recycler_->recycle_page(this->fake_page_id_[i]);
+          {
+            std::lock_guard lock(this->recycle_pages_mutex_);
+            batt::StatusOr<llfs::slot_offset_type> result = this->recycler_->recycle_page(
+                this->fake_page_id_[i], this->get_and_incr_unique_offset());
+            ASSERT_TRUE(result.ok()) << BATT_INSPECT(result);
+          }
 
           if (i == 0) {
             LLFS_VLOG(1) << "waiting for " << BATT_INSPECT(this->fake_page_id_[0]);
@@ -730,7 +728,7 @@ TEST_F(PageRecyclerTest, DuplicatePageDeletion)
                     }));
           }
 
-          ASSERT_TRUE(result.ok()) << BATT_INSPECT(result);
+          //ASSERT_TRUE(result.ok()) << BATT_INSPECT(result);
         }
 
         continue_count.fetch_add(1);  // 0 -> 1
@@ -784,8 +782,10 @@ TEST_F(PageRecyclerTest, DuplicatePageDeletion)
         // everything else the recycler has queued.
         //
         {
+          std::lock_guard lock(this->recycle_pages_mutex_);
           batt::StatusOr<llfs::slot_offset_type> result =
-              this->recycler_->recycle_page(this->fake_page_id_[this->fake_page_id_.size() - 2]);
+              this->recycler_->recycle_page(this->fake_page_id_[this->fake_page_id_.size() - 2],
+                                            this->get_and_incr_unique_offset());
         }
 
         // Wait for all pages to be deleted.
@@ -847,8 +847,9 @@ TEST_F(PageRecyclerTest, NoRefreshBatchedPage)
         // Give some PageIds to delete.
         //
         {
-          batt::StatusOr<llfs::slot_offset_type> result =
-              this->recycler_->recycle_page(this->fake_page_id_[0]);
+          std::lock_guard lock(this->recycle_pages_mutex_);
+          batt::StatusOr<llfs::slot_offset_type> result = this->recycler_->recycle_page(
+              this->fake_page_id_[0], this->get_and_incr_unique_offset());
 
           ASSERT_TRUE(result.ok()) << BATT_INSPECT(result);
         }
@@ -861,12 +862,16 @@ TEST_F(PageRecyclerTest, NoRefreshBatchedPage)
         // refresh the page we just recycled.
         //
         for (usize i = 1; i < this->fake_page_id_.size(); ++i) {
-          batt::StatusOr<llfs::slot_offset_type> result =
-              this->recycler_->recycle_page(this->fake_page_id_[i]);
-          ASSERT_TRUE(result.ok()) << BATT_INSPECT(result);
+          {
+            std::lock_guard lock(this->recycle_pages_mutex_);
+            batt::StatusOr<llfs::slot_offset_type> result = this->recycler_->recycle_page(
+                this->fake_page_id_[i], this->get_and_incr_unique_offset());
 
-          batt::Status flush_status = this->recycler_->await_flush(*result);
-          EXPECT_TRUE(flush_status.ok()) << BATT_INSPECT(flush_status);
+            ASSERT_TRUE(result.ok()) << BATT_INSPECT(result);
+            batt::Status flush_status = this->recycler_->await_flush(*result);
+
+            EXPECT_TRUE(flush_status.ok()) << BATT_INSPECT(flush_status);
+          }
         }
 
         this->save_log_snapshot();

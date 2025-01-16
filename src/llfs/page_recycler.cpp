@@ -413,10 +413,12 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<slot_offset_type> PageRecycler::recycle_page(PageId page_id, batt::Grant* grant, i32 depth)
+StatusOr<slot_offset_type> PageRecycler::recycle_page(PageId page_id,
+                                                      slot_offset_type unique_offset,
+                                                      batt::Grant* grant, i32 depth)
 {
   std::array<PageId, 1> page_ids{page_id};
-  return this->recycle_pages(batt::as_slice(page_ids), 0, grant, depth);
+  return this->recycle_pages(batt::as_slice(page_ids), unique_offset, grant, depth);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

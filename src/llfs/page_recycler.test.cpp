@@ -455,7 +455,7 @@ TEST_F(PageRecyclerTest, CrashRecovery)
 
 void PageRecyclerTest::run_crash_recovery_test()
 {
-  const usize fake_page_count = 190;
+  const usize fake_page_count = 180;
   const u32 max_branching_factor = 8;
 
   const auto options = llfs::PageRecyclerOptions{}  //

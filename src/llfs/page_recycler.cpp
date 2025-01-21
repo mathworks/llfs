@@ -335,17 +335,20 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
     return this->wal_device_->slot_range(LogReadMode::kDurable).upper_bound;
   }
 
-  // Check to see if we have already seen this or any newer request.
+  // Check to make sure request was never seen before. Note that we do unique identifier check only
+  // for depth=0 as that's coming from the external client side. For all recycler internal calls
+  // (with depth > 0) we will simply accept the request.
   //
-  if (this->largest_offset_as_unique_identifier_ >= offset_as_unique_identifier) {
+  if (this->largest_offset_as_unique_identifier_ < offset_as_unique_identifier || depth != 0) {
+    // Update the largest unique identifier and continue.
+    //
+    this->largest_offset_as_unique_identifier_ = offset_as_unique_identifier;
+  } else {
+    // Look like this is a repost of some old request thus update some status and ignore/return.
+    //
     this->metrics_export().page_id_deletion_reissue.fetch_add(1);
-
     return this->wal_device_->slot_range(LogReadMode::kDurable).upper_bound;
   }
-
-  // Update the largest unique identifier.
-  //
-  this->largest_offset_as_unique_identifier_ = offset_as_unique_identifier;
 
   Optional<slot_offset_type> sync_point = None;
 

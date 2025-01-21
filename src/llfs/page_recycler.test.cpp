@@ -228,9 +228,11 @@ class PageRecyclerTest : public ::testing::Test
         });
   }
 
+  // Returns an ever increasing unique_offset value for page recycler calls.
+  //
   slot_offset_type get_and_incr_unique_offset()
   {
-    return this->unique_offset_++;
+    return ++this->unique_offset_;
   }
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -272,7 +274,12 @@ class PageRecyclerTest : public ::testing::Test
   //
   std::unique_ptr<llfs::PageRecycler> unique_page_recycler_;
 
-  slot_offset_type unique_offset_{1};
+  // This is to track unique_offset for PageRecycler tests.
+  //
+  slot_offset_type unique_offset_{0};
+
+  // This mutex is to ensure serialized access to unique_offset counter.
+  //
   std::mutex recycle_pages_mutex_;
 };
 
@@ -445,6 +452,9 @@ TEST_F(PageRecyclerTest, CrashRecovery)
 
 void PageRecyclerTest::run_crash_recovery_test()
 {
+  // Note that increasing the page_count here most likely impact the test execution as we might run
+  // out of grant space.
+  //
   const usize fake_page_count = 180;
   const u32 max_branching_factor = 8;
 
@@ -510,19 +520,21 @@ void PageRecyclerTest::run_crash_recovery_test()
         const std::array<PageId, 1> to_recycle = {root_id};
 
         BATT_DEBUG_INFO("Test - recycle_pages");
-        std::lock_guard lock(this->recycle_pages_mutex_);
-        StatusOr<slot_offset_type> recycle_status =
-            recycler.recycle_pages(to_recycle, this->get_and_incr_unique_offset());
-        if (!recycle_status.ok()) {
-          failed = true;
-          break;
-        }
+        {
+          std::lock_guard lock(this->recycle_pages_mutex_);
+          StatusOr<slot_offset_type> recycle_status =
+              recycler.recycle_pages(to_recycle, this->get_and_incr_unique_offset());
+          if (!recycle_status.ok()) {
+            failed = true;
+            break;
+          }
 
-        BATT_DEBUG_INFO("Test - await_flush");
-        Status flush_status = recycler.await_flush(*recycle_status);
-        if (!flush_status.ok()) {
-          failed = true;
-          break;
+          BATT_DEBUG_INFO("Test - await_flush");
+          Status flush_status = recycler.await_flush(*recycle_status);
+          if (!flush_status.ok()) {
+            failed = true;
+            break;
+          }
         }
 
         ++progress;

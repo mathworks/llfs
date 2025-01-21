@@ -73,7 +73,8 @@ StatusOr<SlotRange> refresh_recycler_info_slot(TypedSlotWriter<PageRecycleEvent>
 /*static*/ u64 PageRecycler::calculate_log_size(const PageRecyclerOptions& options,
                                                 Optional<PageCount> max_buffered_page_count)
 {
-  const usize log_size_raw = calculate_log_size_no_padding(options, max_buffered_page_count);
+  const usize log_size_raw =
+      PageRecycler::calculate_log_size_no_padding(options, max_buffered_page_count);
   const usize padding_bytes = 1 * kKiB;
 
   return round_up_to_page_size_multiple(log_size_raw + padding_bytes);
@@ -175,7 +176,7 @@ StatusOr<SlotRange> refresh_recycler_info_slot(TypedSlotWriter<PageRecycleEvent>
 
   return std::unique_ptr<PageRecycler>{
       new PageRecycler(scheduler, std::string{name}, page_deleter, std::move(*recovered_log),
-                       std::move(latest_batch), std::move(state), visitor.largest_offset())};
+                       std::move(latest_batch), std::move(state), visitor.largest_unique_offset())};
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -184,7 +185,7 @@ PageRecycler::PageRecycler(batt::TaskScheduler& scheduler, const std::string& na
                            PageDeleter& page_deleter, std::unique_ptr<LogDevice>&& wal_device,
                            Optional<Batch>&& recovered_batch,
                            std::unique_ptr<PageRecycler::State>&& state,
-                           u64 largest_offset_as_unique_identifier_init) noexcept
+                           llfs::slot_offset_type largest_offset_as_unique_identifier_init) noexcept
     : scheduler_{scheduler}
     , name_{name}
     , page_deleter_{page_deleter}
@@ -329,7 +330,8 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
   LLFS_VLOG(1) << "PageRecycler::recycle_pages(page_ids=" << batt::dump_range(page_ids) << "["
                << page_ids.size() << "]"
                << ", grant=[" << (grant ? grant->size() : usize{0}) << "], depth=" << depth << ") "
-               << this->name_ << BATT_INSPECT(offset_as_unique_identifier);
+               << this->name_ << BATT_INSPECT(offset_as_unique_identifier)
+               << BATT_INSPECT(this->largest_offset_as_unique_identifier_);
 
   if (page_ids.empty()) {
     return this->wal_device_->slot_range(LogReadMode::kDurable).upper_bound;

@@ -114,7 +114,7 @@ Optional<SlotRange> PageRecyclerRecoveryVisitor::latest_info_refresh_slot() cons
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-u64 PageRecyclerRecoveryVisitor::largest_offset() const
+slot_offset_type PageRecyclerRecoveryVisitor::largest_unique_offset() const
 {
   return this->largest_offset_as_unique_identifier_;
 }

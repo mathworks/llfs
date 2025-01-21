@@ -45,7 +45,7 @@ class PageRecyclerRecoveryVisitor
 
   Optional<SlotRange> latest_info_refresh_slot() const;
 
-  u64 largest_offset() const;
+  slot_offset_type largest_unique_offset() const;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -82,7 +82,9 @@ class PageRecyclerRecoveryVisitor
    */
   Optional<SlotRange> latest_info_refresh_slot_;
 
-  u64 largest_offset_as_unique_identifier_;
+  // This is to track largest unique_offset value during recovery.
+  //
+  slot_offset_type largest_offset_as_unique_identifier_;
 };
 
 }  // namespace llfs

@@ -568,14 +568,14 @@ void run_ref_count_update_sanity_checks(const PageIdFactory& id_factory,
         << BATT_INSPECT(new_count) << ")" << BATT_INSPECT(delta_generation) << BATT_INSPECT(index);
   };
 
-  LLFS_VLOG(2) << "rrcusc: " << debug_info;
+  LLFS_VLOG(2) << debug_info;
 
   BATT_CHECK_GE(old_count, 0) << "ref counts must be non-negative" << debug_info;
   BATT_CHECK_GE(new_count, 0) << "ref counts must be non-negative" << debug_info;
 
   if (old_count == new_count) {
     BATT_CHECK_EQ(delta.ref_count, 0)
-        << "delta was non-zero but count did not change (bbora)" << debug_info;
+        << "delta was non-zero but count did not change" << debug_info;
     return;
   }
 

@@ -462,7 +462,7 @@ PageAllocatorState::ProposalStatus PageAllocatorState::propose(PackedPageAllocat
   if (status == ProposalStatus::kValid) {
     for (PackedPageRefCount& prc : txn->ref_counts) {
       LLFS_VLOG(1) << "reference count: " << prc;
-      prc.ref_count = this->calculate_new_ref_count(prc, *user_index);
+      prc.ref_count = this->calculate_new_ref_count(prc);
     }
   }
   LLFS_VLOG(1) << "propose (end): txn-ref-count= " << txn->ref_counts.size();
@@ -559,13 +559,13 @@ namespace {
 void run_ref_count_update_sanity_checks(const PageIdFactory& id_factory,
                                         const PackedPageRefCount& delta,
                                         const PageAllocatorRefCount& obj, i32 old_count,
-                                        i32 new_count, const u32 index)
+                                        i32 new_count)
 {
   const auto debug_info = [&](std::ostream& out) {
     const page_generation_int delta_generation = id_factory.get_generation(delta.page_id.unpack());
 
     out << "(" << BATT_INSPECT(delta) << BATT_INSPECT(obj) << BATT_INSPECT(old_count)
-        << BATT_INSPECT(new_count) << ")" << BATT_INSPECT(delta_generation) << BATT_INSPECT(index);
+        << BATT_INSPECT(new_count) << ")" << BATT_INSPECT(delta_generation);
   };
 
   LLFS_VLOG(2) << debug_info;
@@ -642,8 +642,7 @@ void run_ref_count_update_sanity_checks(const PageIdFactory& id_factory,
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-i32 PageAllocatorState::calculate_new_ref_count(const PackedPageRefCount& delta,
-                                                const u32 index) const
+i32 PageAllocatorState::calculate_new_ref_count(const PackedPageRefCount& delta) const
 {
   const PageId page_id = delta.page_id.unpack();
   const page_id_int physical_page = this->page_ids_.get_physical_page(page_id);
@@ -666,7 +665,7 @@ i32 PageAllocatorState::calculate_new_ref_count(const PackedPageRefCount& delta,
     new_count = old_count + delta.ref_count;
   }
 
-  run_ref_count_update_sanity_checks(this->page_ids_, delta, obj, old_count, new_count, index);
+  run_ref_count_update_sanity_checks(this->page_ids_, delta, obj, old_count, new_count);
 
   return new_count;
 }

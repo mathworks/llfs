@@ -242,7 +242,7 @@ class PageAllocatorState : public PageAllocatorStateNoLock
 
   // Returns the new ref count that will result from applying the delta to the passed obj.
   //
-  i32 calculate_new_ref_count(const PackedPageRefCount& delta, const u32 index) const;
+  i32 calculate_new_ref_count(const PackedPageRefCount& deltaa) const;
 
   /** \brief If the given ref count object has a positive ref count but *is* in the free pool, then
    * this function removes it; otherwise if the object has a zero ref count but is *not* in the free

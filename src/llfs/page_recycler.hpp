@@ -208,11 +208,14 @@ class PageRecycler
                         PageDeleter& page_deleter, std::unique_ptr<LogDevice>&& wal_device,
                         Optional<Batch>&& recovered_batch,
                         std::unique_ptr<PageRecycler::State>&& state,
-                        u64 largest_offset_as_unique_identifier_init) noexcept;
+                        u64 largest_offset_as_unique_identifier_init, u16 page_index_init) noexcept;
 
   void start_recycle_task();
 
   void recycle_task_main();
+
+  bool is_recycle_pages_allowed(const Slice<const PageId>& page_ids,
+                                llfs::slot_offset_type offset_as_unique_identifier, i32 depth);
 
   // MUST be called only on the recycle task or the ctor.
   //
@@ -220,6 +223,7 @@ class PageRecycler
 
   StatusOr<slot_offset_type> insert_to_log(batt::Grant& grant, PageId page_id, i32 depth,
                                            slot_offset_type offset_as_unique_identifier,
+                                           u16 page_index,
                                            batt::Mutex<std::unique_ptr<State>>::Lock& locked_state);
 
   StatusOr<Batch> prepare_batch(std::vector<PageToRecycle>&& to_recycle);
@@ -263,6 +267,7 @@ class PageRecycler
   Optional<slot_offset_type> latest_batch_upper_bound_;
 
   slot_offset_type largest_offset_as_unique_identifier_;
+  u16 largest_page_index_;
 };
 
 inline std::ostream& operator<<(std::ostream& out, const PageRecycler::Batch& t)

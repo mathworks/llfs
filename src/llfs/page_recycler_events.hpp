@@ -39,7 +39,10 @@ struct PageToRecycle {
   //
   i32 depth;
 
+  // The offset given by volume trimmer.
+  //
   slot_offset_type offset_as_unique_identifier;
+  u16 page_index;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -51,6 +54,7 @@ struct PageToRecycle {
         .batch_slot = None,
         .depth = 0,
         .offset_as_unique_identifier = 0,
+        .page_index = 0,
     };
   }
 
@@ -137,8 +141,9 @@ struct PackedPageToRecycle {
   little_u64 batch_slot;
   u64 offset_as_unique_identifier;
   little_i32 depth;
+  u16 page_index;
   u8 flags;
-  u8 reserved_[3];
+  u8 reserved_[1];
 };
 
 BATT_STATIC_ASSERT_EQ(32, sizeof(PackedPageToRecycle));
@@ -169,6 +174,7 @@ inline bool pack_object_to(const PageToRecycle& from, PackedPageToRecycle* to, D
     to->batch_slot = 0;
   }
   to->offset_as_unique_identifier = from.offset_as_unique_identifier;
+  to->page_index = from.page_index;
   return true;
 }
 
@@ -185,6 +191,7 @@ inline StatusOr<PageToRecycle> unpack_object(const PackedPageToRecycle& packed, 
       }(),
       .depth = packed.depth,
       .offset_as_unique_identifier = packed.offset_as_unique_identifier,
+      .page_index = packed.page_index,
   };
 }
 

@@ -454,8 +454,9 @@ bool PageAllocator::await_ref_count(PageId page_id, i32 ref_count)
     if ((counter & 4095) == 0) {
       LLFS_LOG_INFO() << BATT_INSPECT(prc) << BATT_INSPECT(page_id) << BATT_INSPECT(ref_count)
                       << BATT_INSPECT(counter);
-      BATT_CHECK_LT(counter, 10 * 1000) << "[PageAllocator::await_ref_count] timed out (10s)"
-                                        << BATT_INSPECT(page_id) << BATT_INSPECT(ref_count);
+      BATT_CHECK_LT(counter, 10 * 1000)
+          << "[PageAllocator::await_ref_count] timed out (10s)" << BATT_INSPECT(page_id)
+          << BATT_INSPECT(ref_count) << BATT_INSPECT(prc.ref_count);
     }
   }
   return true;

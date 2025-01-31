@@ -333,7 +333,7 @@ bool PageRecycler::is_recycle_pages_allowed(const Slice<const PageId>& page_ids,
     this->largest_page_index_ = 0;
     return true;
 
-  } else if (depth > 0 &&
+  } else if (depth > 0 ||
              (this->largest_offset_as_unique_identifier_ == offset_as_unique_identifier &&
               this->largest_page_index_ < page_ids.size())) {
     return true;

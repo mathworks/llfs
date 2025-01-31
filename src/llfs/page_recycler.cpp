@@ -322,24 +322,31 @@ void PageRecycler::join()
   }
 }
 
-bool PageRecycler::is_recycle_pages_allowed(const Slice<const PageId>& page_ids,
-                                            llfs::slot_offset_type offset_as_unique_identifier,
-                                            i32 depth)
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+bool PageRecycler::is_page_recycling_allowed(const Slice<const PageId>& page_ids,
+                                             llfs::slot_offset_type offset_as_unique_identifier,
+                                             i32 depth)
 {
-  if (this->largest_offset_as_unique_identifier_ < offset_as_unique_identifier) {
+  // If we got higher offset allow recycle.
+  //
+  if (this->largest_offset_as_unique_identifier_ < offset_as_unique_identifier && depth == 0) {
     // Update the largest unique identifier and index.
     //
     this->largest_offset_as_unique_identifier_ = offset_as_unique_identifier;
     this->largest_page_index_ = 0;
     return true;
-
-  } else if (depth > 0 ||
-             (this->largest_offset_as_unique_identifier_ == offset_as_unique_identifier &&
-              this->largest_page_index_ < page_ids.size())) {
+  }
+  // If we got same offset but not all pages were processed last time then allow recycle.
+  //
+  else if (depth != 0 ||
+           (this->largest_offset_as_unique_identifier_ == offset_as_unique_identifier &&
+            this->largest_page_index_ < page_ids.size())) {
     return true;
-  } else {
-    // Look like this is a repost of some old request thus update some status and ignore/return.
-    //
+  }
+  // Look like this is a repost of some old request thus update metric and do not allow recycle.
+  //
+  else {
     this->metrics_export().page_id_deletion_reissue.fetch_add(1);
     return false;
   }
@@ -370,7 +377,7 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
   //
   {
     auto locked_state = this->state_.lock();
-    if (!is_recycle_pages_allowed(page_ids_in, offset_as_unique_identifier, depth)) {
+    if (!is_page_recycling_allowed(page_ids_in, offset_as_unique_identifier, depth)) {
       return this->wal_device_->slot_range(LogReadMode::kDurable).upper_bound;
     }
   }
@@ -382,6 +389,9 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
     page_ids_list.erase(page_ids_list.begin(), page_ids_list.begin() + this->largest_page_index_);
   }
   auto page_ids = batt::as_slice(page_ids_list);
+
+  LLFS_VLOG(1) << "sorted slice: " << BATT_INSPECT(page_ids_list.size())
+               << BATT_INSPECT(this->largest_page_index_);
 
   Optional<slot_offset_type> sync_point = None;
 
@@ -422,7 +432,7 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
         // Writing to recycler log.
         StatusOr<slot_offset_type> append_slot = this->insert_to_log(
             *local_grant, page_id, depth, this->largest_offset_as_unique_identifier_,
-            this->largest_page_index_, locked_state);
+            this->largest_page_index_ + 1, locked_state);
         BATT_REQUIRE_OK(append_slot);
 
         if (depth == 0) {
@@ -443,7 +453,7 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
       // Writing to recycler log.
       StatusOr<slot_offset_type> append_slot =
           this->insert_to_log(*grant, page_id, depth, this->largest_offset_as_unique_identifier_,
-                              this->largest_page_index_, locked_state);
+                              this->largest_page_index_ + 1, locked_state);
       BATT_REQUIRE_OK(append_slot);
 
       if (depth == 0) {

@@ -383,6 +383,7 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
   }
 
   // Sort the pages.
+  //
   std::vector<PageId> page_ids_list(page_ids_in.begin(), page_ids_in.end());
   if (depth == 0) {
     std::sort(page_ids_list.begin(), page_ids_list.end());
@@ -438,6 +439,7 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
         if (depth == 0) {
           ++this->largest_page_index_;
         }
+        this->last_page_recycle_offset_ = *append_slot;
 
         clamp_min_slot(&sync_point, *append_slot);
       }
@@ -847,6 +849,12 @@ Status PageRecycler::trim_log()
       return this->latest_batch_upper_bound_.value_or(latest_info_slot);
     }
   }();
+
+  // We want to keep atleast one recycle_page slot in the log.
+  //
+  if (trim_point <= this->last_page_recycle_offset_) {
+    return batt::OkStatus();
+  }
 
   // Check to see if we need to refresh the info slot.
   //

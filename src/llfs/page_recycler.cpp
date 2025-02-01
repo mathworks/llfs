@@ -234,10 +234,10 @@ PageRecycler::PageRecycler(batt::TaskScheduler& scheduler, const std::string& na
  * flows. This is static metric infrastructure so that any user level code could access it.
  *
  */
-auto PageRecycler::metrics_export() -> MetricsExported&
+auto PageRecycler::metrics_global() -> MetricsGlobal&
 {
-  static MetricsExported& metrics_ = [&]() -> MetricsExported& {
-    static MetricsExported metrics_;
+  static MetricsGlobal& metrics_ = [&]() -> MetricsGlobal& {
+    static MetricsGlobal metrics_;
 
     LLFS_VLOG(1) << "Registering PageRecycler metrics...";
     const auto metric_name = [](std::string_view property) {
@@ -246,7 +246,7 @@ auto PageRecycler::metrics_export() -> MetricsExported&
 
 #define ADD_METRIC_(n) global_metric_registry().add(metric_name(#n), metrics_.n)
 
-    ADD_METRIC_(page_id_deletion_reissue);
+    ADD_METRIC_(page_id_deletion_reissue_count);
 
 #undef ADD_METRIC_
 
@@ -347,7 +347,7 @@ bool PageRecycler::is_page_recycling_allowed(const Slice<const PageId>& page_ids
   // Look like this is a repost of some old request thus update metric and do not allow recycle.
   //
   else {
-    this->metrics_export().page_id_deletion_reissue.fetch_add(1);
+    this->metrics_global().page_id_deletion_reissue_count.fetch_add(1);
     return false;
   }
 }

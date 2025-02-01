@@ -55,10 +55,10 @@ class PageRecycler
     CountMetric<u64> page_drop_error_count{0};
   };
 
-  struct MetricsExported {
-    CountMetric<u32> page_id_deletion_reissue{0};
+  struct MetricsGlobal {
+    CountMetric<u32> page_id_deletion_reissue_count{0};
   };
-  static MetricsExported& metrics_export();
+  static MetricsGlobal& metrics_global();
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

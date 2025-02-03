@@ -392,18 +392,16 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
     std::sort(page_ids_list.begin(), page_ids_list.end());
     page_ids_list.erase(page_ids_list.begin(), page_ids_list.begin() + this->largest_page_index_);
 
-    LLFS_VLOG(1) << "sorted slice: " << BATT_INSPECT(page_ids_list.size())
+    LLFS_VLOG(1) << "Sorted slice: " << BATT_INSPECT(page_ids_list.size())
                  << BATT_INSPECT(this->largest_page_index_);
-  }
-  auto page_ids = batt::as_slice(page_ids_list);
 
-  Optional<slot_offset_type> sync_point = None;
-
-  if (depth == 0) {
     BATT_CHECK_EQ(grant, nullptr) << "External callers to `PageRecycler::recycle_pages` should "
                                      "specify depth == 0 and grant == nullptr; other values are "
                                      "for PageRecycler internal use only.";
   }
+  const Slice<const PageId> page_ids = batt::as_slice(page_ids_list);
+
+  Optional<slot_offset_type> sync_point = None;
 
   if (grant == nullptr) {
     BATT_CHECK_EQ(depth, 0u);
@@ -439,9 +437,8 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
             this->largest_page_index_ + 1, locked_state);
         BATT_REQUIRE_OK(append_slot);
 
-        if (depth == 0) {
-          ++this->largest_page_index_;
-        }
+        ++this->largest_page_index_;
+
         this->last_page_recycle_offset_ = *append_slot;
 
         clamp_min_slot(&sync_point, *append_slot);
@@ -458,10 +455,6 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
           this->insert_to_log(*grant, page_id, depth, this->largest_offset_as_unique_identifier_,
                               this->largest_page_index_ + 1, locked_state);
       BATT_REQUIRE_OK(append_slot);
-
-      if (depth == 0) {
-        ++this->largest_page_index_;
-      }
 
       this->last_page_recycle_offset_ = *append_slot;
 

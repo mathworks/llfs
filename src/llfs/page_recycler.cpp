@@ -81,7 +81,9 @@ StatusOr<SlotRange> refresh_recycler_info_slot(TypedSlotWriter<PageRecycleEvent>
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
+/** \brief This function determins the bytes needed for bufferd pages in the log.
+ *
+ */
 /*static*/ u64 PageRecycler::calculate_log_size_no_padding(
     const PageRecyclerOptions& options, Optional<PageCount> max_buffered_page_count)
 {
@@ -234,10 +236,10 @@ PageRecycler::PageRecycler(batt::TaskScheduler& scheduler, const std::string& na
  * flows. This is static metric infrastructure so that any user level code could access it.
  *
  */
-auto PageRecycler::metrics_global() -> MetricsGlobal&
+auto PageRecycler::global_metrics() -> GlobalMetrics&
 {
-  static MetricsGlobal& metrics_ = [&]() -> MetricsGlobal& {
-    static MetricsGlobal metrics_;
+  static GlobalMetrics& metrics_ = [&]() -> GlobalMetrics& {
+    static GlobalMetrics metrics_;
 
     LLFS_VLOG(1) << "Registering PageRecycler metrics...";
     const auto metric_name = [](std::string_view property) {
@@ -347,7 +349,7 @@ bool PageRecycler::is_page_recycling_allowed(const Slice<const PageId>& page_ids
   // Look like this is a repost of some old request thus update metric and do not allow recycle.
   //
   else {
-    this->metrics_global().page_id_deletion_reissue_count.fetch_add(1);
+    this->global_metrics().page_id_deletion_reissue_count.fetch_add(1);
     return false;
   }
 }
@@ -461,6 +463,8 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
       if (depth == 0) {
         ++this->largest_page_index_;
       }
+
+      this->last_page_recycle_offset_ = *append_slot;
 
       clamp_min_slot(&sync_point, *append_slot);
     }
@@ -852,7 +856,7 @@ Status PageRecycler::trim_log()
 
   // We want to keep atleast one recycle_page slot in the log.
   //
-  if (trim_point <= this->last_page_recycle_offset_) {
+  if (trim_point >= this->last_page_recycle_offset_) {
     return batt::OkStatus();
   }
 

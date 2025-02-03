@@ -55,10 +55,10 @@ class PageRecycler
     CountMetric<u64> page_drop_error_count{0};
   };
 
-  struct MetricsGlobal {
+  struct GlobalMetrics {
     CountMetric<u32> page_id_deletion_reissue_count{0};
   };
-  static MetricsGlobal& metrics_global();
+  static GlobalMetrics& global_metrics();
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -113,7 +113,7 @@ class PageRecycler
   // necessarily flushed (see `await_flush`).
   //
   StatusOr<slot_offset_type> recycle_pages(const Slice<const PageId>& page_ids,
-                                           llfs::slot_offset_type offset,
+                                           llfs::slot_offset_type unique_offset,
                                            batt::Grant* grant = nullptr, i32 depth = 0);
 
   // Schedule a single page to be recycled.  \see recycle_pages

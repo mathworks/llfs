@@ -2172,7 +2172,7 @@ TEST_F(VolumeSimTest, DeadPageRefCountVariantSimulation)
   std::vector<usize> histogram(10);
   const usize div = max_seeds / histogram.size();
 
-  llfs::PageRecycler::metrics_global().page_id_deletion_reissue_count.set(0);
+  llfs::PageRecycler::global_metrics().page_id_deletion_reissue_count.set(0);
 
   for (u32 current_seed = 0; current_seed < max_seeds; ++current_seed) {
     LOG_EVERY_N(INFO, 100) << BATT_INSPECT(current_seed) << BATT_INSPECT(max_seeds);
@@ -2180,23 +2180,23 @@ TEST_F(VolumeSimTest, DeadPageRefCountVariantSimulation)
     yield_pre_halt = (yield_pre_halt % 2) ? pick_value1(rng) : pick_value2(rng);
     yield_post_halt = (yield_post_halt % 2) ? pick_value1(rng) : pick_value2(rng);
 
-    usize last_value = llfs::PageRecycler::metrics_global().page_id_deletion_reissue_count;
+    usize last_value = llfs::PageRecycler::global_metrics().page_id_deletion_reissue_count;
 
     ASSERT_NO_FATAL_FAILURE(
         this->run_dead_page_recovery_test_variant(current_seed, yield_pre_halt, yield_post_halt));
 
-    last_value = llfs::PageRecycler::metrics_global().page_id_deletion_reissue_count - last_value;
+    last_value = llfs::PageRecycler::global_metrics().page_id_deletion_reissue_count - last_value;
     histogram[current_seed / div] += last_value;
   }
 
   LOG(INFO) << "Ran DeadPageRefCountVariant test for " << max_seeds << " iterations..."
-            << BATT_INSPECT(llfs::PageRecycler::metrics_global().page_id_deletion_reissue_count);
+            << BATT_INSPECT(llfs::PageRecycler::global_metrics().page_id_deletion_reissue_count);
 
   display_histogram(max_seeds, histogram);
 
   // We need to have atleast one iteration hitting the issue.
   //
-  ASSERT_GE(llfs::PageRecycler::metrics_global().page_id_deletion_reissue_count, 0);
+  ASSERT_GE(llfs::PageRecycler::global_metrics().page_id_deletion_reissue_count, 0);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

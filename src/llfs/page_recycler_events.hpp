@@ -42,6 +42,9 @@ struct PageToRecycle {
   // The offset given by volume trimmer.
   //
   slot_offset_type offset_as_unique_identifier;
+
+  // This tracks the page index within recycle_pages request.
+  //
   u16 page_index;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -

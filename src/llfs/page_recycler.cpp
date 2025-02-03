@@ -326,27 +326,25 @@ void PageRecycler::join()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 /** \brief This check is to make sure this request was never seen before. Note that we do unique
- * identifier check only for depth=0 as that's coming from the external client side. For all
- * recycler internal calls (with depth > 0) we will simply accept the request.
+ * identifier check only for external calls.
  */
 bool PageRecycler::is_page_recycling_allowed(const Slice<const PageId>& page_ids,
-                                             llfs::slot_offset_type offset_as_unique_identifier,
-                                             i32 depth)
+                                             llfs::slot_offset_type offset_as_unique_identifier)
+
 {
   // If we got higher offset allow recycle.
   //
-  if (this->largest_offset_as_unique_identifier_ < offset_as_unique_identifier && depth == 0) {
+  if (this->largest_offset_as_unique_identifier_ < offset_as_unique_identifier) {
     // Update the largest unique identifier and index.
     //
     this->largest_offset_as_unique_identifier_ = offset_as_unique_identifier;
     this->largest_page_index_ = 0;
     return true;
   }
-  // If we got same offset but not all pages were processed last time or depth>0 then allow recycle.
+  // If we got same offset but not all pages were processed last time then allow recycle.
   //
-  else if (depth != 0 ||
-           (this->largest_offset_as_unique_identifier_ == offset_as_unique_identifier &&
-            this->largest_page_index_ < page_ids.size())) {
+  else if (this->largest_offset_as_unique_identifier_ == offset_as_unique_identifier &&
+           this->largest_page_index_ < page_ids.size()) {
     return true;
   }
   // Look like this is a repost of some old request thus update metric and do not allow recycle.
@@ -376,19 +374,21 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
     return this->wal_device_->slot_range(LogReadMode::kDurable).upper_bound;
   }
 
-  // Check to make sure request was never seen before.
-  //
-  {
-    auto locked_state = this->state_.lock();
-    if (!is_page_recycling_allowed(page_ids_in, offset_as_unique_identifier, depth)) {
-      return this->wal_device_->slot_range(LogReadMode::kDurable).upper_bound;
-    }
-  }
-
-  // Sort the pages.
+  // Sort the pages if called by external callers.
   //
   std::vector<PageId> page_ids_list(page_ids_in.begin(), page_ids_in.end());
   if (depth == 0) {
+    // Check to make sure request was never seen before.
+    //
+    {
+      auto locked_state = this->state_.lock();
+      if (!is_page_recycling_allowed(page_ids_in, offset_as_unique_identifier)) {
+        return this->wal_device_->slot_range(LogReadMode::kDurable).upper_bound;
+      }
+    }
+
+    // We need to include the pages which are not processed yet.
+    //
     std::sort(page_ids_list.begin(), page_ids_list.end());
     page_ids_list.erase(page_ids_list.begin(), page_ids_list.begin() + this->largest_page_index_);
 
@@ -400,7 +400,6 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
                                      "for PageRecycler internal use only.";
   }
   const Slice<const PageId> page_ids = batt::as_slice(page_ids_list);
-
   Optional<slot_offset_type> sync_point = None;
 
   if (grant == nullptr) {

@@ -215,7 +215,7 @@ class PageRecycler
   void recycle_task_main();
 
   bool is_page_recycling_allowed(const Slice<const PageId>& page_ids,
-                                 llfs::slot_offset_type offset_as_unique_identifier, i32 depth);
+                                 llfs::slot_offset_type offset_as_unique_identifier);
 
   // MUST be called only on the recycle task or the ctor.
   //

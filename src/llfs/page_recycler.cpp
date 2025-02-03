@@ -325,7 +325,10 @@ void PageRecycler::join()
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
+/** \brief This check is to make sure this request was never seen before. Note that we do unique
+ * identifier check only for depth=0 as that's coming from the external client side. For all
+ * recycler internal calls (with depth > 0) we will simply accept the request.
+ */
 bool PageRecycler::is_page_recycling_allowed(const Slice<const PageId>& page_ids,
                                              llfs::slot_offset_type offset_as_unique_identifier,
                                              i32 depth)
@@ -339,7 +342,7 @@ bool PageRecycler::is_page_recycling_allowed(const Slice<const PageId>& page_ids
     this->largest_page_index_ = 0;
     return true;
   }
-  // If we got same offset but not all pages were processed last time then allow recycle.
+  // If we got same offset but not all pages were processed last time or depth>0 then allow recycle.
   //
   else if (depth != 0 ||
            (this->largest_offset_as_unique_identifier_ == offset_as_unique_identifier &&
@@ -367,15 +370,13 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
                << ", grant=[" << (grant ? grant->size() : usize{0}) << "], depth=" << depth << ") "
                << this->name_ << BATT_INSPECT(offset_as_unique_identifier)
                << BATT_INSPECT(this->largest_offset_as_unique_identifier_)
-               << BATT_INSPECT(this->largest_page_index_);
+               << BATT_INSPECT(this->last_page_recycle_offset_);
 
   if (page_ids_in.empty()) {
     return this->wal_device_->slot_range(LogReadMode::kDurable).upper_bound;
   }
 
-  // Check to make sure request was never seen before. Note that we do unique identifier check only
-  // for depth=0 as that's coming from the external client side. For all recycler internal calls
-  // (with depth > 0) we will simply accept the request.
+  // Check to make sure request was never seen before.
   //
   {
     auto locked_state = this->state_.lock();
@@ -390,11 +391,11 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
   if (depth == 0) {
     std::sort(page_ids_list.begin(), page_ids_list.end());
     page_ids_list.erase(page_ids_list.begin(), page_ids_list.begin() + this->largest_page_index_);
+
+    LLFS_VLOG(1) << "sorted slice: " << BATT_INSPECT(page_ids_list.size())
+                 << BATT_INSPECT(this->largest_page_index_);
   }
   auto page_ids = batt::as_slice(page_ids_list);
-
-  LLFS_VLOG(1) << "sorted slice: " << BATT_INSPECT(page_ids_list.size())
-               << BATT_INSPECT(this->largest_page_index_);
 
   Optional<slot_offset_type> sync_point = None;
 
@@ -409,7 +410,6 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
 
     const PageRecyclerOptions& options = this->state_.no_lock().options;
 
-    LLFS_VLOG(1) << "recycle_pages entered grant==NULL case";
     for (PageId page_id : page_ids) {
       StatusOr<batt::Grant> local_grant = [&] {
         const usize needed_size = options.insert_grant_size();
@@ -420,7 +420,8 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
             << BATT_INSPECT(depth) << BATT_INSPECT(options.total_grant_size_for_depth(depth))
             << BATT_INSPECT(this->slot_writer_.in_use_size())
             << BATT_INSPECT(this->slot_writer_.log_capacity())
-            << BATT_INSPECT(options.recycle_task_target()) << BATT_INSPECT(page_ids.size()));
+            << BATT_INSPECT(options.recycle_task_target()) << BATT_INSPECT(page_ids.size())
+            << BATT_INSPECT(this->last_page_recycle_offset_));
 
         return this->insert_grant_pool_.spend(needed_size, batt::WaitForResource::kTrue);
       }();
@@ -448,8 +449,6 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
     }
   } else {
     BATT_CHECK_LT(depth, (i32)kMaxPageRefDepth) << BATT_INSPECT_RANGE(page_ids);
-
-    LLFS_VLOG(1) << "recycle_pages entered the valid grant case";
 
     auto locked_state = this->state_.lock();
 

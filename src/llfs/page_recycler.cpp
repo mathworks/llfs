@@ -412,13 +412,13 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
       StatusOr<batt::Grant> local_grant = [&] {
         const usize needed_size = options.insert_grant_size();
 
-        BATT_DEBUG_INFO("[PageRecycler::recycle_page] waiting for log space; "
-                        << BATT_INSPECT(needed_size)
-                        << BATT_INSPECT(this->insert_grant_pool_.size()) << BATT_INSPECT(depth)
-                        << BATT_INSPECT(options.total_grant_size_for_depth(depth))
-                        << BATT_INSPECT(this->slot_writer_.in_use_size())
-                        << BATT_INSPECT(this->slot_writer_.log_capacity())
-                        << BATT_INSPECT(options.recycle_task_target()));
+        BATT_DEBUG_INFO(
+            "[PageRecycler::recycle_page] waiting for log space; "
+            << BATT_INSPECT(needed_size) << BATT_INSPECT(this->insert_grant_pool_.size())
+            << BATT_INSPECT(depth) << BATT_INSPECT(options.total_grant_size_for_depth(depth))
+            << BATT_INSPECT(this->slot_writer_.in_use_size())
+            << BATT_INSPECT(this->slot_writer_.log_capacity())
+            << BATT_INSPECT(options.recycle_task_target()) << BATT_INSPECT(page_ids.size()));
 
         return this->insert_grant_pool_.spend(needed_size, batt::WaitForResource::kTrue);
       }();

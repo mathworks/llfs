@@ -455,7 +455,7 @@ void PageRecyclerTest::run_crash_recovery_test()
   // Note that increasing the page_count here most likely impact the test execution as we might run
   // out of grant space.
   //
-  const usize fake_page_count = 180;
+  const usize fake_page_count = 155;
   const u32 max_branching_factor = 8;
 
   const auto options = llfs::PageRecyclerOptions{}  //

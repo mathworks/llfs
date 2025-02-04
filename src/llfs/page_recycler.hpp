@@ -121,6 +121,18 @@ class PageRecycler
   StatusOr<slot_offset_type> recycle_page(PageId page_id, slot_offset_type unique_offset,
                                           batt::Grant* grant = nullptr, i32 depth = 0);
 
+  // Schedule a list of pages to be recycled when depth is ZERO. This is basically called by
+  // recycle_pages.
+  //
+  StatusOr<slot_offset_type> recycle_pages_depth_0(
+      const Slice<const PageId>& page_ids_in, llfs::slot_offset_type offset_as_unique_identifier);
+
+  // Schedule a list of pages to be recycled when depth is non-ZERO. This is basically called by
+  // recycle_pages.
+  //
+  StatusOr<slot_offset_type> recycle_pages_depth_n(const Slice<const PageId>& page_ids_in,
+                                                   batt::Grant* grant, const i32 depth);
+
   // Waits for the given slot to be flushed to durable storage.
   //
   Status await_flush(Optional<slot_offset_type> min_upper_bound);

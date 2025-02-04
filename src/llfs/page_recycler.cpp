@@ -178,7 +178,7 @@ StatusOr<SlotRange> refresh_recycler_info_slot(TypedSlotWriter<PageRecycleEvent>
 
   return std::unique_ptr<PageRecycler>{
       new PageRecycler(scheduler, std::string{name}, page_deleter, std::move(*recovered_log),
-                       std::move(latest_batch), std::move(state), visitor.largest_unique_offset(),
+                       std::move(latest_batch), std::move(state), visitor.volume_trim_offset(),
                        visitor.page_index() + 1)};
 }
 
@@ -203,7 +203,7 @@ PageRecycler::PageRecycler(batt::TaskScheduler& scheduler, const std::string& na
     , recycle_task_{}
     , metrics_{}
     , prepared_batch_{std::move(recovered_batch)}
-    , largest_offset_as_unique_identifier_{largest_offset_as_unique_identifier_init}
+    , volume_trim_slot_{largest_offset_as_unique_identifier_init}
     , largest_page_index_{page_index_init}
 {
   const PageRecyclerOptions& options = this->state_.no_lock().options;
@@ -334,16 +334,16 @@ bool PageRecycler::is_page_recycling_allowed(const Slice<const PageId>& page_ids
 {
   // If we got higher offset allow recycle.
   //
-  if (this->largest_offset_as_unique_identifier_ < offset_as_unique_identifier) {
+  if (this->volume_trim_slot_ < offset_as_unique_identifier) {
     // Update the largest unique identifier and index.
     //
-    this->largest_offset_as_unique_identifier_ = offset_as_unique_identifier;
+    this->volume_trim_slot_ = offset_as_unique_identifier;
     this->largest_page_index_ = 0;
     return true;
   }
   // If we got same offset but not all pages were processed last time then allow recycle.
   //
-  else if (this->largest_offset_as_unique_identifier_ == offset_as_unique_identifier &&
+  else if (this->volume_trim_slot_ == offset_as_unique_identifier &&
            this->largest_page_index_ < page_ids.size()) {
     return true;
   }
@@ -411,9 +411,9 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages_depth_0(
     {
       auto locked_state = this->state_.lock();
       // Writing to recycler log.
-      StatusOr<slot_offset_type> append_slot = this->insert_to_log(
-          *local_grant, page_id, depth, this->largest_offset_as_unique_identifier_,
-          this->largest_page_index_, locked_state);
+      StatusOr<slot_offset_type> append_slot =
+          this->insert_to_log(*local_grant, page_id, depth, this->volume_trim_slot_,
+                              this->largest_page_index_, locked_state);
       BATT_REQUIRE_OK(append_slot);
 
       ++this->largest_page_index_;
@@ -439,9 +439,8 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages_depth_n(const Slice<const
   auto locked_state = this->state_.lock();
   for (PageId page_id : page_ids) {
     // Writing to recycler log.
-    StatusOr<slot_offset_type> append_slot =
-        this->insert_to_log(*grant, page_id, depth, this->largest_offset_as_unique_identifier_,
-                            this->largest_page_index_, locked_state);
+    StatusOr<slot_offset_type> append_slot = this->insert_to_log(
+        *grant, page_id, depth, this->volume_trim_slot_, this->largest_page_index_, locked_state);
     BATT_REQUIRE_OK(append_slot);
 
     this->last_page_recycle_offset_ = *append_slot;
@@ -465,7 +464,7 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(
                << page_ids.size() << "]"
                << ", grant=[" << (grant ? grant->size() : usize{0}) << "], depth=" << depth << ") "
                << this->name_ << BATT_INSPECT(offset_as_unique_identifier)
-               << BATT_INSPECT(this->largest_offset_as_unique_identifier_)
+               << BATT_INSPECT(this->volume_trim_slot_)
                << BATT_INSPECT(this->last_page_recycle_offset_);
 
   if (page_ids.empty()) {

@@ -29,7 +29,7 @@ namespace llfs {
     , latest_batch_{}
     , recycler_uuid_{boost::uuids::random_generator{}()}
     , latest_info_refresh_slot_{}
-    , largest_offset_as_unique_identifier_{0}
+    , volume_trim_slot_{0}
     , largest_page_index_{0}
 {
   initialize_status_codes();
@@ -115,9 +115,9 @@ Optional<SlotRange> PageRecyclerRecoveryVisitor::latest_info_refresh_slot() cons
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-slot_offset_type PageRecyclerRecoveryVisitor::largest_unique_offset() const
+slot_offset_type PageRecyclerRecoveryVisitor::volume_trim_offset() const
 {
-  return this->largest_offset_as_unique_identifier_;
+  return this->volume_trim_slot_;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -133,8 +133,7 @@ Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
                                                const PageToRecycle& recovered)
 {
   LLFS_VLOG(1) << "Recovered slot: " << slot.offset << " " << recovered
-               << BATT_INSPECT((bool)this->latest_batch_)
-               << BATT_INSPECT(this->largest_offset_as_unique_identifier_)
+               << BATT_INSPECT((bool)this->latest_batch_) << BATT_INSPECT(this->volume_trim_slot_)
                << BATT_INSPECT(this->largest_page_index_);
 
   // Add the new record, or verify that the existing one and the new one are equivalent.
@@ -162,10 +161,10 @@ Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
   // Save the largest unique offset identifier. Note that if offsets are same then we need to only
   // update the largest page_index.
   //
-  if (this->largest_offset_as_unique_identifier_ < recovered.offset_as_unique_identifier) {
-    this->largest_offset_as_unique_identifier_ = recovered.offset_as_unique_identifier;
+  if (this->volume_trim_slot_ < recovered.offset_as_unique_identifier) {
+    this->volume_trim_slot_ = recovered.offset_as_unique_identifier;
     this->largest_page_index_ = recovered.page_index;
-  } else if (this->largest_offset_as_unique_identifier_ == recovered.offset_as_unique_identifier &&
+  } else if (this->volume_trim_slot_ == recovered.offset_as_unique_identifier &&
              this->largest_page_index_ < recovered.page_index) {
     this->largest_page_index_ = recovered.page_index;
   }

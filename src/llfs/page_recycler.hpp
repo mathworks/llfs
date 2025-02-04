@@ -278,7 +278,7 @@ class PageRecycler
 
   Optional<slot_offset_type> latest_batch_upper_bound_;
 
-  slot_offset_type largest_offset_as_unique_identifier_;
+  slot_offset_type volume_trim_slot_;
 
   u16 largest_page_index_;
 

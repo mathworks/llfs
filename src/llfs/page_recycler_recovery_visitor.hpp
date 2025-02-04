@@ -45,7 +45,7 @@ class PageRecyclerRecoveryVisitor
 
   Optional<SlotRange> latest_info_refresh_slot() const;
 
-  slot_offset_type largest_unique_offset() const;
+  slot_offset_type volume_trim_offset() const;
   u16 page_index() const;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -85,7 +85,7 @@ class PageRecyclerRecoveryVisitor
 
   // This is to track largest unique_offset value during recovery.
   //
-  slot_offset_type largest_offset_as_unique_identifier_;
+  slot_offset_type volume_trim_slot_;
 
   // This tracks the largest page_index seen so far for a given offset.
   //

@@ -22,6 +22,29 @@
 
 namespace llfs {
 
+/** \brief This is to track volume_trim_slot and page_index values for PageRecycler so that it could
+ * detect a re-issue of recycle_pages request by an external caller (like volume-trimmer side).
+ * If a duplicate request was deetcted, recycler skips adding it to its internal work queue.
+ * 'volume_trim_slot' is an ever increasing value. 'page_index' is used to allow resume of a
+ * partially executed request.
+ */
+struct VolumeTrimSlotInfo {
+  // The offset given by volume trimmer.
+  //
+  slot_offset_type volume_trim_slot;
+
+  // This tracks the page index within recycle_pages request.
+  //
+  u32 page_index;
+
+  bool operator<(const VolumeTrimSlotInfo& other) const
+  {
+    return slot_less_than(this->volume_trim_slot, other.volume_trim_slot) ||
+           (this->volume_trim_slot == other.volume_trim_slot &&
+            this->page_index < other.page_index);
+  }
+};
+
 struct PageToRecycle {
   // Which page to recycle.
   //
@@ -39,13 +62,7 @@ struct PageToRecycle {
   //
   i32 depth;
 
-  // The offset given by volume trimmer.
-  //
-  slot_offset_type volume_trim_slot;
-
-  // This tracks the page index within recycle_pages request.
-  //
-  u32 page_index;
+  VolumeTrimSlotInfo volume_trim_slot_info;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -56,8 +73,7 @@ struct PageToRecycle {
         .refresh_slot = None,
         .batch_slot = None,
         .depth = 0,
-        .volume_trim_slot = 0,
-        .page_index = 0,
+        .volume_trim_slot_info{0, 0},
     };
   }
 
@@ -168,15 +184,14 @@ inline bool pack_object_to(const PageToRecycle& from, PackedPageToRecycle* to, D
   to->page_id = from.page_id.int_value();
   to->depth = from.depth;
   to->flags = 0;
-  //std::memset(&to->reserved_, 0, sizeof(PackedPageToRecycle::reserved_));
   if (from.batch_slot) {
     to->flags |= PackedPageToRecycle::kHasBatchSlot;
     to->batch_slot = *from.batch_slot;
   } else {
     to->batch_slot = 0;
   }
-  to->volume_trim_slot = from.volume_trim_slot;
-  to->page_index = from.page_index;
+  to->volume_trim_slot = from.volume_trim_slot_info.volume_trim_slot;
+  to->page_index = from.volume_trim_slot_info.page_index;
   return true;
 }
 
@@ -192,8 +207,7 @@ inline StatusOr<PageToRecycle> unpack_object(const PackedPageToRecycle& packed, 
         return None;
       }(),
       .depth = packed.depth,
-      .volume_trim_slot = packed.volume_trim_slot,
-      .page_index = packed.page_index,
+      .volume_trim_slot_info = VolumeTrimSlotInfo{packed.volume_trim_slot, packed.page_index},
   };
 }
 

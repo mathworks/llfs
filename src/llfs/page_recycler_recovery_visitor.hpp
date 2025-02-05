@@ -45,8 +45,7 @@ class PageRecyclerRecoveryVisitor
 
   Optional<SlotRange> latest_info_refresh_slot() const;
 
-  slot_offset_type volume_trim_offset() const;
-  u32 page_index() const;
+  VolumeTrimSlotInfo volume_trim_slot_info() const;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -83,13 +82,7 @@ class PageRecyclerRecoveryVisitor
    */
   Optional<SlotRange> latest_info_refresh_slot_;
 
-  // This is to track largest unique_offset value during recovery.
-  //
-  slot_offset_type volume_trim_slot_;
-
-  // This tracks the largest page_index seen so far for a given offset.
-  //
-  u32 largest_page_index_;
+  VolumeTrimSlotInfo volume_trim_slot_info_;
 };
 
 }  // namespace llfs

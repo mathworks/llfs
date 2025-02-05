@@ -29,8 +29,7 @@ namespace llfs {
     , latest_batch_{}
     , recycler_uuid_{boost::uuids::random_generator{}()}
     , latest_info_refresh_slot_{}
-    , volume_trim_slot_{0}
-    , largest_page_index_{0}
+    , volume_trim_slot_info_{}
 {
   initialize_status_codes();
   LLFS_VLOG(1) << "PageRecyclerRecoveryVisitor()";
@@ -115,16 +114,9 @@ Optional<SlotRange> PageRecyclerRecoveryVisitor::latest_info_refresh_slot() cons
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-slot_offset_type PageRecyclerRecoveryVisitor::volume_trim_offset() const
+VolumeTrimSlotInfo PageRecyclerRecoveryVisitor::volume_trim_slot_info() const
 {
-  return this->volume_trim_slot_;
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-u32 PageRecyclerRecoveryVisitor::page_index() const
-{
-  return this->largest_page_index_;
+  return this->volume_trim_slot_info_;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -133,8 +125,9 @@ Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
                                                const PageToRecycle& recovered)
 {
   LLFS_VLOG(1) << "Recovered slot: " << slot.offset << " " << recovered
-               << BATT_INSPECT((bool)this->latest_batch_) << BATT_INSPECT(this->volume_trim_slot_)
-               << BATT_INSPECT(this->largest_page_index_);
+               << BATT_INSPECT((bool)this->latest_batch_)
+               << BATT_INSPECT(this->volume_trim_slot_info_.volume_trim_slot)
+               << BATT_INSPECT(this->volume_trim_slot_info_.page_index);
 
   // Add the new record, or verify that the existing one and the new one are equivalent.
   //
@@ -161,12 +154,8 @@ Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
   // Save the largest unique offset identifier. Note that if offsets are same then we need to only
   // update the largest page_index.
   //
-  if (this->volume_trim_slot_ < recovered.volume_trim_slot) {
-    this->volume_trim_slot_ = recovered.volume_trim_slot;
-    this->largest_page_index_ = recovered.page_index;
-  } else if (this->volume_trim_slot_ == recovered.volume_trim_slot &&
-             this->largest_page_index_ < recovered.page_index) {
-    this->largest_page_index_ = recovered.page_index;
+  if (this->volume_trim_slot_info_ < recovered.volume_trim_slot_info) {
+    this->volume_trim_slot_info_ = recovered.volume_trim_slot_info;
   }
 
   PageToRecycle& to_recycle = iter->second;

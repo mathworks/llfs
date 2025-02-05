@@ -114,24 +114,23 @@ class PageRecycler
   //
   StatusOr<slot_offset_type> recycle_pages(const Slice<const PageId>& page_ids,
                                            llfs::slot_offset_type unique_offset,
-                                           batt::Grant* grant = nullptr, i32 depth = 0);
+                                           batt::Grant* grant = nullptr, i32 depth = 0) noexcept;
 
   // Schedule a single page to be recycled.  \see recycle_pages
   //
   StatusOr<slot_offset_type> recycle_page(PageId page_id, slot_offset_type unique_offset,
-                                          batt::Grant* grant = nullptr, i32 depth = 0);
+                                          batt::Grant* grant = nullptr, i32 depth = 0) noexcept;
 
-  // Schedule a list of pages to be recycled when depth is ZERO. This is basically called by
-  // recycle_pages.
-  //
+  /** \brief Schedule a list of pages to be recycled when depth is ZERO (when called by external
+   * callers).
+   */
   StatusOr<slot_offset_type> recycle_pages_depth_0(
-      const Slice<const PageId>& page_ids_in, llfs::slot_offset_type offset_as_unique_identifier);
+      const Slice<const PageId>& page_ids_in, llfs::slot_offset_type volume_trim_slot) noexcept;
 
-  // Schedule a list of pages to be recycled when depth is non-ZERO. This is basically called by
-  // recycle_pages.
-  //
+  /** \brief Schedule a list of pages to be recycled when depth is non-ZERO.
+   */
   StatusOr<slot_offset_type> recycle_pages_depth_n(const Slice<const PageId>& page_ids_in,
-                                                   batt::Grant* grant, const i32 depth);
+                                                   batt::Grant* grant, const i32 depth) noexcept;
 
   // Waits for the given slot to be flushed to durable storage.
   //
@@ -219,23 +218,22 @@ class PageRecycler
   explicit PageRecycler(batt::TaskScheduler& scheduler, const std::string& name,
                         PageDeleter& page_deleter, std::unique_ptr<LogDevice>&& wal_device,
                         Optional<Batch>&& recovered_batch,
-                        std::unique_ptr<PageRecycler::State>&& state,
-                        u64 largest_offset_as_unique_identifier_init, u16 page_index_init) noexcept;
+                        std::unique_ptr<PageRecycler::State>&& state, u64 volume_trim_slot_init,
+                        u32 page_index_init) noexcept;
 
   void start_recycle_task();
 
   void recycle_task_main();
 
   bool is_page_recycling_allowed(const Slice<const PageId>& page_ids,
-                                 llfs::slot_offset_type offset_as_unique_identifier);
+                                 llfs::slot_offset_type volume_trim_slot) noexcept;
 
   // MUST be called only on the recycle task or the ctor.
   //
   void refresh_grants();
 
   StatusOr<slot_offset_type> insert_to_log(batt::Grant& grant, PageId page_id, i32 depth,
-                                           slot_offset_type offset_as_unique_identifier,
-                                           u16 page_index,
+                                           slot_offset_type volume_trim_slot, u32 page_index,
                                            batt::Mutex<std::unique_ptr<State>>::Lock& locked_state);
 
   StatusOr<Batch> prepare_batch(std::vector<PageToRecycle>&& to_recycle);
@@ -280,7 +278,7 @@ class PageRecycler
 
   slot_offset_type volume_trim_slot_;
 
-  u16 largest_page_index_;
+  u32 largest_page_index_;
 
   slot_offset_type last_page_recycle_offset_;
 };

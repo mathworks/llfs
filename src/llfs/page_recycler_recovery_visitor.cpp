@@ -122,7 +122,7 @@ slot_offset_type PageRecyclerRecoveryVisitor::volume_trim_offset() const
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-u16 PageRecyclerRecoveryVisitor::page_index() const
+u32 PageRecyclerRecoveryVisitor::page_index() const
 {
   return this->largest_page_index_;
 }
@@ -161,10 +161,10 @@ Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
   // Save the largest unique offset identifier. Note that if offsets are same then we need to only
   // update the largest page_index.
   //
-  if (this->volume_trim_slot_ < recovered.offset_as_unique_identifier) {
-    this->volume_trim_slot_ = recovered.offset_as_unique_identifier;
+  if (this->volume_trim_slot_ < recovered.volume_trim_slot) {
+    this->volume_trim_slot_ = recovered.volume_trim_slot;
     this->largest_page_index_ = recovered.page_index;
-  } else if (this->volume_trim_slot_ == recovered.offset_as_unique_identifier &&
+  } else if (this->volume_trim_slot_ == recovered.volume_trim_slot &&
              this->largest_page_index_ < recovered.page_index) {
     this->largest_page_index_ = recovered.page_index;
   }

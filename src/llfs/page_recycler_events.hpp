@@ -41,11 +41,11 @@ struct PageToRecycle {
 
   // The offset given by volume trimmer.
   //
-  slot_offset_type offset_as_unique_identifier;
+  slot_offset_type volume_trim_slot;
 
   // This tracks the page index within recycle_pages request.
   //
-  u16 page_index;
+  u32 page_index;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -56,7 +56,7 @@ struct PageToRecycle {
         .refresh_slot = None,
         .batch_slot = None,
         .depth = 0,
-        .offset_as_unique_identifier = 0,
+        .volume_trim_slot = 0,
         .page_index = 0,
     };
   }
@@ -142,11 +142,10 @@ struct PackedPageToRecycle {
 
   little_page_id_int page_id;
   little_u64 batch_slot;
-  u64 offset_as_unique_identifier;
-  little_i32 depth;
-  u16 page_index;
+  little_u64 volume_trim_slot;
+  little_u32 page_index;
+  little_i24 depth;
   u8 flags;
-  u8 reserved_[1];
 };
 
 BATT_STATIC_ASSERT_EQ(32, sizeof(PackedPageToRecycle));
@@ -169,14 +168,14 @@ inline bool pack_object_to(const PageToRecycle& from, PackedPageToRecycle* to, D
   to->page_id = from.page_id.int_value();
   to->depth = from.depth;
   to->flags = 0;
-  std::memset(&to->reserved_, 0, sizeof(PackedPageToRecycle::reserved_));
+  //std::memset(&to->reserved_, 0, sizeof(PackedPageToRecycle::reserved_));
   if (from.batch_slot) {
     to->flags |= PackedPageToRecycle::kHasBatchSlot;
     to->batch_slot = *from.batch_slot;
   } else {
     to->batch_slot = 0;
   }
-  to->offset_as_unique_identifier = from.offset_as_unique_identifier;
+  to->volume_trim_slot = from.volume_trim_slot;
   to->page_index = from.page_index;
   return true;
 }
@@ -193,7 +192,7 @@ inline StatusOr<PageToRecycle> unpack_object(const PackedPageToRecycle& packed, 
         return None;
       }(),
       .depth = packed.depth,
-      .offset_as_unique_identifier = packed.offset_as_unique_identifier,
+      .volume_trim_slot = packed.volume_trim_slot,
       .page_index = packed.page_index,
   };
 }

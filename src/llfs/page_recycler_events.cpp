@@ -19,8 +19,8 @@ std::ostream& operator<<(std::ostream& out, const PageToRecycle& t)
 {
   return out << "PageToRecycle{.page_id=" << t.page_id << ", .refresh_slot=" << t.refresh_slot
              << ", .batch_slot=" << t.batch_slot << ", .depth=" << t.depth
-             << ", offset_as_unique_identifier=" << t.offset_as_unique_identifier
-             << ", page_index=" << t.page_index << ",}";
+             << ", volume_trim_slot=" << t.volume_trim_slot << ", page_index=" << t.page_index
+             << ",}";
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

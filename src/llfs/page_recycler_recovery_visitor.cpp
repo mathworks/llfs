@@ -29,7 +29,6 @@ namespace llfs {
     , latest_batch_{}
     , recycler_uuid_{boost::uuids::random_generator{}()}
     , latest_info_refresh_slot_{}
-    , volume_trim_slot_info_{}
 {
   initialize_status_codes();
   LLFS_VLOG(1) << "PageRecyclerRecoveryVisitor()";
@@ -116,7 +115,10 @@ Optional<SlotRange> PageRecyclerRecoveryVisitor::latest_info_refresh_slot() cons
 //
 VolumeTrimSlotInfo PageRecyclerRecoveryVisitor::volume_trim_slot_info() const
 {
-  return this->volume_trim_slot_info_;
+  if (this->volume_trim_slot_info_) {
+    return *this->volume_trim_slot_info_;
+  }
+  return VolumeTrimSlotInfo{};
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -126,8 +128,8 @@ Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
 {
   LLFS_VLOG(1) << "Recovered slot: " << slot.offset << " " << recovered
                << BATT_INSPECT((bool)this->latest_batch_)
-               << BATT_INSPECT(this->volume_trim_slot_info_.volume_trim_slot)
-               << BATT_INSPECT(this->volume_trim_slot_info_.page_index);
+               << BATT_INSPECT(this->volume_trim_slot_info_->volume_trim_slot)
+               << BATT_INSPECT(this->volume_trim_slot_info_->page_index);
 
   // Add the new record, or verify that the existing one and the new one are equivalent.
   //
@@ -151,10 +153,12 @@ Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
     existing_record.batch_slot = recovered.batch_slot;
   }
 
-  // Save the largest unique offset identifier. Note that if offsets are same then we need to only
-  // update the largest page_index.
+  // Save the largest unique offset identifier. If it's the first offset we read from log then just
+  // initialize 'volume_trim_slot_info_'.
   //
-  if (this->volume_trim_slot_info_ < recovered.volume_trim_slot_info) {
+  if (!this->volume_trim_slot_info_) {
+    this->volume_trim_slot_info_ = recovered.volume_trim_slot_info;
+  } else if (*this->volume_trim_slot_info_ < recovered.volume_trim_slot_info) {
     this->volume_trim_slot_info_ = recovered.volume_trim_slot_info;
   }
 

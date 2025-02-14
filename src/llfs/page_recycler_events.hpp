@@ -23,10 +23,10 @@
 namespace llfs {
 
 /** \brief This is to track volume_trim_slot and page_index values for PageRecycler so that it could
- * detect a re-issue of recycle_pages request by an external caller (like volume-trimmer side).
- * If a duplicate request was deetcted, recycler skips adding it to its internal work queue.
- * 'volume_trim_slot' is an ever increasing value. 'page_index' is used to allow resume of a
- * partially executed request.
+ * detect re-issue of recycle_pages request by an external caller (like volume-trimmer).
+ * If a duplicate request is detected, recycler skips adding it to it's internal work queue.
+ * 'volume_trim_slot' is an ever increasing value. 'page_index' is to used to resume a partially
+ * executed request.
  */
 struct VolumeTrimSlotInfo {
   // The offset given by volume trimmer.

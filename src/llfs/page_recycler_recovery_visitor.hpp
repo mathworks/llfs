@@ -82,7 +82,9 @@ class PageRecyclerRecoveryVisitor
    */
   Optional<SlotRange> latest_info_refresh_slot_;
 
-  VolumeTrimSlotInfo volume_trim_slot_info_;
+  /** \brief Tracks the highest volume-trim-slot during recovery.
+   */
+  Optional<VolumeTrimSlotInfo> volume_trim_slot_info_;
 };
 
 }  // namespace llfs

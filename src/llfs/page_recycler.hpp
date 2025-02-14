@@ -56,7 +56,7 @@ class PageRecycler
   };
 
   struct GlobalMetrics {
-    CountMetric<u32> page_id_deletion_reissue_count{0};
+    CountMetric<u64> page_id_deletion_reissue_count{0};
   };
   static GlobalMetrics& global_metrics();
 
@@ -66,12 +66,6 @@ class PageRecycler
 
   static u64 calculate_log_size(const PageRecyclerOptions& options,
                                 Optional<PageCount> max_buffered_page_count = None);
-
-  /** \brief This function determins the bytes needed for bufferd pages in the log. Part of the
-   * calculation is based on number of buffered-pages and total-page-grant size.
-   */
-  static u64 calculate_log_size_no_padding(const PageRecyclerOptions& options,
-                                           Optional<PageCount> max_buffered_page_count = None);
 
   static PageCount calculate_max_buffered_page_count(const PageRecyclerOptions& options,
                                                      u64 log_size);
@@ -233,6 +227,13 @@ class PageRecycler
    */
   bool is_page_recycling_allowed(const Slice<const PageId>& page_ids,
                                  llfs::slot_offset_type volume_trim_slot);
+
+  /** \brief This function determins the minimum log size based on passed in options. The
+   * calculation is based on passed in number of pages that log needs to contain and a fixed space
+   * needed for recycler to handle its tasks.
+   */
+  static u64 calculate_log_size_no_padding(const PageRecyclerOptions& options,
+                                           Optional<PageCount> max_buffered_page_count);
 
   // MUST be called only on the recycle task or the ctor.
   //

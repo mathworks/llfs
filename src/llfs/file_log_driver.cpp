@@ -119,7 +119,7 @@ StatusOr<std::unique_ptr<FileLogDevice>> FileLogDriver::recover(const Location& 
 
   // Whatever wasn't consumed by the scan function must be truncated from the end of the log.
   //
-  const auto bytes_to_truncate = slot_distance(*scan_status, driver.get_flush_pos());
+  const auto bytes_to_truncate = LLFS_CHECKED_SLOT_DISTANCE(*scan_status, driver.get_flush_pos());
   auto truncate_status = active_file->truncate(bytes_to_truncate);
   BATT_REQUIRE_OK(truncate_status);
 

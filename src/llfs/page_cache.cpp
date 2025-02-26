@@ -423,6 +423,15 @@ void PageCache::prefetch_hint(PageId page_id)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+const std::vector<std::shared_ptr<PageDeviceEntry>>& PageCache::devices_by_id()
+{
+  batt::ScopedReadLock<State> state(this->state_);
+  const std::vector<std::shared_ptr<PageDeviceEntry>>& page_devices = state->page_devices;
+  return page_devices;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 std::vector<std::shared_ptr<const PageCache::PageDeviceEntry>> PageCache::all_devices()
 {
   batt::ScopedReadLock<State> state(this->state_);
@@ -540,7 +549,7 @@ void PageCache::purge(PageId page_id, u64 callers, u64 job_id)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-PageCache::PageDeviceEntry* PageCache::get_device_for_page(PageId page_id)
+PageDeviceEntry* PageCache::get_device_for_page(PageId page_id)
 {
   batt::ScopedReadLock<State> state(this->state_);
   const page_device_id_int device_id = PageIdFactory::get_device_id(page_id);

@@ -96,6 +96,36 @@ Status StorageContext::add_existing_file(const batt::SharedPtr<StorageFile>& fil
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+StatusOr<std::unique_ptr<LogDeviceFactory>> StorageContext::recover_log_device(
+    const boost::uuids::uuid& uuid, const LogDeviceRuntimeOptions& log_runtime_options)
+{
+  batt::SharedPtr<StorageObjectInfo> info = this->find_object_by_uuid(uuid);
+  if (!info) {
+    return {batt::StatusCode::kNotFound};
+  }
+
+  switch (info->p_config_slot->tag) {
+      //----- --- -- -  -  -   -
+    case PackedConfigSlotBase::Tag::kLogDevice:
+      return {::llfs::make_status(::llfs::StatusCode::kLogDeviceV1Deprecated)};
+
+      //----- --- -- -  -  -   -
+    case PackedConfigSlotBase::Tag::kLogDevice2:
+      return recover_storage_object(
+          batt::shared_ptr_from(this), info->storage_file->file_name(),
+          FileOffsetPtr<const PackedLogDeviceConfig2&>{
+              config_slot_cast<PackedLogDeviceConfig2>(info->p_config_slot.object),
+              info->p_config_slot.file_offset},
+          log_runtime_options);
+
+      //----- --- -- -  -  -   -
+    default:
+      return ::llfs::make_status(::llfs::StatusCode::kStorageObjectTypeError);
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void StorageContext::set_page_cache_options(const PageCacheOptions& options)
 {
   this->page_cache_options_ = options;
@@ -126,7 +156,7 @@ StatusOr<batt::SharedPtr<PageCache>> StorageContext::get_page_cache()
               .name = batt::to_string(base_name, "_Allocator"),
           },
           [&] {
-            IoRingLogDriverOptions options;
+            LogDeviceRuntimeOptions options;
             options.name = batt::to_string(base_name, "_AllocatorLog");
             return options;
           }(),

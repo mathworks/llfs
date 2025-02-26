@@ -13,12 +13,11 @@
 #include <llfs/crc.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/packed_array.hpp>
+#include <llfs/packed_uuid.hpp>
 #include <llfs/version.hpp>
 
 #include <batteries/static_assert.hpp>
 #include <batteries/suppress.hpp>
-
-#include <boost/uuid/uuid.hpp>
 
 #include <cstddef>
 
@@ -32,6 +31,7 @@ struct PackedConfigSlotBase {
     static constexpr u16 kLogDevice = 3;      //
     static constexpr u16 kPageDevice = 4;     //
     static constexpr u16 kPageAllocator = 5;  //
+    static constexpr u16 kLogDevice2 = 6;     // Simpler, optimized version of kLogDevice
 
     // The range [0x1000..0x1fff] is reserved for continuation slots.
 
@@ -59,7 +59,7 @@ BATT_STATIC_ASSERT_EQ(sizeof(PackedConfigSlotBase), 4);
 struct PackedConfigSlotHeader : PackedConfigSlotBase {
   // The globally unique identifier of this object.
   //
-  boost::uuids::uuid uuid;
+  PackedUUID uuid;
 };
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedConfigSlotHeader), 20);

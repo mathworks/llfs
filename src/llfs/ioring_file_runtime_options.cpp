@@ -13,6 +13,8 @@
 #include <llfs/ioring_file_runtime_options.hpp>
 //
 
+#include <llfs/filesystem.hpp>
+
 namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -54,7 +56,7 @@ StatusOr<IoRing::File> open_ioring_file(const std::string& file_name,
   }
 
   int fd = batt::syscall_retry([&] {
-    return ::open(file_name.c_str(), flags);
+    return system_open2(file_name.c_str(), flags);
   });
   BATT_REQUIRE_OK(batt::status_from_retval(fd));
 

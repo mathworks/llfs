@@ -10,24 +10,24 @@
 #ifndef LLFS_PACKED_PAGE_USER_SLOT_HPP
 #define LLFS_PACKED_PAGE_USER_SLOT_HPP
 
+#include <llfs/config.hpp>
+//
 #include <llfs/int_types.hpp>
+#include <llfs/packed_slot_offset.hpp>
+#include <llfs/packed_uuid.hpp>
 
 #include <batteries/static_assert.hpp>
-
-#include <boost/uuid/uuid.hpp>
 
 #include <ostream>
 
 namespace llfs {
-
-using PackedSlotOffset = little_u64;
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 // Represents a user-specified logical timestamp for a page.  The `user` here isn't necessarily an
 // end-user or human, it could be another part of the system (e.g., a Tablet).
 //
 struct PackedPageUserSlot {
-  boost::uuids::uuid user_id;
+  PackedUUID user_id;
   PackedSlotOffset slot_offset;
 };
 

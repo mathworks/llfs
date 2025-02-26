@@ -56,6 +56,12 @@ class TestConfig
    */
   std::filesystem::path data_file_path(std::string_view file_rel_path) noexcept;
 
+  /** \brief Returns initial random seed for tests that use pseudo-random number generators.
+   *
+   * Tries to read from env var `LLFS_TEST_RANDOM_SEED`; defaults to 0.
+   */
+  usize get_random_seed() noexcept;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
   bool extra_testing_;
@@ -63,6 +69,8 @@ class TestConfig
   bool low_level_log_device_sim_;
 
   std::filesystem::path project_dir_;
+
+  usize random_seed_;
 };
 
 }  //namespace testing

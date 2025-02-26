@@ -11,10 +11,9 @@
 
 #include <llfs/basic_ring_buffer_log_device.hpp>
 #include <llfs/confirm.hpp>
-#include <llfs/ioring_log_driver.hpp>
-#include <llfs/ioring_log_driver_options.hpp>
-#include <llfs/ioring_log_flush_op.hpp>
-#include <llfs/ioring_log_initializer.hpp>
+#include <llfs/ioring_log_config2.hpp>
+#include <llfs/ioring_log_device2.hpp>
+#include <llfs/log_device_runtime_options.hpp>
 #include <llfs/simulated_log_device.hpp>
 #include <llfs/simulated_log_device_impl.hpp>
 #include <llfs/simulated_page_device.hpp>
@@ -52,6 +51,18 @@ class StorageSimulation::TaskSchedulerImpl : public batt::TaskScheduler
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+/*explicit*/ StorageSimulation::StorageSimulation(RandomSeed seed) noexcept
+    : StorageSimulation{batt::StateMachineEntropySource{
+          /*entropy_fn=*/[rng = std::make_shared<std::default_random_engine>(seed)](
+                             usize min_value, usize max_value) -> usize {
+            std::uniform_int_distribution<usize> pick_value{min_value, max_value};
+            return pick_value(*rng);
+          }}}
+{
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 /*explicit*/ StorageSimulation::StorageSimulation(
     batt::StateMachineEntropySource&& entropy_source) noexcept
     : entropy_source_{std::move(entropy_source)}
@@ -80,12 +91,8 @@ void StorageSimulation::run_main_task(std::function<void()> main_fn)
 
   const bool was_running = this->is_running_.exchange(true);
 
-  const bool saved_quiet_logging =
-      default_ioring_quiet_failure_logging().exchange(this->low_level_log_devices_);
-
   auto on_scope_exit = batt::finally([&] {
     this->is_running_.store(was_running);
-    default_ioring_quiet_failure_logging().store(saved_quiet_logging);
     LLFS_LOG_SIM_EVENT() << "leaving run_main_task()";
   });
 
@@ -200,8 +207,8 @@ void StorageSimulation::handle_events(bool main_fn_done)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-SimulatedLogDeviceStorage StorageSimulation::get_log_device_storage(const std::string& name,
-                                                                    Optional<u64> capacity)
+SimulatedLogDeviceStorage StorageSimulation::get_log_device_storage(
+    const std::string& name, Optional<u64> capacity, Optional<Interval<i64>> file_offset)
 {
   auto iter = this->log_storage_.find(name);
 
@@ -209,16 +216,10 @@ SimulatedLogDeviceStorage StorageSimulation::get_log_device_storage(const std::s
   //
   if (iter == this->log_storage_.end()) {
     BATT_CHECK(capacity.has_value());
+    BATT_CHECK(file_offset.has_value());
 
-    auto config = IoRingLogConfig::from_logical_size(*capacity);
-    auto durable_state = std::make_shared<SimulatedLogDeviceStorage::DurableState>(*this, config);
-
-    Status init_status =
-        initialize_ioring_log_device(*std::make_unique<SimulatedLogDeviceStorage::RawBlockFileImpl>(
-                                         batt::make_copy(durable_state)),
-                                     config, ConfirmThisWillEraseAllMyData::kYes);
-
-    BATT_CHECK_OK(init_status);
+    auto durable_state =
+        std::make_shared<SimulatedLogDeviceStorage::DurableState>(*this, *capacity, *file_offset);
 
     iter = this->log_storage_.emplace(name, std::move(durable_state)).first;
   }
@@ -235,21 +236,31 @@ std::unique_ptr<LogDevice> StorageSimulation::get_log_device(const std::string& 
                                                              Optional<u64> capacity)
 {
   if (this->low_level_log_devices_) {
-    SimulatedLogDeviceStorage storage = this->get_log_device_storage(name, capacity);
-    IoRingLogConfig config = storage.config();
-    auto options = IoRingLogDriverOptions::with_default_values();
+    auto file_offset = [&]() -> Optional<Interval<i64>> {
+      if (!capacity) {
+        return None;
+      }
+      auto config = IoRingLogConfig2::from_logical_size(*capacity);
+      return config.offset_range();
+    }();
+    SimulatedLogDeviceStorage storage = this->get_log_device_storage(name, capacity, file_offset);
+
+    auto config = IoRingLogConfig2::from_logical_size(storage.log_size());
+
+    if (!storage.is_initialized()) {
+      Status init_status = initialize_log_device2(*storage.get_raw_block_file(), config,
+                                                  ConfirmThisWillEraseAllMyData::kYes);
+
+      BATT_CHECK_OK(init_status);
+
+      storage.set_initialized(true);
+    }
+
+    auto options = LogDeviceRuntimeOptions::with_default_values();
     options.name = name;
-    options.limit_queue_depth(config.block_count());
 
-    using DriverT = BasicIoRingLogDriver<BasicIoRingLogFlushOp, SimulatedLogDeviceStorage>;
-    using LogDeviceT = BasicRingBufferLogDevice<DriverT>;
-
-    batt::TaskScheduler& scheduler =
-        this->is_running() ? this->task_scheduler() : batt::Runtime::instance().default_scheduler();
-
-    auto log_device =
-        std::make_unique<LogDeviceT>(RingBuffer::TempFile{.byte_size = config.logical_size},
-                                     scheduler, std::move(storage), config, options);
+    auto log_device = std::make_unique<BasicIoRingLogDevice2<SimulatedLogDeviceStorage>>(
+        config, options, std::move(storage));
 
     BATT_CHECK_OK(log_device->open());
 
@@ -396,18 +407,19 @@ const batt::SharedPtr<PageCache>& StorageSimulation::init_cache() noexcept
       //----- --- -- -  -  -   -
       std::unique_ptr<PageDevice> page_device = this->get_page_device(arena.page_device_name);
 
+      const PageSize page_size = page_device->page_size();
       const PageIdFactory page_ids = page_device->page_ids();
 
-      arenas.emplace_back(
-          PageArena{std::move(page_device),
-                    PageAllocator::recover_or_die(
-                        PageAllocatorRuntimeOptions{
-                            .scheduler = this->task_scheduler(),
-                            .name = arena.allocator_log_device_name,
-                        },
-                        page_ids, *std::make_unique<BasicLogDeviceFactory>([this, &arena] {
-                          return this->get_log_device(arena.allocator_log_device_name);
-                        }))});
+      arenas.emplace_back(PageArena{
+          std::move(page_device),
+          PageAllocator::recover_or_die(
+              PageAllocatorRuntimeOptions{
+                  .scheduler = this->task_scheduler(),
+                  .name = arena.allocator_log_device_name,
+              },
+              page_size, page_ids, *std::make_unique<BasicLogDeviceFactory>([this, &arena] {
+                return this->get_log_device(arena.allocator_log_device_name);
+              }))});
     }
     this->cache_ = BATT_OK_RESULT_OR_PANIC(PageCache::make_shared(std::move(arenas)));
 
@@ -421,6 +433,16 @@ const batt::SharedPtr<PageCache>& StorageSimulation::init_cache() noexcept
     }
   }
   return this->cache_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+std::unique_ptr<LogDeviceFactory> StorageSimulation::get_log_device_factory(const std::string& name,
+                                                                            Optional<u64> capacity)
+{
+  return std::make_unique<BasicLogDeviceFactory>([this, name, capacity] {
+    return this->get_log_device(name, capacity);
+  });
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

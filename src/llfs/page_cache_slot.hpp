@@ -42,7 +42,6 @@ class PageCacheSlot
  public:
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   // State Transition Diagram:
-  //
   //                                     ┌─────────┐
   //                               ┌─────│ Invalid │──────────┐
   //                        fill() │     └─────────┘          │ clear()
@@ -50,17 +49,17 @@ class PageCacheSlot
   //                               │          │               │
   //                               │          │evict()        │
   //                               ▼          │               ▼
-  //                      ┌────────────────┐  │      ┌─────────────────┐
-  //               ┌──────│ Valid + Filled │──┴──────│ Valid + Cleared │
-  //               │      └────────────────┘         └─────────────────┘
-  //               │               ▲
-  // acquire_pin():│               │
-  //     0 -> 1    │               │release_pin():
-  //               │               │    1 -> 0
-  //               │               │
-  //               │  ┌─────────────────────────┐
-  //               └─▶│ Valid + Filled + Pinned │
-  //                  └─────────────────────────┘
+  //                      ┌────────────────┐  │             ┌─────────────────┐
+  //               ┌──────│ Valid + Filled │──┴─────────────│ Valid + Cleared │
+  //               │      └────────────────┘                └─────────────────┘
+  //               │               ▲              acquire_pin()  │       ▲
+  // acquire_pin():│               │                             │       │
+  //     0 -> 1    │               │release_pin():               │       │ release_pin()
+  //               │               │    1 -> 0                   │       │
+  //               │               │                             ▼       │
+  //               │  ┌─────────────────────────┐       ┌──────────────────────────┐
+  //               └─▶│ Valid + Filled + Pinned │       │ Valid + Cleared + Pinned │
+  //                  └─────────────────────────┘       └──────────────────────────┘
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -108,7 +107,7 @@ class PageCacheSlot
 
   /** \brief Returns the pin count bit field within the passed state integer.
    */
-  static constexpr u32 get_pin_count(u64 state)
+  static constexpr u64 get_pin_count(u64 state)
   {
     return state >> kPinCountShift;
   }
@@ -203,7 +202,7 @@ class PageCacheSlot
 
   /** \brief Returns the current pin count of the slot; if this is 0, the slot is not pinned.
    */
-  u32 pin_count() const noexcept;
+  u64 pin_count() const noexcept;
 
   /** \brief Conditionally pins the slot so it can't be evicted.
    *
@@ -265,7 +264,7 @@ class PageCacheSlot
    */
   void update_latest_use() noexcept;
 
-  /** Give a hint to the cache that this slot is likely to be needed again in the future.
+  /** Give a hint to the cache that this slot is unlikely to be needed again in the future.
    *
    * This function sets the latest_use LTS to a very old value.
    */

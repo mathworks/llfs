@@ -79,6 +79,39 @@ struct KeyOrder {
   }
 };
 
+inline i32 compare_keys(const KeyView& left, const KeyView& right) noexcept
+{
+  const usize left_size = left.size();
+  const usize right_size = right.size();
+
+  const void* const left_data = left.data();
+  const void* const right_data = right.data();
+
+  if (left_size < right_size) {
+    const i32 ord = __builtin_memcmp(left_data, right_data, left_size);
+    if (ord > 0) {
+      return 1;
+    } else {
+      return -1;
+    }
+  } else {
+    const i32 ord = __builtin_memcmp(left_data, right_data, right_size);
+    if (ord < 0) {
+      return -1;
+    }
+    if (ord != 0 || left_size != right_size) {
+      return 1;
+    }
+    return 0;
+  }
+}
+
+template <typename L, typename R>
+inline i32 compare_keys(const L& left, const R& right) noexcept
+{
+  return compare_keys(get_key(left), get_key(right));
+}
+
 struct KeyEqual {
   template <typename L, typename R>
   bool operator()(const L& left, const R& right) const

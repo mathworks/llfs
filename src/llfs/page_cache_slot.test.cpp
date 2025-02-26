@@ -32,6 +32,8 @@ namespace {
 //     f. Valid + Filled + Pinned --(acquire_pin)-- >Valid + Filled + Pinned
 //     g. Valid + Filled + Pinned --(release_pin)-- >Valid + Filled + Pinned
 //     h. Valid + Filled + Pinned --(release_pin)-- >Valid + Filled
+//     i. Valid + Cleared --(acquire_pin)--> Valid + Cleared + Pinned
+//     j. Valid + Cleared + Pinned --(release_pin)--> Valid + Cleared
 //  4. extend_pin increases pin count
 //     a. success if already > 0
 //     b. panic otherwise
@@ -44,8 +46,10 @@ namespace {
 //     a. Valid + Filled
 //     b. Valid + Cleared
 //     c. Valid + Filled + Pinned
+//     d. Valid + Cleared + Pinned
 //  8. update_latest_use
 //  9. set_obsolete_hint
+//  10. concurrent ref and pin count testing
 //
 
 using namespace llfs::int_types;
@@ -64,7 +68,7 @@ class PageCacheSlotTest : public ::testing::Test
 //  1. Create slots with different index values in a Pool; verify index()
 //     - also verify initial is_valid state
 //
-TEST_F(PageCacheSlotTest, CreateSlotsDeath)
+TEST_F(PageCacheSlotTest, CreateSlots)
 {
   for (usize i = 0; i < kNumTestSlots; ++i) {
     llfs::PageCacheSlot* slot = this->pool_->allocate();
@@ -76,7 +80,7 @@ TEST_F(PageCacheSlotTest, CreateSlotsDeath)
     EXPECT_FALSE(slot->is_valid());
 
     if (i == 0) {
-      EXPECT_DEATH(slot->value(), ".*Assert.*failed:.*this->value_.*==.*true.*");
+      EXPECT_EQ(slot->value(), nullptr);
     }
 
     EXPECT_FALSE(slot->key().is_valid());
@@ -131,6 +135,8 @@ TEST_F(PageCacheSlotTest, AddRemoveRefDeath)
 //     f. Valid + Filled + Pinned --(acquire_pin)-- >Valid + Filled + Pinned
 //     g. Valid + Filled + Pinned --(release_pin)-- >Valid + Filled + Pinned
 //     h. Valid + Filled + Pinned --(release_pin)-- >Valid + Filled
+//     i. Valid + Cleared --(acquire_pin)--> Valid + Cleared + Pinned
+//     j. Valid + Cleared + Pinned --(release_pin)--> Valid + Cleared
 //
 TEST_F(PageCacheSlotTest, StateTransitions)
 {
@@ -142,6 +148,21 @@ TEST_F(PageCacheSlotTest, StateTransitions)
   //
   slot->clear();
   EXPECT_TRUE(slot->is_valid());
+
+  //     i. Valid + Cleared --(acquire_pin)--> Valid + Cleared + Pinned
+  //
+  {
+    llfs::PageCacheSlot::PinnedRef valid_cleared_ref =
+        slot->acquire_pin(llfs::PageId{}, /*ignore_key=*/true);
+    EXPECT_EQ(valid_cleared_ref.value(), nullptr);
+    EXPECT_EQ(slot->pin_count(), 1u);
+    EXPECT_EQ(slot->ref_count(), 1u);
+  }
+
+  //     j. Valid + Cleared + Pinned --(release_pin)--> Valid + Cleared
+  //
+  EXPECT_EQ(slot->pin_count(), 0);
+  EXPECT_EQ(slot->ref_count(), 0);
 
   //     c. Valid + Cleared --(evict)--> Invalid
   //
@@ -390,6 +411,7 @@ TEST_F(PageCacheSlotTest, FillFailureAlreadyFilledDeath)
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //  7. fill fails when state is not Invalid:
 //     b. Valid + Cleared
+//     d. Valid + Cleared + Pinned
 //
 TEST_F(PageCacheSlotTest, FillFailureClearedDeath)
 {
@@ -399,6 +421,14 @@ TEST_F(PageCacheSlotTest, FillFailureClearedDeath)
 
   slot->clear();
 
+  {
+    llfs::PageCacheSlot::PinnedRef valid_cleared_ref =
+        slot->acquire_pin(llfs::PageId{}, /*ignore_key=*/true);
+    EXPECT_TRUE(slot->is_valid());
+    EXPECT_DEATH(slot->fill(llfs::PageId{2}), "Assert.*fail.*is.*valid");
+  }
+
+  EXPECT_EQ(slot->pin_count(), 0u);
   EXPECT_TRUE(slot->is_valid());
   EXPECT_DEATH(slot->fill(llfs::PageId{2}), "Assert.*fail.*is.*valid");
   EXPECT_DEATH(slot->clear(), "Assert.*fail.*is.*valid");
@@ -422,6 +452,55 @@ TEST_F(PageCacheSlotTest, LatestUse)
   i64 t2 = slot->get_latest_use();
 
   EXPECT_LT(t2 - t1, 0);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//  10. Concurrent ref and pin count testing
+//
+TEST_F(PageCacheSlotTest, RefCounting)
+{
+  // The slot will start off in an Invalid state with a pin count and ref count of 0.
+  //
+  llfs::PageCacheSlot* slot = this->pool_->allocate();
+  EXPECT_FALSE(slot->is_valid());
+  EXPECT_EQ(slot->pin_count(), 0);
+  EXPECT_EQ(slot->ref_count(), 0);
+
+  u64 numThreads = std::thread::hardware_concurrency();
+  std::vector<std::thread> threads;
+  std::atomic<bool> start{false};
+  for (u64 i = 0; i < numThreads; ++i) {
+    threads.emplace_back([&slot, &start, i]() {
+      while (!start.load()) {
+        continue;
+      }
+
+      // Split the workload: let half the threads perform acquire_pin calls and
+      // let the other half perform evictions.
+      //
+      if (i % 2) {
+        {
+          llfs::PageCacheSlot::PinnedRef pinned =
+              slot->acquire_pin(llfs::PageId{}, /*ignore_key=*/true);
+        }
+      } else {
+        slot->evict_if_key_equals(llfs::PageId{1});
+      }
+    });
+  }
+
+  start.store(true);
+
+  for (std::thread &t : threads) {
+    t.join();
+  }
+
+  // By the end of this test, both the pin count and ref count should still be 0,
+  // since evict_if_key_equals and acquire_pin/release_pin ensure that these values are
+  // incremented and decremented symmetrically, accounting for new pinning and new unpinning.
+  //
+  EXPECT_EQ(slot->pin_count(), 0);
+  EXPECT_EQ(slot->ref_count(), 0);
 }
 
 }  // namespace

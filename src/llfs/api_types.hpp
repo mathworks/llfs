@@ -81,6 +81,18 @@ BATT_STRONG_TYPEDEF(usize, BufferCount);
  */
 BATT_STRONG_TYPEDEF(usize, BufferSize);
 
+/** \brief True if a page contains outgoing references to other pages.
+ */
+BATT_STRONG_TYPEDEF(bool, HasOutgoingRefs);
+
+/** \brief An index into a collection of items.
+ */
+BATT_STRONG_TYPEDEF(usize, ItemOffset);
+
+/** \brief A pseudo-random number generator seed.
+ */
+BATT_STRONG_TYPEDEF(u32, RandomSeed);
+
 }  // namespace llfs
 
 #endif  // LLFS_API_TYPES_HPP

@@ -10,12 +10,19 @@
 #ifndef LLFS_CONFIRM_HPP
 #define LLFS_CONFIRM_HPP
 
+#include <ostream>
+
 namespace llfs {
 
 enum struct ConfirmThisWillEraseAllMyData : bool {
   kNo = false,
   kYes = true,
 };
+
+inline std::ostream& operator<<(std::ostream& out, const ConfirmThisWillEraseAllMyData& t)
+{
+  return out << (bool)t;
+}
 
 }  // namespace llfs
 

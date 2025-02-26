@@ -69,7 +69,8 @@ TEST(IoRingTest, Test)
   StatusOr<IoRing> io = IoRing::make_new(llfs::MaxQueueDepth{64});
   ASSERT_TRUE(io.ok()) << io.status();
 
-  int fd = open("/tmp/llfs_ioring_test_file", O_CREAT | O_RDWR | O_DIRECT | O_SYNC, /*mode=*/0644);
+  int fd = llfs::system_open3("/tmp/llfs_ioring_test_file", O_CREAT | O_RDWR | O_DIRECT | O_SYNC,
+                              /*mode=*/0644);
   ASSERT_GE(fd, 0) << std::strerror(errno);
 
   std::array<char, 1023> buf;
@@ -125,8 +126,8 @@ TEST(IoRingTest, DISABLED_BlockDev)
   StatusOr<IoRing> io = IoRing::make_new(llfs::MaxQueueDepth{64});
   ASSERT_TRUE(io.ok()) << io.status();
 
-  int fd = open("/dev/nvme3n1", O_RDWR | O_DIRECT | O_SYNC);
-  int fd2 = open("/dev/nvme3n1", O_RDWR | O_DIRECT | O_SYNC);
+  int fd = llfs::system_open2("/dev/nvme3n1", O_RDWR | O_DIRECT | O_SYNC);
+  int fd2 = llfs::system_open2("/dev/nvme3n1", O_RDWR | O_DIRECT | O_SYNC);
 
   ASSERT_GE(fd, 0) << std::strerror(errno);
 
@@ -179,7 +180,7 @@ TEST(IoRingTest, MultipleThreads)
 
   const auto file_path = "/tmp/llfs_ioring_test_file";
 
-  int fd = open(file_path, O_CREAT | O_RDWR, /*mode=*/0644);
+  int fd = llfs::system_open3(file_path, O_CREAT | O_RDWR, /*mode=*/0644);
   ASSERT_GE(fd, 0) << std::strerror(errno);
 
   IoRing::File f{scoped_io_ring->get_io_ring(), fd};

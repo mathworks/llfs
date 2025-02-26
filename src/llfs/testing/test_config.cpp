@@ -8,11 +8,34 @@
 
 #include <llfs/testing/test_config.hpp>
 //
+#include <llfs/logging.hpp>
+#include <llfs/optional.hpp>
 
 #include <batteries/env.hpp>
 
 namespace llfs {
 namespace testing {
+
+namespace {
+
+usize get_random_seed_from_env()
+{
+  static const usize seed = [] {
+    const char* varname = "LLFS_TEST_RANDOM_SEED";
+
+    Optional<usize> value = batt::getenv_as<usize>(varname);
+    if (!value) {
+      LLFS_LOG_INFO() << varname << " not defined; using default value 0";
+      return usize{0};
+    }
+    LLFS_LOG_INFO() << varname << " == " << *value;
+    return *value;
+  }();
+
+  return seed;
+}
+
+}  //namespace
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
@@ -25,6 +48,8 @@ TestConfig::TestConfig() noexcept
   this->low_level_log_device_sim_ =                          //
       batt::getenv_as<int>("LLFS_LOW_LEVEL_LOG_DEVICE_SIM")  //
           .value_or(1);
+
+  this->random_seed_ = get_random_seed_from_env();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -80,6 +105,13 @@ const std::filesystem::path& TestConfig::project_dir() noexcept
 std::filesystem::path TestConfig::data_file_path(std::string_view file_rel_path) noexcept
 {
   return this->project_dir() / "testdata" / file_rel_path;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+usize TestConfig::get_random_seed() noexcept
+{
+  return this->random_seed_;
 }
 
 }  //namespace testing

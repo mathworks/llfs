@@ -88,7 +88,7 @@ class LoadingPageTracer : public PageTracer
 class CachingPageTracer : public PageTracer
 {
  public:
-  explicit CachingPageTracer(const std::vector<std::unique_ptr<PageDeviceEntry>>& page_devices,
+  explicit CachingPageTracer(const std::vector<std::shared_ptr<PageDeviceEntry>>& page_devices,
                              PageTracer& loader) noexcept;
 
   CachingPageTracer(const CachingPageTracer&) = delete;
@@ -109,7 +109,7 @@ class CachingPageTracer : public PageTracer
   /** \brief A vector of page device entries used to access cached information about a page's
    * outgoing refs status.
    */
-  const std::vector<std::unique_ptr<PageDeviceEntry>>& page_devices_;
+  const std::vector<std::shared_ptr<PageDeviceEntry>>& page_devices_;
 
   /** \brief The "wrapped" PageTracer that this CachingPageTracer instance falls back on in the
    * event that no cached information is found about a page.

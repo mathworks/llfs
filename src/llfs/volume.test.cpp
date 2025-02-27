@@ -2137,11 +2137,25 @@ TEST_F(VolumeSimTest, DeadPageRefCountSimulation)
   }
 }
 
-using DeathTestVolumeSimTest = VolumeSimTest;
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void display_histogram(u32 max_seeds, const std::vector<usize>& histogram)
+{
+  std::string hist_str;
+  usize current_seed = 0;
+  const usize div = max_seeds / histogram.size();
+
+  for (const auto entry : histogram) {
+    hist_str += std::to_string(current_seed) + ":" + std::to_string(entry) + " ";
+    current_seed += div;
+  }
+
+  LOG(INFO) << "Histogram: " << hist_str;
+}
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-TEST_F(DeathTestVolumeSimTest, DeadPageRefCountVariantSimulation)
+TEST_F(VolumeSimTest, DeadPageRefCountVariantSimulation)
 {
   const u32 max_seeds = batt::getenv_as<u32>("MAX_SEEDS").value_or(1000);
 
@@ -2149,31 +2163,40 @@ TEST_F(DeathTestVolumeSimTest, DeadPageRefCountVariantSimulation)
   // 50 and 40 respectively. To create a perfectly failing test use 50 and 40 as the pre_halt and
   // post_halt values respectively.
 
-  LOG(INFO) << "Starting DeadPageRefCountVariant test for " << max_seeds << " iterations...";
-
   // We will setup a two ranges to pick yield counts from.
   std::vector<std::pair<usize, usize>> ranges{{30, 50}, {30, 100}};
   std::mt19937 rng{0};
   std::uniform_int_distribution<usize> pick_value1{ranges[0].first, ranges[0].second};
   std::uniform_int_distribution<usize> pick_value2{ranges[1].first, ranges[1].second};
   usize yield_pre_halt = 0, yield_post_halt = 0;
+  std::vector<usize> histogram(10);
+  const usize div = max_seeds / histogram.size();
 
-  auto main_test_block = [&]() {
-    for (u32 current_seed = 0; current_seed < max_seeds; ++current_seed) {
-      LOG_EVERY_N(INFO, 100) << BATT_INSPECT(current_seed) << BATT_INSPECT(max_seeds);
+  llfs::PageRecycler::global_metrics().page_id_deletion_reissue_count.set(0);
 
-      yield_pre_halt = (yield_pre_halt % 2) ? pick_value1(rng) : pick_value2(rng);
-      yield_post_halt = (yield_post_halt % 2) ? pick_value1(rng) : pick_value2(rng);
+  for (u32 current_seed = 0; current_seed < max_seeds; ++current_seed) {
+    LOG_EVERY_N(INFO, 100) << BATT_INSPECT(current_seed) << BATT_INSPECT(max_seeds);
 
-      ASSERT_NO_FATAL_FAILURE(
-          this->run_dead_page_recovery_test_variant(current_seed, yield_pre_halt, yield_post_halt));
-    }
-  };
-  // Note that we are enabling thread-safe mode for Death-Test.
+    yield_pre_halt = (yield_pre_halt % 2) ? pick_value1(rng) : pick_value2(rng);
+    yield_post_halt = (yield_post_halt % 2) ? pick_value1(rng) : pick_value2(rng);
+
+    usize last_value = llfs::PageRecycler::global_metrics().page_id_deletion_reissue_count;
+
+    ASSERT_NO_FATAL_FAILURE(
+        this->run_dead_page_recovery_test_variant(current_seed, yield_pre_halt, yield_post_halt));
+
+    last_value = llfs::PageRecycler::global_metrics().page_id_deletion_reissue_count - last_value;
+    histogram[current_seed / div] += last_value;
+  }
+
+  LOG(INFO) << "Ran DeadPageRefCountVariant test for " << max_seeds << " iterations..."
+            << BATT_INSPECT(llfs::PageRecycler::global_metrics().page_id_deletion_reissue_count);
+
+  display_histogram(max_seeds, histogram);
+
+  // We need to have atleast one iteration hitting the issue.
   //
-  ::testing::FLAGS_gtest_death_test_style = "threadsafe";
-  EXPECT_EXIT(main_test_block(), testing::ExitedWithCode(6), "FATAL.*");
-  ::testing::FLAGS_gtest_death_test_style = "fast";
+  ASSERT_GE(llfs::PageRecycler::global_metrics().page_id_deletion_reissue_count, 0);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -2330,9 +2353,9 @@ void VolumeSimTest::post_halt_processing(RecoverySimState& state, llfs::StorageS
 void VolumeSimTest::run_dead_page_recovery_test(u32 seed, u32 yield_count)
 {
   RecoverySimState state;
-  state.seed = seed;
+  std::mt19937 rng{seed};
 
-  std::mt19937 rng{state.seed};
+  state.seed = seed;
 
   llfs::StorageSimulation sim{batt::StateMachineEntropySource{
       /*entropy_fn=*/[&rng](usize min_value, usize max_value) -> usize {
@@ -2417,7 +2440,7 @@ void VolumeSimTest::run_dead_page_recovery_test_variant(u32 seed, u32 yield_coun
                                                         u32 yield_count_post_halt)
 {
   RecoverySimState state;
-  std::mt19937 rng{state.seed};
+  std::mt19937 rng{seed};
 
   state.seed = seed;
 

@@ -45,6 +45,8 @@ class PageRecyclerRecoveryVisitor
 
   Optional<SlotRange> latest_info_refresh_slot() const;
 
+  VolumeTrimSlotInfo volume_trim_slot_info() const;
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   Status operator()(const SlotParse&, const PageToRecycle& to_recycle);
@@ -79,6 +81,10 @@ class PageRecyclerRecoveryVisitor
   /** \brief The most recent slot at which recycler info was refreshed.
    */
   Optional<SlotRange> latest_info_refresh_slot_;
+
+  /** \brief Tracks the highest volume-trim-slot during recovery.
+   */
+  Optional<VolumeTrimSlotInfo> volume_trim_slot_info_;
 };
 
 }  // namespace llfs

@@ -48,9 +48,11 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
   } else {
     p_config->device_id = *options.device_id;
   }
-  p_config->page_count = options.page_count;
+  
+  p_config->page_count = options.max_page_count;
   p_config->page_size_log2 = options.page_size_log2;
   p_config->uuid = options.uuid.value_or(boost::uuids::random_generator{}());
+  p_config->set_last_in_file(options.last_in_file);
 
   txn.require_pre_flush_action([pages_offset, page_size = page_size,
                                 page_count = options.page_count](RawBlockFile& file) -> Status {

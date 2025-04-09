@@ -12,6 +12,7 @@
 #include <llfs/page_arena_config.hpp>
 #include <llfs/raw_block_file_impl.hpp>
 #include <llfs/status_code.hpp>
+#include <llfs/volume_config.hpp>
 
 namespace llfs {
 
@@ -83,9 +84,57 @@ Status StorageContext::add_new_file(const std::string& file_name,
 //
 Status StorageContext::add_existing_file(const batt::SharedPtr<StorageFile>& file)
 {
+  bool last_in_file = false;
   file->find_all_objects()  //
       | seq::for_each([&](const FileOffsetPtr<const PackedConfigSlot&>& slot) {
           LLFS_VLOG(1) << "Adding " << *slot << " to storage context";
+
+          // Verify there is only a single object per file marked as "last_in_file"
+          //
+          switch (slot->tag) {
+            case PackedConfigSlotBase::Tag::kNone:
+                break;
+            case PackedConfigSlotBase::Tag::kPageArena:
+              {
+                const PackedPageArenaConfig& arena_config = reinterpret_cast<const PackedPageArenaConfig&>(*slot);
+                BATT_CHECK_EQ(arena_config.get_last_in_file(), false);
+              }
+                break;
+            case PackedConfigSlotBase::Tag::kVolume:
+              {
+                const PackedVolumeConfig& volume_config = reinterpret_cast<const PackedVolumeConfig&>(*slot);
+                BATT_CHECK_EQ(volume_config.get_last_in_file(), false);
+              }
+                break;
+            case PackedConfigSlotBase::Tag::kLogDevice:
+              {
+                const PackedLogDeviceConfig& log_device_config = reinterpret_cast<const PackedLogDeviceConfig&>(*slot);
+                BATT_CHECK_EQ(log_device_config.get_last_in_file(), false);
+              }
+                break;
+            case PackedConfigSlotBase::Tag::kPageDevice:
+              {
+                const PackedPageDeviceConfig& page_device_config = reinterpret_cast<const PackedPageDeviceConfig&>(*slot);
+
+                // If both are true, then we have multiple devices marked as "last_in_file".
+                //
+                BATT_CHECK_EQ(last_in_file && slot->get_last_in_file(), false);
+                if (page_device_config.get_last_in_file()) {
+                  last_in_file = true;
+                }
+              }
+                break;
+            case PackedConfigSlotBase::Tag::kPageAllocator:
+              {
+                const PackedPageAllocatorConfig& page_allocator_config = reinterpret_cast<const PackedPageAllocatorConfig&>(*slot);
+                BATT_CHECK_EQ(page_allocator_config.get_last_in_file(), false);
+              }
+                break;
+            default:
+                BATT_PANIC() << "Reached default case in switch statement inside StorageContext::add_existing_file."
+                             << " This should never happen.";
+                break;
+        }
 
           this->index_.emplace(slot->uuid,
                                batt::make_shared<StorageObjectInfo>(batt::make_copy(file), slot));

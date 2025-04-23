@@ -85,6 +85,9 @@ Status StorageContext::add_new_file(const std::string& file_name,
 Status StorageContext::add_existing_file(const batt::SharedPtr<StorageFile>& file)
 {
   bool last_in_file = false;
+  batt::Status status = OkStatus();
+  // TODO: [gbornste 4/15/25] Create batt:Status here that's updated by switch statement, and checked at end of function.
+  //
   file->find_all_objects()  //
       | seq::for_each([&](const FileOffsetPtr<const PackedConfigSlot&>& slot) {
           LLFS_VLOG(1) << "Adding " << *slot << " to storage context";
@@ -116,9 +119,14 @@ Status StorageContext::add_existing_file(const batt::SharedPtr<StorageFile>& fil
               {
                 const PackedPageDeviceConfig& page_device_config = reinterpret_cast<const PackedPageDeviceConfig&>(*slot);
 
-                // If both are true, then we have multiple devices marked as "last_in_file".
+                // If both are true, then we have multiple page devices marked as "last_in_file".
                 //
-                BATT_CHECK_EQ(last_in_file && slot->get_last_in_file(), false);
+                bool multiple_last_in_file = page_device_config.get_last_in_file() && last_in_file;
+                if (multiple_last_in_file) {
+                  status.Update(StatusCode::kPageDeviceNotLastInFile);
+                  break;
+                }
+
                 if (page_device_config.get_last_in_file()) {
                   last_in_file = true;
                 }
@@ -131,8 +139,10 @@ Status StorageContext::add_existing_file(const batt::SharedPtr<StorageFile>& fil
               }
                 break;
             default:
-                BATT_PANIC() << "Reached default case in switch statement inside StorageContext::add_existing_file."
-                             << " This should never happen.";
+                // TODO: [Gabe Bornstein 4/23/25] Do we want to BATT_PANIC here instead? We occasionally hit this case, but not sure we should.
+                //
+                LOG(INFO) << "Reached default case in switch statement inside StorageContext::add_existing_file."
+                             << " The value of PackedConfigSlotBase::Tag was: " << slot->tag;
                 break;
         }
 
@@ -140,6 +150,7 @@ Status StorageContext::add_existing_file(const batt::SharedPtr<StorageFile>& fil
                                batt::make_shared<StorageObjectInfo>(batt::make_copy(file), slot));
         });
 
+  BATT_REQUIRE_OK(status);
   return OkStatus();
 }
 

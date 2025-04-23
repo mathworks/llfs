@@ -80,6 +80,9 @@ enum struct StatusCode {
   kPutViewUnknownLayoutId = 62,
   kPageCacheSlotNotInitialized = 63,
   kIoRingShutDown = 64,
+  kPageDeviceNotLastInFile = 65,
+  // TODO: [Gabe Bornstein 4/18/25] Create an error status for multiple devices marked is last_in_file
+  //
 };
 
 bool initialize_status_codes();

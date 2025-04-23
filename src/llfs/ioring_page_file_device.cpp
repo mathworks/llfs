@@ -228,6 +228,18 @@ void IoRingPageFileDevice::drop(PageId id, WriteHandler&& handler)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+bool IoRingPageFileDevice::get_last_in_file() const {
+  return this->config_->get_last_in_file();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void IoRingPageFileDevice::set_last_in_file(bool last_in_file) {
+  this->config_->set_last_in_file(last_in_file);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 StatusOr<u64> IoRingPageFileDevice::get_physical_page(PageId page_id) const
 {
   const i64 physical_page = this->page_ids_.get_physical_page(page_id);

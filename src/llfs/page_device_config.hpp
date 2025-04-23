@@ -187,10 +187,6 @@ struct PackedPageDeviceConfig : PackedConfigSlotHeader {
   //
   little_i64 page_count;
 
-  // Max size of PageDevice in bytes. Should error if attempted to increase past this size.
-  //
-  // little_i64 max_page_count;
-
   // The log2 of the page size in bytes.
   //
   little_u16 page_size_log2;

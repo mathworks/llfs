@@ -137,7 +137,8 @@ bool initialize_status_codes()
           StatusCode::kIoRingShutDown,
           "The operation could not be completed because the IoRing was shut down"),  // 64,
       CODE_WITH_MSG_(StatusCode::kPageDeviceNotLastInFile,
-      "Failed to create llfs file PageDevice. There are multiple Page Devices marked as 'last_in_file'"),  // 65,
+                     "Failed to create llfs file PageDevice. There are multiple Page Devices "
+                     "marked as 'last_in_file'"),  // 65,
   });
   return initialized;
 }

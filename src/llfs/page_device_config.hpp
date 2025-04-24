@@ -74,7 +74,7 @@ struct PageDeviceConfigOptions {
   //
   PageSizeLog2 page_size_log2;
 
-  // Information on if this PageDevice is placed at the end of the llfs file. 
+  // Information on if this PageDevice is placed at the end of the llfs file.
   // Allows for dynamic growth of the Page Device and llfs file.
   //
   bool last_in_file;
@@ -99,9 +99,9 @@ struct PageDeviceConfigOptions {
 
 inline bool operator==(const PageDeviceConfigOptions& l, const PageDeviceConfigOptions& r)
 {
-  return l.uuid == r.uuid                 //
-         && l.device_id == r.device_id    //
-         && l.page_count == r.page_count  //
+  return l.uuid == r.uuid                         //
+         && l.device_id == r.device_id            //
+         && l.page_count == r.page_count          //
          && l.max_page_count == r.max_page_count  //
          && l.page_size_log2 == r.page_size_log2;
 }
@@ -192,7 +192,7 @@ struct PackedPageDeviceConfig : PackedConfigSlotHeader {
   little_u16 page_size_log2;
 
   // Bit mask for PageDevice options
-  // 
+  //
   little_u8 options_mask;
 
   // Reserved for future use.
@@ -207,19 +207,18 @@ struct PackedPageDeviceConfig : PackedConfigSlotHeader {
   }
 
   // Set whether or not this PageDevice is the last object in an llfs file.
-  // 
+  //
   void set_last_in_file(bool last_in_file)
   {
     if (last_in_file) {
       options_mask |= LAST_IN_FILE_MASK;
-    }
-    else {
+    } else {
       options_mask &= ~LAST_IN_FILE_MASK;
     }
   }
 
   // Get whether or not this PageDevice is the last object in an llfs file.
-  // 
+  //
   bool get_last_in_file() const
   {
     return options_mask & LAST_IN_FILE_MASK;

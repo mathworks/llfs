@@ -48,7 +48,7 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
   } else {
     p_config->device_id = *options.device_id;
   }
-  
+
   p_config->page_count = options.max_page_count;
   p_config->page_size_log2 = options.page_size_log2;
   p_config->uuid = options.uuid.value_or(boost::uuids::random_generator{}());

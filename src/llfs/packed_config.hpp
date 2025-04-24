@@ -53,21 +53,21 @@ struct PackedConfigSlotBase {
   //
   little_u8 n_slots;
 
-  // TODO: [Gabe Bornstein 4/9/25] I'd like to make these functions virtual,
-  // however, virtual functions increase the size of the class which is a problem.
-  //
   // Set whether or not this is the last object in an llfs file.
-  // 
-  void set_last_in_file(bool last_in_file) {
+  //
+  void set_last_in_file(bool last_in_file)
+  {
     // We should never call this function unless it's been overriden
     //
-    BATT_PANIC() << "Failed call to set_last_in_file on object " 
-                 << "Type PackedConfigSlotBase because this function has not been implemented. last_in_file==" << last_in_file;
+    BATT_PANIC() << "Failed call to set_last_in_file on object "
+                 << "Type PackedConfigSlotBase because this function has not been implemented. "
+                    "last_in_file=="
+                 << last_in_file;
     return;
   }
 
   // Get whether or not this is the last object in an llfs file.
-  // 
+  //
   bool get_last_in_file() const
   {
     return false;

@@ -112,7 +112,12 @@ class BasicLogStorageDriver
   //
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  Impl& impl()
+  Impl& impl() noexcept
+  {
+    return this->impl_;
+  }
+
+  const Impl& impl() const noexcept
   {
     return this->impl_;
   }

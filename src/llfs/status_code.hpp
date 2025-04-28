@@ -80,7 +80,9 @@ enum struct StatusCode {
   kPutViewUnknownLayoutId = 62,
   kPageCacheSlotNotInitialized = 63,
   kIoRingShutDown = 64,
-  kPageDeviceNotLastInFile = 65,
+  kLogControlBlockBadMagic = 65,
+  kLogDeviceV1Deprecated = 66,
+  kPageDeviceNotLastInFile = 67,
 };
 
 bool initialize_status_codes();

@@ -113,11 +113,23 @@ Optional<SlotRange> PageRecyclerRecoveryVisitor::latest_info_refresh_slot() cons
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+VolumeTrimSlotInfo PageRecyclerRecoveryVisitor::volume_trim_slot_info() const
+{
+  if (this->volume_trim_slot_info_) {
+    return *this->volume_trim_slot_info_;
+  }
+  return VolumeTrimSlotInfo{};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
                                                const PageToRecycle& recovered)
 {
   LLFS_VLOG(1) << "Recovered slot: " << slot.offset << " " << recovered
-               << BATT_INSPECT((bool)this->latest_batch_);
+               << BATT_INSPECT((bool)this->latest_batch_)
+               << BATT_INSPECT(this->volume_trim_slot_info_->volume_trim_slot)
+               << BATT_INSPECT(this->volume_trim_slot_info_->page_index);
 
   // Add the new record, or verify that the existing one and the new one are equivalent.
   //
@@ -140,6 +152,16 @@ Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
 
     existing_record.batch_slot = recovered.batch_slot;
   }
+
+  // Save the largest unique offset identifier. If it's the first offset we read from log then just
+  // initialize 'volume_trim_slot_info_'.
+  //
+  if (!this->volume_trim_slot_info_) {
+    this->volume_trim_slot_info_ = recovered.volume_trim_slot_info;
+  } else if (*this->volume_trim_slot_info_ < recovered.volume_trim_slot_info) {
+    this->volume_trim_slot_info_ = recovered.volume_trim_slot_info;
+  }
+
   PageToRecycle& to_recycle = iter->second;
   to_recycle.refresh_slot = slot.offset.lower_bound;
 

@@ -136,9 +136,15 @@ bool initialize_status_codes()
       CODE_WITH_MSG_(
           StatusCode::kIoRingShutDown,
           "The operation could not be completed because the IoRing was shut down"),  // 64,
+      CODE_WITH_MSG_(StatusCode::kLogControlBlockBadMagic,
+                     "Log device control block magic number is not correct (is this really a log "
+                     "device?)"),  // 65,
+      CODE_WITH_MSG_(StatusCode::kLogDeviceV1Deprecated,
+                     "IoRingLogDevice (aka LogDevice storage object) has been deprecated; use "
+                     "IoRingLogDevice2/LogDevice2 instead"),  // 66,
       CODE_WITH_MSG_(StatusCode::kPageDeviceNotLastInFile,
                      "Failed to create llfs file PageDevice. There are multiple Page Devices "
-                     "marked as 'last_in_file'"),  // 65,
+                     "marked as 'last_in_file'"),  // 67,
   });
   return initialized;
 }

@@ -101,7 +101,7 @@ Newly allocated pages start out with a ref count value of 2.  Pages are consider
 
 While it is possible for applications do to this directly using the `PageDevice` and `PageAllocator` APIs directly, it is somewhat non-trivial to do it correctly in a crash-safe manner.  `llfs::PageRecycler` stores its state in a `llfs::LogDevice`.  The state is comprised of a queue of `PageId` values identifying pages that are ready for recycling, and a "stack" for a depth-first traversal of recursively referenced pages.  `PageRecycler` always processes the deepest level of the stack first, to limit the total space requirements.  Thus the maximum reference depth is configured for a given `PageRecycler` at creation time.
 
-`PageRecycler` also imposes a creation-time-configurable limit on the maximum "branching factor" of page refs (i.e., the maximum number of out-refs per page), and the depth of a reference chain.  Because these limits are highly dependent on the sorts of data structures and page sizes that must be accomodated by the `PageRecycler`, each `llfs::Volume` is given its own `PageRecycler`.  This allows different `Volume` instances to configure these parameters optimally for the type of data stored by that volume.
+`PageRecycler` also imposes a creation-time-configurable limit on the maximum "branching factor" of page refs (i.e., the maximum number of out-refs per page), and the depth of a reference chain.  Because these limits are highly dependent on the sorts of data structures and page sizes that must be accommodated by the `PageRecycler`, each `llfs::Volume` is given its own `PageRecycler`.  This allows different `Volume` instances to configure these parameters optimally for the type of data stored by that volume.
 
 # How To Build
 
@@ -146,7 +146,7 @@ The default build type is `RelWithDebInfo`; this is the standard CMake hybrid bu
 make BUILD_TYPE=Debug install build test
 ```
 
-All output files live in the directory `build/${BUILD_TYPE}/` (e.g. `build/RelWithDebInfo/`), so you can have multiple build types co-existing simulataneously (e.g., Debug and Release).
+All output files live in the directory `build/${BUILD_TYPE}/` (e.g. `build/RelWithDebInfo/`), so you can have multiple build types co-existing simultaneously (e.g., Debug and Release).
 
 ### Summary of Makefile Targets
 

@@ -57,8 +57,8 @@ u64 PageAllocator::calculate_log_size(u64 physical_page_count, u64 max_attachmen
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<std::unique_ptr<PageAllocator>> PageAllocator::recover(
-    const PageAllocatorRuntimeOptions& runtime_options, const PageIdFactory& page_ids,
-    LogDeviceFactory& log_device_factory)
+    const PageAllocatorRuntimeOptions& runtime_options, PageSize page_size,
+    const PageIdFactory& page_ids, LogDeviceFactory& log_device_factory)
 {
   initialize_status_codes();
 
@@ -98,8 +98,8 @@ StatusOr<std::unique_ptr<PageAllocator>> PageAllocator::recover(
   // Now we can create the PageAllocator.
   //
   auto page_allocator = std::unique_ptr<PageAllocator>{
-      new PageAllocator{runtime_options.scheduler, runtime_options.name, std::move(*recovered_log),
-                        std::move(recovered_state)}};
+      new PageAllocator{runtime_options.scheduler, runtime_options.name, page_size,
+                        std::move(*recovered_log), std::move(recovered_state)}};
 
   // Set the recovering_users state.
   //
@@ -122,10 +122,11 @@ StatusOr<std::unique_ptr<PageAllocator>> PageAllocator::recover(
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 PageAllocator::PageAllocator(batt::TaskScheduler& scheduler, std::string_view name,
-                             std::unique_ptr<LogDevice> log_device,
+                             PageSize page_size, std::unique_ptr<LogDevice> log_device,
                              std::unique_ptr<PageAllocator::State> recovered_state) noexcept
     : name_{name}
     , log_device_{std::move(log_device)}
+    , page_size_{page_size}
     , state_{std::move(recovered_state)}
     , checkpoint_task_{scheduler.schedule_task(),
                        [this] {
@@ -453,8 +454,9 @@ bool PageAllocator::await_ref_count(PageId page_id, i32 ref_count)
     if ((counter & 4095) == 0) {
       LLFS_LOG_INFO() << BATT_INSPECT(prc) << BATT_INSPECT(page_id) << BATT_INSPECT(ref_count)
                       << BATT_INSPECT(counter);
-      BATT_CHECK_LT(counter, 10 * 1000) << "[PageAllocator::await_ref_count] timed out (10s)"
-                                        << BATT_INSPECT(page_id) << BATT_INSPECT(ref_count);
+      BATT_CHECK_LT(counter, 10 * 1000)
+          << "[PageAllocator::await_ref_count] timed out (10s)" << BATT_INSPECT(page_id)
+          << BATT_INSPECT(ref_count) << BATT_INSPECT(prc.ref_count);
     }
   }
   return true;

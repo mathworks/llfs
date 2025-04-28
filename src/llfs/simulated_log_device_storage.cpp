@@ -8,22 +8,9 @@
 
 #include <llfs/simulated_log_device_storage.hpp>
 //
-#include <llfs/ioring_log_driver.hpp>
-#include <llfs/ioring_log_driver.ipp>
-#include <llfs/ioring_log_flush_op.hpp>
-#include <llfs/ioring_log_flush_op.ipp>
 #include <llfs/storage_simulation.hpp>
 
 namespace llfs {
-
-// Explicitly instantiate BasicIoRingLogDriver for the simulated LogDevice storage.
-//
-template class BasicIoRingLogDriver<BasicIoRingLogFlushOp, SimulatedLogDeviceStorage>;
-
-// BasicIoRingLogFlushOp is required by BasicIoRingLogDriver, so explicitly instantiate that too.
-//
-template class BasicIoRingLogFlushOp<
-    BasicIoRingLogDriver<BasicIoRingLogFlushOp, SimulatedLogDeviceStorage>>;
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 // class SimulatedLogDeviceStorage::DurableState
@@ -45,10 +32,10 @@ Status SimulatedLogDeviceStorage::DurableState::validate_args(i64 offset, usize 
   if (offset % sizeof(AlignedBlock) != 0 || size != sizeof(AlignedBlock)) {
     return batt::StatusCode::kInvalidArgument;
   }
-  if (offset < this->config_.physical_offset) {
+  if (offset < this->file_offset_.lower_bound) {
     return batt::StatusCode::kOutOfRange;
   }
-  if (offset + size > this->config_.physical_offset + this->config_.physical_size) {
+  if (offset + static_cast<i64>(size) > this->file_offset_.upper_bound) {
     return batt::StatusCode::kOutOfRange;
   }
   if (this->simulation_.inject_failure()) {

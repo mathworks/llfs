@@ -222,6 +222,9 @@ void IoRingPageFileDevice::read_some(PageId page_id, i64 page_offset_in_file,
 void IoRingPageFileDevice::drop(PageId id, WriteHandler&& handler)
 {
   // TODO [tastolfi 2021-06-11] - trim at device level?
+  // Note that we are not clearing the data blocks here. This behavior is copied replicated for
+  // SimulatedPageDevice drop() too. Thus, when modifying this function do visit
+  // SimulatedPageDevice::Impl::drop() and make sure things are updated there.
   (void)id;
   handler(OkStatus());
 }

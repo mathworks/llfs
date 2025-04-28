@@ -18,16 +18,16 @@
 #include <llfs/page_allocator_runtime_options.hpp>
 
 #include <llfs/int_types.hpp>
-#include <llfs/log_device_config.hpp>
+#include <llfs/log_device_runtime_options.hpp>
+#include <llfs/nested_log_device_config.hpp>
 #include <llfs/optional.hpp>
 #include <llfs/packed_config.hpp>
 #include <llfs/packed_pointer.hpp>
+#include <llfs/packed_uuid.hpp>
 #include <llfs/page_device_config.hpp>
 #include <llfs/page_size.hpp>
 
 #include <batteries/static_assert.hpp>
-
-#include <boost/uuid/uuid.hpp>
 
 #include <iostream>
 #include <variant>
@@ -49,7 +49,7 @@ StatusOr<std::unique_ptr<PageAllocator>> recover_storage_object(
     const std::string& file_name,                                     //
     const FileOffsetPtr<const PackedPageAllocatorConfig&>& p_config,  //
     const PageAllocatorRuntimeOptions& options,                       //
-    const IoRingLogDriverOptions& log_options);
+    const LogDeviceRuntimeOptions& log_options);
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
@@ -155,7 +155,7 @@ struct PackedPageAllocatorConfig : PackedConfigSlotHeader {
 
   // The PageAllocator log config.
   //
-  boost::uuids::uuid log_device_uuid;
+  PackedUUID log_device_uuid;
 
   // The page size (log2) of the page device managed by this allocator (for sanity checking).
   //

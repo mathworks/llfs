@@ -56,7 +56,7 @@ usize MemoryLogStorageDriver::unflushed_size() noexcept
   if (this->is_auto_flush()) {
     return 0;
   }
-  return slot_distance(this->get_flush_pos(), this->get_commit_pos());
+  return slot_clamp_distance(this->get_flush_pos(), this->get_commit_pos());
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

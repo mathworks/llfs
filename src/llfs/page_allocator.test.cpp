@@ -64,6 +64,8 @@ using llfs::testing::FakeLogDeviceFactory;
 using llfs::testing::FakeLogDeviceReader;
 using llfs::testing::FakeLogDeviceWriter;
 
+const PageSize kTestPageSize{4096};
+
 TEST(PageAllocatorTest, UpdateRefCounts)
 {
   constexpr u64 kNumPages = 100;
@@ -73,7 +75,7 @@ TEST(PageAllocatorTest, UpdateRefCounts)
 
   StatusOr<std::unique_ptr<PageAllocator>> page_allocator = PageAllocator::recover(
       PageAllocatorRuntimeOptions{batt::Runtime::instance().default_scheduler(), "Test"},
-      PageIdFactory{/*device_capacity=*/PageCount{kNumPages}, /*page_device_id=*/0},
+      kTestPageSize, PageIdFactory{/*device_capacity=*/PageCount{kNumPages}, /*page_device_id=*/0},
       *std::make_unique<MemoryLogDeviceFactory>(
           PageAllocator::calculate_log_size(kNumPages, kMaxAttachments)));
 
@@ -150,6 +152,8 @@ TEST(PageAllocatorTest, LogCrashRecovery)
   constexpr u64 kMaxAttachments = 64;
   constexpr u64 kNumSeeds = 1000;
 
+  const auto page_size = PageSize{4096};
+
   std::uniform_int_distribution<usize> pick_page_count(1u, kNumPages);
   std::uniform_int_distribution<usize> pick_client(0u, kMaxAttachments - 1u);
   std::uniform_int_distribution<usize> pick_physical_page(0u, kNumPages - 1u);
@@ -194,7 +198,7 @@ TEST(PageAllocatorTest, LogCrashRecovery)
         PageAllocatorRuntimeOptions{
             /*TODO [tastolfi 2022-01-21] use fake*/ batt::Runtime::instance().default_scheduler(),
             "Test"},
-        PageIdFactory{/*device_capacity=*/PageCount{kNumPages}, /*page_device_id=*/0},
+        page_size, PageIdFactory{/*device_capacity=*/PageCount{kNumPages}, /*page_device_id=*/0},
         fake_log_factory);
 
     ASSERT_TRUE(status_or_page_allocator.ok());
@@ -326,6 +330,7 @@ TEST(PageAllocatorTest, LogCrashRecovery)
                 /*TODO [tastolfi 2022-01-21] use fake*/ batt::Runtime::instance()
                     .default_scheduler(),
                 "Test"},
+            page_size,
             PageIdFactory{/*device_capacity=*/PageCount{kNumPages}, /*page_device_id=*/0},
             fake_recovered_log_factory);
 
@@ -382,6 +387,7 @@ TEST(PageAllocatorTest, LogCrashRecovery)
 constexpr usize kNumPages = 8;
 constexpr usize kMaxAttachments = 4;
 constexpr i32 kMaxCrashCount = 3;
+
 const usize kSimLogSize =
     /*size=*/PageAllocator::calculate_log_size(/*physical_page_count=*/kNumPages,
                                                /*max_attachments=*/kMaxAttachments);
@@ -616,7 +622,7 @@ class PageAllocatorModel
     LLFS_VLOG(2) << "entered recover() " << BATT_INSPECT(this->context_.work_count().get_value());
 
     StatusOr<std::unique_ptr<PageAllocator>> status_or_page_allocator = PageAllocator::recover(
-        PageAllocatorRuntimeOptions{this->fake_scheduler_, "Test"},
+        PageAllocatorRuntimeOptions{this->fake_scheduler_, "Test"}, kTestPageSize,
         PageIdFactory{/*device_capacity=*/PageCount{kNumPages}, /*page_device_id=*/0},
         *this->fake_log_factory_);
 
@@ -747,12 +753,13 @@ TEST(PageAllocatorTest, RefCountDeltaCheckpointSliceTrim)
   llfs::MemoryLogDevice* p_mem_log = nullptr;
 
   batt::StatusOr<std::unique_ptr<llfs::PageAllocator>> page_allocator_status =
-      llfs::PageAllocator::recover(
-          options, id_factory, *std::make_unique<llfs::BasicLogDeviceFactory>([&p_mem_log] {
-            auto mem_log = std::make_unique<llfs::MemoryLogDevice>(kLogSize);
-            p_mem_log = mem_log.get();
-            return mem_log;
-          }));
+      llfs::PageAllocator::recover(options, kTestPageSize, id_factory,
+                                   *std::make_unique<llfs::BasicLogDeviceFactory>([&p_mem_log] {
+                                     auto mem_log =
+                                         std::make_unique<llfs::MemoryLogDevice>(kLogSize);
+                                     p_mem_log = mem_log.get();
+                                     return mem_log;
+                                   }));
 
   // Verify initial state.
   //
@@ -831,7 +838,8 @@ TEST(PageAllocatorTest, RefCountDeltaCheckpointSliceTrim)
   //
   batt::StatusOr<std::unique_ptr<llfs::PageAllocator>> page_allocator2_status =
       llfs::PageAllocator::recover(
-          options, id_factory, *std::make_unique<llfs::BasicLogDeviceFactory>([&snapshot] {
+          options, kTestPageSize, id_factory,
+          *std::make_unique<llfs::BasicLogDeviceFactory>([&snapshot] {
             auto mem_log2 = std::make_unique<llfs::MemoryLogDevice>(kLogSize);
             mem_log2->restore_snapshot(snapshot, llfs::LogReadMode::kDurable);
             return mem_log2;
@@ -952,7 +960,7 @@ TEST(PageAllocatorTest, DeterministicDeadPage)
   const boost::uuids::uuid user_B_id = llfs::random_uuid();
 
   batt::StatusOr<std::unique_ptr<llfs::PageAllocator>> page_allocator_status =
-      llfs::PageAllocator::recover(options, id_factory,
+      llfs::PageAllocator::recover(options, kTestPageSize, id_factory,
                                    *std::make_unique<llfs::MemoryLogDeviceFactory>(kLogSize));
 
   // Verify initial state.
@@ -1163,7 +1171,7 @@ TEST(PageAllocatorTest, TooManyAttachments)
   const llfs::PageIdFactory id_factory{llfs::PageCount{kNumPages}, /*device_id=*/0};
 
   batt::StatusOr<std::unique_ptr<llfs::PageAllocator>> page_allocator_status =
-      llfs::PageAllocator::recover(options, id_factory,
+      llfs::PageAllocator::recover(options, kTestPageSize, id_factory,
                                    *std::make_unique<llfs::MemoryLogDeviceFactory>(kLogSize));
 
   // Verify initial state.
@@ -1262,7 +1270,7 @@ TEST(PageAllocatorTest, CancelAllocate)
 
   for (usize seed = 0; seed < kNumRandomSeeds; ++seed) {
     batt::StatusOr<std::unique_ptr<llfs::PageAllocator>> page_allocator_status =
-        llfs::PageAllocator::recover(options, id_factory,
+        llfs::PageAllocator::recover(options, kTestPageSize, id_factory,
                                      *std::make_unique<llfs::MemoryLogDeviceFactory>(kLogSize));
 
     ASSERT_TRUE(page_allocator_status.ok()) << BATT_INSPECT(page_allocator_status.status());

@@ -16,6 +16,7 @@
 #ifndef LLFS_DISABLE_IO_URING
 
 #include <llfs/ioring.hpp>
+#include <llfs/log_device_runtime_options.hpp>
 #include <llfs/packed_config.hpp>
 #include <llfs/page_cache.hpp>
 #include <llfs/page_cache_options.hpp>
@@ -129,6 +130,11 @@ class StorageContext : public batt::RefCounted<StorageContext>
                                       info->p_config_slot.file_offset},
                                   BATT_FORWARD(extra_options)...);
   }
+
+  /** \brief Special case for LogDevice recovery; handles both IoRingLogDevice and IoRingLogDevice2.
+   */
+  StatusOr<std::unique_ptr<LogDeviceFactory>> recover_log_device(
+      const boost::uuids::uuid& uuid, const LogDeviceRuntimeOptions& log_runtime_options);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:

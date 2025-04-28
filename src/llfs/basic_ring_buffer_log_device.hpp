@@ -75,7 +75,12 @@ class BasicRingBufferLogDevice
 
   Status sync(LogReadMode mode, SlotUpperBoundAt event) override;
 
-  driver_type& driver()
+  driver_type& driver() noexcept
+  {
+    return this->driver_;
+  }
+
+  const driver_type& driver() const noexcept
   {
     return this->driver_;
   }
@@ -126,7 +131,7 @@ inline u64 BasicRingBufferLogDevice<Impl>::capacity() const
 template <class Impl>
 inline u64 BasicRingBufferLogDevice<Impl>::size() const
 {
-  return slot_distance(this->driver_.get_trim_pos(), this->driver_.get_commit_pos());
+  return slot_clamp_distance(this->driver_.get_trim_pos(), this->driver_.get_commit_pos());
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -134,7 +139,7 @@ inline u64 BasicRingBufferLogDevice<Impl>::size() const
 template <class Impl>
 inline Status BasicRingBufferLogDevice<Impl>::trim(slot_offset_type slot_lower_bound)
 {
-  BATT_CHECK_LE(this->driver_.get_trim_pos(), slot_lower_bound);
+  LLFS_CHECK_SLOT_GE(slot_lower_bound, this->driver_.get_trim_pos());
 
   return this->driver_.set_trim_pos(slot_lower_bound);
 }
@@ -226,7 +231,7 @@ class BasicRingBufferLogDevice<Impl>::WriterImpl : public LogDevice::Writer
     const slot_offset_type readable_end = this->device_->driver_.get_commit_pos();
 
     const usize space_available =
-        this->device_->buffer_.size() - slot_distance(readable_begin, readable_end);
+        this->device_->buffer_.size() - LLFS_CHECKED_SLOT_DISTANCE(readable_begin, readable_end);
 
     return space_available;
   }
@@ -240,7 +245,11 @@ class BasicRingBufferLogDevice<Impl>::WriterImpl : public LogDevice::Writer
     const usize space_required = byte_count + head_room;
 
     if (this->space() < space_required) {
-      return ::llfs::make_status(StatusCode::kPrepareFailedTrimRequired);
+      BATT_REQUIRE_OK(::llfs::make_status(StatusCode::kPrepareFailedTrimRequired))
+          << BATT_INSPECT(space_required) << BATT_INSPECT(this->space())
+          << BATT_INSPECT(this->device_->driver_.get_trim_pos())
+          << BATT_INSPECT(this->device_->driver_.get_commit_pos())
+          << boost::stacktrace::stacktrace{};
     }
 
     const slot_offset_type commit_pos = this->device_->driver_.get_commit_pos();

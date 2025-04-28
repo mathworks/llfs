@@ -309,9 +309,10 @@ void SimulatedPageDevice::Impl::drop(u32 device_create_step, PageId page_id,
           return;
         }
 
-        // No failure injected; erase the DataBlock at the given index and notify the op.
+        // No failure injected.
+        // Note that we are not not erasing the data block as we want to mimic the actual
+        // io_ring Page Device behavior.
         //
-        locked_blocks->erase(block_i);
         op->set_block_result(block_i - block_0, batt::OkStatus());
       });
     });

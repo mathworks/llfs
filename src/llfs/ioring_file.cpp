@@ -50,15 +50,7 @@ auto IoRing::File::operator=(File&& that) noexcept -> File&
 //
 IoRing::File::~File() noexcept
 {
-  if (this->fd_ != -1) {
-    if (this->registered_fd_ != -1) {
-      this->unregister_fd().IgnoreError();
-    }
-
-    batt::syscall_retry([&] {
-      return ::close(this->fd_);
-    });
-  }
+  this->close().IgnoreError();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -145,10 +137,7 @@ Status IoRing::File::read_all_fixed(i64 offset, MutableBuffer buffer, int buf_in
 //
 int IoRing::File::release()
 {
-  if (this->registered_fd_ != -1) {
-    this->unregister_fd().IgnoreError();
-    this->registered_fd_ = -1;
-  }
+  this->unregister_fd().IgnoreError();
 
   int released = -1;
   std::swap(released, this->fd_);
@@ -182,10 +171,11 @@ Status IoRing::File::unregister_fd()
     return OkStatus();
   }
 
-  Status status = this->io_ring_impl_->unregister_fd(this->registered_fd_);
-  BATT_REQUIRE_OK(status);
-
+  const int local_registered_fd = this->registered_fd_;
   this->registered_fd_ = -1;
+
+  Status status = this->io_ring_impl_->unregister_fd(local_registered_fd);
+  BATT_REQUIRE_OK(status) << batt::LogLevel::kError;
 
   return OkStatus();
 }

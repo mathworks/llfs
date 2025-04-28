@@ -88,6 +88,10 @@ class Volume
   //
   const VolumeOptions& options() const;
 
+  /** \brief The name for this Volume, as specified by the VolumeOptions.
+   */
+  const std::string& name() const noexcept;
+
   // Returns the UUID for this volume.
   //
   const boost::uuids::uuid& get_volume_uuid() const;
@@ -346,6 +350,10 @@ class Volume
   // Tracks the latest job that is durable (will-commit).
   //
   batt::Watch<slot_offset_type> durable_user_slot_{0};
+
+  // Set to true when pre-halt method is called.
+  //
+  std::atomic<bool> pre_halt_{false};
 };
 
 }  // namespace llfs

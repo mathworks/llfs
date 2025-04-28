@@ -9,7 +9,6 @@
 #include <llfs/volume_config.hpp>
 //
 
-#include <llfs/ioring_log_device.hpp>
 #include <llfs/page_recycler.hpp>
 #include <llfs/uuid.hpp>
 
@@ -28,6 +27,28 @@ BATT_PRINT_OBJECT_IMPL(PackedVolumeConfig,  //
                        (recycler_log_uuid)  //
 )
 
+namespace {
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<FileOffsetPtr<const PackedLogDeviceConfig2&>> add_recycler_log(
+    StorageFileBuilder::Transaction& txn, batt::StaticType<LogDeviceConfigOptions2>,
+    const VolumeConfigOptions& options)
+{
+  const LogDeviceConfigOptions2 recycler_log_options{
+      .uuid = random_uuid(),
+      .log_size = PageRecycler::calculate_log_size(
+          PageRecyclerOptions{}.set_max_refs_per_page(options.base.max_refs_per_page),
+          options.recycler_max_buffered_page_count),
+      .device_page_size_log2 = None,
+      .data_alignment_log2 = None,
+  };
+
+  return txn.add_object(recycler_log_options);
+}
+
+}  // namespace
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 Status configure_storage_object(StorageFileBuilder::Transaction& txn,
@@ -37,22 +58,13 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
   BATT_CHECK(!options.root_log.uuid)
       << "Creating a Volume from a pre-existing root log is not supported";
 
-  StatusOr<FileOffsetPtr<const PackedLogDeviceConfig&>> p_root_log_config =
-      txn.add_object(options.root_log);
+  using LogDeviceOptionsType = std::decay_t<decltype(options.root_log)>;
 
+  auto p_root_log_config = txn.add_object(options.root_log);
   BATT_REQUIRE_OK(p_root_log_config);
 
-  const LogDeviceConfigOptions recycler_log_options{
-      .uuid = random_uuid(),
-      .pages_per_block_log2 = IoRingLogConfig::kDefaultPagesPerBlockLog2 + 1,
-      .log_size = PageRecycler::calculate_log_size(
-          PageRecyclerOptions{}.set_max_refs_per_page(options.base.max_refs_per_page),
-          options.recycler_max_buffered_page_count),
-  };
-
-  StatusOr<FileOffsetPtr<const PackedLogDeviceConfig&>> p_recycler_log_config =
-      txn.add_object(recycler_log_options);
-
+  auto p_recycler_log_config =
+      add_recycler_log(txn, batt::StaticType<LogDeviceOptionsType>{}, options);
   BATT_REQUIRE_OK(p_recycler_log_config);
 
   p_config->uuid = options.base.uuid.value_or(random_uuid());
@@ -85,15 +97,14 @@ StatusOr<std::unique_ptr<Volume>> recover_storage_object(
   StatusOr<batt::SharedPtr<PageCache>> page_cache = storage_context->get_page_cache();
   BATT_REQUIRE_OK(page_cache);
 
-  StatusOr<std::unique_ptr<LogDeviceFactory>> root_log_factory = storage_context->recover_object(
-      batt::StaticType<PackedLogDeviceConfig>{}, p_volume_config->root_log_uuid,
-      volume_runtime_options.root_log_options);
+  StatusOr<std::unique_ptr<LogDeviceFactory>> root_log_factory =
+      storage_context->recover_log_device(p_volume_config->root_log_uuid,
+                                          volume_runtime_options.root_log_options);
   BATT_REQUIRE_OK(root_log_factory);
 
   StatusOr<std::unique_ptr<LogDeviceFactory>> recycler_log_factory =
-      storage_context->recover_object(batt::StaticType<PackedLogDeviceConfig>{},
-                                      p_volume_config->recycler_log_uuid,
-                                      volume_runtime_options.recycler_log_options);
+      storage_context->recover_log_device(p_volume_config->recycler_log_uuid,
+                                          volume_runtime_options.recycler_log_options);
   BATT_REQUIRE_OK(recycler_log_factory);
 
   VolumeRecoverParams params{

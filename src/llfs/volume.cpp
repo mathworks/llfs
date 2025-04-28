@@ -41,6 +41,13 @@ const VolumeOptions& Volume::options() const
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+const std::string& Volume::name() const noexcept
+{
+  return this->options().name;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 const boost::uuids::uuid& Volume::get_volume_uuid() const
 {
   return this->volume_uuid_;
@@ -161,7 +168,7 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
              metadata.ids->recycler_uuid,
              metadata.ids->trimmer_uuid,
          }) {
-      for (PageCache::PageDeviceEntry* entry : cache->all_devices()) {
+      for (PageDeviceEntry* entry : cache->all_devices()) {
         BATT_CHECK_NOT_NULLPTR(entry);
         const PageArena& arena = entry->arena;
         Optional<PageAllocatorAttachmentStatus> attachment =
@@ -273,7 +280,7 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
              metadata.ids->recycler_uuid,
              metadata.ids->trimmer_uuid,
          }) {
-      for (PageCache::PageDeviceEntry* entry : cache->all_devices()) {
+      for (PageDeviceEntry* entry : cache->all_devices()) {
         BATT_CHECK_NOT_NULLPTR(entry);
         BATT_REQUIRE_OK(entry->arena.allocator().notify_user_recovered(uuid));
       }
@@ -354,6 +361,7 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
 //
 Volume::~Volume() noexcept
 {
+  this->pre_halt();
   this->root_log_->flush().IgnoreError();
   this->halt();
   this->join();
@@ -372,9 +380,13 @@ void Volume::start()
         /*executor=*/this->task_scheduler_.schedule_task(),
         [this] {
           Status result = this->trimmer_->run();
-          LLFS_VLOG(1) << "Volume::trimmer_task_ exited with status=" << result;
+          if (this->pre_halt_.load()) {
+            LLFS_VLOG(1) << "Volume::trimmer_task_ exited with status=" << result;
+          } else {
+            LLFS_LOG_ERROR() << "Volume::trimmer_task_ exited with status=" << result;
+          }
         },
-        "Volume::trimmer_task_");
+        /*task_name=*/batt::to_string(this->name(), "_Volume.trimmer_task"));
   }
 }
 
@@ -382,8 +394,14 @@ void Volume::start()
 //
 void Volume::pre_halt()
 {
-  if (this->recycler_) {
-    this->recycler_->pre_halt();
+  const bool previously_pre_halted = this->pre_halt_.exchange(true);
+  if (!previously_pre_halted) {
+    if (this->trimmer_) {
+      this->trimmer_->pre_halt();
+    }
+    if (this->recycler_) {
+      this->recycler_->pre_halt();
+    }
   }
 }
 
@@ -391,6 +409,8 @@ void Volume::pre_halt()
 //
 void Volume::halt()
 {
+  this->pre_halt();
+
   this->slot_writer_->halt();
   this->trim_control_->halt();
   this->trimmer_->halt();

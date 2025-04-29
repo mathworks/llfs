@@ -80,7 +80,9 @@ TEST(StorageContextTest, GetPageCache)
                                     .uuid = llfs::None,
                                     .device_id = llfs::None,
                                     .page_count = llfs::PageCount{32},
+                                    .max_page_count = llfs::PageCount{32},
                                     .page_size_log2 = llfs::PageSizeLog2{12},
+                                    .last_in_file = false,
                                 },
                         },
                 });
@@ -173,7 +175,7 @@ TEST_F(DynamicStorageProvisioning, PageDeviceGrows)
 {
   boost::uuids::uuid page_device_uuid;
 
-  int max_page_count = 128;
+  u64 max_page_count = 128;
 
   // Create a storage file with one arena (4kb)
   //
@@ -218,7 +220,7 @@ TEST_F(DynamicStorageProvisioning, PageDeviceGrows)
   boost::asio::io_context io;
 
   boost::asio::post(io.get_executor(), [&] {
-    for (int i = 0; i < max_page_count; ++i) {
+    for (u64 i = 0; i < max_page_count; ++i) {
       auto handler = [](batt::Status status) {
         LOG(INFO) << "Handler invoked";
         BATT_CHECK_OK(status);

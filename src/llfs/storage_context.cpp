@@ -106,8 +106,8 @@ Status StorageContext::add_existing_file(const batt::SharedPtr<StorageFile>& fil
               BATT_CHECK_EQ(volume_config.get_last_in_file(), false);
             } break;
             case PackedConfigSlotBase::Tag::kLogDevice: {
-              const PackedLogDeviceConfig& log_device_config =
-                  reinterpret_cast<const PackedLogDeviceConfig&>(*slot);
+              const PackedLogDeviceConfig2& log_device_config =
+                  reinterpret_cast<const PackedLogDeviceConfig2&>(*slot);
               BATT_CHECK_EQ(log_device_config.get_last_in_file(), false);
             } break;
             case PackedConfigSlotBase::Tag::kPageDevice: {

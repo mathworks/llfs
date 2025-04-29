@@ -37,6 +37,13 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
                                 FileOffsetPtr<PackedPageDeviceConfig&> p_config,
                                 const PageDeviceConfigOptions& options)
 {
+  // If the PageDevice is the last in the file, then the max page count needs to be greater or equal
+  // to initial page count. If the PageDevice is not marked last in file, the page counts need to be
+  // equal.
+  //
+  BATT_CHECK((options.last_in_file && options.max_page_count >= options.page_count) ||
+             (!options.last_in_file && options.max_page_count == options.page_count));
+
   const i64 page_size = (i64{1} << options.page_size_log2);
   const i64 pages_total_size = page_size * options.page_count;
 

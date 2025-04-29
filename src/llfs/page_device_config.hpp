@@ -219,7 +219,7 @@ struct PackedPageDeviceConfig : PackedConfigSlotHeader {
 
   // Get whether or not this PageDevice is the last object in an llfs file.
   //
-  bool get_last_in_file() const
+  bool is_last_in_file() const
   {
     return options_mask & LAST_IN_FILE_MASK;
   }

@@ -61,14 +61,12 @@ struct PackedConfigSlotBase {
     //
     BATT_PANIC() << "Failed call to set_last_in_file on object "
                  << "Type PackedConfigSlotBase because this function has not been implemented. "
-                    "last_in_file=="
-                 << last_in_file;
-    return;
+                 << BATT_INSPECT(last_in_file);
   }
 
   // Get whether or not this is the last object in an llfs file.
   //
-  bool get_last_in_file() const
+  bool is_last_in_file() const
   {
     return false;
   }

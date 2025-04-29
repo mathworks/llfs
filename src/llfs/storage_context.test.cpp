@@ -208,7 +208,7 @@ TEST_F(DynamicStorageProvisioning, PageDeviceGrows)
           llfs::IoRingFileRuntimeOptions::with_default_values(io->get_io_ring()));
 
   BATT_CHECK_OK(recovered_device);
-  BATT_CHECK((*recovered_device)->get_last_in_file());
+  BATT_CHECK((*recovered_device)->is_last_in_file());
 
   this->page_device = std::move(*recovered_device);
 

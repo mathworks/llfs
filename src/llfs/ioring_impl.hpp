@@ -311,9 +311,6 @@ inline void IoRingImpl::submit(
 
   std::unique_lock<std::mutex> lock{this->ring_mutex_};
 
-  // TODO: [Gabe Bornstein 4/10/25] Currently, if users runs out of disk space,
-  //  we blow up the program if there's an issue. Do we want to do something else?
-  //
   struct io_uring_sqe* sqe = io_uring_get_sqe(&this->ring_);
   BATT_CHECK_NOT_NULLPTR(sqe);
 

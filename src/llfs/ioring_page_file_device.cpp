@@ -231,16 +231,9 @@ void IoRingPageFileDevice::drop(PageId id, WriteHandler&& handler)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-bool IoRingPageFileDevice::get_last_in_file() const
+bool IoRingPageFileDevice::is_last_in_file() const
 {
-  return this->config_->get_last_in_file();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-void IoRingPageFileDevice::set_last_in_file(bool last_in_file)
-{
-  this->config_->set_last_in_file(last_in_file);
+  return this->config_->is_last_in_file();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

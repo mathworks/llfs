@@ -98,17 +98,17 @@ Status StorageContext::add_existing_file(const batt::SharedPtr<StorageFile>& fil
             case PackedConfigSlotBase::Tag::kPageArena: {
               const PackedPageArenaConfig& arena_config =
                   reinterpret_cast<const PackedPageArenaConfig&>(*slot);
-              BATT_CHECK_EQ(arena_config.get_last_in_file(), false);
+              BATT_CHECK_EQ(arena_config.is_last_in_file(), false);
             } break;
             case PackedConfigSlotBase::Tag::kVolume: {
               const PackedVolumeConfig& volume_config =
                   reinterpret_cast<const PackedVolumeConfig&>(*slot);
-              BATT_CHECK_EQ(volume_config.get_last_in_file(), false);
+              BATT_CHECK_EQ(volume_config.is_last_in_file(), false);
             } break;
-            case PackedConfigSlotBase::Tag::kLogDevice: {
+            case PackedConfigSlotBase::Tag::kLogDevice2: {
               const PackedLogDeviceConfig2& log_device_config =
                   reinterpret_cast<const PackedLogDeviceConfig2&>(*slot);
-              BATT_CHECK_EQ(log_device_config.get_last_in_file(), false);
+              BATT_CHECK_EQ(log_device_config.is_last_in_file(), false);
             } break;
             case PackedConfigSlotBase::Tag::kPageDevice: {
               const PackedPageDeviceConfig& page_device_config =
@@ -116,29 +116,28 @@ Status StorageContext::add_existing_file(const batt::SharedPtr<StorageFile>& fil
 
               // If both are true, then we have multiple page devices marked as "last_in_file".
               //
-              bool multiple_last_in_file = page_device_config.get_last_in_file() && last_in_file;
+              bool multiple_last_in_file = page_device_config.is_last_in_file() && last_in_file;
               if (multiple_last_in_file) {
                 status.Update(StatusCode::kPageDeviceNotLastInFile);
                 break;
               }
 
-              if (page_device_config.get_last_in_file()) {
+              if (page_device_config.is_last_in_file()) {
                 last_in_file = true;
               }
             } break;
             case PackedConfigSlotBase::Tag::kPageAllocator: {
               const PackedPageAllocatorConfig& page_allocator_config =
                   reinterpret_cast<const PackedPageAllocatorConfig&>(*slot);
-              BATT_CHECK_EQ(page_allocator_config.get_last_in_file(), false);
+              BATT_CHECK_EQ(page_allocator_config.is_last_in_file(), false);
             } break;
-            default:
-              // TODO: [Gabe Bornstein 4/23/25] Do we want to BATT_PANIC here instead? We
-              // occasionally hit this case, but not sure we should.
-              //
-              LOG(INFO) << "Reached default case in switch statement inside "
-                           "StorageContext::add_existing_file."
-                        << " The value of PackedConfigSlotBase::Tag was: " << slot->tag;
+            case PackedConfigSlotBase::Tag::kVolumeContinuation: {
               break;
+            }
+            default:
+              BATT_PANIC() << "Reached default case in switch statement inside "
+                              "StorageContext::add_existing_file."
+                           << " The value of PackedConfigSlotBase::Tag was: " << slot->tag;
           }
 
           this->index_.emplace(slot->uuid,

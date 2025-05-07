@@ -210,9 +210,9 @@ TEST_F(StorageFileBuilderTest, PageDeviceConfig_NoFlush)
           .uuid = llfs::None,
           .device_id = llfs::None,
           .page_count = llfs::PageCount{kTestPageCount},
-          .max_page_count = llfs::PageCount{kTestPageCount},
+          .max_page_count = llfs::None,
           .page_size_log2 = llfs::PageSizeLog2{12},
-          .last_in_file = false,
+          .last_in_file = llfs::None,
       });
 
   ASSERT_TRUE(packed_config.ok()) << BATT_INSPECT(packed_config.status());
@@ -230,9 +230,9 @@ TEST_F(StorageFileBuilderTest, PageDeviceConfig_Flush)
           .uuid = llfs::None,
           .device_id = llfs::None,
           .page_count = llfs::PageCount{kTestPageCount},
-          .max_page_count = llfs::PageCount{kTestPageCount},
+          .max_page_count = llfs::None,
           .page_size_log2 = llfs::PageSizeLog2{page_size_log2},
-          .last_in_file = false,
+          .last_in_file = llfs::None,
       };
       const usize kTestPageSize = usize{1} << options.page_size_log2;
 
@@ -317,9 +317,9 @@ TEST_F(StorageFileBuilderTest, WriteReadFile)
         .uuid = llfs::None,
         .device_id = llfs::None,
         .page_count = llfs::PageCount{kTestPageCount},
-        .max_page_count = llfs::PageCount{kTestPageCount},
+        .max_page_count = llfs::None,
         .page_size_log2 = llfs::PageSizeLog2{12} /* 4096 */,
-        .last_in_file = false,
+        .last_in_file = llfs::None,
     };
 
     {
@@ -430,9 +430,9 @@ TEST_F(StorageFileBuilderTest, WriteReadManyPackedConfigs)
         .uuid = llfs::None,
         .device_id = llfs::None,
         .page_count = llfs::PageCount{kTestPageCount},
-        .max_page_count = llfs::PageCount{kTestPageCount},
+        .max_page_count = llfs::None,
         .page_size_log2 = llfs::PageSizeLog2{9},
-        .last_in_file = false,
+        .last_in_file = llfs::None,
     };
 
     llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageDeviceConfig&>> packed_config =

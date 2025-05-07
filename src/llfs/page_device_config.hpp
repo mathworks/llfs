@@ -62,13 +62,14 @@ struct PageDeviceConfigOptions {
   //
   Optional<page_device_id_int> device_id;
 
-  // The number of pages in this device.
+  // The number of pages in this device. If max_page_count is specified, the initial number of pages
+  // in this device.
   //
   PageCount page_count;
 
   // The maximum number of pages that can be allocated on this device.
   //
-  PageCount max_page_count;
+  Optional<PageCount> max_page_count;
 
   // log2(the page size of the device)
   //
@@ -77,7 +78,7 @@ struct PageDeviceConfigOptions {
   // Information on if this PageDevice is placed at the end of the llfs file.
   // Allows for dynamic growth of the Page Device and llfs file.
   //
-  bool last_in_file;
+  Optional<bool> last_in_file;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -103,7 +104,9 @@ inline bool operator==(const PageDeviceConfigOptions& l, const PageDeviceConfigO
          && l.device_id == r.device_id            //
          && l.page_count == r.page_count          //
          && l.max_page_count == r.max_page_count  //
-         && l.page_size_log2 == r.page_size_log2;
+         && l.page_size_log2 == r.page_size_log2  //
+         && l.last_in_file == r.last_in_file      //
+         && l.max_page_count == r.max_page_count;
 }
 
 inline bool operator!=(const PageDeviceConfigOptions& l, const PageDeviceConfigOptions& r)
@@ -208,20 +211,21 @@ struct PackedPageDeviceConfig : PackedConfigSlotHeader {
 
   // Set whether or not this PageDevice is the last object in an llfs file.
   //
-  void set_last_in_file(bool last_in_file)
+  PackedPageDeviceConfig set_last_in_file(bool last_in_file)
   {
     if (last_in_file) {
-      options_mask |= LAST_IN_FILE_MASK;
+      this->options_mask |= PackedPageDeviceConfig::LAST_IN_FILE_MASK;
     } else {
-      options_mask &= ~LAST_IN_FILE_MASK;
+      this->options_mask &= ~PackedPageDeviceConfig::LAST_IN_FILE_MASK;
     }
+    return *this;
   }
 
   // Get whether or not this PageDevice is the last object in an llfs file.
   //
   bool is_last_in_file() const
   {
-    return options_mask & LAST_IN_FILE_MASK;
+    return this->options_mask & PackedPageDeviceConfig::LAST_IN_FILE_MASK;
   }
 };
 

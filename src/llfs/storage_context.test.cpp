@@ -80,9 +80,9 @@ TEST(StorageContextTest, GetPageCache)
                                     .uuid = llfs::None,
                                     .device_id = llfs::None,
                                     .page_count = llfs::PageCount{32},
-                                    .max_page_count = llfs::PageCount{32},
+                                    .max_page_count = llfs::None,
                                     .page_size_log2 = llfs::PageSizeLog2{12},
-                                    .last_in_file = false,
+                                    .last_in_file = llfs::None,
                                 },
                         },
                 });
@@ -117,9 +117,9 @@ TEST(StorageContextTest, GetPageCache)
                                     .uuid = llfs::None,
                                     .device_id = llfs::None,
                                     .page_count = llfs::PageCount{32},
-                                    .max_page_count = llfs::PageCount{32},
+                                    .max_page_count = llfs::None,
                                     .page_size_log2 = llfs::PageSizeLog2{21},
-                                    .last_in_file = false,
+                                    .last_in_file = llfs::None,
                                 },
                         },
                 });
@@ -156,6 +156,7 @@ class DynamicStorageProvisioning : public ::testing::Test
     this->io = llfs::ScopedIoRing::make_new(llfs::MaxQueueDepth{1024}, llfs::ThreadPoolSize{1});
 
     ASSERT_TRUE(this->io.ok()) << BATT_INSPECT(this->io.status());
+
     // Create a StorageContext.
     //
     this->storage_context = batt::make_shared<llfs::StorageContext>(
@@ -177,7 +178,7 @@ TEST_F(DynamicStorageProvisioning, PageDeviceGrows)
 
   u64 max_page_count = 128;
 
-  // Create a storage file with one arena (4kb)
+  // Create a storage file with one page device.
   //
   llfs::Status file_create_status = storage_context->add_new_file(
       storage_file_name, [&](llfs::StorageFileBuilder& builder) -> llfs::Status {
@@ -207,50 +208,43 @@ TEST_F(DynamicStorageProvisioning, PageDeviceGrows)
           batt::StaticType<llfs::PackedPageDeviceConfig>{}, page_device_uuid,
           llfs::IoRingFileRuntimeOptions::with_default_values(io->get_io_ring()));
 
-  BATT_CHECK_OK(recovered_device);
-  BATT_CHECK((*recovered_device)->is_last_in_file());
+  ASSERT_TRUE(recovered_device.ok());
+  ASSERT_TRUE((*recovered_device)->is_last_in_file());
 
   this->page_device = std::move(*recovered_device);
 
   std::filesystem::path llfs_file{this->storage_file_name};
-  int original_file_size = std::filesystem::file_size(llfs_file);
-  int current_file_size = std::filesystem::file_size(llfs_file);
-  LOG(INFO) << "original_file_size==" << original_file_size;
+  i64 prev_file_size = std::filesystem::file_size(llfs_file);
+  i64 current_file_size = std::filesystem::file_size(llfs_file);
 
   boost::asio::io_context io;
 
-  boost::asio::post(io.get_executor(), [&] {
+  batt::Task task(io.get_executor(), [&] {
     for (u64 i = 0; i < max_page_count; ++i) {
-      auto handler = [](batt::Status status) {
-        LOG(INFO) << "Handler invoked";
-        BATT_CHECK_OK(status);
-      };
-
       batt::StatusOr<std::shared_ptr<llfs::PageBuffer>> page_buffer =
           this->page_device->prepare(static_cast<llfs::PageId>(i));
       BATT_CHECK_OK(page_buffer);
-      this->page_device->write(*page_buffer, handler);
+
+      batt::Status write_status = batt::Task::await<batt::Status>([&](auto&& handler) {
+        this->page_device->write(*page_buffer, BATT_FORWARD(handler));
+      });
+
+      BATT_CHECK_OK(write_status);
+
+      // Verify the file is growing a single page at a time.
+      //
+      BATT_ASSERT(current_file_size - prev_file_size == (*recovered_device)->page_size());
 
       current_file_size = std::filesystem::file_size(llfs_file);
-      LOG(INFO) << "original_file_size==" << original_file_size
-                << ", current_file_size==" << current_file_size;
+      BATT_CHECK_GT(current_file_size, prev_file_size);
+
+      prev_file_size = current_file_size;
     }
   });
 
-  std::thread thread1{[&io] {
-    io.run();
-  }};
+  io.run();
 
-  thread1.join();
-
-  // We expect file size to have grown after several writes.
-  // Note: File growth characteristics appear to vary. Sometimes, file size grows with every write.
-  // Sometimes, it will not grow after several writes.
-  //
-  BATT_CHECK_GT(current_file_size, original_file_size);
-
-  llfs::PageCacheMetrics& metrics = (*cache)->metrics();
-  LOG(INFO) << "metrics.get_page_view_count: " << metrics.get_page_view_count.load();
+  task.join();
 }
 
 TEST_F(DynamicStorageProvisioning, CreateMultipleLastFiles)
@@ -258,7 +252,7 @@ TEST_F(DynamicStorageProvisioning, CreateMultipleLastFiles)
   // Create a storage file with one arena (4kb)
   //
   llfs::Status file_create_status = storage_context->add_new_file(
-      storage_file_name, [&](llfs::StorageFileBuilder& builder) -> llfs::Status {
+      this->storage_file_name, [&](llfs::StorageFileBuilder& builder) -> llfs::Status {
         llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageDeviceConfig&>> packed_config1 =
             builder.add_object(llfs::PageDeviceConfigOptions{
                 .uuid = llfs::None,
@@ -287,7 +281,45 @@ TEST_F(DynamicStorageProvisioning, CreateMultipleLastFiles)
   // We expect this to fail because we have attempted to mark multiple PageDevices as
   // "last_in_file".
   //
-  ASSERT_FALSE(file_create_status.ok()) << BATT_INSPECT(file_create_status);
+  ASSERT_TRUE(file_create_status == llfs::StatusCode::kStorageObjectNotLastInFile)
+      << BATT_INSPECT(file_create_status);
+}
+
+TEST_F(DynamicStorageProvisioning, InvalidOptionsDeath)
+{
+  EXPECT_DEATH(BATT_CHECK_OK(storage_context->add_new_file(
+                   storage_file_name,
+                   [&](llfs::StorageFileBuilder& builder) -> llfs::Status {
+                     llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageDeviceConfig&>>
+                         packed_config1 = builder.add_object(llfs::PageDeviceConfigOptions{
+                             .uuid = llfs::None,
+                             .device_id = llfs::None,
+                             .page_count = llfs::PageCount{1},
+                             .max_page_count = llfs::PageCount{0},
+                             .page_size_log2 = llfs::PageSizeLog2{21},
+                             .last_in_file = true,
+                         });
+
+                     return llfs::OkStatus();
+                   })),
+               "Assert.*fail.*is.*valid");
+
+  EXPECT_DEATH(BATT_CHECK_OK(storage_context->add_new_file(
+                   storage_file_name,
+                   [&](llfs::StorageFileBuilder& builder) -> llfs::Status {
+                     llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageDeviceConfig&>>
+                         packed_config1 = builder.add_object(llfs::PageDeviceConfigOptions{
+                             .uuid = llfs::None,
+                             .device_id = llfs::None,
+                             .page_count = llfs::PageCount{1},
+                             .max_page_count = llfs::PageCount{2},
+                             .page_size_log2 = llfs::PageSizeLog2{21},
+                             .last_in_file = false,
+                         });
+
+                     return llfs::OkStatus();
+                   })),
+               "Assert.*fail.*is.*valid");
 }
 
 }  // namespace

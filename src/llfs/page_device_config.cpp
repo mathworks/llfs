@@ -45,7 +45,9 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
   const PageCount max_page_count = options.max_page_count.value_or(options.page_count);
 
   BATT_CHECK((last_in_file && max_page_count >= options.page_count) ||
-             (!last_in_file && max_page_count == options.page_count));
+             (!last_in_file && max_page_count == options.page_count))
+      << "Error: Invalid PageDevice Configuration. Incorrect mix of last_in_file, page_count, and "
+         "max_page_count options";
 
   const i64 page_size = (i64{1} << options.page_size_log2);
   const i64 pages_total_size = page_size * options.page_count;

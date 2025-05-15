@@ -103,7 +103,6 @@ inline bool operator==(const PageDeviceConfigOptions& l, const PageDeviceConfigO
   return l.uuid == r.uuid                         //
          && l.device_id == r.device_id            //
          && l.page_count == r.page_count          //
-         && l.max_page_count == r.max_page_count  //
          && l.page_size_log2 == r.page_size_log2  //
          && l.last_in_file == r.last_in_file      //
          && l.max_page_count == r.max_page_count;

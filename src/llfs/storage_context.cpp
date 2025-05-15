@@ -80,6 +80,8 @@ Status StorageContext::add_new_file(const std::string& file_name,
   return this->add_existing_named_file(batt::make_copy(file_name));
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 bool is_last_in_file(const PackedConfigSlot& slot)
 {
   // Verify there is only a single object per file marked as "last_in_file"

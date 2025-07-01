@@ -233,7 +233,7 @@ TEST_F(DynamicStorageProvisioning, InvalidOptionsDeath)
           .IgnoreError(),
       "Invalid PageDevice Configuration");
 
-  llfs::delete_file(this->storage_file_name).IgnoreError();
+  ASSERT_TRUE(llfs::delete_file(this->storage_file_name).ok());
   EXPECT_FALSE(std::filesystem::exists(std::filesystem::path{this->storage_file_name}));
 
   EXPECT_DEATH(
@@ -321,31 +321,31 @@ TEST_P(DynamicPageAllocation, PageDeviceGrows)
 
   boost::asio::io_context io;
 
-  // Verify allocating the first this->initial_page_count pages doesn't grow the llfs file. These
-  // pages should already exist in the file.
-  //
-  for (u64 i = 0; i < this->initial_page_count; ++i) {
-    // Verify the file_size does not grow here.
-    //
-    ASSERT_EQ(current_file_size, original_file_size);
-
-    batt::StatusOr<std::shared_ptr<llfs::PageBuffer>> page_buffer =
-        this->page_device->prepare(static_cast<llfs::PageId>(i));
-
-    ASSERT_TRUE(page_buffer.ok()) << BATT_INSPECT(page_buffer);
-
-    batt::Status write_status = batt::Task::await<batt::Status>([&](auto&& handler) {
-      this->page_device->write(*page_buffer, BATT_FORWARD(handler));
-    });
-
-    ASSERT_TRUE(write_status.ok()) << BATT_INSPECT(write_status);
-
-    // Verify the file is growing a single page at a time.
-    //
-    current_file_size = std::filesystem::file_size(llfs_file);
-  }
-
   batt::Task task(io.get_executor(), [&] {
+    // Verify allocating the first this->initial_page_count pages doesn't grow the llfs file. These
+    // pages should already exist in the file.
+    //
+    for (u64 i = 0; i < this->initial_page_count; ++i) {
+      // Verify the file_size does not grow here.
+      //
+      ASSERT_EQ(current_file_size, original_file_size);
+
+      batt::StatusOr<std::shared_ptr<llfs::PageBuffer>> page_buffer =
+          this->page_device->prepare(static_cast<llfs::PageId>(i));
+
+      ASSERT_TRUE(page_buffer.ok()) << BATT_INSPECT(page_buffer);
+
+      batt::Status write_status = batt::Task::await<batt::Status>([&](auto&& handler) {
+        this->page_device->write(*page_buffer, BATT_FORWARD(handler));
+      });
+
+      ASSERT_TRUE(write_status.ok()) << BATT_INSPECT(write_status);
+
+      // Verify the file is growing a single page at a time.
+      //
+      current_file_size = std::filesystem::file_size(llfs_file);
+    }
+
     for (u64 i = this->initial_page_count; i < this->max_page_count; ++i) {
       // Verify the total file_size is equivalent to the number of allocated pages +
       // config size (in bytes).

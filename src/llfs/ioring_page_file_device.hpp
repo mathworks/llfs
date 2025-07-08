@@ -35,6 +35,8 @@ class IoRingPageFileDevice : public PageDevice
 
   PageSize page_size() override;
 
+  bool is_last_in_file() const override;
+
   StatusOr<std::shared_ptr<PageBuffer>> prepare(PageId page_id) override;
 
   void write(std::shared_ptr<const PageBuffer>&& page_buffer, WriteHandler&& handler) override;

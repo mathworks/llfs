@@ -103,6 +103,12 @@ Status IoRing::File::read_all(i64 offset, MutableBuffer buffer)
     });
     LLFS_DVLOG(1) << BATT_INSPECT(n_read);
     BATT_REQUIRE_OK(n_read);
+
+    if (*n_read == 0) {
+      LLFS_DVLOG(1) << "read_all read 0 Bytes. Returning OutOfRange Error.";
+      return batt::StatusCode::kOutOfRange;
+    }
+
     offset += *n_read;
     buffer += *n_read;
   }

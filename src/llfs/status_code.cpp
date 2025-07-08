@@ -13,7 +13,10 @@
 
 namespace llfs {
 
-#define CODE_WITH_MSG_(code, msg) {code, msg " (" #code ")"}
+#define CODE_WITH_MSG_(code, msg)                                                                  \
+  {                                                                                                \
+    code, msg " (" #code ")"                                                                       \
+  }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
@@ -139,6 +142,9 @@ bool initialize_status_codes()
       CODE_WITH_MSG_(StatusCode::kLogDeviceV1Deprecated,
                      "IoRingLogDevice (aka LogDevice storage object) has been deprecated; use "
                      "IoRingLogDevice2/LogDevice2 instead"),  // 66,
+      CODE_WITH_MSG_(StatusCode::kStorageObjectNotLastInFile,
+                     "Failed to create llfs file. There are multiple storage objects "
+                     "marked as 'last_in_file'"),  // 67,
   });
   return initialized;
 }

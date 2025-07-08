@@ -52,6 +52,24 @@ struct PackedConfigSlotBase {
   // case).
   //
   little_u8 n_slots;
+
+  // Set whether or not this is the last object in an llfs file.
+  //
+  void set_last_in_file(bool last_in_file)
+  {
+    // We should never call this function unless it's been overriden
+    //
+    BATT_PANIC() << "Failed call to set_last_in_file on object "
+                 << "Type PackedConfigSlotBase because this function has not been implemented. "
+                 << BATT_INSPECT(last_in_file);
+  }
+
+  // Get whether or not this is the last object in an llfs file.
+  //
+  bool is_last_in_file() const
+  {
+    return false;
+  }
 };
 
 BATT_STATIC_ASSERT_EQ(sizeof(PackedConfigSlotBase), 4);

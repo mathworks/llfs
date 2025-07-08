@@ -45,6 +45,11 @@ class PageDevice
 
   virtual PageSize page_size() = 0;
 
+  virtual bool is_last_in_file() const
+  {
+    return false;
+  }
+
   // For convenience...
   //
   PageCount capacity()

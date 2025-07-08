@@ -37,6 +37,18 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
                                 FileOffsetPtr<PackedPageDeviceConfig&> p_config,
                                 const PageDeviceConfigOptions& options)
 {
+  // If the PageDevice is the last in the file, then the max page count needs to be greater or equal
+  // to initial page count. If the PageDevice is not marked last in file, the page counts need to be
+  // equal.
+  //
+  const bool last_in_file = options.last_in_file.value_or(false);
+  const PageCount max_page_count = options.max_page_count.value_or(options.page_count);
+
+  BATT_CHECK((last_in_file && max_page_count >= options.page_count) ||
+             (!last_in_file && max_page_count == options.page_count))
+      << "Error: Invalid PageDevice Configuration. Incorrect mix of last_in_file, page_count, and "
+         "max_page_count options";
+
   const i64 page_size = (i64{1} << options.page_size_log2);
   const i64 pages_total_size = page_size * options.page_count;
 
@@ -48,9 +60,11 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
   } else {
     p_config->device_id = *options.device_id;
   }
-  p_config->page_count = options.page_count;
+
+  p_config->page_count = max_page_count;
   p_config->page_size_log2 = options.page_size_log2;
   p_config->uuid = options.uuid.value_or(boost::uuids::random_generator{}());
+  p_config->set_last_in_file(last_in_file);
 
   txn.require_pre_flush_action([pages_offset, page_size = page_size,
                                 page_count = options.page_count](RawBlockFile& file) -> Status {

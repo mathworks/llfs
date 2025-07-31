@@ -107,6 +107,7 @@ While it is possible for applications do to this directly using the `PageDevice`
 
 ## Requirements:
 
+- `cor` command line tool ([installation instructions here](https://gitlab.com/batteriesincluded/batt-cli#cor-launcher-cor-toolkit-launcher-front-end))
 - gcc (11.2 or later)
 - gnu make
 - cmake (3.16 or later)
@@ -124,56 +125,53 @@ The following Conan remote must be added to resolve the Batteries package depend
 conan remote add batteriesincluded https://batteriesincluded.cc/artifactory/api/conan/conan-local
 ```
 
-## Run Makefile
+## Run `cor` Commands
 
-To install Conan dependencies, generate makefiles, build LLFS, and run tests, simply run (from project root dir):
+To install Conan dependencies and build LLFS, simply run (from project root dir):
 
 ```shell
-make
+cor build
 ```
 
-This is a shortcut for the more verbose command:
+To run tests, run
 
 ```shell
-make install build test
+cor test
 ```
 
 ### Build Types
 
-The default build type is `RelWithDebInfo`; this is the standard CMake hybrid build type (some optimization, with debug symbols).  We also support build types `Release` and `Debug`.  To make the project with a non-default build type, you can run:
+The default build type is `RelWithDebInfo`; this is the standard CMake hybrid build type (some optimization, with debug symbols).  We also support build types `Release` and `Debug`; to specify the build type, use the `--build-type` flag as shown below:
 
 ```
-make BUILD_TYPE=Debug install build test
+cor build --build-type=Debug
 ```
 
 All output files live in the directory `build/${BUILD_TYPE}/` (e.g. `build/RelWithDebInfo/`), so you can have multiple build types co-existing simultaneously (e.g., Debug and Release).
 
-### Summary of Makefile Targets
+### Summary of `cor` Commands
+
+Below is a brief summary of a select few `cor` commands when used with LLFS. To specify a build type to run the command with, use the `--build-type` flag as discussed above.
 
 - `install`
-    - Like `conan install`; installs Conan package dependencies on the local system
+    - Installs Conan package dependencies on the local system
 - `build`
-    - Like `conan build`; builds `libllfs.a`, `llfs_Test` (the unit test), and `llfs` (minimal CLI utility; WIP)
-    - Requires:
-        - `install`
+    - Builds `libllfs.a`, `llfs_Test` (the unit tests), and `llfs` (minimal CLI utility, WIP); implicitly installs Conan package dependencies if `cor install` hasn't run yet
 - `test`
-    - Runs unit tests
-    - Requires:
-        - `install`
-        - `build`
+    - Runs unit tests; implicitly installs Conan package dependencies and builds LLFS if those steps haven't been done yet
 - `export-pkg`
     - Exports LLFS Conan package (from existing build) to the local cache, for consumption by downstream projects
-    - Requires:
-        - `install`
-        - `build`
-    - Recommended:
-        - `test`
-- `create`
-    - Creates LLFS Conan package using a clean build; _does not run tests_
 - `clean`
     - Removes the build directory
-- `clean-pkg`
+- `remove`
     - Removes the current Conan package version from the local cache
+
+
+For a full listing and description of existing `cor` commands, run the following command:
+
+```
+cor --help
+```
 
 # Test Configuration
 

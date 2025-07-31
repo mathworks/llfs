@@ -1,4 +1,0 @@
-[submodule "script"]
-	path = script
-	url = ../../tonyastolfi/batteries
-	branch = script

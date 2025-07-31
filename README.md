@@ -156,9 +156,9 @@ Below is a brief summary of a select few `cor` commands when used with LLFS. To 
 - `install`
     - Installs Conan package dependencies on the local system
 - `build`
-    - Builds `libllfs.a`, `llfs_Test` (the unit tests), and `llfs` (minimal CLI utility, WIP); implicitly installs Conan package dependencies if `cor install` hasn't run yet
+    - Builds `libllfs.a`, `llfs_Test` (the unit tests), and `llfs` (minimal CLI utility, WIP); implicitly installs Conan package dependencies if `cor install` has not been run yet
 - `test`
-    - Runs unit tests; implicitly installs Conan package dependencies and builds LLFS if those steps haven't been done yet
+    - Runs unit tests; implicitly installs Conan package dependencies and builds LLFS if those steps have not been done yet
 - `export-pkg`
     - Exports LLFS Conan package (from existing build) to the local cache, for consumption by downstream projects
 - `clean`

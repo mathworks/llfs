@@ -1,0 +1,23 @@
+[
+  {
+    "os": "Linux",
+    "arch": "x86_64",
+    "compiler": "gcc",
+    "compiler.version": "11"
+  },
+  {
+    "os": "Macos",
+    "arch": "armv8",
+    "compiler": "apple-clang",
+    "compiler.version": "14"
+  },
+  {
+    "os": "Macos",
+    "arch": "x86_64",
+    "compiler": "apple-clang",
+    "compiler.version": "14"
+  },
+  {
+    "os": "Windows"
+  }
+]

@@ -46,10 +46,6 @@ class LlfsConan(ConanFile):
 
     build_policy = "missing"
 
-    exports = [
-        "script/*.py",
-        "script/*.sh",
-    ]
     exports_sources = [
         "CMakeLists.txt",
         "src/CMakeLists.txt",
@@ -104,7 +100,7 @@ class LlfsConan(ConanFile):
         return self.cor.build_cmake_default(self)
 
     def package(self):
-        return self.cor.package_cmake_lib_default(self)
+        return self.cor.package_cmake_install(self)
 
     def package_info(self):
         return self.cor.package_info_lib_default(self)

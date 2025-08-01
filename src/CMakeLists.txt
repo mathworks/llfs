@@ -77,6 +77,13 @@ macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
     LIBRARY DESTINATION lib
     )
 
+  file(GLOB_RECURSE LLFS_HEADERS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ./${TARGET_SRCDIR}/*.hpp)
+  
+  foreach(_header IN LISTS LLFS_HEADERS)
+    get_filename_component(_destination "${_header}" PATH)
+    install(FILES "${_header}" DESTINATION include/${_destination})
+  endforeach()
+
 endmacro()
 # LLFS_DefineLibrary
 #==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -122,6 +129,13 @@ install(TARGETS llfs_cli DESTINATION "."
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   )
+
+file(GLOB_RECURSE LLFS_CLI_HEADERS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ./llfs_cli/*.hpp)
+
+foreach(_header IN LISTS LLFS_CLI_HEADERS)
+    get_filename_component(_destination "${_header}" PATH)
+    install(FILES "${_header}" DESTINATION include/${_destination})
+endforeach()
 
 #=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 

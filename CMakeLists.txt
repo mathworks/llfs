@@ -13,10 +13,6 @@ include(${COR_CMAKE_INCLUDE_DIR}/common.cmake)
 include(${CMAKE_BINARY_DIR}/conan_find_requirements.cmake)
 
 #==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-# Include the options file we generated in conanfile.py.
-#
-include(${CMAKE_BINARY_DIR}/conan_find_requirements.cmake)
-
 # Do not attempt to set/fix rpath for binaries.
 #
 set(CMAKE_SKIP_INSTALL_RPATH TRUE)

@@ -8,6 +8,18 @@
 
 cmake_minimum_required(VERSION 3.20)
 
+macro(LLFS_CollectHeaders TARGET_NAME TARGET_SRCDIR)
+
+  file(GLOB_RECURSE ${TARGET_NAME}_Headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ./${TARGET_SRCDIR}/*.hpp ./${TARGET_SRCDIR}/*.ipp)
+  
+  foreach(_header IN LISTS ${TARGET_NAME}_Headers)
+    get_filename_component(_destination "${_header}" PATH)
+    install(FILES "${_header}" DESTINATION include/${_destination})
+  endforeach()
+
+endmacro()
+# LLFS_CollectHeaders
+
 macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
 
   set(TARGET_DEPS ${ARGN})
@@ -77,12 +89,7 @@ macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
     LIBRARY DESTINATION lib
     )
 
-  file(GLOB_RECURSE ${TARGET_NAME}_Headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ./${TARGET_SRCDIR}/*.hpp ./${TARGET_SRCDIR}/*.ipp)
-  
-  foreach(_header IN LISTS ${TARGET_NAME}_Headers)
-    get_filename_component(_destination "${_header}" PATH)
-    install(FILES "${_header}" DESTINATION include/${_destination})
-  endforeach()
+  LLFS_CollectHeaders(llfs ./llfs)
 
 endmacro()
 # LLFS_DefineLibrary
@@ -130,12 +137,7 @@ install(TARGETS llfs_cli DESTINATION "."
   LIBRARY DESTINATION lib
   )
 
-file(GLOB_RECURSE llfs_cli_Headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ./llfs_cli/*.hpp ./llfs_cli/*.ipp)
-
-foreach(_header IN LISTS llfs_cli_Headers)
-    get_filename_component(_destination "${_header}" PATH)
-    install(FILES "${_header}" DESTINATION include/${_destination})
-endforeach()
+LLFS_CollectHeaders(llfs_cli ./llfs_cli)
 
 #=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 

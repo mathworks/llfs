@@ -22,7 +22,7 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-usize get_page_size(const PageDeviceEntry* entry)
+usize get_page_size(std::shared_ptr<const PageCache::PageDeviceEntry> entry)
 {
   return entry ? get_page_size(entry->arena) : 0;
 }
@@ -102,7 +102,8 @@ PageCache::PageCache(std::vector<PageArena>&& storage_pool,
     , metrics_{}
     , page_readers_{std::make_shared<batt::Mutex<PageLayoutReaderMap>>()}
 {
-  this->cache_slot_pool_by_page_size_log2_.fill(nullptr);
+  batt::ScopedWriteLock<State> state(this->state_);
+  state->cache_slot_pool_by_page_size_log2.fill(nullptr);
 
   // Find the maximum page device id value.
   //
@@ -111,9 +112,9 @@ PageCache::PageCache(std::vector<PageArena>&& storage_pool,
     max_page_device_id = std::max(max_page_device_id, arena.device().get_id());
   }
 
-  // Populate this->page_devices_.
+  // Populate state->page_devices.
   //
-  this->page_devices_.resize(max_page_device_id + 1);
+  state->page_devices.resize(max_page_device_id + 1);
   for (PageArena& arena : storage_pool) {
     const page_device_id_int device_id = arena.device().get_id();
     const auto page_size_log2 = batt::log2_ceil(arena.device().page_size());
@@ -131,36 +132,36 @@ PageCache::PageCache(std::vector<PageArena>&& storage_pool,
           /*name=*/batt::to_string("size_", u64{1} << page_size_log2));
     }
 
-    BATT_CHECK_EQ(this->page_devices_[device_id], nullptr)
+    BATT_CHECK_EQ((state->page_devices)[device_id], nullptr)
         << "Duplicate entries found for the same device id!" << BATT_INSPECT(device_id);
 
-    this->page_devices_[device_id] = std::make_unique<PageDeviceEntry>(            //
+    (state->page_devices)[device_id] = std::make_unique<PageDeviceEntry>(           //
         std::move(arena),                                                          //
         batt::make_copy(this->cache_slot_pool_by_page_size_log2_[page_size_log2])  //
     );
 
     // We will sort these later.
     //
-    this->page_devices_by_page_size_.emplace_back(this->page_devices_[device_id].get());
+    state->page_devices_by_page_size.emplace_back(state->page_devices[device_id]);
   }
-  BATT_CHECK_EQ(this->page_devices_by_page_size_.size(), storage_pool.size());
+  BATT_CHECK_EQ(state->page_devices_by_page_size.size(), storage_pool.size());
 
   // Sort the storage pool by page size (MUST be first).
   //
-  std::sort(this->page_devices_by_page_size_.begin(), this->page_devices_by_page_size_.end(),
+  std::sort(state->page_devices_by_page_size.begin(), state->page_devices_by_page_size.end(),
             PageSizeOrder{});
 
   // Index the storage pool into groups of arenas by page size.
   //
   for (usize size_log2 = 6; size_log2 < kMaxPageSizeLog2; ++size_log2) {
-    auto iter_pair = std::equal_range(this->page_devices_by_page_size_.begin(),
-                                      this->page_devices_by_page_size_.end(),
-                                      PageSize{u32{1} << size_log2}, PageSizeOrder{});
+    auto iter_pair =
+        std::equal_range(state->page_devices_by_page_size.begin(), state->page_devices_by_page_size.end(),
+                          PageSize{u32{1} << size_log2}, PageSizeOrder{});
 
-    this->page_devices_by_page_size_log2_[size_log2] =
-        as_slice(this->page_devices_by_page_size_.data() +
-                     std::distance(this->page_devices_by_page_size_.begin(), iter_pair.first),
-                 as_range(iter_pair).size());
+    (state->page_devices_by_page_size_log2)[size_log2] =
+        as_slice(state->page_devices_by_page_size.data() +
+                      std::distance(state->page_devices_by_page_size.begin(), iter_pair.first),
+                  as_range(iter_pair).size());
   }
 
   // Register metrics.
@@ -253,7 +254,8 @@ batt::Status PageCache::register_page_reader(const PageLayoutId& layout_id, cons
 //
 void PageCache::close()
 {
-  for (const std::unique_ptr<PageDeviceEntry>& entry : this->page_devices_) {
+  batt::ScopedWriteLock<State> state(this->state_);
+  for (const std::shared_ptr<PageDeviceEntry>& entry : state->page_devices) {
     if (entry) {
       entry->arena.halt();
     }
@@ -264,7 +266,8 @@ void PageCache::close()
 //
 void PageCache::join()
 {
-  for (const std::unique_ptr<PageDeviceEntry>& entry : this->page_devices_) {
+  batt::ScopedWriteLock<State> state(this->state_);
+  for (const std::shared_ptr<PageDeviceEntry>& entry : state->page_devices) {
     if (entry) {
       entry->arena.join();
     }
@@ -302,14 +305,14 @@ StatusOr<std::shared_ptr<PageBuffer>> PageCache::allocate_page_of_size_log2(
 
   LatencyTimer alloc_timer{this->metrics_.allocate_page_alloc_latency};
 
-  Slice<PageDeviceEntry* const> device_entries = this->devices_with_page_size_log2(size_log2);
+  Slice<std::shared_ptr<const PageCache::PageDeviceEntry>> device_entries = this->devices_with_page_size_log2(size_log2);
 
   // TODO [tastolfi 2021-09-08] If the caller wants to wait, which device should we wait on?  First
   // available? Random?  Round-Robin?
   //
   for (auto wait_arg : {batt::WaitForResource::kFalse, batt::WaitForResource::kTrue}) {
-    for (PageDeviceEntry* device_entry : device_entries) {
-      PageArena& arena = device_entry->arena;
+    for (std::shared_ptr<const PageDeviceEntry> device_entry : device_entries) {
+      const PageArena& arena = device_entry->arena;
       StatusOr<PageId> page_id = arena.allocator().allocate_page(wait_arg, cancel_token);
       if (!page_id.ok()) {
         if (page_id.status() == batt::StatusCode::kResourceExhausted) {
@@ -384,7 +387,7 @@ Status PageCache::attach(const boost::uuids::uuid& user_id, slot_offset_type slo
     }
   });
 
-  for (PageDeviceEntry* entry : this->all_devices()) {
+  for (std::shared_ptr<const PageCache::PageDeviceEntry> entry : this->all_devices()) {
     BATT_CHECK_NOT_NULLPTR(entry);
     auto arena_status = entry->arena.allocator().attach_user(user_id, slot_offset);
     BATT_REQUIRE_OK(arena_status);
@@ -400,7 +403,7 @@ Status PageCache::attach(const boost::uuids::uuid& user_id, slot_offset_type slo
 //
 Status PageCache::detach(const boost::uuids::uuid& user_id, slot_offset_type slot_offset)
 {
-  for (PageDeviceEntry* entry : this->all_devices()) {
+  for (std::shared_ptr<const PageCache::PageDeviceEntry> entry : this->all_devices()) {
     BATT_CHECK_NOT_NULLPTR(entry);
     auto arena_status = entry->arena.allocator().detach_user(user_id, slot_offset);
     BATT_REQUIRE_OK(arena_status);
@@ -420,21 +423,26 @@ void PageCache::prefetch_hint(PageId page_id)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-const std::vector<std::unique_ptr<PageDeviceEntry>>& PageCache::devices_by_id() const
+const std::vector<std::shared_ptr<PageDeviceEntry>>& PageCache::devices_by_id()
 {
-  return this->page_devices_;
+  batt::ScopedReadLock<State> state(this->state_);
+  const std::vector<std::shared_ptr<PageDeviceEntry>>& page_devices = state->page_devices;
+  return page_devices;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Slice<PageDeviceEntry* const> PageCache::all_devices() const
+std::vector<std::shared_ptr<const PageCache::PageDeviceEntry>> PageCache::all_devices()
 {
-  return as_slice(this->page_devices_by_page_size_);
+  batt::ScopedReadLock<State> state(this->state_);
+  std::vector<std::shared_ptr<const PageCache::PageDeviceEntry>> devices =
+      state->page_devices_by_page_size;
+  return devices;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Slice<PageDeviceEntry* const> PageCache::devices_with_page_size(usize size) const
+Slice<std::shared_ptr<const PageCache::PageDeviceEntry>> PageCache::devices_with_page_size(usize size)
 {
   const usize size_log2 = batt::log2_ceil(size);
   BATT_CHECK_EQ(size, usize{1} << size_log2) << "page size must be a power of 2";
@@ -444,30 +452,32 @@ Slice<PageDeviceEntry* const> PageCache::devices_with_page_size(usize size) cons
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Slice<PageDeviceEntry* const> PageCache::devices_with_page_size_log2(usize size_log2) const
+Slice<std::shared_ptr<const PageCache::PageDeviceEntry>> PageCache::devices_with_page_size_log2(usize size_log2)
 {
   BATT_CHECK_LT(size_log2, kMaxPageSizeLog2);
 
-  return this->page_devices_by_page_size_log2_[size_log2];
+  batt::ScopedReadLock<State> state(this->state_);
+  return state->page_devices_by_page_size_log2[size_log2];
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-const PageArena& PageCache::arena_for_page_id(PageId page_id) const
+const PageArena& PageCache::arena_for_page_id(PageId page_id)
 {
   return this->arena_for_device_id(PageIdFactory::get_device_id(page_id));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-const PageArena& PageCache::arena_for_device_id(page_device_id_int device_id_val) const
+const PageArena& PageCache::arena_for_device_id(page_device_id_int device_id_val)
 {
-  BATT_CHECK_LT(device_id_val, this->page_devices_.size())
+  batt::ScopedReadLock<State> state(this->state_);
+  BATT_CHECK_LT(device_id_val, state->page_devices.size())
       << "the specified page_id's device is not in the storage pool for this cache";
 
-  BATT_CHECK_NOT_NULLPTR(this->page_devices_[device_id_val]);
+  BATT_CHECK_NOT_NULLPTR(state->page_devices[device_id_val]);
 
-  return this->page_devices_[device_id_val]->arena;
+  return state->page_devices[device_id_val]->arena;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -541,12 +551,13 @@ void PageCache::purge(PageId page_id, u64 callers, u64 job_id)
 //
 PageDeviceEntry* PageCache::get_device_for_page(PageId page_id)
 {
+  batt::ScopedReadLock<State> state(this->state_);
   const page_device_id_int device_id = PageIdFactory::get_device_id(page_id);
-  if (BATT_HINT_FALSE(device_id >= this->page_devices_.size())) {
+  if (BATT_HINT_FALSE(device_id >= state->page_devices.size())) {
     return nullptr;
   }
 
-  return this->page_devices_[device_id].get();
+  return state->page_devices[device_id].get();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -704,7 +715,7 @@ void PageCache::track_new_page_event(const NewPageTracker& tracker)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-BoxedSeq<NewPageTracker> PageCache::find_new_page_events(PageId page_id) const
+BoxedSeq<NewPageTracker> PageCache::find_new_page_events(PageId page_id)
 {
   const isize n = this->history_end_.load();
   return batt::as_seq(boost::irange(isize{0}, isize(this->history_.size())))  //

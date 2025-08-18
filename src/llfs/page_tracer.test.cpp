@@ -227,7 +227,7 @@ class PageTracerTest : public ::testing::Test
    */
   llfs::page_generation_int get_generation(llfs::PageId page_id)
   {
-    const std::vector<std::unique_ptr<llfs::PageDeviceEntry>>& page_devices =
+    const std::vector<std::shared_ptr<llfs::PageDeviceEntry>>& page_devices =
         this->page_cache->devices_by_id();
     llfs::page_device_id_int device = llfs::PageIdFactory::get_device_id(page_id);
     llfs::page_generation_int generation =
@@ -242,7 +242,7 @@ class PageTracerTest : public ::testing::Test
    */
   batt::BoolStatus get_outgoing_refs_status(llfs::PageId page_id)
   {
-    const std::vector<std::unique_ptr<llfs::PageDeviceEntry>>& page_devices =
+    const std::vector<std::shared_ptr<llfs::PageDeviceEntry>>& page_devices =
         this->page_cache->devices_by_id();
     llfs::page_device_id_int device = llfs::PageIdFactory::get_device_id(page_id);
 
@@ -300,7 +300,7 @@ class PageTracerTest : public ::testing::Test
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 TEST_F(PageTracerTest, NoOutgoingRefsCacheDeath)
 {
-  const std::unique_ptr<llfs::PageDeviceEntry>& page_device1 = this->page_cache->devices_by_id()[0];
+  const std::shared_ptr<llfs::PageDeviceEntry>& page_device1 = this->page_cache->devices_by_id()[0];
 
   llfs::HasOutgoingRefs no_outgoing_refs{false};
   llfs::PageId page = page_device1->arena.device().page_ids().make_page_id(1, 1);

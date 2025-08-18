@@ -24,10 +24,7 @@ jobs:
         uses: actions/checkout@master
         with:
           submodules: recursive
-      - name: Configure directories
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git config --global --add safe.directory "$GITHUB_WORKSPACE/script"
+          set-safe-directory: true
       - name: make_install
         run: make BUILD_TYPE=Release install
   build:

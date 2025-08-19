@@ -131,7 +131,7 @@ class IoringStreamBufferTest : public ::testing::Test
     LLFS_VLOG(1) << "calling poll the first time";
 
     io.poll();
-    io.reset();
+    io.restart();
 
     EXPECT_TRUE(op_entered);
     EXPECT_FALSE(blocked_op_task.try_join());
@@ -145,7 +145,7 @@ class IoringStreamBufferTest : public ::testing::Test
     LLFS_VLOG(1) << "calling poll the second time";
 
     io.poll();
-    io.reset();
+    io.restart();
 
     //+++++++++++-+-+--+----- --- -- -  -  -   -
     LLFS_VLOG(1) << "joining the consumer task";

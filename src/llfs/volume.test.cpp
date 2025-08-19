@@ -1306,7 +1306,7 @@ TEST_F(VolumeTest, ReaderInterruptedByVolumeClose)
   LLFS_VLOG(1) << "before first poll";
 
   io.poll();
-  io.reset();
+  io.restart();
 
   LLFS_VLOG(1) << "after first poll; calling volume halt";
 
@@ -1317,7 +1317,7 @@ TEST_F(VolumeTest, ReaderInterruptedByVolumeClose)
   LLFS_VLOG(1) << "after volume halt; before second poll";
 
   io.poll();
-  io.reset();
+  io.restart();
 
   LLFS_VLOG(1) << "after second poll";
 

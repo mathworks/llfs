@@ -54,8 +54,14 @@ class LlfsConan(ConanFile):
     exports_sources = [
         "src/CMakeLists.txt",
         "src/**/*.hpp",
+        "src/**/*.h",
         "src/**/*.ipp",
         "src/**/*.cpp",
+    ]
+
+    tool_requires = [
+        "cmake/[>=3.20.0 <4]",
+        "ninja/[>=1.12.1 <2]",
     ]
 
     #+++++++++++-+-+--+----- --- -- -  -  -   -

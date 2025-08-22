@@ -208,12 +208,7 @@ Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 c
   const PageCacheJob* job = this->job_.get();
   BATT_CHECK_NOT_NULLPTR(job);
 
-  if (durable_caller_slot) {
-    LLFS_VLOG(1) << "commit(PageCacheJob): entered" << BATT_INSPECT(prev_caller_slot)
-                 << BATT_INSPECT(*durable_caller_slot);
-  } else {
-    LLFS_VLOG(1) << "commit(PageCacheJob): entered" << BATT_INSPECT(prev_caller_slot);
-  }
+  LLFS_VLOG(1) << "commit(PageCacheJob): entered";
 
   // Make sure the job is pruned!
   //

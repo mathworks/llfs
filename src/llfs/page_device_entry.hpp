@@ -31,6 +31,10 @@ struct PageDeviceEntry {
    */
   PageArena arena;
 
+  /** \brief Is this device available for `new_page` requests?
+   */
+  bool can_alloc = true;
+
   /** \brief A per-device page cache; shares a PageCacheSlot::Pool with all other PageDeviceEntry
    * objects that have the same page size.
    */

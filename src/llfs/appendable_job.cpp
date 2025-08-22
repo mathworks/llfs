@@ -9,6 +9,7 @@
 #include <llfs/appendable_job.hpp>
 //
 
+#include <llfs/uuid.hpp>
 #include <llfs/volume_events.hpp>
 
 namespace llfs {
@@ -98,6 +99,44 @@ usize JobSizeSpec::calculate_grant_size() const noexcept
                 << BATT_INSPECT(commit_slot_size);
 
   return prepare_slot_size + commit_slot_size;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status unsafe_commit_job(std::unique_ptr<PageCacheJob>&& job) noexcept
+{
+  PageCache& cache = job->cache();
+
+  BATT_ASSIGN_OK_RESULT(CommittablePageCacheJob committable,
+                        CommittablePageCacheJob::from(std::move(job), /*callers=*/Caller::Unknown));
+
+  BATT_REQUIRE_OK(committable.start_writing_new_pages());
+
+  static const boost::uuids::uuid fake_uuid = random_uuid();
+  static std::atomic<u64> fake_slot{0};
+
+  for (PageDeviceEntry* entry : cache.all_devices()) {
+    BATT_CHECK_NOT_NULLPTR(entry);
+    if (!entry->can_alloc) {
+      continue;
+    }
+    PageAllocator& allocator = entry->arena.allocator();
+    Optional<PageAllocatorAttachmentStatus> attach_status =
+        allocator.get_client_attachment_status(fake_uuid);
+    if (!attach_status) {
+      BATT_REQUIRE_OK(allocator.attach_user(fake_uuid, fake_slot.fetch_add(1)));
+    }
+  }
+
+  const JobCommitParams params{
+      .caller_uuid = &fake_uuid,
+      .caller_slot = fake_slot.fetch_add(2),
+      .recycler = Ref<PageRecycler>{},
+      .recycle_grant = nullptr,
+      .recycle_depth = -1,
+  };
+
+  return commit(std::move(committable), params, Caller::Unknown, params.caller_slot - 1, nullptr);
 }
 
 }  // namespace llfs

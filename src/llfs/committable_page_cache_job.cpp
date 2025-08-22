@@ -580,6 +580,10 @@ Status CommittablePageCacheJob::recycle_dead_pages(const JobCommitParams& params
   LLFS_VLOG(1) << "commit(PageCacheJob): recycling dead pages (count=" << dead_pages.ids.size()
                << ")";
 
+  if (dead_pages.ids.empty()) {
+    return OkStatus();
+  }
+
   BATT_CHECK_NOT_NULLPTR(params.recycler.pointer());
 
   BATT_ASSIGN_OK_RESULT(

@@ -84,7 +84,7 @@ int FuseImplBase::invoke_fuse_reply_iov(fuse_req_t req, const batt::Slice<batt::
 //
 int FuseImplBase::invoke_fuse_reply_data(fuse_req_t req, const FuseConstBufferVec& v)
 {
-  batt::SmallVec<char, 512> tmp_storage;
+  batt::SmallVec<char, kDirectIOBlockSize> tmp_storage;
 
   tmp_storage.resize(sizeof(fuse_bufvec) - sizeof(fuse_buf) +
                      sizeof(fuse_buf) * std::min<usize>(1, v.buffers.size()));

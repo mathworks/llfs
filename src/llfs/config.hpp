@@ -88,22 +88,24 @@ inline std::atomic<bool>& suppress_log_output_for_test()
   return value_;
 }
 
-// The device-level log page size and max atomic write size.
+// When doing direct I/O, buffers must be a multiple of this number.
 //
-constexpr usize kLogPageSize = 512;
-constexpr usize kLogPageSizeLog2 = 9;
+constexpr usize kDirectIOBlockSize = 4096;
+constexpr usize kDirectIOBlockSizeLog2 = 12;
 
-BATT_STATIC_ASSERT_EQ(usize{1} << kLogPageSizeLog2, kLogPageSize);
+BATT_STATIC_ASSERT_EQ(usize{1} << kDirectIOBlockSizeLog2, kDirectIOBlockSize);
 
-constexpr usize kLogAtomicWriteSize = 512;
-constexpr usize kLogAtomicWriteSizeLog2 = 9;
+// When doing direct I/O, buffers must be aligned to this number, in memory and on device.
+//
+constexpr usize kDirectIOBlockAlign = 4096;
+constexpr usize kDirectIOBlockAlignLog2 = 12;
 
-BATT_STATIC_ASSERT_EQ(usize{1} << kLogAtomicWriteSizeLog2, kLogAtomicWriteSize);
+BATT_STATIC_ASSERT_EQ(usize{1} << kDirectIOBlockAlignLog2, kDirectIOBlockAlign);
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 // Controls whether a pool of page buffers is maintained by class PageBuffer to speed up allocation.
 //
-constexpr bool kEnablePageBufferPool = true;
+constexpr bool kEnablePageBufferPoolByDefault = true;
 
 // The maximum number of page buffers of a given size to cache (in order to avoid/reduce heap
 // allocation).

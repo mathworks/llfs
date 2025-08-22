@@ -13,7 +13,6 @@
 #include <llfs/config.hpp>
 //
 #include <llfs/api_types.hpp>
-#include <llfs/cache.hpp>
 #include <llfs/caller.hpp>
 #include <llfs/log_device.hpp>
 #include <llfs/metrics.hpp>
@@ -24,7 +23,6 @@
 #include <llfs/page_cache_options.hpp>
 #include <llfs/page_device.hpp>
 #include <llfs/page_device_entry.hpp>
-#include <llfs/page_filter.hpp>
 #include <llfs/page_id_slot.hpp>
 #include <llfs/page_loader.hpp>
 #include <llfs/page_reader.hpp>

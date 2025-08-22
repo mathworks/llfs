@@ -146,6 +146,10 @@ BATT_STRONG_TYPEDEF(bool, IgnoreGeneration);
  */
 BATT_STRONG_TYPEDEF(bool, ComputeChecksum);
 
+/** \brief The number of bits per item to use when building a filter.
+ */
+BATT_STRONG_TYPEDEF(usize, BitsPerKey);
+
 }  // namespace llfs
 
 #endif  // LLFS_API_TYPES_HPP

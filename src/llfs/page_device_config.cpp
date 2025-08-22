@@ -76,7 +76,7 @@ Status configure_storage_object(StorageFileBuilder::Transaction& txn,
     if (!kFastIoRingPageDeviceInit) {
       // Initialize all the packed page headers.
       //
-      std::aligned_storage_t<512, 512> buffer;
+      std::aligned_storage_t<kDirectIOBlockSize, kDirectIOBlockAlign> buffer;
       std::memset(&buffer, 0, sizeof(buffer));
 
       auto& page_header = reinterpret_cast<PackedPageHeader&>(buffer);

@@ -171,6 +171,9 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
       for (PageDeviceEntry* entry : cache->all_devices()) {
         BATT_CHECK_NOT_NULLPTR(entry);
         const PageArena& arena = entry->arena;
+        if (!arena.has_allocator()) {
+          continue;
+        }
         Optional<PageAllocatorAttachmentStatus> attachment =
             arena.allocator().get_client_attachment_status(uuid);
 
@@ -282,7 +285,9 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
          }) {
       for (PageDeviceEntry* entry : cache->all_devices()) {
         BATT_CHECK_NOT_NULLPTR(entry);
-        BATT_REQUIRE_OK(entry->arena.allocator().notify_user_recovered(uuid));
+        if (entry->arena.has_allocator()) {
+          BATT_REQUIRE_OK(entry->arena.allocator().notify_user_recovered(uuid));
+        }
       }
     }
   }

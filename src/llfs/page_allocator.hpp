@@ -167,9 +167,26 @@ class PageAllocator
   auto debug_info()
   {
     return [this](std::ostream& out) {
-      out << "PageAllocator{.page_size=" << batt::dump_size(this->page_size())
-          << ", .free=" << this->free_pool_size() << "/" << this->page_device_capacity() << ",}";
+      const auto page_size_bytes = this->page_size();
+      const auto free_count = this->free_pool_size();
+      const auto total_count = this->page_device_capacity();
+      const auto in_use_count = total_count - free_count;
+      const auto in_use_bytes = in_use_count * page_size_bytes;
+
+      out << "PageAllocator{.page_size=" << batt::dump_size(page_size_bytes)
+          << ", .free=" << free_count << "/" << total_count << ", .in_use=" << in_use_count
+          << ", .in_use_bytes=" << in_use_bytes << "(" << batt::dump_size(in_use_bytes) << "),}";
     };
+  }
+
+  u64 in_use_count() const
+  {
+    return this->page_device_capacity() - this->free_pool_size();
+  }
+
+  u64 in_use_bytes() const
+  {
+    return this->in_use_count() * this->page_size();
   }
 
   u64 page_size() const
@@ -394,10 +411,6 @@ inline StatusOr<slot_offset_type> PageAllocator::update_page_ref_counts(
 
   sample_count.fetch_add(1);
   prc_count.fetch_add(txn->ref_counts.size());
-
-  LLFS_LOG_INFO_EVERY_T(100.0 /*seconds*/)
-      << "Average pages per allocator update: "
-      << ((double)prc_count.load() / (double)sample_count.load());
 
   StatusOr<slot_offset_type> update_status = this->update(*txn);
   BATT_REQUIRE_OK(update_status);

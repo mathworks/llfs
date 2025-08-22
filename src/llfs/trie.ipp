@@ -25,8 +25,8 @@ namespace llfs {
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 template <typename Range>
-inline BPTrieNode* make_trie(const Range& keys, std::vector<std::unique_ptr<BPTrieNode>>& nodes,
-                             usize current_prefix_len, bool is_right_subtree)
+inline BPTrieNode* make_trie(const Range& keys, BPTrieNodeSet& node_set, usize current_prefix_len,
+                             bool is_right_subtree)
 {
   // Guard against too much recursion.
   //
@@ -53,9 +53,7 @@ inline BPTrieNode* make_trie(const Range& keys, std::vector<std::unique_ptr<BPTr
 
   // We know we are going to create at least one node.
   //
-  auto new_node = std::make_unique<BPTrieNode>();
-  auto* node = new_node.get();
-  nodes.emplace_back(std::move(new_node));
+  auto* node = node_set.new_node();
 
   // Base case 1: single key.
   //
@@ -68,13 +66,16 @@ inline BPTrieNode* make_trie(const Range& keys, std::vector<std::unique_ptr<BPTr
 
     node->prefix_ = std::string_view{first->data() + current_prefix_len,  //
                                      first->size() - current_prefix_len};
+
+    node->subtree_node_count_ = 1;
+
     return node;
   }
 
   // Find the longest common prefix of the input key range.
   //
-  const std::string& min_key = *first;
-  const std::string& max_key = *std::prev(last);
+  const auto& min_key = *first;
+  const auto& max_key = *std::prev(last);
 
   node->prefix_ = find_common_prefix(current_prefix_len, min_key, max_key);
 
@@ -131,10 +132,14 @@ inline BPTrieNode* make_trie(const Range& keys, std::vector<std::unique_ptr<BPTr
                                   << BATT_INSPECT(current_prefix_len);
 
   node->left_ =
-      make_trie(boost::make_iterator_range(first, pivot_iter), nodes, current_prefix_len, false);
+      make_trie(boost::make_iterator_range(first, pivot_iter), node_set, current_prefix_len, false);
 
   node->right_ =
-      make_trie(boost::make_iterator_range(pivot_iter, last), nodes, current_prefix_len, true);
+      make_trie(boost::make_iterator_range(pivot_iter, last), node_set, current_prefix_len, true);
+
+  node->subtree_node_count_ = 1 +  //
+                              ((node->left_) ? node->left_->subtree_node_count_ : 0) +
+                              ((node->right_) ? node->right_->subtree_node_count_ : 0);
 
   return node;
 }

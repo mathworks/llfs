@@ -253,7 +253,8 @@ class StorageSimulation
    *
    * \param name A unique name used to identify the LogDevice in the context of this simulation
    * \param page_count The number of pages in the device
-   * \param page_size The size (bytes) of each page in the device; must be a power of 2, >=512
+   * \param page_size The size (bytes) of each page in the device; must be a power of 2,
+   * >=kDirectIOBlockSize
    */
   std::unique_ptr<PageDevice> get_page_device(const std::string& name,
                                               Optional<PageCount> page_count = None,

@@ -44,11 +44,19 @@ namespace llfs {
 class StorageContext : public batt::RefCounted<StorageContext>
 {
  public:
+  static boost::intrusive_ptr<StorageContext> make_shared(batt::TaskScheduler& scheduler,
+                                                          const IoRing& io) noexcept
+  {
+    return boost::intrusive_ptr<StorageContext>{new StorageContext{scheduler, io}};
+  }
+
+ private:
   // Construct a new StorageContext that will use the given TaskScheduler and IoRing for background
   // tasks and asynchronous file I/O.
   //
   explicit StorageContext(batt::TaskScheduler& scheduler, const IoRing& io) noexcept;
 
+ public:
   //+++++++++++-+-+--+----- --- -- -  -  -   -
   // noncopyable
   //
@@ -66,7 +74,13 @@ class StorageContext : public batt::RefCounted<StorageContext>
     return *this->io_ring_;
   }
 
-  /*! \brief Set runtime options for PageCache.
+  boost::intrusive_ptr<StorageContext> shared_from_this()
+  {
+    BATT_CHECK_NE(this->use_count(), 0);
+    return boost::intrusive_ptr<StorageContext>{this};
+  }
+
+  /** \brief Set runtime options for PageCache.
    */
   void set_page_cache_options(const PageCacheOptions& options);
 

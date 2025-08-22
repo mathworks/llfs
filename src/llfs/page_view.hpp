@@ -52,7 +52,7 @@ class PageView
 
   PageId page_id() const noexcept
   {
-    return this->data_->page_id();
+    return get_page_id(this->data_);
   }
 
   std::shared_ptr<const PageBuffer> data() const noexcept
@@ -60,9 +60,19 @@ class PageView
     return this->data_;
   }
 
+  const PageBuffer& page_buffer() const noexcept
+  {
+    return *this->data_;
+  }
+
+  PageSize page_size() const
+  {
+    return get_page_size(this->data_);
+  }
+
   ConstBuffer const_buffer() const noexcept
   {
-    return this->data_->const_buffer();
+    return get_const_buffer(this->data_);
   }
 
   ConstBuffer const_payload() const noexcept
@@ -95,6 +105,21 @@ class PageView
   // Dump a human-readable representation or summary of the page to the passed stream.
   //
   virtual void dump_to_ostream(std::ostream& out) const = 0;
+
+  // Sets the PageView implementation for a newly created page.
+  //
+  virtual Status set_new_page_view(std::shared_ptr<const PageView>&& view [[maybe_unused]]) const
+  {
+    return batt::StatusCode::kUnimplemented;
+  }
+
+  // Returns a shared_ptr to the _mutable_ PageBuffer associated with this PageView; only supported
+  // by NewPageView.
+  //
+  virtual StatusOr<std::shared_ptr<PageBuffer>> get_new_page_buffer() const
+  {
+    return {batt::StatusCode::kUnimplemented};
+  }
 
   // Get typed user data for the specified key, if that is the active key for this PageView.
   // Otherwise, return `None`.

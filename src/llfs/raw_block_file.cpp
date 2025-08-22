@@ -17,7 +17,7 @@ namespace llfs {
 //
 Status RawBlockFile::validate_buffer(const ConstBuffer& buffer, i64 offset)
 {
-  static constexpr i64 kAlignMask = 512 - 1;
+  static constexpr i64 kAlignMask = kDirectIOBlockAlign - 1;
 
   const bool buffer_alignment_ok = (reinterpret_cast<i64>(buffer.data()) & kAlignMask) == 0;
   const bool buffer_size_ok = (static_cast<i64>(buffer.size()) & kAlignMask) == 0;

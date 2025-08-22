@@ -52,7 +52,7 @@ usize packed_sizeof_bp_trie_node(const BPTrieNode* node, batt::Interval<usize> r
     node_size += sizeof(PackedPointer<PackedBPTrieNodeBase, SubtreeOffset>) * 2;
 
     space -= (i64)node_size;
-    if (space > 0) {
+    if (space >= 0) {
       const usize middle = range.lower_bound + node->pivot_pos_;
 
       left_subtree_size = packed_sizeof_bp_trie_node<SubtreeOffset>(
@@ -62,6 +62,7 @@ usize packed_sizeof_bp_trie_node(const BPTrieNode* node, batt::Interval<usize> r
           node->right_, batt::Interval<usize>{middle, range.upper_bound}, space);
     }
   } else {
+    BATT_CHECK_EQ(node->right_, nullptr);
     space -= (i64)node_size;
   }
   return node_size + left_subtree_size + right_subtree_size;
@@ -71,30 +72,47 @@ usize packed_sizeof_bp_trie_node(const BPTrieNode* node, batt::Interval<usize> r
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-usize packed_sizeof(const BPTrie& object)
+usize BPTrie::packed_size() const
 {
+  u64 observed = this->packed_size_.load();
+  if (observed != kInvalidPackedSize) {
+    return observed;
+  }
+
+  const BPTrie& object = *this;
   batt::Interval<usize> range{0, object.size()};
 
   const BPTrieNode* root = object.root();
 
-  i64 space = 0xff;
-  usize z = sizeof(PackedBPTrie) + packed_sizeof_bp_trie_node<u8>(root, range, space);
+  i64 space = i64{1} << 8;
+  u64 z = sizeof(PackedBPTrie) + packed_sizeof_bp_trie_node<little_u8>(root, range, space);
   if (space < 0) {
-    space = 0xffff;
+    space = i64{1} << 16;
     z = sizeof(PackedBPTrie) + packed_sizeof_bp_trie_node<little_u16>(root, range, space);
     if (space < 0) {
-      space = 0xffffffl;
+      space = i64{1} << 24;
       z = sizeof(PackedBPTrie) + packed_sizeof_bp_trie_node<little_u24>(root, range, space);
       if (space < 0) {
-        space = 0xffffffffl;
+        space = i64{1} << 32;
         z = sizeof(PackedBPTrie) + packed_sizeof_bp_trie_node<little_u32>(root, range, space);
         BATT_CHECK_GE(space, 0);
       }
     }
   }
 
+  this->packed_size_.compare_exchange_strong(observed, z);
+
   return z;
 }
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+usize packed_sizeof(const BPTrie& object)
+{
+  return object.packed_size();
+}
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
 namespace {
 
@@ -193,19 +211,19 @@ PackedBPTrie* build_packed_trie(const BPTrie& object, PackedBPTrie* packed, Data
       return parent;
     };
 
-    if (next.range.size() <= 0xff) {
+    if (next.range.size() <= isize{0xff}) {
       if (!pack_parent(batt::StaticType<PackedBPTrieNodeParent<u8, SubtreeOffset>>{})) {
         return nullptr;
       }
-    } else if (next.range.size() <= 0xffff) {
+    } else if (next.range.size() <= isize{0xffff}) {
       if (!pack_parent(batt::StaticType<PackedBPTrieNodeParent<little_u16, SubtreeOffset>>{})) {
         return nullptr;
       }
-    } else if (next.range.size() <= 0xffffffl) {
+    } else if (next.range.size() <= isize{0xffffff}) {
       if (!pack_parent(batt::StaticType<PackedBPTrieNodeParent<little_u24, SubtreeOffset>>{})) {
         return nullptr;
       }
-    } else if (next.range.size() <= 0xffffffffl) {
+    } else if (next.range.size() <= isize{0xffffffff}) {
       if (!pack_parent(batt::StaticType<PackedBPTrieNodeParent<little_u32, SubtreeOffset>>{})) {
         return nullptr;
       }
@@ -396,13 +414,16 @@ struct NextSmaller<u8> : batt::StaticType<u8> {
 //
 template <typename PivotPosT, typename SubtreeOffset>
 batt::Interval<usize> find_impl(const PackedBPTrieNodeBase* node, std::string_view& key,
-                                batt::Interval<usize>& range)
+                                batt::Interval<usize>& range, usize& key_prefix_match)
 {
   constexpr i64 threshold = i64{1} << (sizeof(typename NextSmaller<PivotPosT>::type) * 8);
 
+  key_prefix_match = 0;
+
   for (;;) {
     if (!std::is_same_v<PivotPosT, u8> && range.size() < threshold) {
-      return find_impl<typename NextSmaller<PivotPosT>::type, SubtreeOffset>(node, key, range);
+      return find_impl<typename NextSmaller<PivotPosT>::type, SubtreeOffset>(node, key, range,
+                                                                             key_prefix_match);
     }
 
     usize prefix_chunk_len;
@@ -424,6 +445,7 @@ batt::Interval<usize> find_impl(const PackedBPTrieNodeBase* node, std::string_vi
         }
 
         key = key.substr(prefix_chunk_len);
+        key_prefix_match += prefix_chunk_len;
 
         if (prefix_chunk_len == PackedBPTrie::kMaxPrefixChunkLen) {
           node = reinterpret_cast<const PackedBPTrieNodeBase*>(&node->prefix_[prefix_chunk_len]);
@@ -458,6 +480,7 @@ batt::Interval<usize> find_impl(const PackedBPTrieNodeBase* node, std::string_vi
           return range;
         }
         key = key.substr(1);
+        key_prefix_match += 1;
       }
 
       range.lower_bound = middle;
@@ -470,7 +493,8 @@ batt::Interval<usize> find_impl(const PackedBPTrieNodeBase* node, std::string_vi
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-batt::Interval<usize> PackedBPTrie::find(std::string_view key) const noexcept
+batt::Interval<usize> PackedBPTrie::find(std::string_view key,
+                                         usize& key_prefix_match) const noexcept
 {
   batt::Interval<usize> range{0, this->size()};
 
@@ -482,16 +506,16 @@ batt::Interval<usize> PackedBPTrie::find(std::string_view key) const noexcept
 
   switch (this->offset_kind_) {
     case PackedBPTrie::kOffset8:
-      return find_impl<u8, u8>(node, key, range);
+      return find_impl<u8, u8>(node, key, range, key_prefix_match);
 
     case PackedBPTrie::kOffset16:
-      return find_impl<little_u16, little_u16>(node, key, range);
+      return find_impl<little_u16, little_u16>(node, key, range, key_prefix_match);
 
     case PackedBPTrie::kOffset24:
-      return find_impl<little_u24, little_u24>(node, key, range);
+      return find_impl<little_u24, little_u24>(node, key, range, key_prefix_match);
 
     case PackedBPTrie::kOffset32:
-      return find_impl<little_u32, little_u32>(node, key, range);
+      return find_impl<little_u32, little_u32>(node, key, range, key_prefix_match);
   }
 
   BATT_PANIC() << "Bad offset kind: " << (int)this->offset_kind_;

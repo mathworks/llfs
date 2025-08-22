@@ -156,9 +156,8 @@ Status PageRecyclerRecoveryVisitor::operator()(const SlotParse& slot,
   // Save the largest unique offset identifier. If it's the first offset we read from log then just
   // initialize 'volume_trim_slot_info_'.
   //
-  if (!this->volume_trim_slot_info_) {
-    this->volume_trim_slot_info_ = recovered.volume_trim_slot_info;
-  } else if (*this->volume_trim_slot_info_ < recovered.volume_trim_slot_info) {
+  if (!this->volume_trim_slot_info_ ||
+      *this->volume_trim_slot_info_ < recovered.volume_trim_slot_info) {
     this->volume_trim_slot_info_ = recovered.volume_trim_slot_info;
   }
 

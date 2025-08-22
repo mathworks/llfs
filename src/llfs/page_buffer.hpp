@@ -10,6 +10,8 @@
 #ifndef LLFS_PAGE_BUFFER_HPP
 #define LLFS_PAGE_BUFFER_HPP
 
+#include <llfs/config.hpp>
+//
 #include <llfs/buffer.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/page_id.hpp>
@@ -28,7 +30,7 @@ namespace llfs {
 class PageBuffer
 {
  public:
-  using Block = std::aligned_storage_t<4096, 512>;
+  using Block = std::aligned_storage_t<kDirectIOBlockSize, kDirectIOBlockAlign>;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -44,14 +46,16 @@ class PageBuffer
   // batt::SharedPtr/RefCounted) because this class is designed to overlay the page data buffer and
   // nothing else, so that the blocks contained within are properly aligned for direct I/O.
   //
-  static std::shared_ptr<PageBuffer> allocate(PageSize size,
-                                              PageId page_id = PageId{kInvalidPageId});
+  static std::shared_ptr<PageBuffer> allocate(PageSize size, PageId page_id);
+
+  // Frees a PageBuffer to the pool (or the heap).
+  //
+  static void deallocate(PageSize page_size, void* ptr);
 
   // PageBuffer memory is managed internally by LLFS; disable dtor and override the default `delete`
   // operator.
   //
   PageBuffer() = delete;
-  void operator delete(void* ptr);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -64,7 +68,7 @@ class PageBuffer
   //
   PageId page_id() const;
 
-  // Sets the PageId of this page.x
+  // Sets the PageId of this page.
   //
   void set_page_id(PageId id);
 
@@ -92,6 +96,85 @@ class PageBuffer
 };
 
 BATT_STATIC_ASSERT_EQ(sizeof(PageBuffer), 4096);
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
+struct PageBufferDeleter {
+  PageSize page_size;
+  PageId page_id;
+
+  void operator()(void* ptr) const
+  {
+    PageBuffer::deallocate(this->page_size, ptr);
+  }
+};
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename T>
+inline PageSize get_page_buffer_size(const std::shared_ptr<T>& page_buffer)
+{
+  const PageBufferDeleter* const deleter = get_deleter<PageBufferDeleter>(page_buffer);
+  if (deleter) {
+    return deleter->page_size;
+  }
+  return page_buffer->size();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+inline PageSize get_page_size(const std::shared_ptr<const PageBuffer>& page_buffer)
+{
+  return get_page_buffer_size(page_buffer);
+}
+
+inline PageSize get_page_size(const std::shared_ptr<PageBuffer>& page_buffer)
+{
+  return get_page_buffer_size(page_buffer);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+template <typename T>
+inline PageId get_page_buffer_page_id(const std::shared_ptr<T>& page_buffer)
+{
+  const PageBufferDeleter* const deleter = get_deleter<PageBufferDeleter>(page_buffer);
+  if (deleter) {
+    return deleter->page_id;
+  }
+  return page_buffer->page_id();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+inline PageId get_page_id(const std::shared_ptr<const PageBuffer>& page_buffer)
+{
+  return get_page_buffer_page_id(page_buffer);
+}
+
+inline PageId get_page_id(const std::shared_ptr<PageBuffer>& page_buffer)
+{
+  return get_page_buffer_page_id(page_buffer);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+inline ConstBuffer get_const_buffer(const std::shared_ptr<const PageBuffer>& page_buffer)
+{
+  return ConstBuffer{page_buffer.get(), get_page_size(page_buffer)};
+}
+
+inline ConstBuffer get_const_buffer(const std::shared_ptr<PageBuffer>& page_buffer)
+{
+  return ConstBuffer{page_buffer.get(), get_page_size(page_buffer)};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+inline MutableBuffer get_mutable_buffer(const std::shared_ptr<PageBuffer>& page_buffer)
+{
+  return MutableBuffer{page_buffer.get(), get_page_size(page_buffer)};
+}
 
 }  // namespace llfs
 

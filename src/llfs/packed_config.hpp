@@ -10,6 +10,8 @@
 #ifndef LLFS_PACKED_CONFIG_HPP
 #define LLFS_PACKED_CONFIG_HPP
 
+#include <llfs/config.hpp>
+//
 #include <llfs/crc.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/packed_array.hpp>
@@ -99,7 +101,7 @@ struct PackedConfigTagFor;
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
-struct alignas(512) PackedConfigBlock {
+struct alignas(kDirectIOBlockAlign) PackedConfigBlock {
   static constexpr u64 kMagic = 0x49dcc2d0e14dbe9eull;
 
   static constexpr u32 kVersion = make_version_u64(0, 1, 0);

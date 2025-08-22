@@ -72,6 +72,15 @@ inline PackedPageHeader* mutable_page_header(PageBuffer* page)
   return reinterpret_cast<PackedPageHeader*>(page);
 }
 
+/** \brief If required_layout is non-None, returns OkStatus() iff the layout_id field in the header
+ * of the passed `page` matches the required_layout; if required_layout is None, always returns
+ * OkStatus().
+ *
+ * When the status does not match, returns llfs::StatusCode::kPageHeaderBadLayoutId.
+ */
+Status require_page_layout(const PageBuffer& page,
+                           const Optional<PageLayoutId>& required_layout) noexcept;
+
 }  // namespace llfs
 
 #endif  // LLFS_PACKED_PAGE_HEADER_HPP

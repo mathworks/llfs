@@ -217,7 +217,7 @@ class VolumeTrimmer
 
   /** \brief The default level to log failed BATT_REQUIRE_OK statements.
    */
-  std::atomic<batt::LogLevel> error_log_level_{batt::LogLevel::kError};
+  std::atomic<batt::LogLevel> error_log_level_{batt::LogLevel::kVerbose};
 };
 
 }  // namespace llfs

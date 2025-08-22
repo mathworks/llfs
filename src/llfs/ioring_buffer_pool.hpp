@@ -49,7 +49,7 @@ class IoRingBufferPool
 
   /** \brief A chunk of memory for the pool.
    */
-  using MemoryUnit = std::aligned_storage_t<kMemoryUnitSize, 512>;
+  using MemoryUnit = std::aligned_storage_t<kMemoryUnitSize, kDirectIOBlockAlign>;
 
   //----- --- -- -  -  -   -
   /** \brief A buffer registered with the IoRing.

@@ -48,7 +48,7 @@ class IoRingLogDriver2
 {
  public:
   using Self = IoRingLogDriver2;
-  using AlignedUnit = std::aligned_storage_t<kLogAtomicWriteSize, kLogAtomicWriteSize>;
+  using AlignedUnit = std::aligned_storage_t<kDirectIOBlockSize, kDirectIOBlockAlign>;
   using EventLoopTask = typename StorageT::EventLoopTask;
   using Metrics = IoRingLogDevice2Metrics;
 

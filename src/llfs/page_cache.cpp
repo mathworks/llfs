@@ -295,8 +295,8 @@ StatusOr<std::shared_ptr<PageBuffer>> PageCache::allocate_page_of_size(
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<std::shared_ptr<PageBuffer>> PageCache::allocate_page_of_size_log2(
-    PageSizeLog2 size_log2, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id,
-    const batt::CancelToken& cancel_token)
+    PageSizeLog2 size_log2, batt::WaitForResource wait_for_resource, u64 callers [[maybe_unused]],
+    u64 job_id [[maybe_unused]], const batt::CancelToken& cancel_token)
 {
   BATT_CHECK_LT(size_log2, kMaxPageSizeLog2);
 
@@ -324,6 +324,7 @@ StatusOr<std::shared_ptr<PageBuffer>> PageCache::allocate_page_of_size_log2(
 
       LLFS_VLOG(1) << "allocated page " << *page_id;
 
+#if LLFS_TRACK_NEW_PAGE_EVENTS
       this->track_new_page_event(NewPageTracker{
           .ts = 0,
           .job_id = job_id,
@@ -331,6 +332,7 @@ StatusOr<std::shared_ptr<PageBuffer>> PageCache::allocate_page_of_size_log2(
           .callers = callers,
           .event_id = (int)NewPageTracker::Event::kAllocate,
       });
+#endif  // LLFS_TRACK_NEW_PAGE_EVENTS
 
       // PageDevice::prepare must be thread-safe.
       //
@@ -352,6 +354,7 @@ void PageCache::deallocate_page(PageId page_id, u64 callers, u64 job_id)
 {
   LLFS_VLOG(1) << "deallocated page " << std::hex << page_id;
 
+#if LLFS_TRACK_NEW_PAGE_EVENTS
   this->track_new_page_event(NewPageTracker{
       .ts = 0,
       .job_id = job_id,
@@ -359,6 +362,7 @@ void PageCache::deallocate_page(PageId page_id, u64 callers, u64 job_id)
       .callers = callers,
       .event_id = (int)NewPageTracker::Event::kDeallocate,
   });
+#endif  // LLFS_TRACK_NEW_PAGE_EVENTS
 
   this->arena_for_page_id(page_id).allocator().deallocate_page(page_id);
   this->purge(page_id, callers | Caller::PageCache_deallocate_page, job_id);
@@ -472,8 +476,8 @@ const PageArena& PageCache::arena_for_device_id(page_device_id_int device_id_val
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<PinnedPage> PageCache::put_view(std::shared_ptr<const PageView>&& view, u64 callers,
-                                         u64 job_id)
+StatusOr<PinnedPage> PageCache::put_view(std::shared_ptr<const PageView>&& view,
+                                         u64 callers [[maybe_unused]], u64 job_id [[maybe_unused]])
 {
   BATT_CHECK_NOT_NULLPTR(view);
 
@@ -498,6 +502,7 @@ StatusOr<PinnedPage> PageCache::put_view(std::shared_ptr<const PageView>&& view,
         pinned_ref->set_value(std::move(view));
       });
 
+#if LLFS_TRACK_NEW_PAGE_EVENTS
   this->track_new_page_event(NewPageTracker{
       .ts = 0,
       .job_id = job_id,
@@ -506,6 +511,7 @@ StatusOr<PinnedPage> PageCache::put_view(std::shared_ptr<const PageView>&& view,
       .event_id = pinned_cache_slot.ok() ? (int)NewPageTracker::Event::kPutView_Ok
                                          : (int)NewPageTracker::Event::kPutView_Fail,
   });
+#endif  // LLFS_TRACK_NEW_PAGE_EVENTS
 
   // If no slots are available, clients should back off and retry.
   //
@@ -519,9 +525,10 @@ StatusOr<PinnedPage> PageCache::put_view(std::shared_ptr<const PageView>&& view,
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void PageCache::purge(PageId page_id, u64 callers, u64 job_id)
+void PageCache::purge(PageId page_id, u64 callers [[maybe_unused]], u64 job_id [[maybe_unused]])
 {
   if (page_id.is_valid()) {
+#if LLFS_TRACK_NEW_PAGE_EVENTS
     this->track_new_page_event(NewPageTracker{
         .ts = 0,
         .job_id = job_id,
@@ -529,6 +536,7 @@ void PageCache::purge(PageId page_id, u64 callers, u64 job_id)
         .callers = callers,
         .event_id = (int)NewPageTracker::Event::kPurge,
     });
+#endif  // LLFS_TRACK_NEW_PAGE_EVENTS
 
     PageDeviceEntry* const entry = this->get_device_for_page(page_id);
     BATT_CHECK_NOT_NULLPTR(entry);
@@ -634,12 +642,14 @@ void PageCache::async_load_page_into_slot(const PageCacheSlot::PinnedRef& pinned
 
         if (!result.ok()) {
           if (!ok_if_not_found) {
+#if LLFS_TRACK_NEW_PAGE_EVENTS
             LLFS_LOG_WARNING() << "recent events for" << BATT_INSPECT(page_id)
                                << BATT_INSPECT(ok_if_not_found) << " (now=" << this->history_end_
                                << "):"
                                << batt::dump_range(
                                       this->find_new_page_events(page_id) | seq::collect_vec(),
                                       batt::Pretty::True);
+#endif  // LLFS_TRACK_NEW_PAGE_EVENTS
           }
           latch->set_value(result.status());
           return;
@@ -691,6 +701,10 @@ bool PageCache::page_might_contain_key(PageId /*page_id*/, const KeyView& /*key*
   return true;
 }
 
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+//
+#if LLFS_TRACK_NEW_PAGE_EVENTS
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 void PageCache::track_new_page_event(const NewPageTracker& tracker)
@@ -727,5 +741,7 @@ BoxedSeq<NewPageTracker> PageCache::find_new_page_events(PageId page_id) const
                })  //
          | seq::boxed();
 }
+
+#endif  // LLFS_TRACK_NEW_PAGE_EVENTS
 
 }  // namespace llfs

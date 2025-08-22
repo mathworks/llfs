@@ -74,7 +74,7 @@ class VolumeConfigTest : public ::testing::Test
   //
   void create_storage_context()
   {
-    this->storage_context_ = batt::make_shared<llfs::StorageContext>(
+    this->storage_context_ = llfs::StorageContext::make_shared(
         batt::Runtime::instance().default_scheduler(), this->ioring_.get_io_ring());
   }
 

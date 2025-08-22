@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 
 #include <bitset>
+#include <cmath>
 #include <limits>
 #include <random>
 
@@ -26,15 +27,14 @@ constexpr i32 kNumTestCases = 1000 * 1000;
 template <typename PackedT, typename FloatT>
 void verify_case_for_packed_type(FloatT value, i32 case_i)
 {
-  u8 buffer[sizeof(FloatT)];
+  u8 buffer[sizeof(PackedT)];
 
   {
     std::memset(buffer, 0xba, sizeof(buffer));
 
     // Construct from double
     //
-    new (buffer) PackedT(value);
-    const PackedT& packed = reinterpret_cast<const PackedT&>(buffer);
+    const PackedT& packed = *(new (buffer) PackedT(value));
     FloatT unpacked = packed;
 
     EXPECT_EQ(value, unpacked) << BATT_INSPECT(case_i) << " "
@@ -66,6 +66,14 @@ void verify_case(double value, i32 case_i)
 
 TEST(PackedFloat, Test)
 {
+  const double pos_inf = std::numeric_limits<double>::infinity();
+  const double neg_inf = -std::numeric_limits<double>::infinity();
+
+  ASSERT_TRUE(std::isinf(pos_inf));
+  ASSERT_FALSE(std::signbit(pos_inf));
+  ASSERT_TRUE(std::isinf(neg_inf));
+  ASSERT_TRUE(std::signbit(neg_inf));
+
   // First verify edge cases.
   //
   verify_case(std::numeric_limits<double>::infinity(), -1);

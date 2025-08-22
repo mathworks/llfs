@@ -92,6 +92,7 @@ void FilesystemPageDevice::write(std::shared_ptr<const PageBuffer>&& page_buffer
     metrics().commit_count++;
 
     BATT_CHECK_EQ(page_buffer->size(), this->page_size_);
+    BATT_CHECK_EQ(get_page_size(page_buffer), this->page_size_);
 
     std::unique_lock<std::mutex> lock{this->mutex_};
 
@@ -105,7 +106,7 @@ void FilesystemPageDevice::write(std::shared_ptr<const PageBuffer>&& page_buffer
     std::ofstream ofs(page_file_from_id(page_buffer->page_id()),
                       std::ios_base::out | std::ios_base::binary | std::ios_base::trunc);
 
-    const ConstBuffer buf = page_buffer->const_buffer();
+    const ConstBuffer buf = get_const_buffer(page_buffer);
     if (!ofs.write((const char*)buf.data(), buf.size()).good()) {
       return make_status(StatusCode::kFilesystemPageWriteFailed);
     }
@@ -130,10 +131,11 @@ void FilesystemPageDevice::read(PageId id, ReadHandler&& handler)
 
     // TODO [tastolfi 2020-12-07] Pool these?
     //
-    std::shared_ptr<PageBuffer> page = PageBuffer::allocate(this->page_size_);
+    std::shared_ptr<PageBuffer> page = PageBuffer::allocate(this->page_size_, id);
 
     BATT_CHECK_NOT_NULLPTR(page);
     BATT_CHECK_EQ(page->size(), this->page_size_);
+    BATT_CHECK_EQ(get_page_size(page), this->page_size_);
 
     std::ifstream ifs(page_file_from_id(id));
     if (!ifs.good()) {

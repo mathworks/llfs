@@ -160,14 +160,14 @@ Status IoRingImpl::run() noexcept
   // This is just an arbitrary limit; how many times can we iterate without successfully
   // grabbing/running a completion handler?
   //
-  constexpr usize kMaxNoopCount = 1000 * 1000;
+  constexpr i64 kMaxNoopCount = 1000 * 1000 * 1000;
 
   auto on_scope_exit = batt::finally([this] {
     LLFS_DVLOG(1) << "IoRingImpl::run() " << BATT_INSPECT(this->work_count_) << " LEAVING";
   });
 
   CompletionHandler* handler = nullptr;
-  usize noop_count = 0;
+  i64 noop_count = 0;
 
   while (this->can_run()) {
     LLFS_DVLOG(1) << "IoRingImpl::run() top of loop;" << BATT_INSPECT(this->work_count_);

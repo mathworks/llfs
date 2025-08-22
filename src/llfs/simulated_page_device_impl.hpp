@@ -46,12 +46,12 @@ class SimulatedPageDevice::Impl : public SimulatedStorageObject
  public:
   /** \brief The size of a simulated minimum atomically writable storage unit.
    */
-  static constexpr usize kDataBlockSize = 512;
+  static constexpr usize kDataBlockSize = kDirectIOBlockSize;
 
-  /** \brief The alignment of a DataBlock; this is set to 512 to match the requirements of direct
-   * (raw) I/O on Linux.
+  /** \brief The alignment of a DataBlock; this is set to kDirectIOBlockAlign to match the
+   * requirements of direct (raw) I/O on Linux.
    */
-  static constexpr usize kDataBlockAlign = 512;
+  static constexpr usize kDataBlockAlign = kDirectIOBlockAlign;
 
   /** \brief Buffer type used to store simulated atomic writes to storage.
    */

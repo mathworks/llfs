@@ -32,11 +32,7 @@ namespace llfs {
     const IoRing& io_ring, const char* file_name, int flags, Optional<mode_t> mode)
 {
   const int fd = batt::syscall_retry([&] {
-    if (mode) {
-      return system_open3(file_name, flags, *mode);
-    } else {
-      return system_open2(file_name, flags);
-    }
+    return system_open3(file_name, flags, mode.value_or(0644));
   });
   BATT_REQUIRE_OK(batt::status_from_retval(fd));
 
@@ -61,7 +57,9 @@ StatusOr<i64> IoRingRawBlockFile::write_some(i64 offset, const ConstBuffer& data
   StatusOr<i64> result = batt::Task::await<batt::StatusOr<i64>>([&](auto&& handler) {
     this->file_.async_write_some(offset, data, BATT_FORWARD(handler));
   });
-  BATT_REQUIRE_OK(result);
+
+  BATT_REQUIRE_OK(result) << BATT_INSPECT(offset) << BATT_INSPECT(data.data())
+                          << BATT_INSPECT(data.size()) << boost::stacktrace::stacktrace{};
 
   /*
   const int retval = batt::syscall_retry([&] {

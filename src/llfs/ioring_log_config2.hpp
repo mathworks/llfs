@@ -26,11 +26,11 @@ struct IoRingLogConfig2 {
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  static constexpr usize kDefaultDevicePageSize = 512;
-  static constexpr usize kDefaultDataAlignment = 4096;
+  static constexpr usize kDefaultDevicePageSize = kDirectIOBlockSize;
+  static constexpr usize kDefaultDataAlignment = kDirectIOBlockAlign;
 
-  static constexpr u16 kDefaultDevicePageSizeLog2 = 9 /*=log2(512)*/;
-  static constexpr u16 kDefaultDataAlignmentLog2 = 12 /*=log2(4096)*/;
+  static constexpr u16 kDefaultDevicePageSizeLog2 = kDirectIOBlockSizeLog2;
+  static constexpr u16 kDefaultDataAlignmentLog2 = kDirectIOBlockAlignLog2;
 
   static_assert((usize{1} << Self::kDefaultDevicePageSizeLog2) == Self::kDefaultDevicePageSize);
   static_assert((usize{1} << Self::kDefaultDataAlignmentLog2) == Self::kDefaultDataAlignment);

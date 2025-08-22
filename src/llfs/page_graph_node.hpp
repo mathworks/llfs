@@ -16,7 +16,6 @@
 #include <llfs/packed_array.hpp>
 #include <llfs/packed_page_id.hpp>
 #include <llfs/page_cache_job.hpp>
-#include <llfs/page_filter.hpp>
 #include <llfs/page_view.hpp>
 #include <llfs/seq.hpp>
 #include <llfs/unpack_cast.hpp>
@@ -120,14 +119,6 @@ class PageGraphNodeView : public PageView
   Optional<KeyView> max_key() const override
   {
     return None;
-  }
-
-  /** \brief Builds a key-based approximate member query (AMQ) filter for the page, to answer the
-   * question whether a given key *might* be contained by the page.
-   */
-  std::shared_ptr<PageFilter> build_filter() const override
-  {
-    return std::make_shared<NullPageFilter>(this->page_id());
   }
 
   /** \brief Dump a human-readable representation or summary of the page to the passed stream.

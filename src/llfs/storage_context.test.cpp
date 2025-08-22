@@ -42,7 +42,7 @@ TEST(StorageContextTest, GetPageCache)
 
   // Create a StorageContext.
   //
-  batt::SharedPtr<llfs::StorageContext> storage_context = batt::make_shared<llfs::StorageContext>(
+  batt::SharedPtr<llfs::StorageContext> storage_context = llfs::StorageContext::make_shared(
       batt::Runtime::instance().default_scheduler(), io->get_io_ring());
 
   boost::uuids::uuid arena_uuid_4kb = llfs::random_uuid();
@@ -50,11 +50,11 @@ TEST(StorageContextTest, GetPageCache)
 
   // Create a storage file with two page arenas, one for small pages (4kb), one for large (2mb).
   //
-  llfs::Status file_create_status = storage_context->add_new_file(
-      storage_file_name, [&](llfs::StorageFileBuilder& builder) -> llfs::Status {
-        llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageArenaConfig&>> config_4kb =
-            builder.add_object(
-                llfs::PageArenaConfigOptions{
+  llfs::Status file_create_status =
+      storage_context->add_new_file(
+          storage_file_name, [&](llfs::StorageFileBuilder& builder) -> llfs::Status {
+            llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageArenaConfig&>> config_4kb =
+                builder.add_object(llfs::PageArenaConfigOptions{
                     .uuid = arena_uuid_4kb,
                     .page_allocator =
                         llfs::CreateNewPageAllocator{
@@ -66,8 +66,8 @@ TEST(StorageContextTest, GetPageCache)
                                     .log_device =
                                         llfs::CreateNewLogDevice2WithDefaultSize{
                                             .uuid = llfs::None,
-                                            .device_page_size_log2 = 9,
-                                            .data_alignment_log2 = 12,
+                                            .device_page_size_log2 = llfs::kDirectIOBlockSizeLog2,
+                                            .data_alignment_log2 = llfs::kDirectIOBlockAlignLog2,
                                         },
                                     .page_size_log2 = llfs::PageSizeLog2{12},
                                     .page_device = llfs::LinkToNewPageDevice{},
@@ -87,11 +87,10 @@ TEST(StorageContextTest, GetPageCache)
                         },
                 });
 
-        BATT_REQUIRE_OK(config_4kb);
+            BATT_REQUIRE_OK(config_4kb);
 
-        llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageArenaConfig&>> config_2mb =
-            builder.add_object(
-                llfs::PageArenaConfigOptions{
+            llfs::StatusOr<llfs::FileOffsetPtr<const llfs::PackedPageArenaConfig&>> config_2mb =
+                builder.add_object(llfs::PageArenaConfigOptions{
                     .uuid = arena_uuid_2mb,
                     .page_allocator =
                         llfs::CreateNewPageAllocator{
@@ -103,8 +102,8 @@ TEST(StorageContextTest, GetPageCache)
                                     .log_device =
                                         llfs::CreateNewLogDevice2WithDefaultSize{
                                             .uuid = llfs::None,
-                                            .device_page_size_log2 = 9,
-                                            .data_alignment_log2 = 12,
+                                            .device_page_size_log2 = llfs::kDirectIOBlockSizeLog2,
+                                            .data_alignment_log2 = llfs::kDirectIOBlockAlignLog2,
                                         },
                                     .page_size_log2 = llfs::PageSizeLog2{21},
                                     .page_device = llfs::LinkToNewPageDevice{},
@@ -124,10 +123,10 @@ TEST(StorageContextTest, GetPageCache)
                         },
                 });
 
-        BATT_REQUIRE_OK(config_2mb);
+            BATT_REQUIRE_OK(config_2mb);
 
-        return llfs::OkStatus();
-      });
+            return llfs::OkStatus();
+          });
   ASSERT_TRUE(file_create_status.ok()) << BATT_INSPECT(file_create_status);
 
   llfs::StatusOr<batt::SharedPtr<llfs::PageCache>> cache = storage_context->get_page_cache();
@@ -159,7 +158,7 @@ class DynamicStorageProvisioning : public ::testing::Test
 
     // Create a StorageContext.
     //
-    this->storage_context = batt::make_shared<llfs::StorageContext>(
+    this->storage_context = llfs::StorageContext::make_shared(
         batt::Runtime::instance().default_scheduler(), this->io->get_io_ring());
   }
 

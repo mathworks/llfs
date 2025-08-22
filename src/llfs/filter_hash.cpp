@@ -6,9 +6,4 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-#include <llfs/stable_string_store.hpp>
-//
-
-namespace llfs {
-
-}  // namespace llfs
+#include <llfs/filter_hash.hpp>

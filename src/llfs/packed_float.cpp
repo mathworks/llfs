@@ -9,8 +9,12 @@
 #include <llfs/packed_float.hpp>
 //
 
+#include <batteries/type_traits.hpp>
+
 #include <cfloat>
+#include <cmath>
 #include <limits>
+#include <type_traits>
 
 namespace llfs {
 
@@ -22,7 +26,7 @@ struct BinaryLayout;
 template <>
 struct BinaryLayout<u32> {
   static constexpr i32 kExponentBits = 8;
-  static constexpr i32 kExponentShift = 22;
+  static constexpr i32 kExponentShift = 23;
   static constexpr i32 kExponentBias = 127;
   static constexpr i32 kExponentUnbiasedMin = -127;
   static constexpr i32 kExponentUnbiasedMax = 128;
@@ -56,15 +60,24 @@ struct BinaryLayout<u64> {
 template <typename Integer, typename Real>
 Integer encode_as(Real value)
 {
+  static_assert(std::is_same_v<Real, std::decay_t<Real>>);
+
   using Layout = BinaryLayout<Integer>;
 
   BATT_STATIC_ASSERT_EQ(sizeof(Integer), sizeof(Real));
 
-  if (value == std::numeric_limits<Real>::infinity()) {
+  union {
+    Real r;
+    Integer i;
+  } copy;
+
+  copy.r = value;
+
+  if ((std::isinf(copy.r) && !std::signbit(copy.r)) || (copy.i == Layout::kPositiveInfinity)) {
     return Layout::kPositiveInfinity;
   }
 
-  if (value == -std::numeric_limits<Real>::infinity()) {
+  if ((std::isinf(copy.r) && std::signbit(copy.r)) || (copy.i == Layout::kNegativeInfinity)) {
     return Layout::kNegativeInfinity;
   }
 

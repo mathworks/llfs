@@ -56,6 +56,7 @@ Status parallel_drop_pages(const std::vector<PageId>& deleted_pages, PageCache& 
       cache.arena_for_page_id(page_id).device().drop(page_id, ops[i].get_handler());
       ++i;
 
+#if LLFS_TRACK_NEW_PAGE_EVENTS
       cache.track_new_page_event(NewPageTracker{
           .ts = 0,
           .job_id = job_id,
@@ -63,6 +64,7 @@ Status parallel_drop_pages(const std::vector<PageId>& deleted_pages, PageCache& 
           .callers = callers | Caller::PageCacheJob_commit_2,
           .event_id = (int)NewPageTracker::Event::kDrop,
       });
+#endif  // LLFS_TRACK_NEW_PAGE_EVENTS
     }
   }
 

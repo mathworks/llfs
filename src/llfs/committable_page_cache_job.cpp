@@ -208,12 +208,7 @@ Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 c
   const PageCacheJob* job = this->job_.get();
   BATT_CHECK_NOT_NULLPTR(job);
 
-  if (durable_caller_slot) {
-    LLFS_VLOG(1) << "commit(PageCacheJob): entered" << BATT_INSPECT(prev_caller_slot)
-                 << BATT_INSPECT(*durable_caller_slot);
-  } else {
-    LLFS_VLOG(1) << "commit(PageCacheJob): entered" << BATT_INSPECT(prev_caller_slot);
-  }
+  LLFS_VLOG(1) << "commit(PageCacheJob): entered";
 
   // Make sure the job is pruned!
   //
@@ -406,6 +401,7 @@ Status CommittablePageCacheJob::WriteNewPagesContext::await_finish()
   //
   Status all_ops_status = OkStatus();
   for (auto& op : as_slice(this->ops.get(), this->n_ops)) {
+#if LLFS_TRACK_NEW_PAGE_EVENTS
     this->job->cache().track_new_page_event(NewPageTracker{
         .ts = 0,
         .job_id = this->job->job_id,
@@ -414,6 +410,8 @@ Status CommittablePageCacheJob::WriteNewPagesContext::await_finish()
         .event_id = op.result.ok() ? (int)NewPageTracker::Event::kWrite_Ok
                                    : (int)NewPageTracker::Event::kWrite_Fail,
     });
+#endif  // LLFS_TRACK_NEW_PAGE_EVENTS
+
     all_ops_status.Update(op.result);
   }
   BATT_REQUIRE_OK(all_ops_status);
@@ -579,6 +577,10 @@ Status CommittablePageCacheJob::recycle_dead_pages(const JobCommitParams& params
 {
   LLFS_VLOG(1) << "commit(PageCacheJob): recycling dead pages (count=" << dead_pages.ids.size()
                << ")";
+
+  if (dead_pages.ids.empty()) {
+    return OkStatus();
+  }
 
   BATT_CHECK_NOT_NULLPTR(params.recycler.pointer());
 

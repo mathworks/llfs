@@ -75,6 +75,7 @@ StatusOr<SlotRange> refresh_recycler_info_slot(TypedSlotWriter<PageRecycleEvent>
 {
   const usize log_size_raw =
       PageRecycler::calculate_log_size_no_padding(options, max_buffered_page_count);
+
   const usize padding_bytes = 1 * kKiB;
 
   return round_up_to_page_size_multiple(log_size_raw + padding_bytes);
@@ -858,7 +859,7 @@ Status PageRecycler::trim_log()
     }
   }();
 
-  // We want to keep atleast one recycle_page slot in the log.
+  // We want to keep at least one recycle_page slot in the log.
   //
   if (trim_point >= this->last_page_recycle_offset_) {
     return batt::OkStatus();

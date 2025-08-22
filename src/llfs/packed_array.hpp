@@ -16,6 +16,7 @@
 
 #include <batteries/optional.hpp>
 #include <batteries/static_assert.hpp>
+#include <batteries/suppress.hpp>
 
 #include <cstring>
 
@@ -42,7 +43,12 @@ struct PackedArray {
   template <typename I>
   void initialize(I count_arg)
   {
+    BATT_SUPPRESS_IF_GCC("-Wstringop-overflow")
+
     std::memset(this, 0, sizeof(PackedArray));
+
+    BATT_UNSUPPRESS_IF_GCC()
+
     this->item_count = count_arg;
 
     BATT_CHECK_EQ(count_arg, this->item_count.value());
@@ -95,6 +101,8 @@ struct PackedArray {
     return this->item_count;
   }
 
+  BATT_SUPPRESS_IF_GCC("-Warray-bounds")
+
   T& operator[](usize index)
   {
     return this->items[index];
@@ -104,6 +112,8 @@ struct PackedArray {
   {
     return this->items[index];
   }
+
+  BATT_UNSUPPRESS_IF_GCC()
 
   auto debug_dump(const void* base) const
   {

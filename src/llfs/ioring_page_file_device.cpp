@@ -141,7 +141,7 @@ void IoRingPageFileDevice::read(PageId page_id, ReadHandler&& handler)
   const PageSize page_buffer_size = this->page_size();
   const usize n_read_so_far = 0;
 
-  this->read_some(page_id, *page_offset_in_file, PageBuffer::allocate(page_buffer_size),
+  this->read_some(page_id, *page_offset_in_file, PageBuffer::allocate(page_buffer_size, page_id),
                   page_buffer_size, n_read_so_far, std::move(handler));
 }
 

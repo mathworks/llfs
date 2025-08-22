@@ -22,10 +22,10 @@
 namespace llfs {
 
 struct PackedLogControlBlock2 {
-  /** \brief The control block structure should take up exactly 512 bytes, since that is the
-   * smallest atomic block size for the kinds of devices we care about.
+  /** \brief The control block structure should take up exactly kDirectIOBlockSize, since that is
+   * the smallest atomic block size for the kinds of devices we care about.
    */
-  static constexpr usize kSize = 512;
+  static constexpr usize kSize = kDirectIOBlockSize;
 
   /** \brief Used to sanity check instances of this packed structure read from media.
    */

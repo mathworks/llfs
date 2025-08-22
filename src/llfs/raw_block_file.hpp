@@ -48,16 +48,16 @@ class RawBlockFile
   // Write `data` to the file at the specified bytes offset.  This may result in a short write, in
   // which case the caller is responsible for retrying.
   //
-  // The memory pointed to by `data` must be 512-byte aligned; `data.size()` must be a multiple of
-  // 512.
+  // The memory pointed to by `data` must be block-aligned; `data.size()` must be a multiple of
+  // kDirectIOBlockSize.
   //
   virtual StatusOr<i64> write_some(i64 offset, const ConstBuffer& data) = 0;
 
   // Read as much data as possible into `buffer` from the file, starting at file byte `offset`.
   // This may result in a short read, in which case the caller is responsible for retrying.
   //
-  // The memory pointed to by `data` must be 512-byte aligned; `data.size()` must be a multiple of
-  // 512.
+  // The memory pointed to by `data` must be block-aligned; `data.size()` must be a multiple of
+  // kDirectIOBlockSize.
   //
   virtual StatusOr<i64> read_some(i64 offset, const MutableBuffer& buffer) = 0;
 

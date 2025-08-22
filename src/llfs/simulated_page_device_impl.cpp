@@ -24,7 +24,8 @@ namespace llfs {
     , page_count_{page_count}
     , device_id_{device_id}
 {
-  BATT_CHECK_EQ(this->blocks_per_page_ * kDataBlockSize, this->page_size_);
+  BATT_CHECK_EQ(this->blocks_per_page_ * kDataBlockSize, this->page_size_)
+      << BATT_INSPECT(this->blocks_per_page_) << BATT_INSPECT(kDataBlockSize);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -97,7 +98,7 @@ void SimulatedPageDevice::Impl::write(u32 device_create_step,
                                       std::shared_ptr<const PageBuffer>&& page_buffer,
                                       PageDevice::WriteHandler&& handler)
 {
-  this->log_event("write(", page_buffer->page_id(), "[size=", page_buffer->size(), "])");
+  this->log_event("write(", page_buffer->page_id(), "[size=", get_page_size(page_buffer), "])");
 
   if (this->latest_recovery_step_.get_value() > device_create_step) {
     this->log_event(" -- ignoring (obsolete PageDevice)");
@@ -148,7 +149,7 @@ void SimulatedPageDevice::Impl::write(u32 device_create_step,
 
               // No failure injected; grab the slice of the PageBuffer corresponding to this block.
               //
-              ConstBuffer source = batt::slice_buffer(page_buffer->const_buffer(),
+              ConstBuffer source = batt::slice_buffer(get_const_buffer(page_buffer),
                                                       batt::Interval<usize>{
                                                           (block_i - block_0) * kDataBlockSize,
                                                           (block_i - block_0 + 1) * kDataBlockSize,
@@ -213,7 +214,7 @@ void SimulatedPageDevice::Impl::read(u32 device_create_step, PageId page_id,
 
       // Find the slice of the page buffer corresponding to this block.
       //
-      MutableBuffer target = batt::slice_buffer(page_buffer->mutable_buffer(),
+      MutableBuffer target = batt::slice_buffer(get_mutable_buffer(page_buffer),
                                                 batt::Interval<usize>{
                                                     (block_i - block_0) * kDataBlockSize,
                                                     (block_i - block_0 + 1) * kDataBlockSize,

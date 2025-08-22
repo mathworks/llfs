@@ -16,15 +16,20 @@
 namespace llfs {
 
 using ::batt::CountMetric;
+using ::batt::Every2ToThe;
+using ::batt::Every2ToTheConst;
+using ::batt::FastCountMetric;
 using ::batt::global_metric_registry;
 using ::batt::LatencyMetric;
 using ::batt::LatencyTimer;
 using ::batt::MetricLabel;
 using ::batt::MetricLabelSet;
 using ::batt::MetricRegistry;
+using ::batt::RateMetric;
 
 #define LLFS_COLLECT_LATENCY BATT_COLLECT_LATENCY
 #define LLFS_COLLECT_LATENCY_N BATT_COLLECT_LATENCY_N
+#define LLFS_COLLECT_LATENCY_SAMPLE BATT_COLLECT_LATENCY_SAMPLE
 
 }  // namespace llfs
 

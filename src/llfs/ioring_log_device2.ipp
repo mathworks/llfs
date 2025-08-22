@@ -402,7 +402,7 @@ inline void IoRingLogDriver2<StorageT>::start_flush(const CommitPos observed_com
       slot_range.upper_bound = new_upper_bound;
     }
 
-    // Align to 512-byte boundaries for direct I/O
+    // Align to block boundaries for direct I/O
     //
     SlotRange aligned_range = this->get_aligned_range(slot_range);
 

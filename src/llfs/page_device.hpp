@@ -36,6 +36,8 @@ class PageDevice
   using WriteHandler = std::function<void(PageDevice::WriteResult)>;
   using ReadHandler = std::function<void(PageDevice::ReadResult)>;
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   PageDevice(const PageDevice&) = delete;
   PageDevice& operator=(const PageDevice&) = delete;
 

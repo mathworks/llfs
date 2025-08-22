@@ -12,18 +12,24 @@ on:
 concurrency: custom_runner
 
 jobs:
+  setup-directories:
+    runs-on: self-hosted
+    steps:
+      - name: Create conan cache directory
+        run: mkdir -p /github-ci/.conan2
+      - name: Clean workspace
+        run: |
+          rm -rf "${{ github.workspace }}"/*
+          rm -rf "${{ github.workspace }}"/.??*
   install:
     runs-on: self-hosted
     env:
       CONAN_HOME: /conan_cache
     container:
       image: registry.gitlab.com/batteriescpp/batteries:v0.50.7.linux_gcc11_amd64
-      options: --volume ${{ runner.tool_cache }}:/conan_cache --ulimit memlock=-1:-1 --cap-add SYS_ADMIN --device /dev/fuse --privileged
+      options: --volume /github-ci/.conan2:/conan_cache --ulimit memlock=-1:-1 --cap-add SYS_ADMIN --device /dev/fuse --privileged
+    needs: setup-directories
     steps:
-      - name: Clean workspace
-        run: |
-          rm -rf "${{ github.workspace }}"/*
-          rm -rf "${{ github.workspace }}"/.??*
       - name: Checkout repository
         uses: actions/checkout@master
         with:
@@ -36,7 +42,7 @@ jobs:
       CONAN_HOME: /conan_cache
     container:
       image: registry.gitlab.com/batteriescpp/batteries:v0.50.7.linux_gcc11_amd64
-      options: --volume ${{ runner.tool_cache }}:/conan_cache --ulimit memlock=-1:-1 --cap-add SYS_ADMIN --device /dev/fuse --privileged
+      options: --volume /github-ci/.conan2:/conan_cache --ulimit memlock=-1:-1 --cap-add SYS_ADMIN --device /dev/fuse --privileged
     needs: install
     steps:
       - name: make_build
@@ -47,7 +53,7 @@ jobs:
       CONAN_HOME: /conan_cache
     container:
       image: registry.gitlab.com/batteriescpp/batteries:v0.50.7.linux_gcc11_amd64
-      options: --volume ${{ runner.tool_cache }}:/conan_cache --ulimit memlock=-1:-1 --cap-add SYS_ADMIN --device /dev/fuse --privileged
+      options: --volume /github-ci/.conan2:/conan_cache --ulimit memlock=-1:-1 --cap-add SYS_ADMIN --device /dev/fuse --privileged
     needs: build
     steps:
       - name: make_test
@@ -59,7 +65,7 @@ jobs:
       CONAN_HOME: /conan_cache
     container:
       image: registry.gitlab.com/batteriescpp/batteries:v0.50.7.linux_gcc11_amd64
-      options: --volume ${{ runner.tool_cache }}:/conan_cache --ulimit memlock=-1:-1 --cap-add SYS_ADMIN --device /dev/fuse --privileged
+      options: --volume /github-ci/.conan2:/conan_cache --ulimit memlock=-1:-1 --cap-add SYS_ADMIN --device /dev/fuse --privileged
     needs:
       - build
       - test

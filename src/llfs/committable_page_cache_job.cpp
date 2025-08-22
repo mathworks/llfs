@@ -401,6 +401,7 @@ Status CommittablePageCacheJob::WriteNewPagesContext::await_finish()
   //
   Status all_ops_status = OkStatus();
   for (auto& op : as_slice(this->ops.get(), this->n_ops)) {
+#if LLFS_TRACK_NEW_PAGE_EVENTS
     this->job->cache().track_new_page_event(NewPageTracker{
         .ts = 0,
         .job_id = this->job->job_id,
@@ -409,6 +410,8 @@ Status CommittablePageCacheJob::WriteNewPagesContext::await_finish()
         .event_id = op.result.ok() ? (int)NewPageTracker::Event::kWrite_Ok
                                    : (int)NewPageTracker::Event::kWrite_Fail,
     });
+#endif  // LLFS_TRACK_NEW_PAGE_EVENTS
+
     all_ops_status.Update(op.result);
   }
   BATT_REQUIRE_OK(all_ops_status);

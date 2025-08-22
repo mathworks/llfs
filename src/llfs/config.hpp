@@ -148,6 +148,10 @@ constexpr bool kFastIoRingLogDeviceInit = true;
 //
 constexpr bool kFastIoRingPageDeviceInit = true;
 
+/** \brief Define as 1 to enable tracking of new page events, 0 to disable.
+ */
+#define LLFS_TRACK_NEW_PAGE_EVENTS 0
+
 }  // namespace llfs
 
 #endif  // LLFS_CONFIG_HPP

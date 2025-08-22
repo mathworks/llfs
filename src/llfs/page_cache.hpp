@@ -54,6 +54,8 @@ namespace llfs {
 class PageCacheJob;
 struct JobCommitParams;
 
+#if LLFS_TRACK_NEW_PAGE_EVENTS
+
 struct NewPageTracker {
   enum struct Event {
     kMinValue,
@@ -88,6 +90,8 @@ inline std::ostream& operator<<(std::ostream& out, const NewPageTracker& t)
                             1]
              << ",}";
 }
+
+#endif  // LLFS_TRACK_NEW_PAGE_EVENTS
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
@@ -217,9 +221,13 @@ class PageCache : public PageLoader
 
   bool page_might_contain_key(PageId id, const KeyView& key) const;
 
+#if LLFS_TRACK_NEW_PAGE_EVENTS
+
   BoxedSeq<NewPageTracker> find_new_page_events(PageId page_id) const;
 
   void track_new_page_event(const NewPageTracker& tracker);
+
+#endif  // LLFS_TRACK_NEW_PAGE_EVENTS
 
   PageCacheMetrics& metrics()
   {
@@ -326,22 +334,10 @@ class PageCache : public PageLoader
   //
   std::shared_ptr<batt::Mutex<PageLayoutReaderMap>> page_readers_;
 
-  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-  // TODO [tastolfi 2021-09-08] We need something akin to the PageRecycler/PageAllocator to durably
-  // store page filters so we can cache those and do fast exclusion tests.  This may belong at a
-  // higher level, however...
-  //
-  //  bool update_page_filter(std::shared_ptr<PageFilter>&& new_filter);
-  //  void build_page_filter(PinnedPage&& page);
-  //  Slice<Mutex<std::shared_ptr<PageFilter>>> leaf_page_filters();
-  //  void page_filter_builder_task_main();
-  //
-  //  Queue<PinnedPage<>> page_filter_build_queue_;
-  //  Task page_filter_builder_;
-  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-
+#if LLFS_TRACK_NEW_PAGE_EVENTS
   std::array<NewPageTracker, 16384> history_;
   std::atomic<isize> history_end_{0};
+#endif  // LLFS_TRACK_NEW_PAGE_EVENTS
 
 };  // class PageCache
 

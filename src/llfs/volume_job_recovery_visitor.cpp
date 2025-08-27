@@ -17,6 +17,7 @@ namespace llfs {
 //
 /*explicit*/ VolumeJobRecoveryVisitor::VolumeJobRecoveryVisitor() noexcept
 {
+  LLFS_VLOG(1) << "Created VolumeJobRecoverVisitor";
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

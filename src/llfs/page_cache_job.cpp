@@ -9,6 +9,7 @@
 #include <llfs/page_cache_job.hpp>
 //
 
+#include <llfs/new_page_view.hpp>
 #include <llfs/trace_refs_recursive.hpp>
 
 #include <batteries/async/backoff.hpp>
@@ -64,8 +65,6 @@ PageCacheJob::PageCacheJob(PageCache* cache) noexcept : cache_{cache}
 PageCacheJob::~PageCacheJob()
 {
   job_destroy_count.fetch_add(1);
-
-  BATT_CHECK_EQ(0, binder_count);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -95,32 +94,40 @@ bool PageCacheJob::is_page_new(PageId id) const
 bool PageCacheJob::is_page_new_and_pinned(PageId page_id) const
 {
   auto iter = this->new_pages_.find(page_id);
-  return (iter != this->new_pages_.end()) &&
-         (iter->second.has_view() || this->deferred_new_pages_.count(page_id));
+  if (iter == this->new_pages_.end()) {
+    return false;
+  }
+  const NewPage& new_page = iter->second;
+  return (new_page.has_view() || this->deferred_new_pages_.count(page_id));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<std::shared_ptr<PageBuffer>> PageCacheJob::new_page(
     PageSize size, batt::WaitForResource wait_for_resource, const PageLayoutId& layout_id,
-    u64 callers, const batt::CancelToken& cancel_token)
+    LruPriority lru_priority, u64 callers, const batt::CancelToken& cancel_token)
 {
   // TODO [tastolfi 2021-04-07] instead of WaitForResource::kTrue, implement a backoff-and-retry
   // loop with a cancel token.
   //
-  StatusOr<std::shared_ptr<PageBuffer>> buffer = this->cache_->allocate_page_of_size(
-      size, wait_for_resource, callers | Caller::PageCacheJob_new_page, this->job_id, cancel_token);
+  StatusOr<PinnedPage> pinned_page = this->cache_->allocate_page_of_size(
+      size, wait_for_resource, lru_priority, callers | Caller::PageCacheJob_new_page, this->job_id,
+      cancel_token);
 
-  BATT_REQUIRE_OK(buffer);
+  BATT_REQUIRE_OK(pinned_page);
+  BATT_CHECK(*pinned_page);
 
-  const PageId page_id = buffer->get()->page_id();
+  std::shared_ptr<PageBuffer> buffer =
+      BATT_OK_RESULT_OR_PANIC(pinned_page->get()->get_new_page_buffer());
+
+  const PageId page_id = buffer->page_id();
   {
-    PackedPageHeader* const header = mutable_page_header(buffer->get());
+    PackedPageHeader* const header = mutable_page_header(buffer.get());
     header->layout_id = layout_id;
   }
 
   this->pruned_ = false;
-  this->new_pages_.emplace(page_id, NewPage{batt::make_copy(*buffer)});
+  this->new_pages_.emplace(page_id, NewPage{std::move(*pinned_page), IsRecoveredPage{false}});
 
   return buffer;
 }
@@ -130,15 +137,20 @@ StatusOr<std::shared_ptr<PageBuffer>> PageCacheJob::new_page(
 void PageCacheJob::pin(PinnedPage&& pinned_page)
 {
   const PageId id = pinned_page->page_id();
-  const bool inserted = this->pinned_.emplace(id, std::move(pinned_page)).second;
-  (void)inserted;
+  [[maybe_unused]] const bool inserted = this->pinned_
+                                             .emplace(id,
+                                                      PinState{
+                                                          .pinned_page = std::move(pinned_page),
+                                                      })
+                                             .second;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<PinnedPage> PageCacheJob::pin_new(std::shared_ptr<PageView>&& page_view, u64 callers)
+StatusOr<PinnedPage> PageCacheJob::pin_new(std::shared_ptr<PageView>&& page_view,
+                                           LruPriority lru_priority, u64 callers)
 {
-  return this->pin_new_with_retry(std::move(page_view), callers, /*retry_policy=*/
+  return this->pin_new_with_retry(std::move(page_view), lru_priority, callers, /*retry_policy=*/
                                   batt::ExponentialBackoff{
                                       .max_attempts = 1000,
                                       .initial_delay_usec = 100,
@@ -151,9 +163,10 @@ StatusOr<PinnedPage> PageCacheJob::pin_new(std::shared_ptr<PageView>&& page_view
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<PinnedPage> PageCacheJob::pin_new_impl(
-    std::shared_ptr<PageView>&& page_view, u64 callers,
+    std::shared_ptr<PageView>&& page_view, LruPriority lru_priority [[maybe_unused]],
+    u64 callers [[maybe_unused]],
     std::function<StatusOr<PinnedPage>(const std::function<StatusOr<PinnedPage>()>&)>&&
-        put_with_retry)
+        put_with_retry [[maybe_unused]])
 {
   BATT_CHECK_NOT_NULLPTR(page_view);
 
@@ -172,39 +185,31 @@ StatusOr<PinnedPage> PageCacheJob::pin_new_impl(
   bool set_view_ok = new_page.set_view(batt::make_copy(page_view));
   BATT_CHECK(set_view_ok) << "pin_new called multiple times for the same page!";
 
-  // Insert the page into the main cache.  Since page_ids are universally unique, there is no
-  // problem doing this even before the page has been durably written to storage.
-  //
-  // TODO [tastolfi 2022-09-19] once WaitForResource param is added to Cache<T>::find_or_insert,
-  // remove this backoff polling loop.
-  //
-  StatusOr<PinnedPage> pinned_page = put_with_retry([&] {
-    return this->cache_->put_view(batt::make_copy(page_view),
-                                  callers | Caller::PageCacheJob_pin_new, this->job_id);
-  });
-
-  BATT_REQUIRE_OK(pinned_page) << batt::LogLevel::kInfo << "Failed to pin page " << id
-                               << ", reason: " << pinned_page.status()
-                               << BATT_INSPECT(page_view->get_page_layout_id());
+  StatusOr<PinnedPage> pinned_page = new_page.get_pinned_page();
+  BATT_CHECK_OK(pinned_page);
 
   // Add to the pinned set.
   //
-  this->pinned_.emplace(id, *pinned_page);
+  this->pinned_.emplace(id, PinState{
+                                .pinned_page = *pinned_page,
+                            });
 
   return pinned_page;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void PageCacheJob::pin_new_if_needed(PageId page_id,
-                                     std::function<std::shared_ptr<PageView>()>&& pin_page_fn,
+void PageCacheJob::pin_new_if_needed(PageId page_id, DeferredNewPageFn&& deferred_new_page_fn,
                                      u64 /*callers - TODO [tastolfi 2021-12-03] */)
 {
   BATT_CHECK(this->is_page_new(page_id));
   BATT_CHECK_EQ(this->deferred_new_pages_.count(page_id), 0u);
 
   this->pruned_ = false;
-  this->deferred_new_pages_.emplace(page_id, std::move(pin_page_fn));
+  this->deferred_new_pages_.emplace(page_id,
+                                    DeferredPinState{
+                                        .deferred_new_page_fn = std::move(deferred_new_page_fn),
+                                    });
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -233,13 +238,99 @@ void PageCacheJob::unpin_all()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<PinnedPage> PageCacheJob::get_page_with_layout_in_job(
-    PageId page_id, const Optional<PageLayoutId>& required_layout, PinPageToJob pin_page_to_job,
-    OkIfNotFound ok_if_not_found)
+StatusOr<PinnedPage> PageCacheJob::try_pin_cached_page(PageId page_id,
+                                                       const PageLoadOptions& options) /*override*/
 {
+  Optional<PinnedPage> already_pinned =
+      this->get_already_pinned(page_id, options.pin_page_to_job());
+
+  if (already_pinned) {
+    return {std::move(*already_pinned)};
+  }
+
+  // If not pinned, then check to see if its a new page that hasn't been built yet.
+  {
+    StatusOr<PinnedPage> newly_pinned = this->get_new_pinned_page(page_id);
+    if (newly_pinned.ok()) {
+      return newly_pinned;
+    }
+    if (newly_pinned.status() != batt::StatusCode::kNotFound) {
+      return newly_pinned.status();
+    }
+  }
+
+  StatusOr<PinnedPage> pinned_from_cache =
+      this->cache_->try_pin_cached_page(page_id, options.clone().pin_page_to_job(false));
+
+  if (pinned_from_cache.ok() && options.pin_page_to_job() != PinPageToJob::kFalse) {
+    this->pinned_.emplace(page_id, PinState{batt::make_copy(*pinned_from_cache)});
+  }
+
+  return pinned_from_cache;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<PinnedPage> PageCacheJob::const_try_pin_cached_page(PageId page_id,
+                                                             const PageLoadOptions& options) const
+{
+  Optional<PinnedPage> already_pinned = this->get_already_pinned(page_id);
+  if (already_pinned) {
+    return {std::move(*already_pinned)};
+  }
+
+  return this->cache_->try_pin_cached_page(page_id, options.clone().pin_page_to_job(false));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<PinnedPage> PageCacheJob::get_new_pinned_page(PageId page_id)
+{
+  auto iter = this->new_pages_.find(page_id);
+  if (iter != this->new_pages_.end()) {
+    NewPage& new_page = iter->second;
+
+    if (!new_page.has_view()) {
+      auto iter2 = this->deferred_new_pages_.find(page_id);
+      if (iter2 != this->deferred_new_pages_.end()) {
+        DeferredNewPageFn build_page_fn = std::move(iter2->second.deferred_new_page_fn);
+
+        this->deferred_new_pages_.erase(iter2);
+
+        return this->pin_new(std::move(build_page_fn)(), LruPriority{0}, Caller::Unknown);
+      }
+    }
+
+    BATT_CHECK(new_page.has_view()) << "If the page has a view associated with it, then it "
+                                       "should have been pinned to the job already "
+                                       "inside `pin_new`; possible race condition?  (remember, "
+                                       "PageCacheJob is not thread-safe)";
+
+    LLFS_LOG_WARNING() << "The specified page has not yet been built/pinned to the job."
+                       << BATT_INSPECT(page_id);
+
+    return Status{batt::StatusCode::kUnavailable};  // TODO [tastolfi 2021-10-20]
+  }
+
+  return Status{batt::StatusCode::kNotFound};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<PinnedPage> PageCacheJob::load_page(PageId page_id, const PageLoadOptions& options)
+{
+  if (this->count_get_calls) {
+    this->cache().metrics().job_get_page_count.add(1);
+  }
+
+  batt::LatencyTimer timer{batt::Every2ToThe{this->get_latency_sample_rate_spec},
+                           this->cache().metrics().job_get_page_latency};
+
   // First check in the pinned pages table.
   {
-    Optional<PinnedPage> already_pinned = this->get_already_pinned(page_id);
+    Optional<PinnedPage> already_pinned =
+        this->get_already_pinned(page_id, options.pin_page_to_job());
+
     if (already_pinned) {
       return std::move(*already_pinned);
     }
@@ -247,38 +338,22 @@ StatusOr<PinnedPage> PageCacheJob::get_page_with_layout_in_job(
 
   // If not pinned, then check to see if its a new page that hasn't been built yet.
   {
-    auto iter = this->new_pages_.find(page_id);
-    if (iter != this->new_pages_.end()) {
-      NewPage& new_page = iter->second;
-
-      if (!new_page.has_view()) {
-        auto iter2 = this->deferred_new_pages_.find(page_id);
-        if (iter2 != this->deferred_new_pages_.end()) {
-          auto build_page_fn = std::move(iter2->second);
-          this->deferred_new_pages_.erase(iter2);
-          return this->pin_new(std::move(build_page_fn)(), Caller::Unknown);
-        }
-      }
-
-      BATT_CHECK(new_page.has_view()) << "If the page has a view associated with it, then it "
-                                         "should have been pinned to the job already "
-                                         "inside `pin_new`; possible race condition?  (remember, "
-                                         "PageCacheJob is not thread-safe)";
-
-      LLFS_LOG_WARNING() << "The specified page has not yet been built/pinned to the job."
-                         << BATT_INSPECT(page_id);
-
-      return Status{batt::StatusCode::kUnavailable};  // TODO [tastolfi 2021-10-20]
+    StatusOr<PinnedPage> newly_pinned = this->get_new_pinned_page(page_id);
+    if (newly_pinned.ok()) {
+      return newly_pinned;
+    }
+    if (newly_pinned.status() != batt::StatusCode::kNotFound) {
+      return newly_pinned.status();
     }
   }
 
   // Fall back on the cache or base job if it is available.
   //
-  auto pinned_page = this->const_get(page_id, required_layout, ok_if_not_found);
+  StatusOr<PinnedPage> pinned_page = this->const_get(page_id, options);
 
   // If successful and the caller has asked us to do so, pin the page to the job.
   //
-  if (pinned_page.ok() && bool_from(pin_page_to_job, /*default_value=*/true)) {
+  if (pinned_page.ok() && bool_from(options.pin_page_to_job(), /*default_value=*/true)) {
     this->pin(batt::make_copy(*pinned_page));
   }
 
@@ -291,23 +366,28 @@ Optional<PinnedPage> PageCacheJob::get_already_pinned(PageId page_id) const
 {
   auto iter = this->pinned_.find(page_id);
   if (iter != this->pinned_.end()) {
-    return iter->second;
+    return iter->second.pinned_page;
   }
   return None;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<PinnedPage> PageCacheJob::const_get(PageId page_id,
-                                             const Optional<PageLayoutId>& required_layout,
-                                             OkIfNotFound ok_if_not_found) const
+Optional<PinnedPage> PageCacheJob::get_already_pinned(PageId page_id,
+                                                      PinPageToJob pin_page_to_job [[maybe_unused]])
 {
-  StatusOr<PinnedPage> pinned_page =
-      this->base_job_.finalized_get(page_id, required_layout, ok_if_not_found);
+  return const_cast<const PageCacheJob*>(this)->get_already_pinned(page_id);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<PinnedPage> PageCacheJob::const_get(PageId page_id, const PageLoadOptions& options) const
+{
+  StatusOr<PinnedPage> pinned_page = this->base_job_.finalized_get(page_id, options);
   if (pinned_page.status() != batt::StatusCode::kUnavailable) {
     return pinned_page;
   }
-  return this->cache_->get_page_with_layout(page_id, required_layout, ok_if_not_found);
+  return this->cache_->load_page(page_id, options.clone().pin_page_to_job(false));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -334,16 +414,16 @@ Status PageCacheJob::recover_page(PageId page_id,
                                   const boost::uuids::uuid& caller_uuid [[maybe_unused]],
                                   slot_offset_type caller_slot [[maybe_unused]])
 {
-  StatusOr<PinnedPage> pinned_page = this->get_page_with_layout_in_job(
-      page_id, /*required_layout=*/None, PinPageToJob::kTrue, OkIfNotFound{false});
+  StatusOr<PinnedPage> pinned_page = this->load_page(page_id, PageLoadOptions{}  //
+                                                                  .required_layout(None)
+                                                                  .pin_page_to_job(true)
+                                                                  .ok_if_not_found(false));
 
   BATT_REQUIRE_OK(pinned_page);
 
-  const auto& [iter, inserted] = this->new_pages_.emplace(page_id, NewPage{/*buffer=*/nullptr});
-  if (inserted) {
-    iter->second.set_view(pinned_page->get_shared_view());
-  }
+  BATT_CHECK_NE(pinned_page->get()->get_page_layout_id(), NewPageView::page_layout_id());
 
+  this->new_pages_.emplace(page_id, NewPage{std::move(*pinned_page), IsRecoveredPage{true}});
   this->recovered_pages_.emplace(page_id);
 
   return OkStatus();
@@ -455,42 +535,42 @@ StatusOr<usize> PageCacheJob::prune(u64 callers)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-PageCacheJob::NewPage::NewPage(std::shared_ptr<PageBuffer>&& buffer) noexcept
-    : buffer_{std::move(buffer)}
-    , view_{}
+PageCacheJob::NewPage::NewPage(PinnedPage&& pinned_page, IsRecoveredPage is_recovered) noexcept
+    : pinned_page_{std::move(pinned_page)}
+    , has_view_{is_recovered}
 {
+  BATT_CHECK(this->pinned_page_);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 bool PageCacheJob::NewPage::set_view(std::shared_ptr<const PageView>&& v)
 {
-  if (this->view_) {
-    return false;
+  if (!this->has_view_) {
+    this->has_view_ = this->pinned_page_->set_new_page_view(std::move(v)).ok();
   }
-  this->view_.emplace(std::move(v));
-  return true;
+  return this->has_view_;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 bool PageCacheJob::NewPage::has_view() const
 {
-  return this->view_ && (*this->view_ != nullptr);
+  return this->has_view_;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 std::shared_ptr<const PageView> PageCacheJob::NewPage::view() const
 {
-  return this->view_.value_or(nullptr);
+  return this->pinned_page_.get_shared_view();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 std::shared_ptr<PageBuffer> PageCacheJob::NewPage::buffer() const
 {
-  return this->buffer_;
+  return BATT_OK_RESULT_OR_PANIC(this->pinned_page_->get_new_page_buffer());
 }
 
 }  // namespace llfs

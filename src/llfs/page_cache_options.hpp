@@ -11,8 +11,11 @@
 #define LLFS_PAGE_CACHE_OPTIONS_HPP
 
 #include <llfs/config.hpp>
+//
+#include <llfs/api_types.hpp>
 #include <llfs/constants.hpp>
 #include <llfs/int_types.hpp>
+#include <llfs/optional.hpp>
 #include <llfs/page_size.hpp>
 
 #include <batteries/assert.hpp>
@@ -32,16 +35,22 @@ class PageCacheOptions
     return this->default_log_size_;
   }
 
-  PageCacheOptions& set_max_cached_pages_per_size(PageSize page_size, usize n)
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  PageCacheOptions& set_byte_size(usize max_size,
+                                  Optional<PageSize> default_page_size = PageSize{4096})
   {
-    const int page_size_log2 = batt::log2_ceil(page_size);
-    BATT_CHECK_EQ(page_size_log2, batt::log2_floor(page_size));
-    BATT_CHECK_LT(page_size_log2, kMaxPageSizeLog2);
-    this->max_cached_pages_per_size_log2[page_size_log2] = n;
+    this->max_cache_size_bytes = MaxCacheSizeBytes{max_size};
+    if (default_page_size) {
+      this->cache_slot_count = SlotCount{this->max_cache_size_bytes / *default_page_size};
+    }
+
     return *this;
   }
 
-  std::array<usize, kMaxPageSizeLog2> max_cached_pages_per_size_log2;
+  SlotCount cache_slot_count;
+
+  MaxCacheSizeBytes max_cache_size_bytes;
 
  private:
   u64 default_log_size_;

@@ -50,19 +50,19 @@ class FinalizedPageCacheJob : public PageLoader
   Self& operator=(const Self&) noexcept;
   Self& operator=(Self&&) noexcept;
 
+  PageCache* page_cache() const override;
+
   void prefetch_hint(PageId page_id) override;
 
-  StatusOr<PinnedPage> get_page_with_layout_in_job(PageId page_id,
-                                                   const Optional<PageLayoutId>& required_layout,
-                                                   PinPageToJob pin_page_to_job,
-                                                   OkIfNotFound ok_if_not_found) override;
+  StatusOr<PinnedPage> try_pin_cached_page(PageId page_id, const PageLoadOptions& options) override;
+
+  StatusOr<PinnedPage> load_page(PageId page_id, const PageLoadOptions& options) override;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   void finalized_prefetch_hint(PageId page_id, PageCache& cache) const;
 
-  StatusOr<PinnedPage> finalized_get(PageId page_id, const Optional<PageLayoutId>& required_layout,
-                                     OkIfNotFound ok_if_not_found) const;
+  StatusOr<PinnedPage> finalized_get(PageId page_id, const PageLoadOptions& options) const;
 
   u64 job_id() const;
 

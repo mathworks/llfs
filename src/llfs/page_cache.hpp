@@ -7,7 +7,6 @@
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
 #pragma once
-#ifndef LLFS_PAGE_CACHE_HPP
 #define LLFS_PAGE_CACHE_HPP
 
 #include <llfs/config.hpp>
@@ -119,6 +118,8 @@ class PageCache : public PageLoader
     PageCache& page_cache_;
   };
 
+  using ExternalAllocation = PageCacheSlot::Pool::ExternalAllocation;
+
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
   static std::atomic<bool>& job_debug_on()
@@ -155,13 +156,19 @@ class PageCache : public PageLoader
 
   std::unique_ptr<PageCacheJob> new_job();
 
-  StatusOr<std::shared_ptr<PageBuffer>> allocate_page_of_size(
-      PageSize size, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id,
-      const batt::CancelToken& cancel_token = None);
+  StatusOr<PinnedPage> allocate_page_of_size(PageSize size, batt::WaitForResource wait_for_resource,
+                                             LruPriority lru_priority, u64 callers, u64 job_id,
+                                             const batt::CancelToken& cancel_token = None);
 
-  StatusOr<std::shared_ptr<PageBuffer>> allocate_page_of_size_log2(
-      PageSizeLog2 size_log2, batt::WaitForResource wait_for_resource, u64 callers, u64 job_id,
-      const batt::CancelToken& cancel_token = None);
+  StatusOr<PinnedPage> allocate_page_of_size_log2(PageSizeLog2 size_log2,
+                                                  batt::WaitForResource wait_for_resource,
+                                                  LruPriority lru_priority, u64 callers, u64 job_id,
+                                                  const batt::CancelToken& cancel_token = None);
+
+  ExternalAllocation allocate_external(usize byte_size)
+  {
+    return this->cache_slot_pool_->allocate_external(byte_size);
+  }
 
   // Returns a page allocated via `allocate_page` to the free pool.  This MUST be done before the
   // page is written to the `PageDevice`.
@@ -184,35 +191,31 @@ class PageCache : public PageLoader
 
   const PageArena& arena_for_device_id(page_device_id_int device_id_val) const;
 
+  void async_write_new_page(PinnedPage&& pinned_page, PageDevice::WriteHandler&& handler) noexcept;
+
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   // PageLoader interface
   //
-  using PageLoader::get_page;
-  using PageLoader::get_page_in_job;
-  using PageLoader::get_page_slot;
-  using PageLoader::get_page_slot_in_job;
-  using PageLoader::get_page_slot_with_layout;
-  using PageLoader::get_page_slot_with_layout_in_job;
-  using PageLoader::get_page_with_layout;
+
+  PageCache* page_cache() const override
+  {
+    return const_cast<PageCache*>(this);
+  }
 
   // Gives a hint to the cache to fetch the pages for the given ids in the background because we are
   // going to need them soon.
   //
   void prefetch_hint(PageId page_id) override;
 
+  // Attempt to pin the page without loading it.
+  //
+  StatusOr<PinnedPage> try_pin_cached_page(PageId page_id, const PageLoadOptions& options) override;
+
   // Loads the specified page or retrieves from cache.
   //
-  StatusOr<PinnedPage> get_page_with_layout_in_job(PageId page_id,
-                                                   const Optional<PageLayoutId>& required_layout,
-                                                   PinPageToJob pin_page_to_job,
-                                                   OkIfNotFound ok_if_not_found) override;
+  StatusOr<PinnedPage> load_page(PageId page_id, const PageLoadOptions& options) override;
   //
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-
-  //----- --- -- -  -  -   -
-  /** \brief Inserts a newly built PageView into the cache.
-   */
-  StatusOr<PinnedPage> put_view(std::shared_ptr<const PageView>&& view, u64 callers, u64 job_id);
 
   //----- --- -- -  -  -   -
   /** \brief Removes all cached data for the specified page.
@@ -234,17 +237,32 @@ class PageCache : public PageLoader
     return this->metrics_;
   }
 
-  const PageCacheSlot::Pool::Metrics& metrics_for_page_size(PageSize page_size) const
+  PageCacheSlot::Pool& slot_pool()
   {
-    const i32 page_size_log2 = batt::log2_ceil(page_size);
-
-    BATT_CHECK_LT(static_cast<usize>(page_size_log2),
-                  this->cache_slot_pool_by_page_size_log2_.size());
-
-    BATT_CHECK_NOT_NULLPTR(this->cache_slot_pool_by_page_size_log2_[page_size_log2]);
-
-    return this->cache_slot_pool_by_page_size_log2_[page_size_log2]->metrics();
+    return *this->cache_slot_pool_;
   }
+
+  const boost::intrusive_ptr<PageCacheSlot::Pool>& shared_slot_pool()
+  {
+    return this->cache_slot_pool_;
+  }
+
+  const PageCacheSlot::Pool::Metrics& slot_pool_metrics() const
+  {
+    return this->cache_slot_pool_->metrics();
+  }
+
+  usize clear_all_slots()
+  {
+    return this->cache_slot_pool_->clear_all();
+  }
+
+  /** \brief Returns the PageDeviceEntry for the device that owns the given page.
+   *
+   * If the specified device (in the most-significant bits of `page_id`) isn't known by this
+   * PageCache, returns nullptr.
+   */
+  PageDeviceEntry* get_device_for_page(PageId page_id);
 
  private:
   //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
@@ -260,12 +278,9 @@ class PageCache : public PageLoader
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   //----- --- -- -  -  -   -
-  /** \brief Returns the PageDeviceEntry for the device that owns the given page.
-   *
-   * If the specified device (in the most-significant bits of `page_id`) isn't known by this
-   * PageCache, returns nullptr.
-   */
-  PageDeviceEntry* get_device_for_page(PageId page_id);
+  StatusOr<PinnedPage> pin_allocated_page_to_cache(PageDeviceEntry* device_entry,
+                                                   PageSize page_size, PageId page_id,
+                                                   LruPriority lru_priority);
 
   //----- --- -- -  -  -   -
   /** \brief Attempts to find the specified page (`page_id`) in the cache; if successful, the cache
@@ -283,8 +298,8 @@ class PageCache : public PageLoader
    * \param ok_if_not_found Controls whether page-not-found log messages (WARNING) are emitted if
    * the page isn't found; ok_if_not_found == false -> emit log warnings, ... == true -> don't
    */
-  batt::StatusOr<PageCacheSlot::PinnedRef> find_page_in_cache(
-      PageId page_id, const Optional<PageLayoutId>& required_layout, OkIfNotFound ok_if_not_found);
+  batt::StatusOr<PageCacheSlot::PinnedRef> find_page_in_cache(PageId page_id,
+                                                              const PageLoadOptions& options);
 
   //----- --- -- -  -  -   -
   /** \brief Populates the passed PageCacheSlot asynchronously by attempting to read the page from
@@ -324,10 +339,9 @@ class PageCache : public PageLoader
   //
   std::array<Slice<PageDeviceEntry* const>, kMaxPageSizeLog2> page_devices_by_page_size_log2_;
 
-  // A pool of cache slots for each page size.
+  // The pool of cache slots.
   //
-  std::array<boost::intrusive_ptr<PageCacheSlot::Pool>, kMaxPageSizeLog2>
-      cache_slot_pool_by_page_size_log2_;
+  boost::intrusive_ptr<PageCacheSlot::Pool> cache_slot_pool_;
 
   // A thread-safe shared map from PageLayoutId to PageReader function; layouts must be registered
   // with the PageCache so that we trace references during page recycling (aka garbage collection).
@@ -341,6 +355,18 @@ class PageCache : public PageLoader
 
 };  // class PageCache
 
-}  // namespace llfs
+//=##=##=#==#=#==#===#+==#+==========+==+=+=+=+=+=++=+++=+++++=-++++=-+++++++++++
 
-#endif  // LLFS_PAGE_CACHE_HPP
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+BATT_ALWAYS_INLINE inline PageDeviceEntry* PageCache::get_device_for_page(PageId page_id)
+{
+  const page_device_id_int device_id = PageIdFactory::get_device_id(page_id);
+  if (BATT_HINT_FALSE(device_id >= this->page_devices_.size())) {
+    return nullptr;
+  }
+
+  return this->page_devices_[device_id].get();
+}
+
+}  // namespace llfs

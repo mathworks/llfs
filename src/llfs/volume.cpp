@@ -172,6 +172,8 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
         BATT_CHECK_NOT_NULLPTR(entry);
         const PageArena& arena = entry->arena;
         if (!arena.has_allocator()) {
+          LLFS_VLOG(1) << "[Volume::recover] skipping attach for device " << arena.device().get_id()
+                       << ": no allocator";
           continue;
         }
         Optional<PageAllocatorAttachmentStatus> attachment =
@@ -180,6 +182,8 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
         // If already attached, then nothing to do; continue.
         //
         if (attachment) {
+          LLFS_VLOG(1) << "[Volume::recover] skipping attach for device " << arena.device().get_id()
+                       << "; attachment found!";
           continue;
         }
 

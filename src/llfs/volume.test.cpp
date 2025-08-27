@@ -205,7 +205,7 @@ class VolumeTest : public ::testing::Test
 
     llfs::StatusOr<std::shared_ptr<llfs::PageBuffer>> page_allocated = job.new_page(
         llfs::PageSize{256}, batt::WaitForResource::kFalse, llfs::OpaquePageView::page_layout_id(),
-        llfs::Caller::Unknown, /*cancel_token=*/llfs::None);
+        llfs::LruPriority{1}, llfs::Caller::Unknown, /*cancel_token=*/llfs::None);
 
     BATT_REQUIRE_OK(page_allocated);
 
@@ -215,7 +215,7 @@ class VolumeTest : public ::testing::Test
     std::memset(buffer.data(), expected_byte_value(page_id), buffer.size());
 
     return job.pin_new(std::make_shared<llfs::OpaquePageView>(std::move(*page_allocated)),
-                       llfs::Caller::Unknown);
+                       llfs::LruPriority{0}, llfs::Caller::Unknown);
   }
 
   bool verify_opaque_page(llfs::PageId page_id, llfs::Optional<i32> expected_ref_count = llfs::None)
@@ -223,7 +223,7 @@ class VolumeTest : public ::testing::Test
     bool ok = true;
 
     llfs::StatusOr<llfs::PinnedPage> loaded =
-        this->page_cache->get_page(page_id, llfs::OkIfNotFound{false});
+        this->page_cache->load_page(page_id, llfs::PageLoadOptions{}.ok_if_not_found(false));
 
     EXPECT_TRUE(loaded.ok());
     if (!loaded.ok()) {
@@ -1482,44 +1482,25 @@ TEST_F(VolumeSimTest, RecoverySimulation)
   static const usize kNumThreads =  //
       batt::getenv_as<u32>("LLFS_VOLUME_SIM_THREADS").value_or(std::thread::hardware_concurrency());
 
-  static const bool kMultiProcess =  //
-      batt::getenv_as<bool>("LLFS_VOLUME_SIM_MULTI_PROCESS").value_or(false);
-
   static const u32 kNumSeedsPerThread = (kNumSeeds + kNumThreads - 1) / kNumThreads;
+
+  LLFS_LOG_INFO() << BATT_INSPECT(kNumThreads) << BATT_INSPECT(kNumSeedsPerThread)
+                  << BATT_INSPECT(kNumSeeds);
 
   std::vector<std::thread> threads;
 
-  if (kMultiProcess) {
-    for (usize thread_i = 0; thread_i < kNumThreads; thread_i += 1) {
-      std::string command = batt::to_string(                                      //
-          "LLFS_VOLUME_SIM_SEED=", kInitialSeed + kNumSeedsPerThread * thread_i,  //
-          " LLFS_VOLUME_SIM_COUNT=", kNumSeedsPerThread,                          //
-          " LLFS_VOLUME_SIM_CPU=", thread_i,                                      //
-          " LLFS_VOLUME_SIM_THREADS=1",                                           //
-          " LLFS_VOLUME_SIM_MULTI_PROCESS=0",                                     //
-          " GTEST_FILTER=VolumeSimTest.RecoverySimulation",                       //
-          " bin/llfs_Test");
-
-      std::cout << command << std::endl;
-
-      threads.emplace_back([command] {
-        EXPECT_EQ(0, std::system(command.c_str()));
-      });
-    }
-  } else {
-    for (usize thread_i = 0; thread_i < kNumThreads; thread_i += 1) {
-      threads.emplace_back([thread_i, this] {
-        batt::pin_thread_to_cpu((thread_i + kCpuPin) % std::thread::hardware_concurrency())
-            .IgnoreError();
-        const u32 first_seed = kInitialSeed + kNumSeedsPerThread * thread_i;
-        const u32 last_seed = first_seed + kNumSeedsPerThread;
-        LLFS_VLOG(1) << BATT_INSPECT(thread_i) << BATT_INSPECT(first_seed)
-                     << BATT_INSPECT(last_seed);
-        for (u32 seed = first_seed; seed < last_seed; ++seed) {
-          ASSERT_NO_FATAL_FAILURE(this->run_recovery_sim(seed));
-        }
-      });
-    }
+  for (usize thread_i = 0; thread_i < kNumThreads; thread_i += 1) {
+    threads.emplace_back([thread_i, this] {
+      batt::pin_thread_to_cpu((thread_i + kCpuPin) % std::thread::hardware_concurrency())
+          .IgnoreError();
+      const u32 first_seed = kInitialSeed + kNumSeedsPerThread * thread_i;
+      const u32 last_seed = first_seed + kNumSeedsPerThread;
+      LLFS_VLOG(1) << BATT_INSPECT(thread_i) << BATT_INSPECT(first_seed) << BATT_INSPECT(last_seed);
+      for (u32 seed = first_seed; seed < last_seed; ++seed) {
+        ASSERT_NO_FATAL_FAILURE(this->run_recovery_sim(seed))
+            << BATT_INSPECT(seed) << BATT_INSPECT(first_seed) << BATT_INSPECT((seed - first_seed));
+      }
+    });
   }
 
   for (auto& t : threads) {
@@ -1818,7 +1799,7 @@ batt::Status VolumeSimTest::commit_second_job_pre_crash(RecoverySimState& state,
   BATT_CHECK_NOT_NULLPTR(job);
 
   //----- --- -- -  -  -   -
-  // Build the 4k page; this will reference the 1k page, and be referenced from the 2k
+  // Build the 16k page; this will reference the 1k page, and be referenced from the 2k
   // page.
   //
   BATT_ASSIGN_OK_RESULT(
@@ -1826,7 +1807,7 @@ batt::Status VolumeSimTest::commit_second_job_pre_crash(RecoverySimState& state,
       this->build_page_with_refs_to({state.first_page_id}, llfs::PageSize{16 * kKiB}, *job, sim));
 
   //----- --- -- -  -  -   -
-  // Build the 2k page; this will be referenced from the log.
+  // Build the 8k page; this will be referenced from the log.
   //
   BATT_ASSIGN_OK_RESULT(
       state.second_root_page_id,
@@ -1994,9 +1975,10 @@ batt::StatusOr<llfs::PageId> VolumeSimTest::build_page_with_refs_to(
     llfs::PageCacheJob& job, llfs::StorageSimulation& /*sim*/)
 {
   batt::StatusOr<llfs::PageGraphNodeBuilder> page_builder =
-      llfs::PageGraphNodeBuilder::from_new_page(job.new_page(
-          page_size, batt::WaitForResource::kFalse, llfs::PageGraphNodeView::page_layout_id(),
-          /*callers=*/0, /*cancel_token=*/llfs::None));
+      llfs::PageGraphNodeBuilder::from_new_page(
+          job.new_page(page_size, batt::WaitForResource::kFalse,
+                       llfs::PageGraphNodeView::page_layout_id(), llfs::LruPriority{1},
+                       /*callers=*/0, /*cancel_token=*/llfs::None));
 
   BATT_REQUIRE_OK(page_builder);
 

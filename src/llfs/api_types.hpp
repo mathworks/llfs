@@ -150,6 +150,10 @@ BATT_STRONG_TYPEDEF(bool, ComputeChecksum);
  */
 BATT_STRONG_TYPEDEF(usize, BitsPerKey);
 
+/** \brief Whether a new page in a page cache job is recovered (via load).
+ */
+BATT_STRONG_TYPEDEF(bool, IsRecoveredPage);
+
 }  // namespace llfs
 
 #endif  // LLFS_API_TYPES_HPP

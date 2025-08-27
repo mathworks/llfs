@@ -6,9 +6,19 @@
 //
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-#include <llfs/page_loader.hpp>
-//
+#pragma once
+#ifndef LLFS_PAGE_LOADER_DECL_HPP
+#define LLFS_PAGE_LOADER_DECL_HPP
+
+#include <llfs/pinned_page.hpp>
 
 namespace llfs {
 
-}  // namespace llfs
+template <typename PinnedPageParamT>
+class BasicPageLoader;
+
+using PageLoader = BasicPageLoader<PinnedPage>;
+
+}  //namespace llfs
+
+#endif  // LLFS_PAGE_LOADER_DECL_HPP

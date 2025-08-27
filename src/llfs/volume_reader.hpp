@@ -65,20 +65,13 @@ class VolumeReader : public PageLoader
   //+++++++++++-+-+--+----- --- -- -  -  -   -
   // PageLoader methods
   //
-  using PageLoader::get_page;
-  using PageLoader::get_page_in_job;
-  using PageLoader::get_page_slot;
-  using PageLoader::get_page_slot_in_job;
-  using PageLoader::get_page_slot_with_layout;
-  using PageLoader::get_page_slot_with_layout_in_job;
-  using PageLoader::get_page_with_layout;
+  PageCache* page_cache() const override;
 
   void prefetch_hint(PageId page_id) override;
 
-  StatusOr<PinnedPage> get_page_with_layout_in_job(PageId page_id,
-                                                   const Optional<PageLayoutId>& required_layout,
-                                                   PinPageToJob pin_page_to_job,
-                                                   OkIfNotFound ok_if_not_found) override;
+  StatusOr<PinnedPage> try_pin_cached_page(PageId page_id, const PageLoadOptions& options) override;
+
+  StatusOr<PinnedPage> load_page(PageId page_id, const PageLoadOptions& options) override;
   //
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

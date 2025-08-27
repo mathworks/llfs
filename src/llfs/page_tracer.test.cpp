@@ -182,9 +182,10 @@ class PageTracerTest : public ::testing::Test
       llfs::PageCacheJob& job)
   {
     batt::StatusOr<llfs::PageGraphNodeBuilder> page_builder =
-        llfs::PageGraphNodeBuilder::from_new_page(job.new_page(
-            page_size, batt::WaitForResource::kFalse, llfs::PageGraphNodeView::page_layout_id(),
-            /*callers=*/0, /*cancel_token=*/llfs::None));
+        llfs::PageGraphNodeBuilder::from_new_page(
+            job.new_page(page_size, batt::WaitForResource::kFalse,
+                         llfs::PageGraphNodeView::page_layout_id(), llfs::LruPriority{1},
+                         /*callers=*/0, /*cancel_token=*/llfs::None));
 
     BATT_REQUIRE_OK(page_builder);
 

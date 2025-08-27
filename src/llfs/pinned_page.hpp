@@ -67,7 +67,14 @@ class PinnedPage
     }
   }
 
-  const PageView* operator->() const noexcept
+  void update_latest_use(LruPriority lru_priority)
+  {
+    if (this->pinned_cache_slot_) {
+      this->pinned_cache_slot_.slot()->update_latest_use(lru_priority);
+    }
+  }
+
+  const PageView* operator->() const
   {
     return this->get();
   }

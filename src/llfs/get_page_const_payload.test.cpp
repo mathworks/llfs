@@ -40,7 +40,9 @@ TEST(GetPageConstPayloadTest, Test)
   const llfs::PageSize page_size{8192};
   const llfs::PageId page_id{1};
   std::shared_ptr<llfs::PageBuffer> page_buffer = llfs::PageBuffer::allocate(page_size, page_id);
+
   ASSERT_NE(page_buffer, nullptr);
+
   const void* const page_payload_data = page_buffer->const_payload().data();
   const usize page_payload_size = page_buffer->const_payload().size();
   {
@@ -71,17 +73,22 @@ TEST(GetPageConstPayloadTest, Test)
 
   // Case 4: ConstBuffer from PinnedPage
   //
-  const usize num_slots = 1;
+  const auto num_slots = llfs::SlotCount{1};
   const char* const pool_name = "test_cache_slot_pool";
 
-  boost::intrusive_ptr<llfs::PageCacheSlot::Pool> slot_pool =
-      llfs::PageCacheSlot::Pool::make_new(num_slots, pool_name);
+  boost::intrusive_ptr<llfs::PageCacheSlot::Pool> slot_pool = llfs::PageCacheSlot::Pool::make_new(
+      num_slots, llfs::MaxCacheSizeBytes{num_slots * page_size}, pool_name);
+
   ASSERT_NE(slot_pool, nullptr);
 
-  llfs::PageCacheSlot* const slot = slot_pool->allocate();
+  llfs::PageCacheSlot* slot = nullptr;
+  llfs::PageCacheSlot::Pool::ExternalAllocation claim;
+  std::tie(slot, claim) = slot_pool->allocate(page_size);
+
   ASSERT_NE(slot, nullptr);
 
-  const llfs::PageCacheSlot::PinnedRef pinned_ref = slot->fill(page_id);
+  const llfs::PageCacheSlot::PinnedRef pinned_ref =
+      slot->fill(page_id, page_size, llfs::LruPriority{1}, std::move(claim));
   const llfs::PinnedPage pinned_page{&page_view, batt::make_copy(pinned_ref)};
 
   {

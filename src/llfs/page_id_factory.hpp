@@ -18,22 +18,19 @@
 #include <batteries/assert.hpp>
 #include <batteries/checked_cast.hpp>
 #include <batteries/math.hpp>
+#include <batteries/utility.hpp>
 
 #include <boost/operators.hpp>
 
 namespace llfs {
 
-using page_device_id_int = u64;
+using page_device_id_int = page_id_int;
 using little_page_device_id_int = little_u64;
 using big_page_device_id_int = big_u64;
 
-using page_generation_int = u64;
+using page_generation_int = page_id_int;
 using little_page_generation_int = little_u64;
 using big_page_generation_int = big_u64;
-
-constexpr u8 kPageDeviceIdShift = 64 - kPageDeviceIdBits;
-constexpr page_id_int kPageDeviceIdMask = ((page_id_int{1} << kPageDeviceIdBits) - 1)
-                                          << kPageDeviceIdShift;
 
 // Utility class to construct/deconstruct page ids from device id, physical page number, and page
 // generation.
@@ -55,19 +52,26 @@ constexpr page_id_int kPageDeviceIdMask = ((page_id_int{1} << kPageDeviceIdBits)
 class PageIdFactory : public boost::equality_comparable<PageIdFactory>
 {
  public:
-  static constexpr usize kMinGenerationBits = 18;
+  BATT_ALWAYS_INLINE static page_device_id_int get_device_id(PageId id)
+  {
+    return id.device_id();
+  }
+
+  BATT_ALWAYS_INLINE static PageId change_device_id(PageId src_page_id,
+                                                    page_device_id_int new_device_id)
+  {
+    return src_page_id.set_device_id(new_device_id);
+  }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   explicit PageIdFactory(PageCount device_capacity, page_device_id_int page_device_id) noexcept
       : capacity_{BATT_CHECKED_CAST(page_id_int, device_capacity.value())}
       , device_id_{page_device_id}
-      , device_id_prefix_{(this->device_id_ << kPageDeviceIdShift) & kPageDeviceIdMask}
+      , device_id_prefix_{(this->device_id_ << kPageIdDeviceShift) & kPageIdDeviceMask}
   {
-    BATT_CHECK_GE(sizeof(page_device_id_int) * 8 - (kPageDeviceIdBits - this->capacity_bits_),
-                  kMinGenerationBits);
-
-    BATT_CHECK_GE(this->physical_page_mask_ + 1, this->capacity_);
+    BATT_CHECK_LT(this->device_id_, page_id_int{1} << kPageIdDeviceBits);
+    BATT_CHECK_LT(this->capacity_, page_id_int{1} << kPageIdAddressBits);
   }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -77,12 +81,13 @@ class PageIdFactory : public boost::equality_comparable<PageIdFactory>
     return PageCount{this->capacity_};
   }
 
-  PageId make_page_id(page_id_int physical_page, page_generation_int generation) const
+  BATT_ALWAYS_INLINE PageId make_page_id(page_id_int physical_page, page_id_int generation) const
   {
     BATT_CHECK_LT(physical_page, this->capacity_);
-    return PageId{this->device_id_prefix_                                                 //
-                  | ((u64{generation} << this->capacity_bits_) & this->generation_mask_)  //
-                  | (u64{physical_page} & this->physical_page_mask_)};
+
+    return PageId{this->device_id_prefix_                                             //
+                  | ((generation << kPageIdGenerationShift) & kPageIdGenerationMask)  //
+                  | ((physical_page << kPageIdAddressShift) & kPageIdAddressMask)};
   }
 
   PageId advance_generation(PageId id) const
@@ -90,24 +95,19 @@ class PageIdFactory : public boost::equality_comparable<PageIdFactory>
     return this->make_page_id(this->get_physical_page(id), this->get_generation(id) + 1);
   }
 
-  page_id_int max_generation_count() const
+  static constexpr page_id_int max_generation_count()
   {
-    return this->generation_mask_ >> this->capacity_bits_;
+    return (page_id_int{1} << kPageIdGenerationBits) - 1;
   }
 
-  i64 get_physical_page(PageId id) const
+  BATT_ALWAYS_INLINE i64 get_physical_page(PageId page_id) const
   {
-    return id.int_value() & this->physical_page_mask_;
+    return page_id.address();
   }
 
-  page_generation_int get_generation(PageId id) const
+  BATT_ALWAYS_INLINE page_id_int get_generation(PageId page_id) const
   {
-    return (id.int_value() & this->generation_mask_) >> this->capacity_bits_;
-  }
-
-  static page_device_id_int get_device_id(PageId id)
-  {
-    return (id.int_value() & kPageDeviceIdMask) >> kPageDeviceIdShift;
+    return page_id.generation();
   }
 
   page_device_id_int get_device_id() const
@@ -121,6 +121,13 @@ class PageIdFactory : public boost::equality_comparable<PageIdFactory>
     return delta != 0 && delta < this->max_generation_count() / 2;
   }
 
+  bool is_same_physical_page(PageId left, PageId right) const
+  {
+    return PageIdFactory::get_device_id(left) == this->get_device_id() &&
+           PageIdFactory::get_device_id(left) == PageIdFactory::get_device_id(right) &&
+           this->get_physical_page(left) == this->get_physical_page(right);
+  }
+
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 
   friend inline bool operator==(const PageIdFactory& l, const PageIdFactory& r)
@@ -132,20 +139,8 @@ class PageIdFactory : public boost::equality_comparable<PageIdFactory>
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
   page_id_int capacity_;
-  page_device_id_int device_id_;
+  page_id_int device_id_;
   page_id_int device_id_prefix_;
-
-  // We round the capacity up by two bits and then add four so that the hex representation of a
-  // page_id will always have a zero digit in between the generation and the physical page number.
-  //
-  static constexpr i32 kHexDigitBits = 4;
-  static constexpr i32 kHexDigitBitsLog2 = 2;
-  //
-  u8 capacity_bits_ =
-      batt::round_up_bits(kHexDigitBitsLog2, batt::log2_ceil(this->capacity_)) + kHexDigitBits;
-
-  u64 physical_page_mask_ = (u64{1} << this->capacity_bits_) - 1;
-  u64 generation_mask_ = ~(kPageDeviceIdMask | this->physical_page_mask_);
 };
 
 }  // namespace llfs

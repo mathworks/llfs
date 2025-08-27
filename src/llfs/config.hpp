@@ -50,9 +50,42 @@ namespace llfs {
 //
 //#define LLFS_DISABLE_IO_URING
 
-// The number of bits in a page_id int allocated to page device.
+// The size of a page id, in bits.
 //
-constexpr usize kPageDeviceIdBits = 24;
+constexpr usize kPageIdBits = 64;
+
+// The number of bits in a page id int allocated to page device.
+//
+constexpr usize kPageIdDeviceBits = 8;
+
+// The number of bits in a page id allocated to generation number.
+//
+constexpr usize kPageIdGenerationBits = 24;
+
+// The number of bits in a page id allocated to page address (physical).
+//
+constexpr usize kPageIdAddressBits = 32;
+
+// The three components of a page id, device:generation:address, should add up to the total
+// number of bits.
+//
+static_assert(kPageIdDeviceBits + kPageIdGenerationBits + kPageIdAddressBits == kPageIdBits);
+
+// The left bit-shift of the address component of a page id.
+//
+constexpr usize kPageIdAddressShift = 0;
+
+// The left bit-shift of the generation component of a page id.
+//
+constexpr usize kPageIdGenerationShift = kPageIdAddressBits + kPageIdAddressShift;
+
+// The left bit-shift of the device component of a page id.
+//
+constexpr usize kPageIdDeviceShift = kPageIdGenerationBits + kPageIdGenerationShift;
+
+// Sanity check.
+//
+static_assert(kPageIdDeviceBits + kPageIdDeviceShift == kPageIdBits);
 
 // The queue discipline for page pool allocation.
 //

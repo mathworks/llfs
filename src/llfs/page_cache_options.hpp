@@ -18,10 +18,8 @@
 #include <llfs/optional.hpp>
 #include <llfs/page_size.hpp>
 
-#include <batteries/assert.hpp>
-#include <batteries/math.hpp>
-
 #include <array>
+#include <set>
 
 namespace llfs {
 
@@ -30,27 +28,34 @@ class PageCacheOptions
  public:
   static PageCacheOptions with_default_values();
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  // TODO [tastolfi 2025-08-29] remove once we get rid of FileLogDevice.
+  //
   u64 default_log_size() const
   {
     return this->default_log_size_;
   }
 
+  /** \brief Specifies that for each PageDevice in the PageCache with `page_size`, a sharded
+   * view (virtual) PageDevice with `shard_size`-aligned shards should be created.
+   */
+  PageCacheOptions& add_sharded_view(PageSize page_size, PageSize shard_size);
+
+  /** \brief Sets the total PageCache size in bytes.
+   *
+   * `min_page_size` is used to calculate the number of cache slots to allocate.  It defaults to
+   * kDirectIOBlockSize.
+   */
+  PageCacheOptions& set_byte_size(usize max_size, Optional<PageSize> min_page_size = None);
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
-
-  PageCacheOptions& set_byte_size(usize max_size,
-                                  Optional<PageSize> default_page_size = PageSize{4096})
-  {
-    this->max_cache_size_bytes = MaxCacheSizeBytes{max_size};
-    if (default_page_size) {
-      this->cache_slot_count = SlotCount{this->max_cache_size_bytes / *default_page_size};
-    }
-
-    return *this;
-  }
 
   SlotCount cache_slot_count;
 
   MaxCacheSizeBytes max_cache_size_bytes;
+
+  std::set<std::pair<PageSize, PageSize>> sharded_views;
 
  private:
   u64 default_log_size_;

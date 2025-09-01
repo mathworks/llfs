@@ -38,6 +38,7 @@
 #include <batteries/async/cancel_token.hpp>
 #include <batteries/async/latch.hpp>
 #include <batteries/async/mutex.hpp>
+#include <batteries/utility.hpp>
 
 #include <functional>
 #include <iomanip>
@@ -139,7 +140,13 @@ class PageCache : public PageLoader
 
   ~PageCache() noexcept;
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief Returns a reference to a copy of the PageCacheOptions used to create this object.
+   */
   const PageCacheOptions& options() const;
+
+  Optional<PageId> page_shard_id_for(PageId full_page_id, const Interval<usize>& shard_range);
 
   /** \brief DEPRECATED - use register_page_reader.
    */
@@ -264,18 +271,42 @@ class PageCache : public PageLoader
    */
   PageDeviceEntry* get_device_for_page(PageId page_id);
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
-  //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-
   using PageLayoutReaderMap =
       std::unordered_map<PageLayoutId, PageReaderFromFile, PageLayoutId::Hash>;
 
-  //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief Returns the maximum-valued id for the devices in `storage_pool`.
+   */
+  static page_device_id_int find_max_page_device_id(const std::vector<PageArena>& storage_pool);
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   explicit PageCache(std::vector<PageArena>&& storage_pool,
                      const PageCacheOptions& options) noexcept;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief Adds PageDeviceEntry objects for all arenas in `storage_pool`.
+   *
+   * `storage_pool` must be passed via move because its elements will be consumed/moved by this
+   * function.
+   */
+  void initialize_page_device_entries(std::vector<PageArena>&& storage_pool) noexcept;
+
+  /** \brief Creates and cross-links sharded view devices for each existing entry in
+   * `this->page_devices_` joined with `options.sharded_views`.
+   *
+   * Should be called from the ctor, after `initialize_page_device_entries`.
+   */
+  void create_sharded_views(const PageCacheOptions& options) noexcept;
+
+  /** \brief (Re-)Builds the index from page size (log2) to slice of PageDeviceEntry, for fast
+   * lookup from allocation routines.
+   */
+  void index_device_entries_by_page_size() noexcept;
 
   //----- --- -- -  -  -   -
   StatusOr<PinnedPage> pin_allocated_page_to_cache(PageDeviceEntry* device_entry,

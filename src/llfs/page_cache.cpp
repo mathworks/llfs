@@ -14,6 +14,7 @@
 #include <llfs/metrics.hpp>
 #include <llfs/new_page_view.hpp>
 #include <llfs/page_cache_job.hpp>
+#include <llfs/sharded_page_view.hpp>
 #include <llfs/status_code.hpp>
 
 #include <boost/range/irange.hpp>
@@ -97,6 +98,18 @@ Status PageCache::PageDeleterImpl::delete_pages(const Slice<const PageToRecycle>
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+/*static*/ page_device_id_int PageCache::find_max_page_device_id(
+    const std::vector<PageArena>& storage_pool)
+{
+  page_device_id_int max_page_device_id = 0;
+  for (const PageArena& arena : storage_pool) {
+    max_page_device_id = std::max(max_page_device_id, arena.device().get_id());
+  }
+  return max_page_device_id;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 PageCache::PageCache(std::vector<PageArena>&& storage_pool,
                      const PageCacheOptions& options) noexcept
     : options_{options}
@@ -105,62 +118,9 @@ PageCache::PageCache(std::vector<PageArena>&& storage_pool,
           options.cache_slot_count, options.max_cache_size_bytes, "PageCacheSlot_Pool")}
     , page_readers_{std::make_shared<batt::Mutex<PageLayoutReaderMap>>()}
 {
-  // Find the maximum page device id value.
-  //
-  page_device_id_int max_page_device_id = 0;
-  for (const PageArena& arena : storage_pool) {
-    max_page_device_id = std::max(max_page_device_id, arena.device().get_id());
-  }
-
-  // Populate this->page_devices_.
-  //
-  this->page_devices_.resize(max_page_device_id + 1);
-  for (PageArena& arena : storage_pool) {
-    const page_device_id_int device_id = arena.device().get_id();
-    const auto page_size_log2 = batt::log2_ceil(arena.device().page_size());
-
-    BATT_CHECK_EQ(PageSize{1} << page_size_log2, arena.device().page_size())
-        << "Page sizes must be powers of 2!";
-
-    BATT_CHECK_LT(page_size_log2, kMaxPageSizeLog2);
-
-    BATT_CHECK_LT(device_id, this->page_devices_.size());
-    BATT_CHECK_EQ(this->page_devices_[device_id], nullptr)
-        << "Duplicate entries found for the same device id!" << BATT_INSPECT(device_id);
-
-    this->page_devices_[device_id] = std::make_unique<PageDeviceEntry>(  //
-        std::move(arena),                                                //
-        batt::make_copy(this->cache_slot_pool_));
-
-    PageDeviceEntry& device_entry = *this->page_devices_[device_id];
-
-    if (!device_entry.arena.has_allocator()) {
-      device_entry.can_alloc = false;
-    }
-
-    // We will sort these later.
-    //
-    this->page_devices_by_page_size_.emplace_back(this->page_devices_[device_id].get());
-  }
-  BATT_CHECK_EQ(this->page_devices_by_page_size_.size(), storage_pool.size());
-
-  // Sort the storage pool by page size (MUST be first).
-  //
-  std::sort(this->page_devices_by_page_size_.begin(), this->page_devices_by_page_size_.end(),
-            PageSizeOrder{});
-
-  // Index the storage pool into groups of arenas by page size.
-  //
-  for (usize size_log2 = 6; size_log2 < kMaxPageSizeLog2; ++size_log2) {
-    auto iter_pair = std::equal_range(this->page_devices_by_page_size_.begin(),
-                                      this->page_devices_by_page_size_.end(),
-                                      PageSize{u32{1} << size_log2}, PageSizeOrder{});
-
-    this->page_devices_by_page_size_log2_[size_log2] =
-        as_slice(this->page_devices_by_page_size_.data() +
-                     std::distance(this->page_devices_by_page_size_.begin(), iter_pair.first),
-                 as_range(iter_pair).size());
-  }
+  this->initialize_page_device_entries(std::move(storage_pool));
+  this->create_sharded_views(options);
+  this->index_device_entries_by_page_size();
 
   // Register metrics.
   //
@@ -200,9 +160,182 @@ PageCache::~PageCache() noexcept
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+void PageCache::initialize_page_device_entries(std::vector<PageArena>&& storage_pool) noexcept
+{
+  BATT_CHECK(this->page_devices_.empty())
+      << "This function must be called in the PageCache constructor!";
+
+  // Find the maximum page device id value.
+  //
+  const page_device_id_int max_page_device_id = PageCache::find_max_page_device_id(storage_pool);
+
+  // Populate this->page_devices_.
+  //
+  this->page_devices_.resize(max_page_device_id + 1);
+  for (PageArena& arena : storage_pool) {
+    const page_device_id_int device_id = arena.device().get_id();
+
+    // Make sure the id is not greater than the max.
+    //
+    BATT_CHECK_LT(device_id, this->page_devices_.size());
+
+    // Make sure there isn't an existing entry under this id.
+    //
+    BATT_CHECK_EQ(this->page_devices_[device_id], nullptr)
+        << "Duplicate entries found for the same device id!" << BATT_INSPECT(device_id);
+
+    // Create the entry!
+    //
+    this->page_devices_[device_id] = std::make_unique<PageDeviceEntry>(  //
+        std::move(arena),                                                //
+        batt::make_copy(this->cache_slot_pool_));
+
+    // We will sort these later.
+    //
+    this->page_devices_by_page_size_.emplace_back(this->page_devices_[device_id].get());
+  }
+  BATT_CHECK_EQ(this->page_devices_by_page_size_.size(), storage_pool.size());
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void PageCache::create_sharded_views(const PageCacheOptions& options) noexcept
+{
+  // Build a map from page size to list of shard sizes.
+  //
+  std::unordered_map<u32, std::vector<PageSize>> views_for_size;
+  for (const std::pair<PageSize, PageSize>& sharded_view : options.sharded_views) {
+    views_for_size[sharded_view.first].emplace_back(sharded_view.second);
+  }
+
+  // For each device entry that existed *prior to* this call, check to see if there are any sharded
+  // views which need to be created; if so, add them.
+  //
+  const usize n_entries_init = this->page_devices_.size();
+  for (usize entry_i = 0; entry_i < n_entries_init; ++entry_i) {
+    const std::unique_ptr<PageDeviceEntry>& entry = this->page_devices_[entry_i];
+    if (entry == nullptr) {
+      continue;
+    }
+
+    // Are there any sharded views requested for this device's page size?
+    //
+    auto iter = views_for_size.find(entry->page_size());
+    if (iter == views_for_size.end()) {
+      continue;
+    }
+
+    const std::vector<PageSize>& sharded_view_sizes = iter->second;
+
+    for (const PageSize shard_size : sharded_view_sizes) {
+      const i32 shard_size_log2 = batt::log2_ceil(shard_size);
+      BATT_CHECK_GT(shard_size_log2, 8);
+      BATT_CHECK_LT(shard_size_log2, 32);
+
+      // If the device is a sharded view, or already has the specified view, skip it.
+      //
+      if (entry->is_sharded_view || entry->sharded_views[shard_size_log2] != nullptr) {
+        continue;
+      }
+
+      // The device id for the sharded view is the first unused id value.
+      //
+      const page_device_id_int sharded_view_id = this->page_devices_.size();
+
+      // Warning: not all PageDevice types currently support sharded views!
+      //
+      std::unique_ptr<PageDevice> sharded_view_device =
+          entry->arena.device().make_sharded_view(sharded_view_id, shard_size);
+
+      if (sharded_view_device != nullptr) {
+        auto& p_sharded_device_entry =
+            this->page_devices_.emplace_back(std::make_unique<PageDeviceEntry>(
+                PageArena{std::move(sharded_view_device), /*allocator=*/nullptr},
+                batt::make_copy(this->cache_slot_pool_)));
+
+        p_sharded_device_entry->is_sharded_view = true;
+        BATT_CHECK(!p_sharded_device_entry->can_alloc);
+
+        // Cross-link the sharded view device.
+        //
+        BATT_CHECK_EQ(entry->sharded_views[shard_size_log2], nullptr);
+        entry->sharded_views[shard_size_log2] = p_sharded_device_entry.get();
+      }
+    }
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void PageCache::index_device_entries_by_page_size() noexcept
+{
+  this->page_devices_by_page_size_.clear();
+  this->page_devices_by_page_size_log2_.fill(Slice<PageDeviceEntry* const>{});
+
+  // Scan all entries, adding the non-nulls.
+  //
+  for (const std::unique_ptr<PageDeviceEntry>& entry : this->page_devices_) {
+    if (entry == nullptr) {
+      continue;
+    }
+    this->page_devices_by_page_size_.emplace_back(entry.get());
+  }
+
+  // Sort by page size.
+  //
+  std::sort(this->page_devices_by_page_size_.begin(),  //
+            this->page_devices_by_page_size_.end(),    //
+            PageSizeOrder{});
+
+  // Create groups of arenas by page size.
+  //
+  for (usize size_log2 = 6; size_log2 < kMaxPageSizeLog2; ++size_log2) {
+    auto iter_pair = std::equal_range(this->page_devices_by_page_size_.begin(),
+                                      this->page_devices_by_page_size_.end(),
+                                      PageSize{u32{1} << size_log2}, PageSizeOrder{});
+
+    this->page_devices_by_page_size_log2_[size_log2] =
+        as_slice(this->page_devices_by_page_size_.data() +
+                     std::distance(this->page_devices_by_page_size_.begin(), iter_pair.first),
+                 as_range(iter_pair).size());
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 const PageCacheOptions& PageCache::options() const
 {
   return this->options_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Optional<PageId> PageCache::page_shard_id_for(PageId full_page_id,
+                                              const Interval<usize>& shard_range)
+{
+  const usize shard_size = shard_range.size();
+
+  BATT_CHECK_EQ(batt::bit_count(shard_size), 1) << "shard sizes must be powers of 2";
+  BATT_CHECK_EQ(shard_range.lower_bound & (shard_size - 1), 0)
+      << "shard offsets must be aligned to the shard size";
+
+  PageDeviceEntry* const src_entry = this->get_device_for_page(full_page_id);
+
+  const i32 shard_size_log2 = batt::log2_ceil(shard_size);
+  const i32 shards_per_page_log2 = src_entry->page_size_log2 - shard_size_log2;
+
+  BATT_CHECK_GT(src_entry->page_size_log2, shard_size_log2);
+
+  PageDeviceEntry* const dst_entry = src_entry->sharded_views[shard_size_log2];
+  if (!dst_entry) {
+    return None;
+  }
+
+  const u64 shard_index_in_page = shard_range.lower_bound >> shard_size_log2;
+
+  return full_page_id  //
+      .set_device_id_shifted(dst_entry->device_id_shifted)
+      .set_address((full_page_id.address() << shards_per_page_log2) | shard_index_in_page);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -587,7 +720,8 @@ StatusOr<PinnedPage> PageCache::try_pin_cached_page(PageId page_id,
 
   BATT_ASSIGN_OK_RESULT(std::shared_ptr<const PageView> loaded, pinned_ref->poll());
 
-  if (options.required_layout()) {
+  if (options.required_layout() &&
+      *options.required_layout() != ShardedPageView::page_layout_id()) {
     BATT_REQUIRE_OK(require_page_layout(loaded->page_buffer(), options.required_layout()));
   }
 
@@ -720,8 +854,8 @@ void PageCache::async_load_page_into_slot(const PageCacheSlot::PinnedRef& pinned
         }
         p_metrics->total_bytes_read.add(read_page_size);
 
-        if (false) {
-          // TODO [tastolfi 2025-08-27] merge this branch (sharded views).
+        if (op->required_layout && *op->required_layout == ShardedPageView::page_layout_id()) {
+          page_view = std::make_shared<ShardedPageView>(std::move(page_data));
 
         } else {
           Status layout_status = require_page_layout(*page_data, op->required_layout);

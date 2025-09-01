@@ -52,6 +52,13 @@ class PageDevice
     return false;
   }
 
+  virtual std::unique_ptr<PageDevice> make_sharded_view(page_device_id_int device_id
+                                                        [[maybe_unused]],
+                                                        PageSize shard_size [[maybe_unused]])
+  {
+    return nullptr;
+  }
+
   // For convenience...
   //
   PageCount capacity()

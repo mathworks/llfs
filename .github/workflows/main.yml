@@ -22,7 +22,7 @@ jobs:
     steps:
       - name: Clean workspace
         run: |
-          rm -rf "${{ github.workspace }}"
+          rm -rf ${{ github.workspace }}
       - name: Checkout repository
         uses: actions/checkout@master
         with:

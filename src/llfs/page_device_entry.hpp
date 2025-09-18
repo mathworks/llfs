@@ -14,6 +14,7 @@
 #include <llfs/no_outgoing_refs_cache.hpp>
 #include <llfs/page_arena.hpp>
 #include <llfs/page_device_cache.hpp>
+#include <llfs/page_device_pairing.hpp>
 
 #include <batteries/math.hpp>
 
@@ -58,6 +59,22 @@ struct PageDeviceEntry {
   /** \brief The sharded views associated with this device.
    */
   std::array<PageDeviceEntry*, kMaxPageSizeLog2> sharded_views;
+
+  /** \brief This device's paired device entries.
+   */
+  std::array<PageDeviceEntry*, kMaxPageDevicePairings> paired_device_entry;
+
+  /** \brief If this is a paired device, the primary for each pairing.
+   */
+  std::array<PageDeviceEntry*, kMaxPageDevicePairings> is_paired_device_for;
+
+  /** \brief This device's paired device ids.
+   */
+  std::array<page_id_int, kMaxPageDevicePairings> paired_device_id;
+
+  /** \brief This device's paired device ids.
+   */
+  std::array<page_id_int, kMaxPageDevicePairings> is_paired_device_for_id;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

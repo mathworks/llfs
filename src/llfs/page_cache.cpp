@@ -213,7 +213,8 @@ void PageCache::create_sharded_views(const PageCacheOptions& options) noexcept
   //
   const usize n_entries_init = this->page_devices_.size();
   for (usize entry_i = 0; entry_i < n_entries_init; ++entry_i) {
-    const std::unique_ptr<PageDeviceEntry>& entry = this->page_devices_[entry_i];
+    BATT_CHECK_LT(entry_i, this->page_devices_.size());
+    PageDeviceEntry* const entry = this->page_devices_[entry_i].get();
     if (entry == nullptr) {
       continue;
     }
@@ -258,7 +259,8 @@ void PageCache::create_sharded_views(const PageCacheOptions& options) noexcept
 
         // Cross-link the sharded view device.
         //
-        BATT_CHECK_EQ(entry->sharded_views[shard_size_log2], nullptr);
+        BATT_CHECK_EQ(entry->sharded_views[shard_size_log2], nullptr)
+            << BATT_INSPECT(shard_size_log2) << BATT_INSPECT_RANGE(entry->sharded_views);
         entry->sharded_views[shard_size_log2] = p_sharded_device_entry.get();
       }
     }
@@ -675,6 +677,104 @@ void PageCache::async_write_new_page(PinnedPage&& pinned_page,
   // TODO [tastolfi 2025-08-27]: Start a (sampled) timer for metrics.page_write_latency here
   //
   entry.arena.device().write(pinned_page.get_page_buffer(), std::move(handler));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status PageCache::assign_paired_device(PageSize src_page_size, const PageDevicePairing& pairing,
+                                       PageSize paired_page_size) noexcept
+{
+  // Find and cache the PageDeviceEntry for the paired device and leaf device.
+  //
+  llfs::Slice<llfs::PageDeviceEntry* const> src_entries =
+      this->devices_with_page_size(src_page_size);
+
+  llfs::Slice<llfs::PageDeviceEntry* const> paired_entries =
+      this->devices_with_page_size(paired_page_size);
+
+  if (src_entries.size() == 0 || paired_entries.size() == 0) {
+    return batt::StatusCode::kNotFound;
+  }
+
+  llfs::PageDeviceEntry* found_src_entry = nullptr;
+  llfs::PageDeviceEntry* found_paired_entry = nullptr;
+
+  // Search through all src-page-size devices and all paired-page-size devices, looking for a pair
+  // that have the same page count.  Panic unless this is the *only* such pair.
+  //
+  for (llfs::PageDeviceEntry* src_entry : src_entries) {
+    const llfs::PageCount src_page_count =
+        src_entry->arena.device().page_ids().get_physical_page_count();
+
+    for (llfs::PageDeviceEntry* paired_entry : paired_entries) {
+      const llfs::PageCount paired_page_count =
+          paired_entry->arena.device().page_ids().get_physical_page_count();
+
+      if (src_page_count == paired_page_count) {
+        if (found_src_entry != nullptr || found_paired_entry != nullptr) {
+          return batt::StatusCode::kUnavailable;
+        }
+
+        found_src_entry = src_entry;
+        found_paired_entry = paired_entry;
+        //
+        // IMPORTANT: we do not exit the loops early because we want to verify that this is the only
+        // match!
+      }
+    }
+  }
+
+  if (found_src_entry == nullptr || found_paired_entry == nullptr) {
+    return batt::StatusCode::kNotFound;
+  }
+
+  const i32 i = pairing.value();
+  BATT_CHECK_LT(i, kMaxPageDevicePairings);
+
+  BATT_CHECK_EQ(found_src_entry->paired_device_entry[i], nullptr);
+  BATT_CHECK_EQ(found_src_entry->is_paired_device_for[i], nullptr);
+  BATT_CHECK_EQ(found_paired_entry->paired_device_entry[i], nullptr);
+  BATT_CHECK_EQ(found_paired_entry->is_paired_device_for[i], nullptr);
+
+  found_src_entry->paired_device_entry[i] = found_paired_entry;
+  found_src_entry->paired_device_id[i] = found_paired_entry->arena.device().get_id();
+
+  found_paired_entry->is_paired_device_for[i] = found_src_entry;
+  found_paired_entry->is_paired_device_for_id[i] = found_src_entry->arena.device().get_id();
+  found_paired_entry->can_alloc = false;
+
+  return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<PinnedPage> PageCache::allocate_paired_page_for(PageId page_id,
+                                                         const PageDevicePairing& pairing,
+                                                         LruPriority lru_priority)
+{
+  Optional<PageId> paired_page_id = this->paired_page_id_for(page_id, pairing);
+  if (!paired_page_id) {
+    return {batt::StatusCode::kUnavailable};
+  }
+
+  PageDeviceEntry* paired_device_entry = this->get_device_for_page(*paired_page_id);
+  BATT_CHECK_NOT_NULLPTR(paired_device_entry);
+
+  PageDevice* paired_page_device = std::addressof(paired_device_entry->arena.device());
+
+  return this->pin_allocated_page_to_cache(paired_device_entry, paired_page_device->page_size(),
+                                           *paired_page_id, lru_priority);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void PageCache::async_write_paired_page(const PinnedPage& new_paired_page,
+                                        const PageDevicePairing& pairing [[maybe_unused]],
+                                        PageDevice::WriteHandler&& handler)
+{
+  PageDeviceEntry* paired_device_entry = this->get_device_for_page(new_paired_page.page_id());
+
+  paired_device_entry->arena.device().write(new_paired_page.get_page_buffer(), std::move(handler));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

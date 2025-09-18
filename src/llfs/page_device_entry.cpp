@@ -30,6 +30,11 @@ namespace llfs {
     this->can_alloc = false;
   }
 
+  this->paired_device_entry.fill(nullptr);
+  this->is_paired_device_for.fill(nullptr);
+  this->paired_device_id.fill(kInvalidPageId);
+  this->is_paired_device_for_id.fill(kInvalidPageId);
+
   //----- --- -- -  -  -   -
   // Sanity checks.
   //

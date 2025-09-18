@@ -22,6 +22,7 @@
 #include <llfs/page_cache_options.hpp>
 #include <llfs/page_device.hpp>
 #include <llfs/page_device_entry.hpp>
+#include <llfs/page_device_pairing.hpp>
 #include <llfs/page_id_slot.hpp>
 #include <llfs/page_loader.hpp>
 #include <llfs/page_reader.hpp>
@@ -199,6 +200,35 @@ class PageCache : public PageLoader
   const PageArena& arena_for_device_id(page_device_id_int device_id_val) const;
 
   void async_write_new_page(PinnedPage&& pinned_page, PageDevice::WriteHandler&& handler) noexcept;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+  // Paired PageDevice interface.
+  //
+
+  /** \brief Attempts to pair two PageDevice instances in the pool.
+   */
+  Status assign_paired_device(PageSize src_page_size, const PageDevicePairing& pairing,
+                              PageSize paired_page_size) noexcept;
+
+  /** \brief Returns the PageId for the paired page for `page_id`, under the specified `pairing`
+   * relationship.
+   *
+   * If no PageDevice has been assigned as the paired device for `page_id`'s device, returns None.
+   */
+  Optional<PageId> paired_page_id_for(PageId page_id, const PageDevicePairing& pairing) const;
+
+  /** \brief Allocates a PageBuffer for the page paired to `page_id` under the specified pairing
+   * relationship; pins the new page to the cache (with the specified priority)and returns the
+   * resulting PinnedPage.
+   */
+  StatusOr<PinnedPage> allocate_paired_page_for(PageId page_id, const PageDevicePairing& pairing,
+                                                LruPriority lru_priority);
+
+  /** \brief Writes the specified paired page.  This happens outside the normal transactional page
+   * creation workflow.
+   */
+  void async_write_paired_page(const PinnedPage& new_paired_page, const PageDevicePairing& pairing,
+                               PageDevice::WriteHandler&& handler);
 
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
   // PageLoader interface
@@ -398,6 +428,24 @@ BATT_ALWAYS_INLINE inline PageDeviceEntry* PageCache::get_device_for_page(PageId
   }
 
   return this->page_devices_[device_id].get();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+BATT_ALWAYS_INLINE inline Optional<PageId> PageCache::paired_page_id_for(
+    PageId src_page_id, const PageDevicePairing& pairing) const
+{
+  const auto device_id = PageIdFactory::get_device_id(src_page_id);
+  if (device_id >= this->page_devices_.size()) {
+    return None;
+  }
+
+  PageDeviceEntry& src_entry = *this->page_devices_[device_id];
+  if (!src_entry.paired_device_entry[pairing.value()]) {
+    return None;
+  }
+
+  return PageIdFactory::change_device_id(src_page_id, src_entry.paired_device_id[pairing.value()]);
 }
 
 }  // namespace llfs

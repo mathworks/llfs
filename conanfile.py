@@ -95,7 +95,7 @@ class LlfsConan(ConanFile):
     #+++++++++++-+-+--+----- --- -- -  -  -   -
 
     from script.batt import set_version_from_git_tags as set_version
-    from script.batt import cmake_in_src_layout       as layout
+    from script.batt import cmake_unified_src_layout  as layout
     from script.batt import default_cmake_generate    as generate
     from script.batt import default_cmake_build       as build
     from script.batt import default_cmake_lib_package as package

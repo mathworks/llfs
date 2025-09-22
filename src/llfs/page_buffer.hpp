@@ -114,7 +114,7 @@ struct PageBufferDeleter {
 template <typename T>
 inline PageSize get_page_buffer_size(const std::shared_ptr<T>& page_buffer)
 {
-  const PageBufferDeleter* const deleter = get_deleter<PageBufferDeleter>(page_buffer);
+  const PageBufferDeleter* const deleter = std::get_deleter<PageBufferDeleter>(page_buffer);
   if (deleter) {
     return deleter->page_size;
   }
@@ -138,7 +138,7 @@ inline PageSize get_page_size(const std::shared_ptr<PageBuffer>& page_buffer)
 template <typename T>
 inline PageId get_page_buffer_page_id(const std::shared_ptr<T>& page_buffer)
 {
-  const PageBufferDeleter* const deleter = get_deleter<PageBufferDeleter>(page_buffer);
+  const PageBufferDeleter* const deleter = std::get_deleter<PageBufferDeleter>(page_buffer);
   if (deleter) {
     return deleter->page_id;
   }

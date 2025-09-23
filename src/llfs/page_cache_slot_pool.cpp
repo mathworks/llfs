@@ -144,18 +144,19 @@ auto PageCacheSlot::Pool::allocate(PageSize page_size)
 
   // Free queue is empty; if we can construct a new one, do it.
   //
-  const auto try_construct_new_slot = [&] {
-    if (!free_slot && this->n_allocated_.load() < this->n_slots_ &&
+  const auto try_construct_new_slot = [this, prior_resident_size,
+                                       max_resident_size](PageCacheSlot** p_free_slot) {
+    if (!*p_free_slot && this->n_allocated_.load() < this->n_slots_ &&
         prior_resident_size < max_resident_size) {
-      free_slot = this->construct_new_slot();
-      if (free_slot) {
-        BATT_CHECK(!free_slot->is_valid());
+      *p_free_slot = this->construct_new_slot();
+      if (*p_free_slot) {
+        BATT_CHECK(!(*p_free_slot)->is_valid());
         this->metrics_.allocate_construct_count.add(1);
       }
     }
   };
 
-  try_construct_new_slot();
+  try_construct_new_slot(&free_slot);
 
   // If both of the previous methods failed to allocate a free_slot, or if the cache has grown too
   // large, then evict expired pages until we fix both problems.
@@ -175,7 +176,7 @@ auto PageCacheSlot::Pool::allocate(PageSize page_size)
       // If we wrap-around and have no free slot, try constructing a new one if possible.
       //
       if (!free_slot && (slot_i < prev_slot_i || n_attempts > this->n_slots_ * 2)) {
-        try_construct_new_slot();
+        try_construct_new_slot(&free_slot);
         if (free_slot && observed_resident_size <= max_resident_size) {
           break;
         }

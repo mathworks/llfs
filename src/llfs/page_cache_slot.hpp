@@ -114,7 +114,7 @@ class PageCacheSlot
 
   /** \brief The Valid bit.
    */
-  static constexpr u64 kValidMask = 1;
+  static constexpr u64 kValidMask = 0b1;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

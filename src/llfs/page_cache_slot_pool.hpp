@@ -126,8 +126,12 @@ class PageCacheSlot::Pool : public boost::intrusive_ref_counter<Pool>
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  /** \brief Requests shutdown on this object; does not block (see join).
+   */
   void halt();
 
+  /** \brief Waits for shutdown to complete on this object; does not request shutdown (see halt).
+   */
   void join();
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -178,18 +182,36 @@ class PageCacheSlot::Pool : public boost::intrusive_ref_counter<Pool>
     return this->metrics_;
   }
 
+  /** \brief Returns the current size (bytes) of the page data in the cache, including all external
+   * allocations (see allocate_external).
+   */
   i64 get_resident_size() const
   {
     return this->resident_size_.load();
   }
 
+  /** \brief Returns the maximum allowed size (bytes) of all page data in the cache, including all
+   * external allocations (see allocate_external).
+   */
   i64 get_max_byte_size() const
   {
     return this->max_byte_size_;
   }
 
+  /** \brief Dynamically adjusts the size of the cache; this may cause data to be evicted, if the
+   * new size limit is smaller than the current one.  If too much page data is pinned, we may be
+   * unable to shrink the cache to the desired limit.  If this happens, the size limit will not be
+   * changed, and `batt::StatusCode::kResourceExhausted` will be returned.
+   */
   Status set_max_byte_size(usize new_size_limit);
 
+  /** \brief Allocates against the maximum byte size limit, without explicitly allocating or filling
+   * any cache slots.
+   *
+   * This is a mechanism for limiting overall memory usage in an allocation by claiming some of the
+   * page cache quota for external use.  The returned object is a move-only RAII type that returns
+   * the allocated amount to the cache when the last (moved) copy is destructed.
+   */
   ExternalAllocation allocate_external(usize byte_size);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -220,17 +242,61 @@ class PageCacheSlot::Pool : public boost::intrusive_ref_counter<Pool>
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  // The number of items to pre-allocate in the free queue.
+  //
+  static constexpr usize kFreeQueueStaticCapacity = 32768;
+
+  // The maximum number of configured cache slots for this pool.
+  //
   const usize n_slots_;
+
+  // The current maximum allowed total bytes for all pages in all slots of this pool; can be
+  // dynamically adjusted (see set_max_byte_size).
+  //
   std::atomic<usize> max_byte_size_;
+
+  // A human-readable debug name for this cache slot pool.
+  //
   const std::string name_;
+
+  // The backing storage for the slots in this pool; this memory is lazily initialized as new slots
+  // are constructed.
+  //
   std::unique_ptr<SlotStorage[]> slot_storage_;
+
+  // The current total bytes in use by pages in the cache and external allocations.
+  //
   std::atomic<i64> resident_size_{0};
+
+  // The position of the CLOCK hand; this is the next candidate for eviction if there is memory
+  // pressure.
+  //
   std::atomic<usize> clock_hand_{0};
+
+  // The number of elements at the front of this->slot_storage_ which have been allocated, ever (not
+  // necessarily the number currently occupied).
+  //
   std::atomic<usize> n_allocated_{0};
+
+  // The number of elements at the front of this->slot_storage_ which have been constructed, ever;
+  // this number trails this->n_allocated_ as storage for slots is lazily initialized.
+  //
   std::atomic<usize> n_constructed_{0};
+
+  // Set by this->halt(); indicates the pool has been requested to shut down.
+  //
   std::atomic<bool> halt_requested_;
+
+  // Diagnostic metrics for this pool.
+  //
   Metrics& metrics_ = Metrics::instance();
-  boost::lockfree::queue<PageCacheSlot*, boost::lockfree::capacity<32768>,
+
+  // A concurrent FIFO queue of free slots; this is consulted first when a new allocation request
+  // comes in.  This is because sometimes cache slots are freed explicitly (e.g., when a page is
+  // de-allocated in storage), so we want an inexpensive way to reuse these slots without needlessly
+  // evicting other pages.
+  //
+  boost::lockfree::queue<PageCacheSlot*, boost::lockfree::capacity<kFreeQueueStaticCapacity>,
                          boost::lockfree::fixed_sized<true>>
       free_queue_;
 };

@@ -16,11 +16,13 @@
 #include <llfs/define_packed_type.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/packed_pointer.hpp>
+#include <llfs/stable_string_store.hpp>
 
 #include <batteries/small_vec.hpp>
 #include <batteries/static_dispatch.hpp>
 #include <batteries/utility.hpp>
 
+#include <atomic>
 #include <deque>
 #include <memory>
 #include <string_view>
@@ -35,8 +37,29 @@ struct BPTrieNode {
   std::string_view prefix_;
   u8 pivot_ = 0;
   usize pivot_pos_ = 0;
+  usize subtree_node_count_ = 0;
   BPTrieNode* left_ = nullptr;
   BPTrieNode* right_ = nullptr;
+};
+
+class BPTrieNodeSet
+{
+ public:
+  usize size() const noexcept
+  {
+    return this->node_count_;
+  }
+
+  BPTrieNode* new_node() noexcept
+  {
+    this->node_count_ += 1;
+    return new (this->memory_.allocate(sizeof(BPTrieNode)).data()) BPTrieNode{};
+  }
+
+ private:
+  BasicStableStringStore<4096, 4096> memory_;
+
+  usize node_count_ = 0;
 };
 
 /** \brief Builds a BPTrie subtree from the given range of keys (std::string_view objects).
@@ -48,8 +71,8 @@ struct BPTrieNode {
  * constructor).
  */
 template <typename Range>
-BPTrieNode* make_trie(const Range& keys, std::vector<std::unique_ptr<BPTrieNode>>& nodes,
-                      usize current_prefix_len = 0, bool is_right_subtree = false);
+BPTrieNode* make_trie(const Range& keys, BPTrieNodeSet& nodes, usize current_prefix_len = 0,
+                      bool is_right_subtree = false);
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 /** \brief A binary prefix trie - implements an ordered set of strings.
@@ -101,6 +124,8 @@ class BPTrie
       , root_{make_trie(keys, this->nodes_)}
       , size_{std::size(keys)}
   {
+    BATT_CHECK_NOT_NULLPTR(this->root_);
+    BATT_CHECK_EQ(this->root_->subtree_node_count_, this->nodes_.size());
   }
 
   /** \brief BPTrie is a move-only type.
@@ -142,6 +167,10 @@ class BPTrie
     return this->size_;
   }
 
+  /** \brief Returns the packed size of the trie.
+   */
+  usize packed_size() const;
+
   /** \brief Returns an interval of indices into the original range used to construct `this`; this
    * interval is the set of strings which are equal to the passed key.  If the returned interval is
    * non-empty, the key is found and the lower_bound is its position in the original set.  If the
@@ -177,10 +206,13 @@ class BPTrie
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
-  std::vector<std::unique_ptr<BPTrieNode>> nodes_;
+  static constexpr u64 kInvalidPackedSize = ~u64{0};
+
+  BPTrieNodeSet nodes_;
   BPTrieNode* root_;
   usize size_ = 0;
   PackedLayout layout_ = PackedLayout::kVanEmdeBoas;
+  mutable std::atomic<u64> packed_size_{kInvalidPackedSize};
 };
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
@@ -290,7 +322,13 @@ struct PackedBPTrie {
     return reinterpret_cast<const PackedBPTrieNodeBase*>(this + 1);
   }
 
-  batt::Interval<usize> find(std::string_view key) const noexcept;
+  batt::Interval<usize> find(std::string_view key, usize& key_prefix_match) const noexcept;
+
+  batt::Interval<usize> find(std::string_view key) const noexcept
+  {
+    usize ignored;
+    return this->find(key, ignored);
+  }
 
   std::string_view get_key(usize index, batt::SmallVecBase<char>& buffer) const noexcept;
 };

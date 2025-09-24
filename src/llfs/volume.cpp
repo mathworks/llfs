@@ -171,12 +171,19 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
       for (PageDeviceEntry* entry : cache->all_devices()) {
         BATT_CHECK_NOT_NULLPTR(entry);
         const PageArena& arena = entry->arena;
+        if (!arena.has_allocator()) {
+          LLFS_VLOG(1) << "[Volume::recover] skipping attach for device " << arena.device().get_id()
+                       << ": no allocator";
+          continue;
+        }
         Optional<PageAllocatorAttachmentStatus> attachment =
             arena.allocator().get_client_attachment_status(uuid);
 
         // If already attached, then nothing to do; continue.
         //
         if (attachment) {
+          LLFS_VLOG(1) << "[Volume::recover] skipping attach for device " << arena.device().get_id()
+                       << "; attachment found!";
           continue;
         }
 
@@ -282,7 +289,9 @@ u64 Volume::calculate_grant_size(const AppendableJob& appendable) const
          }) {
       for (PageDeviceEntry* entry : cache->all_devices()) {
         BATT_CHECK_NOT_NULLPTR(entry);
-        BATT_REQUIRE_OK(entry->arena.allocator().notify_user_recovered(uuid));
+        if (entry->arena.has_allocator()) {
+          BATT_REQUIRE_OK(entry->arena.allocator().notify_user_recovered(uuid));
+        }
       }
     }
   }

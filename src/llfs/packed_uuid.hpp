@@ -65,9 +65,11 @@ struct PackedUUID {
 #endif
 };
 
+namespace {
 BATT_STATIC_ASSERT_EQ(sizeof(PackedUUID), 16);
 BATT_STATIC_ASSERT_EQ(alignof(PackedUUID), 1);
 BATT_STATIC_ASSERT_EQ(sizeof(boost::uuids::uuid), sizeof(PackedUUID));
+}  //namespace
 
 inline std::ostream& operator<<(std::ostream& out, const PackedUUID& t)
 {

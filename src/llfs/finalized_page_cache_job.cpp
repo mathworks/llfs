@@ -73,6 +73,17 @@ u64 FinalizedPageCacheJob::job_id() const
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+PageCache* FinalizedPageCacheJob::page_cache() const /*override*/
+{
+  const std::shared_ptr<const PageCacheJob> job = lock_job(this->tracker_.get());
+  if (job != nullptr) {
+    return job->page_cache();
+  }
+  return nullptr;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void FinalizedPageCacheJob::prefetch_hint(PageId page_id) /*override*/
 {
   const std::shared_ptr<const PageCacheJob> job = lock_job(this->tracker_.get());
@@ -83,15 +94,27 @@ void FinalizedPageCacheJob::prefetch_hint(PageId page_id) /*override*/
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<PinnedPage> FinalizedPageCacheJob::get_page_with_layout_in_job(
-    PageId page_id, const Optional<PageLayoutId>& required_layout, PinPageToJob pin_page_to_job,
-    OkIfNotFound ok_if_not_found) /*override*/
+StatusOr<PinnedPage> FinalizedPageCacheJob::try_pin_cached_page(
+    PageId page_id, const PageLoadOptions& options) /*override*/
 {
-  if (bool_from(pin_page_to_job, /*default_value=*/false)) {
+  const std::shared_ptr<const PageCacheJob> job = lock_job(this->tracker_.get());
+  if (job != nullptr) {
+    return job->const_try_pin_cached_page(page_id, options);
+  }
+
+  return {batt::StatusCode::kUnavailable};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<PinnedPage> FinalizedPageCacheJob::load_page(PageId page_id,
+                                                      const PageLoadOptions& options) /*override*/
+{
+  if (bool_from(options.pin_page_to_job(), /*default_value=*/false)) {
     return Status{batt::StatusCode::kUnimplemented};
   }
 
-  return this->finalized_get(page_id, required_layout, ok_if_not_found);
+  return this->finalized_get(page_id, options);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -109,9 +132,8 @@ void FinalizedPageCacheJob::finalized_prefetch_hint(PageId page_id, PageCache& c
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<PinnedPage> FinalizedPageCacheJob::finalized_get(
-    PageId page_id, const Optional<PageLayoutId>& required_layout,
-    OkIfNotFound ok_if_not_found) const
+StatusOr<PinnedPage> FinalizedPageCacheJob::finalized_get(PageId page_id,
+                                                          const PageLoadOptions& options) const
 {
   const std::shared_ptr<const PageCacheJob> job = lock_job(this->tracker_.get());
   if (job == nullptr) {
@@ -128,7 +150,7 @@ StatusOr<PinnedPage> FinalizedPageCacheJob::finalized_get(
 
   // Use the base job if it is available.
   //
-  return job->const_get(page_id, required_layout, ok_if_not_found);
+  return job->const_get(page_id, options);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

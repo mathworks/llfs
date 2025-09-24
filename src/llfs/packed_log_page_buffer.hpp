@@ -26,7 +26,7 @@ namespace llfs {
 // Aligned memory buffer that holds a single log page.
 //
 struct PackedLogPageBuffer {
-  using AlignedUnit = std::aligned_storage_t<kLogPageSize, 512>;
+  using AlignedUnit = std::aligned_storage_t<kDirectIOBlockSize, kDirectIOBlockAlign>;
 
   union {
     AlignedUnit aligned_storage;
@@ -49,7 +49,7 @@ struct PackedLogPageBuffer {
   }
 };
 
-BATT_STATIC_ASSERT_EQ(sizeof(PackedLogPageBuffer), kLogPageSize);
+BATT_STATIC_ASSERT_EQ(sizeof(PackedLogPageBuffer), kDirectIOBlockSize);
 
 }  // namespace llfs
 

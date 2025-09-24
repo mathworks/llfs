@@ -7,19 +7,18 @@
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
 #pragma once
-#ifndef LLFS_PAGE_FILTER_POLICY_HPP
-#define LLFS_PAGE_FILTER_POLICY_HPP
+#ifndef LLFS_PAGE_LOADER_DECL_HPP
+#define LLFS_PAGE_LOADER_DECL_HPP
 
-#include <llfs/bloom_filter.hpp>
-
-#include <batteries/optional.hpp>
-
-#include <variant>
+#include <llfs/pinned_page.hpp>
 
 namespace llfs {
 
-using PageFilterPolicy = std::variant<batt::NoneType, llfs::BloomFilterParams>;
+template <typename PinnedPageParamT>
+class BasicPageLoader;
 
-}  // namespace llfs
+using PageLoader = BasicPageLoader<PinnedPage>;
 
-#endif  // LLFS_PAGE_FILTER_POLICY_HPP
+}  //namespace llfs
+
+#endif  // LLFS_PAGE_LOADER_DECL_HPP

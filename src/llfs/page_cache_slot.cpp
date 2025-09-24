@@ -17,7 +17,7 @@ namespace llfs {
 {
   BATT_CHECK(!this->is_pinned());
   BATT_CHECK(!this->is_valid());
-  BATT_CHECK_EQ(this->ref_count(), 0);
+  BATT_CHECK_EQ(this->cache_slot_ref_count(), 0);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -25,196 +25,70 @@ namespace llfs {
 PageCacheSlot::~PageCacheSlot() noexcept
 {
   BATT_CHECK(!this->is_pinned()) << BATT_INSPECT(this->pin_count())
-                                 << BATT_INSPECT(this->ref_count()) << BATT_INSPECT((void*)this);
-  BATT_CHECK_EQ(this->ref_count(), 0);
+                                 << BATT_INSPECT(this->cache_slot_ref_count())
+                                 << BATT_INSPECT((void*)this);
+  BATT_CHECK_EQ(this->cache_slot_ref_count(), 0);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-PageCacheSlot::Pool& PageCacheSlot::pool() const noexcept
-{
-  return this->pool_;
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-usize PageCacheSlot::index() const noexcept
+usize PageCacheSlot::index() const
 {
   return this->pool_.index_of(this);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-PageId PageCacheSlot::key() const
+auto PageCacheSlot::fill(PageId key, PageSize page_size, i64 lru_priority, ExternalAllocation claim)
+    -> PinnedRef
 {
-  return this->key_;
-}
+  BATT_CHECK(!this->is_valid());
+  BATT_CHECK(key.is_valid());
+  BATT_CHECK_EQ(std::addressof(claim.pool()), std::addressof(this->pool_));
+  BATT_CHECK_EQ(claim.size(), page_size);
 
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-batt::Latch<std::shared_ptr<const PageView>>* PageCacheSlot::value() noexcept
-{
-  if (this->value_) {
-    return std::addressof(*this->value_);
-  }
-  return nullptr;
-}
+  this->key_ = key;
+  this->value_.emplace();
+  this->p_value_ = std::addressof(*this->value_);
+  this->page_size_ = page_size;
+  this->update_latest_use(lru_priority);
 
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-bool PageCacheSlot::is_valid() const noexcept
-{
-  return Self::is_valid(this->state_.load(std::memory_order_acquire));
-}
+  auto observed_state = this->state_.fetch_add(kPinCountDelta) + kPinCountDelta;
+  BATT_CHECK_EQ(observed_state & Self::kOverflowMask, 0);
+  BATT_CHECK(Self::is_pinned(observed_state));
 
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-bool PageCacheSlot::is_pinned() const noexcept
-{
-  return Self::is_pinned(this->state_.load(std::memory_order_acquire));
-}
+  this->pool_.metrics().admit_count.add(1);
+  this->pool_.metrics().admit_byte_count.add(page_size);
 
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-u64 PageCacheSlot::pin_count() const noexcept
-{
-  return Self::get_pin_count(this->state_.load(std::memory_order_acquire));
-}
+  claim.absorb();
 
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-u64 PageCacheSlot::ref_count() const noexcept
-{
-  return this->ref_count_.load(std::memory_order_acquire);
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-void PageCacheSlot::add_ref() noexcept
-{
-  const auto observed_count = this->ref_count_.fetch_add(1, std::memory_order_relaxed);
-  if (observed_count == 0) {
-    this->notify_first_ref_acquired();
-  }
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-void PageCacheSlot::remove_ref() noexcept
-{
-  const auto observed_count = this->ref_count_.fetch_sub(1, std::memory_order_release);
-  BATT_CHECK_GT(observed_count, 0);
-  if (observed_count == 1) {
-    (void)this->ref_count_.load(std::memory_order_acquire);
-    this->notify_last_ref_released();
-  }
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-auto PageCacheSlot::acquire_pin(PageId key, bool ignore_key) noexcept -> PinnedRef
-{
-  const auto old_state = this->state_.fetch_add(kPinCountDelta, std::memory_order_acquire);
-  const auto new_state = old_state + kPinCountDelta;
-  const bool newly_pinned = !Self::is_pinned(old_state);
-
-  BATT_CHECK_EQ(new_state & Self::kOverflowMask, 0);
-
-  BATT_CHECK(Self::is_pinned(new_state));
-
-  BATT_SUPPRESS_IF_GCC("-Wmaybe-uninitialized")
-
-  // We must always do this, even if the pin fails, so that we don't have an unmatched
-  // `remove_ref` in `release_pin` below.
-  //
-  if (newly_pinned) {
-    this->add_ref();
-  }
-
-  // If the pin_count > 1 (because of the fetch_add above) and the slot is valid, it is safe to read
-  // the key.  If the key doesn't match, release the ref and return failure.
-  //
-  if (!Self::is_valid(old_state) ||
-      (!ignore_key && (!this->key_.is_valid() || this->key_ != key))) {
-    this->release_pin();
-    return PinnedRef{};
-  }
-
-  BATT_UNSUPPRESS_IF_GCC()
-
-  // If we aren't ignoring the slot's key and are looking to use the slot's value,
-  // make sure that the value is in a valid state before creating a PinnedRef.
-  //
-  if (!ignore_key) {
-    BATT_CHECK(this->value_);
-  }
+  this->add_ref();
+  this->set_valid();
 
   return PinnedRef{this, CallerPromisesTheyAcquiredPinCount{}};
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void PageCacheSlot::extend_pin() noexcept
+void PageCacheSlot::clear()
 {
-  const auto old_state = this->state_.fetch_add(kPinCountDelta, std::memory_order_relaxed);
-  const auto new_state = old_state + kPinCountDelta;
+  BATT_CHECK(!this->is_valid());
 
-  BATT_CHECK_EQ(new_state & Self::kOverflowMask, 0);
+  this->pool_.metrics().erase_count.add(1);
+  this->pool_.metrics().erase_byte_count.add(this->page_size_);
 
-  BATT_CHECK(Self::is_pinned(old_state))
-      << "This method should never be called in cases where the current pin count might be 0; "
-         "use acquire_pin() instead.";
+  BATT_CHECK_EQ(this->value_, None);
+  BATT_CHECK_EQ(this->p_value_, nullptr);
+  BATT_CHECK_EQ(this->page_size_, PageSize{0});
+
+  this->key_ = PageId{};
+  this->latest_use_.store(0);
+  this->set_valid();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void PageCacheSlot::update_latest_use() noexcept
-{
-  this->latest_use_.store(LRUClock::advance_local());
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-void PageCacheSlot::set_obsolete_hint() noexcept
-{
-  this->latest_use_.store(LRUClock::read_global() - (i64{1} << 56));
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-i64 PageCacheSlot::get_latest_use() const noexcept
-{
-  return this->latest_use_.load();
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-void PageCacheSlot::release_pin() noexcept
-{
-  const auto old_state = this->state_.fetch_sub(kPinCountDelta, std::memory_order_release);
-
-  BATT_CHECK(Self::is_pinned(old_state))
-      << "Each call to release_pin should have a previous call to "
-         "acquire_pin, so we should always observe a prior pinned state. "
-      << BATT_INSPECT(old_state);
-
-  const auto new_state = old_state - kPinCountDelta;
-  const bool newly_unpinned = !Self::is_pinned(new_state);
-
-  BATT_CHECK_EQ(new_state & Self::kOverflowMask, 0);
-
-  if (newly_unpinned) {
-    // Load the state with `acquire` order to create a full memory barrier.
-    //
-    (void)this->state_.load(std::memory_order_acquire);
-
-    this->remove_ref();
-  }
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-bool PageCacheSlot::evict() noexcept
+bool PageCacheSlot::evict()
 {
   // Use a CAS loop here to guarantee an atomic transition from Valid + Filled (unpinned) state to
   // Invalid.
@@ -229,7 +103,7 @@ bool PageCacheSlot::evict() noexcept
     //
     const auto target_state = observed_state & ~kValidMask;
     if (this->state_.compare_exchange_weak(observed_state, target_state)) {
-      BATT_CHECK(!this->is_valid());
+      this->on_evict_success(nullptr);
       return true;
     }
   }
@@ -237,12 +111,14 @@ bool PageCacheSlot::evict() noexcept
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-bool PageCacheSlot::evict_if_key_equals(PageId key) noexcept
+bool PageCacheSlot::evict_if_key_equals(PageId key)
 {
+  static_assert(std::is_same_v<decltype(this->state_)::value_type, u64>);
+
   // The slot must be pinned in order to read the key, so increase the pin count.
   //
-  const auto old_state = this->state_.fetch_add(kPinCountDelta, std::memory_order_acquire);
-  auto observed_state = old_state + kPinCountDelta;
+  const u64 old_state = this->state_.fetch_add(kPinCountDelta, std::memory_order_acquire);
+  u64 observed_state = old_state + kPinCountDelta;
 
   const bool newly_pinned = !Self::is_pinned(old_state);
   if (newly_pinned) {
@@ -265,13 +141,14 @@ bool PageCacheSlot::evict_if_key_equals(PageId key) noexcept
 
     // Clear the valid bit from the state mask and release the pin count we acquired above.
     //
-    auto target_state = ((observed_state - kPinCountDelta) & ~kValidMask);
+    u64 target_state = ((observed_state - kPinCountDelta) & ~kValidMask);
 
     BATT_CHECK(!Self::is_pinned(target_state) && !Self::is_valid(target_state))
         << BATT_INSPECT(target_state);
 
     if (this->state_.compare_exchange_weak(observed_state, target_state)) {
-      BATT_CHECK(!Self::is_valid());
+      this->on_evict_success(nullptr);
+
       // At this point, we always expect to be going from pinned to unpinned.
       // In order to successfully evict the slot, we must be holding the only pin,
       // as guarenteed by the first if statement in the for loop.
@@ -284,35 +161,67 @@ bool PageCacheSlot::evict_if_key_equals(PageId key) noexcept
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-auto PageCacheSlot::fill(PageId key) noexcept -> PinnedRef
+bool PageCacheSlot::evict_and_release_pin(ExternalAllocation* reclaim)
 {
-  BATT_CHECK(!this->is_valid());
-  BATT_CHECK(key.is_valid());
+  static_assert(std::is_same_v<decltype(this->state_)::value_type, u64>);
 
-  this->key_ = key;
-  this->value_.emplace();
-  this->update_latest_use();
+  u64 observed_state = this->state_.load(std::memory_order_acquire);
 
-  auto observed_state = this->state_.fetch_add(kPinCountDelta) + kPinCountDelta;
-  BATT_CHECK_EQ(observed_state & Self::kOverflowMask, 0);
   BATT_CHECK(Self::is_pinned(observed_state));
+  BATT_CHECK_EQ(observed_state & Self::kOverflowMask, 0);
 
-  this->add_ref();
-  this->set_valid();
+  // Use a CAS loop here to guarantee an atomic transition from Valid + Filled (unpinned) state to
+  // Invalid.
+  //
+  for (;;) {
+    // To succeed, we must be holding the only pin and the slot must be valid.
+    //
+    if (!(Self::get_pin_count(observed_state) == 1 && Self::is_valid(observed_state))) {
+      this->release_pin();
+      return false;
+    }
 
-  return PinnedRef{this, CallerPromisesTheyAcquiredPinCount{}};
+    // Clear the valid bit from the state mask and release the pin count we acquired above.
+    //
+    u64 target_state = ((observed_state - kPinCountDelta) & ~kValidMask);
+
+    BATT_CHECK(!Self::is_pinned(target_state) && !Self::is_valid(target_state))
+        << BATT_INSPECT(target_state);
+
+    if (this->state_.compare_exchange_weak(observed_state, target_state)) {
+      this->on_evict_success(reclaim);
+
+      // At this point, we always expect to be going from pinned to unpinned.
+      // In order to successfully evict the slot, we must be holding the only pin,
+      // as guarenteed by the first if statement in the for loop.
+      //
+      this->remove_ref();
+      return true;
+    }
+  }
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void PageCacheSlot::clear() noexcept
+void PageCacheSlot::on_evict_success(ExternalAllocation* reclaim)
 {
   BATT_CHECK(!this->is_valid());
 
-  this->key_ = PageId{};
+  this->pool_.metrics().evict_count.add(1);
+  this->pool_.metrics().evict_byte_count.add(this->page_size_);
+
+  if (reclaim != nullptr) {
+    *reclaim = ExternalAllocation{this->pool_, this->page_size_};
+  } else {
+    this->pool_.resident_size_.fetch_sub(this->page_size_);
+  }
+
   this->value_ = None;
-  this->set_valid();
+  this->p_value_ = nullptr;
+  this->page_size_ = PageSize{0};
 }
+
+#if LLFS_PAGE_CACHE_SLOT_UPDATE_POOL_REF_COUNT
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
@@ -328,12 +237,18 @@ void PageCacheSlot::notify_last_ref_released()
   intrusive_ptr_release(std::addressof(this->pool_));
 }
 
+#endif  // LLFS_PAGE_CACHE_SLOT_UPDATE_POOL_REF_COUNT
+
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-void PageCacheSlot::set_valid()
+void PageCacheSlot::ExternalAllocation::release() noexcept
 {
-  const auto observed_state = this->state_.fetch_or(kValidMask, std::memory_order_release);
-  BATT_CHECK(!Self::is_valid(observed_state)) << "Must go from an invalid state to valid!";
+  if (this->pool_) {
+    const i64 prior_resident_size = this->pool_->resident_size_.fetch_sub(this->size_);
+    BATT_CHECK_GE(prior_resident_size, (i64)this->size_);
+    this->pool_ = nullptr;
+    this->size_ = 0;
+  }
 }
 
 }  //namespace llfs

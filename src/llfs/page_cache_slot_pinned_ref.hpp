@@ -24,10 +24,12 @@ class CallerPromisesTheyAcquiredPinCount
   // a cache slot and using it to create a PinnedRef!
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
-  friend auto PageCacheSlot::acquire_pin(PageId key,
-                                         bool ignore_key) noexcept -> PageCacheSlot::PinnedRef;
+  friend auto PageCacheSlot::acquire_pin(PageId key, IgnoreKey ignore_key,
+                                         IgnoreGeneration ignore_generation)
+      -> PageCacheSlot::PinnedRef;
 
-  friend auto PageCacheSlot::fill(PageId key) noexcept -> PageCacheSlot::PinnedRef;
+  friend auto PageCacheSlot::fill(PageId key, PageSize page_size, i64 lru_priority,
+                                  PageCacheSlot::ExternalAllocation) -> PageCacheSlot::PinnedRef;
 };
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -90,6 +92,14 @@ class PageCacheSlot::PinnedRef : public boost::equality_comparable<PageCacheSlot
     }
   }
 
+  /** \brief Releases the slot without decrementing the pin count.
+   */
+  void release_ownership_of_pin()
+  {
+    this->slot_ = nullptr;
+    this->value_ = nullptr;
+  }
+
   void swap(PinnedRef& that)
   {
     std::swap(this->slot_, that.slot_);
@@ -136,9 +146,9 @@ class PageCacheSlot::PinnedRef : public boost::equality_comparable<PageCacheSlot
     return this->slot_ ? this->slot_->pin_count() : 0;
   }
 
-  u64 ref_count() const noexcept
+  u64 cache_slot_ref_count() const noexcept
   {
-    return this->slot_ ? this->slot_->ref_count() : 0;
+    return this->slot_ ? this->slot_->cache_slot_ref_count() : 0;
   }
 
  private:

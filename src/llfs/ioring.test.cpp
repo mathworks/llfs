@@ -40,6 +40,8 @@ namespace {
 
 using llfs::ConstBuffer;
 using llfs::IoRing;
+using llfs::kDirectIOBlockAlign;
+using llfs::kDirectIOBlockSize;
 using llfs::MutableBuffer;
 using llfs::RingBuffer;
 using llfs::ScopedIoRing;
@@ -86,29 +88,30 @@ TEST(IoRingTest, Test)
 
   IoRing::File f{*io, fd};
 
-  for (u64 offset = 0; offset < 1 * kMiB; offset += 512 * 100) {
+  for (u64 offset = 0; offset < 1 * kMiB; offset += kDirectIOBlockSize * 100) {
     if (offset % (100 * 10 * kMiB) == 0) {
       LLFS_LOG_INFO() << BATT_INSPECT(offset);
     }
     bool ok = false;
-    f.async_write_some(
-        offset, std::array{ConstBuffer{data, 512}}, /*handler=*/[&](StatusOr<i32> result) {
-          if (!result.ok()) {
-            LLFS_LOG_INFO() << "write failed: " << result.status();
-            return;
-          }
-          EXPECT_EQ(*result, 512);
+    f.async_write_some(offset, std::array{ConstBuffer{data, kDirectIOBlockSize}},
+                       /*handler=*/[&](StatusOr<i32> result) {
+                         if (!result.ok()) {
+                           LLFS_LOG_INFO() << "write failed: " << result.status();
+                           return;
+                         }
+                         EXPECT_EQ(*result, kDirectIOBlockSize);
 
-          std::memset(data, 'x', 512);
+                         std::memset(data, 'x', kDirectIOBlockSize);
 
-          f.async_read_some(offset, std::array{MutableBuffer{data, 512}},
-                            /*handler=*/[&](StatusOr<i32> result) {
-                              ok = result.ok();
+                         f.async_read_some(
+                             offset, std::array{MutableBuffer{data, kDirectIOBlockSize}},
+                             /*handler=*/[&](StatusOr<i32> result) {
+                               ok = result.ok();
 
-                              EXPECT_EQ(*result, 512);
-                              EXPECT_THAT(std::string(data, str.size()), ::testing::StrEq(str));
-                            });
-        });
+                               EXPECT_EQ(*result, kDirectIOBlockSize);
+                               EXPECT_THAT(std::string(data, str.size()), ::testing::StrEq(str));
+                             });
+                       });
 
     Status io_status = io->run();
 
@@ -136,8 +139,8 @@ TEST(IoRingTest, DISABLED_BlockDev)
 
   using llfs::PageBuffer;
 
-  auto page = PageBuffer::allocate(llfs::PageSize{2 * kMiB});
-  MutableBuffer buf = page->mutable_buffer();
+  auto page = PageBuffer::allocate(llfs::PageSize{2 * kMiB}, llfs::PageId{});
+  MutableBuffer buf = get_mutable_buffer(page);
   std::memset(buf.data(), '@', buf.size());
 
   io->on_work_started();
@@ -193,7 +196,7 @@ TEST(IoRingTest, MultipleThreads)
 
   ASSERT_TRUE(write_status.ok()) << BATT_INSPECT(write_status);
 
-  std::array<char, 512> buffer;
+  std::array<char, kDirectIOBlockSize> buffer;
 
   Status read_status = f.read_all(/*offset=*/0, MutableBuffer{buffer.data(), message.size()});
 
@@ -291,7 +294,7 @@ TEST(IoRingTest, ErrorRetval)
 
   IoRing::File file{*io, kBadFileDescriptor};
 
-  std::aligned_storage_t<512, 512> buffer;
+  std::aligned_storage_t<kDirectIOBlockSize, kDirectIOBlockAlign> buffer;
 
   llfs::Status run_status = batt::StatusCode::kUnknown;
 
@@ -352,8 +355,8 @@ TEST(IoRingTest, ReRegisterBuffers)
   static constexpr usize kBufferSize = 4096;
 
   for (bool update : {false, true}) {
-    auto buffer1 = std::make_unique<std::aligned_storage_t<kBufferSize, 512>>();
-    auto buffer2 = std::make_unique<std::aligned_storage_t<kBufferSize, 512>>();
+    auto buffer1 = std::make_unique<std::aligned_storage_t<kBufferSize, kDirectIOBlockAlign>>();
+    auto buffer2 = std::make_unique<std::aligned_storage_t<kBufferSize, kDirectIOBlockAlign>>();
 
     StatusOr<IoRing> io = IoRing::make_new(llfs::MaxQueueDepth{64});
     ASSERT_TRUE(io.ok()) << BATT_INSPECT(io.status());
@@ -477,7 +480,7 @@ TEST(IoRingTest, RegisterFd)
   std::filesystem::path this_file = std::filesystem::path{__FILE__};
   std::filesystem::path this_dir = this_file.parent_path();
 
-  std::aligned_storage_t<512, 512> memory;
+  std::aligned_storage_t<kDirectIOBlockSize, kDirectIOBlockAlign> memory;
   batt::MutableBuffer buffer{&memory, sizeof(memory)};
   std::string_view buffer_str{(const char*)buffer.data(), kFileBanner.size()};
 

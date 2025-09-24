@@ -20,7 +20,7 @@ Status initialize_log_device2(RawBlockFile& file, const IoRingLogConfig2& config
     return ::llfs::make_status(::llfs::StatusCode::kFileLogEraseNotConfirmed);
   }
 
-  using AlignedUnit = std::aligned_storage_t<kLogAtomicWriteSize, kLogAtomicWriteSize>;
+  using AlignedUnit = std::aligned_storage_t<kDirectIOBlockSize, kDirectIOBlockAlign>;
 
   const usize device_page_size = usize{1} << config.device_page_size_log2;
   const usize buffer_size = batt::round_up_to(sizeof(AlignedUnit), device_page_size);

@@ -54,8 +54,14 @@ class LlfsConan(ConanFile):
     exports_sources = [
         "src/CMakeLists.txt",
         "src/**/*.hpp",
+        "src/**/*.h",
         "src/**/*.ipp",
         "src/**/*.cpp",
+    ]
+
+    tool_requires = [
+        "cmake/[>=3.20.0 <4]",
+        "ninja/[>=1.12.1 <2]",
     ]
 
     #+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -69,27 +75,27 @@ class LlfsConan(ConanFile):
 
 
     def requirements(self):
-        self.requires("batteries/0.59.0", **VISIBLE)
-        self.requires("boost/1.86.0", **VISIBLE, **OVERRIDE)
-        self.requires("cli11/2.4.2", **VISIBLE)
+        self.requires("batteries/0.60.2", **VISIBLE)
+        self.requires("boost/1.88.0", **VISIBLE, **OVERRIDE)
+        self.requires("cli11/2.5.0", **VISIBLE)
         self.requires("glog/0.7.1", **VISIBLE, **OVERRIDE)
-        self.requires("libbacktrace/cci.20210118", **VISIBLE)
-        self.requires("openssl/3.3.2", **VISIBLE, **OVERRIDE)
-        self.requires("xxhash/0.8.2", **VISIBLE)
+        self.requires("libbacktrace/cci.20240730", **VISIBLE, **OVERRIDE)
+        self.requires("openssl/3.5.2", **VISIBLE, **OVERRIDE)
+        self.requires("xxhash/0.8.3", **VISIBLE)
 
-        self.requires("zlib/1.3", **OVERRIDE)
+        self.requires("zlib/1.3.1", **OVERRIDE)
 
-        self.test_requires("gtest/1.15.0")
+        self.test_requires("gtest/1.16.0")
         
         if platform.system() == "Linux":
-            self.requires("liburing/2.4", **VISIBLE)
+            self.requires("liburing/2.11", **VISIBLE)
             self.requires("libfuse/3.16.2", **VISIBLE)
-            self.requires("libunwind/1.7.2", **VISIBLE, **OVERRIDE)
+            self.requires("libunwind/1.8.1", **VISIBLE, **OVERRIDE)
 
     #+++++++++++-+-+--+----- --- -- -  -  -   -
 
     from script.batt import set_version_from_git_tags as set_version
-    from script.batt import cmake_in_src_layout       as layout
+    from script.batt import cmake_unified_src_layout  as layout
     from script.batt import default_cmake_generate    as generate
     from script.batt import default_cmake_build       as build
     from script.batt import default_cmake_lib_package as package

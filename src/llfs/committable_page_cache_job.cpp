@@ -208,12 +208,7 @@ Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 c
   const PageCacheJob* job = this->job_.get();
   BATT_CHECK_NOT_NULLPTR(job);
 
-  if (durable_caller_slot) {
-    LLFS_VLOG(1) << "commit(PageCacheJob): entered" << BATT_INSPECT(prev_caller_slot)
-                 << BATT_INSPECT(*durable_caller_slot);
-  } else {
-    LLFS_VLOG(1) << "commit(PageCacheJob): entered" << BATT_INSPECT(prev_caller_slot);
-  }
+  LLFS_VLOG(1) << "commit(PageCacheJob): entered";
 
   // Make sure the job is pruned!
   //
@@ -221,8 +216,7 @@ Status CommittablePageCacheJob::commit_impl(const JobCommitParams& params, u64 c
 
   // Write new pages.
   //
-  Status write_status = LLFS_COLLECT_LATENCY(job->cache().metrics().page_write_latency,  //
-                                             this->write_new_pages());
+  Status write_status = this->write_new_pages();
   BATT_REQUIRE_OK(write_status);
 
   // Make sure the ref_count_updates_ is initialized!
@@ -334,6 +328,7 @@ Status CommittablePageCacheJob::WriteNewPagesContext::start()
   LLFS_VLOG(1) << "commit(PageCacheJob): writing new pages";
 
   if (this->that->job_->get_new_pages().empty()) {
+    LLFS_VLOG(1) << "commit(PageCacheJob): skipping write new pages (none found)";
     return OkStatus();
   }
 
@@ -353,6 +348,7 @@ Status CommittablePageCacheJob::WriteNewPagesContext::start()
       // There's no need to write recovered pages, since they are already durable; skip.
       //
       if (this->job->is_recovered_page(page_id)) {
+        LLFS_VLOG(1) << "commit(PageCacheJob): skipping recovered page " << page_id;
         this->ops[i].get_handler()(batt::OkStatus());
         continue;
       }
@@ -361,7 +357,9 @@ Status CommittablePageCacheJob::WriteNewPagesContext::start()
       std::shared_ptr<const PageView> new_page_view = new_page.view();
       BATT_CHECK_NOT_NULLPTR(new_page_view);
       BATT_CHECK_EQ(page_id, new_page_view->page_id());
-      BATT_CHECK(this->job->get_already_pinned(page_id) != None) << BATT_INSPECT(page_id);
+
+      Optional<PinnedPage> pinned_page = this->job->get_already_pinned(page_id);
+      BATT_CHECK_NE(pinned_page, None) << BATT_INSPECT(page_id);
 
       // Finalize the client uuid and slot that uniquely identifies this transaction, so we can
       // guarantee exactly-once side effects in the presence of crashes.
@@ -378,8 +376,7 @@ Status CommittablePageCacheJob::WriteNewPagesContext::start()
 
       this->ops[i].page_id = page_id;
 
-      this->job->cache().arena_for_page_id(page_id).device().write(new_page.const_buffer(),
-                                                                   this->ops[i].get_handler());
+      this->job->cache().async_write_new_page(std::move(*pinned_page), this->ops[i].get_handler());
 
       this->total_byte_count += page_size;
       this->used_byte_count += used_size;
@@ -406,6 +403,7 @@ Status CommittablePageCacheJob::WriteNewPagesContext::await_finish()
   //
   Status all_ops_status = OkStatus();
   for (auto& op : as_slice(this->ops.get(), this->n_ops)) {
+#if LLFS_TRACK_NEW_PAGE_EVENTS
     this->job->cache().track_new_page_event(NewPageTracker{
         .ts = 0,
         .job_id = this->job->job_id,
@@ -414,6 +412,8 @@ Status CommittablePageCacheJob::WriteNewPagesContext::await_finish()
         .event_id = op.result.ok() ? (int)NewPageTracker::Event::kWrite_Ok
                                    : (int)NewPageTracker::Event::kWrite_Fail,
     });
+#endif  // LLFS_TRACK_NEW_PAGE_EVENTS
+
     all_ops_status.Update(op.result);
   }
   BATT_REQUIRE_OK(all_ops_status);
@@ -495,6 +495,7 @@ auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/)
   for (const auto& p : this->job_->get_new_pages()) {
     const PageId& id = p.first;
     if (id) {
+      LLFS_VLOG(1) << "+1 ref for new page " << id;
       ref_count_delta[id] += 1;
     }
   }
@@ -506,6 +507,7 @@ auto CommittablePageCacheJob::get_page_ref_count_updates(u64 /*callers*/)
   //
   Status trace_add_ref_status = this->job_->trace_new_roots(loader, [&ref_count_delta](PageId id) {
     if (id) {
+      LLFS_VLOG(1) << "+1 ref for reachable page " << id;
       ref_count_delta[id] += 1;
     }
   });
@@ -579,6 +581,10 @@ Status CommittablePageCacheJob::recycle_dead_pages(const JobCommitParams& params
 {
   LLFS_VLOG(1) << "commit(PageCacheJob): recycling dead pages (count=" << dead_pages.ids.size()
                << ")";
+
+  if (dead_pages.ids.empty()) {
+    return OkStatus();
+  }
 
   BATT_CHECK_NOT_NULLPTR(params.recycler.pointer());
 

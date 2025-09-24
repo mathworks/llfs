@@ -36,6 +36,8 @@ class PageDevice
   using WriteHandler = std::function<void(PageDevice::WriteResult)>;
   using ReadHandler = std::function<void(PageDevice::ReadResult)>;
 
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   PageDevice(const PageDevice&) = delete;
   PageDevice& operator=(const PageDevice&) = delete;
 
@@ -48,6 +50,13 @@ class PageDevice
   virtual bool is_last_in_file() const
   {
     return false;
+  }
+
+  virtual std::unique_ptr<PageDevice> make_sharded_view(page_device_id_int device_id
+                                                        [[maybe_unused]],
+                                                        PageSize shard_size [[maybe_unused]])
+  {
+    return nullptr;
   }
 
   // For convenience...

@@ -7,12 +7,16 @@
 //+++++++++++-+-+--+----- --- -- -  -  -   -
 
 #pragma once
-#ifndef LLFS_PAGE_DEVICE_ENTRY_HPP
 #define LLFS_PAGE_DEVICE_ENTRY_HPP
 
+#include <llfs/config.hpp>
+//
 #include <llfs/no_outgoing_refs_cache.hpp>
 #include <llfs/page_arena.hpp>
 #include <llfs/page_device_cache.hpp>
+#include <llfs/page_device_pairing.hpp>
+
+#include <batteries/math.hpp>
 
 namespace llfs {
 
@@ -20,16 +24,15 @@ namespace llfs {
  */
 struct PageDeviceEntry {
   explicit PageDeviceEntry(PageArena&& arena,
-                           boost::intrusive_ptr<PageCacheSlot::Pool>&& slot_pool) noexcept
-      : arena{std::move(arena)}
-      , cache{this->arena.device().page_ids(), std::move(slot_pool)}
-      , no_outgoing_refs_cache{this->arena.device().page_ids()}
-  {
-  }
+                           boost::intrusive_ptr<PageCacheSlot::Pool>&& slot_pool) noexcept;
 
   /** \brief The PageDevice and PageAllocator.
    */
   PageArena arena;
+
+  /** \brief Is this device available for `new_page` requests?
+   */
+  bool can_alloc;
 
   /** \brief A per-device page cache; shares a PageCacheSlot::Pool with all other PageDeviceEntry
    * objects that have the same page size.
@@ -40,7 +43,47 @@ struct PageDeviceEntry {
    * device.
    */
   NoOutgoingRefsCache no_outgoing_refs_cache;
-};
-}  // namespace llfs
 
-#endif  // LLFS_PAGE_DEVICE_ENTRY_HPP
+  /** \brief The log2 of the page size.
+   */
+  i32 page_size_log2;
+
+  /** \brief Set to true iff this device is a sharded view of some other device.
+   */
+  bool is_sharded_view;
+
+  /** \brief Precalculated device_id portion of PageIds owned by this device.
+   */
+  page_device_id_int device_id_shifted;
+
+  /** \brief The sharded views associated with this device.
+   */
+  std::array<PageDeviceEntry*, kMaxPageSizeLog2> sharded_views;
+
+  /** \brief This device's paired device entries.
+   */
+  std::array<PageDeviceEntry*, kMaxPageDevicePairings> paired_device_entry;
+
+  /** \brief If this is a paired device, the primary for each pairing.
+   */
+  std::array<PageDeviceEntry*, kMaxPageDevicePairings> is_paired_device_for;
+
+  /** \brief This device's paired device ids.
+   */
+  std::array<page_id_int, kMaxPageDevicePairings> paired_device_id;
+
+  /** \brief This device's paired device ids.
+   */
+  std::array<page_id_int, kMaxPageDevicePairings> is_paired_device_for_id;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief Returns the page size of this device.
+   */
+  PageSize page_size() const
+  {
+    return PageSize{u32{1} << this->page_size_log2};
+  }
+};
+
+}  // namespace llfs

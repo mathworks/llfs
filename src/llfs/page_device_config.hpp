@@ -175,7 +175,7 @@ using NestedPageDeviceConfig =
 struct PackedPageDeviceConfig : PackedConfigSlotHeader {
   static constexpr usize kSize = PackedConfigSlot::kSize;
 
-  static constexpr u8 LAST_IN_FILE_MASK = 0b00000001;
+  static constexpr u8 kLastInFileMask = 0b00000001;
 
   // The offset in bytes of the first page, relative to this structure.
   //
@@ -213,9 +213,9 @@ struct PackedPageDeviceConfig : PackedConfigSlotHeader {
   PackedPageDeviceConfig set_last_in_file(bool last_in_file)
   {
     if (last_in_file) {
-      this->options_mask |= PackedPageDeviceConfig::LAST_IN_FILE_MASK;
+      this->options_mask |= PackedPageDeviceConfig::kLastInFileMask;
     } else {
-      this->options_mask &= ~PackedPageDeviceConfig::LAST_IN_FILE_MASK;
+      this->options_mask &= ~PackedPageDeviceConfig::kLastInFileMask;
     }
     return *this;
   }
@@ -224,7 +224,7 @@ struct PackedPageDeviceConfig : PackedConfigSlotHeader {
   //
   bool is_last_in_file() const
   {
-    return this->options_mask & PackedPageDeviceConfig::LAST_IN_FILE_MASK;
+    return (this->options_mask & PackedPageDeviceConfig::kLastInFileMask) != 0;
   }
 };
 

@@ -12,12 +12,14 @@
 
 #include <llfs/config.hpp>
 //
+#include <llfs/api_types.hpp>
 #include <llfs/int_types.hpp>
 #include <llfs/page_cache_slot.hpp>
 #include <llfs/page_id_factory.hpp>
 #include <llfs/page_view.hpp>
 
 #include <batteries/async/latch.hpp>
+#include <batteries/small_fn.hpp>
 
 #include <boost/intrusive_ptr.hpp>
 
@@ -72,7 +74,13 @@ class PageDeviceCache
    * called to start the process of loading the page data into the slot.
    */
   batt::StatusOr<PageCacheSlot::PinnedRef> find_or_insert(
-      PageId key, const std::function<void(const PageCacheSlot::PinnedRef&)>& initialize);
+      PageId key, PageSize page_size, LruPriority lru_priority,
+      const batt::SmallFn<void(const PageCacheSlot::PinnedRef&)>& initialize);
+
+  /** \brief Attempt to find and pin the given page in the cache.  No attempt to load the page will
+   * be made in this case if it is not found in the cache.
+   */
+  batt::StatusOr<PageCacheSlot::PinnedRef> try_find(PageId key, LruPriority lru_priority);
 
   /** \brief Removes the specified key from this cache, if it is currently present.
    */
@@ -83,13 +91,21 @@ class PageDeviceCache
   /** \brief Returns a reference to the atomic cache slot index integer for the given physical page
    * on the device for this cache.
    */
-  std::atomic<usize>& get_slot_index_ref(i64 physical_page);
+  BATT_ALWAYS_INLINE std::atomic<PageCacheSlot*>& get_slot_ptr_ref(i64 physical_page)
+  {
+    static_assert(sizeof(std::atomic<PageCacheSlot*>) == sizeof(PageCacheSlot*));
+    static_assert(alignof(std::atomic<PageCacheSlot*>) == alignof(PageCacheSlot*));
+
+    BATT_CHECK_LT((usize)physical_page, this->cache_.size());
+
+    return reinterpret_cast<std::atomic<PageCacheSlot*>&>(this->cache_[physical_page]);
+  }
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   const PageIdFactory page_ids_;
   boost::intrusive_ptr<PageCacheSlot::Pool> slot_pool_;
-  std::vector<usize> cache_;
+  std::vector<PageCacheSlot*> cache_;
 };
 
 }  //namespace llfs

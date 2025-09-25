@@ -663,7 +663,8 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
    */ // 37/44
   template <typename Handler>
   void async_write_buf(fuse_req_t req, fuse_ino_t ino, const FuseImplBase::ConstBufferVec& bufv,
-                       FileOffset offset, FuseFileHandle fh, Handler&& handler)
+                       FileOffset offset, FuseFileHandle fh, std::shared_ptr<char[]>&& storage,
+                       Handler&& handler)
   {
     // TODO [tastolfi 2023-07-12]  print bufv
     //
@@ -673,8 +674,9 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(offset)  //
                  << BATT_INSPECT(fh);
 
-    batt::Status push_status = this->work_queue_->push_job(
-        [this, req, ino, bufv, offset, fh, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, ino, bufv, offset, fh, storage = std::move(storage),
+                                     handler = BATT_FORWARD(handler)] {
           BATT_FORWARD(handler)(this->derived_this()->write_buf(req, ino, bufv, offset, fh));
         });
 

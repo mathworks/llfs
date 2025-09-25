@@ -12,7 +12,8 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*static*/ auto FuseImplBase::const_buffer_vec_from_bufv(const fuse_bufvec& bufv)
+/*static*/ auto FuseImplBase::const_buffer_vec_from_bufv(fuse_bufvec& bufv,
+                                                         std::shared_ptr<char[]>* storage)
     -> batt::StatusOr<ConstBufferVec>
 {
   if (bufv.idx > bufv.count) {
@@ -21,18 +22,93 @@ namespace llfs {
 
   ConstBufferVec vec;
 
+  {
+    // First pass is to calculate total storage space to allocate, if any.
+    //
+    bool storage_needed = false;
+    usize total_size = 0;
+    for (usize i = bufv.idx; i < bufv.count; ++i) {
+      const fuse_buf& buf = bufv.buf[i];
+      total_size += buf.size;
+      if (buf.flags & FUSE_BUF_IS_FD) {
+        storage_needed = true;
+      }
+    }
+
+    // Allocate some temporary memory if we will be reading from fds.
+    //
+    if (storage_needed) {
+      BATT_CHECK_NOT_NULLPTR(storage);
+      storage->reset(new char[total_size]);
+
+      fuse_bufvec tmp{
+          .count = 1,
+          .idx = 0,
+          .off = 0,
+          .buf = {{
+              .size = total_size,
+              .flags = (fuse_buf_flags)0,
+              .mem = storage->get(),
+              .fd = 0,
+              .pos = 0,
+          }},
+      };
+
+      const isize n_copied = fuse_buf_copy(&tmp, &bufv, /*flags=*/(fuse_buf_copy_flags)0);
+      if (n_copied < 0) {
+        return {batt::status_from_errno(-n_copied)};
+      }
+      BATT_CHECK_EQ(n_copied, total_size);
+
+      return const_buffer_vec_from_bufv(tmp, nullptr);
+    }
+  }
+
+  // No copy/storage needed; build `vec`.
+  //
   usize offset = bufv.off;
   for (usize i = bufv.idx; i < bufv.count; ++i, offset = 0) {
     const fuse_buf& buf = bufv.buf[i];
 
     if (buf.flags & (FUSE_BUF_IS_FD | FUSE_BUF_FD_SEEK | FUSE_BUF_FD_RETRY)) {
+      LLFS_VLOG(1) << "buf=" << DumpFuseBufInfo{buf} << BATT_INSPECT(bufv.count) << BATT_INSPECT(i);
       return {batt::Status{batt::StatusCode::kUnimplemented}};
     }
 
+    BATT_CHECK_LE(offset, buf.size);
     vec.emplace_back(batt::ConstBuffer{buf.mem, buf.size} + offset);
   }
 
   return {std::move(vec)};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+std::ostream& operator<<(std::ostream& out, const DumpFuseBufInfo& t)
+{
+  return out << "fuse_buf{.size=" << t.buf.size               //
+             << ", .flags=" << DumpFuseBufFlags{t.buf.flags}  //
+             << ", .mem=" << t.buf.mem                        //
+             << ", .fd=" << t.buf.fd                          //
+             << ", .pos=" << t.buf.pos                        //
+             << ",}";
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+std::ostream& operator<<(std::ostream& out, const DumpFuseBufFlags& t)
+{
+  out << (int)t.flags << "{";
+  if (t.flags & FUSE_BUF_IS_FD) {
+    out << "is_fd,";
+  }
+  if (t.flags & FUSE_BUF_FD_SEEK) {
+    out << "fd_seek,";
+  }
+  if (t.flags & FUSE_BUF_FD_RETRY) {
+    out << "fd_retry,";
+  }
+  return out << "}";
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

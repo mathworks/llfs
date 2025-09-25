@@ -13,6 +13,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <llfs/filesystem.hpp>
 #include <llfs/fuse.hpp>
 #include <llfs/worker_task.hpp>
 
@@ -225,10 +226,22 @@ TEST_F(MemFuseTest, CreateFile)
   {
     std::ofstream ofs{this->mountpoint_ / "file.txt"};
     ofs << data1;
+
+    ASSERT_TRUE(ofs.good());
   }
   {
-    std::ofstream ofs{this->mountpoint_ / "file2.txt"};
-    ofs << data2;
+    batt::StatusOr<int> fd =
+        llfs::create_file_read_write((this->mountpoint_ / "file2.txt").string());
+
+    ASSERT_TRUE(fd.ok()) << BATT_INSPECT(fd);
+
+    auto on_scope_exit = batt::finally([&] {
+      llfs::close_fd(*fd).IgnoreError();
+    });
+
+    batt::Status wr_status = llfs::write_fd(*fd, llfs::ConstBuffer{data2.data(), data2.size()}, 0);
+
+    ASSERT_TRUE(wr_status.ok()) << BATT_INSPECT(wr_status);
   }
 
   // Expect to find the file we created.

@@ -12,41 +12,80 @@ on:
 concurrency: custom_runner
 
 jobs:
+  #+++++++++++-+-+--+----- --- -- -  -  -   -
   install:
     runs-on: self-hosted
+    env:
+      CONAN_HOME: /cache/.conan2
+      XDG_CACHE_HOME: /cache/.ccache
+    container:
+      image: registry.gitlab.com/batteriescpp/batteries:v0.60.2-devel.linux_gcc11_amd64
+      volumes:
+        - /actions-runner-cache:/cache
     steps:
+      - name: Clean workspace
+        run: rm -rf /__w/llfs/llfs && mkdir -p /__w/llfs/llfs
       - name: Checkout repository
         uses: actions/checkout@master
         with:
           submodules: recursive
       - name: make_install
-        run: script/run-with-docker.sh make BUILD_TYPE=Release install
+        run: make BUILD_TYPE=Release install
+  #+++++++++++-+-+--+----- --- -- -  -  -   -
   build:
     runs-on: self-hosted
-    needs: install
+    env:
+      CONAN_HOME: /cache/.conan2
+      XDG_CACHE_HOME: /cache/.ccache
+    container:
+      image: registry.gitlab.com/batteriescpp/batteries:v0.60.2-devel.linux_gcc11_amd64
+      volumes:
+        - /actions-runner-cache:/cache
+    needs:
+      - install
     steps:
       - name: make_build
-        run: script/run-with-docker.sh make BUILD_TYPE=Release build
+        run: make BUILD_TYPE=Release build
+  #+++++++++++-+-+--+----- --- -- -  -  -   -
   test:
     runs-on: self-hosted
-    needs: build
+    env:
+      CONAN_HOME: /cache/.conan2
+      XDG_CACHE_HOME: /cache/.ccache
+    container:
+      image: registry.gitlab.com/batteriescpp/batteries:v0.60.2-devel.linux_gcc11_amd64
+      volumes:
+        - /actions-runner-cache:/cache
+      options: --ulimit memlock=-1:-1 --cap-add SYS_ADMIN --device /dev/fuse --privileged
+    needs:
+      - install
+      - build
     steps:
       - name: make_test
-        run: script/run-with-docker.sh make BUILD_TYPE=Release test
+        run: ls -al /dev ; ls -al /dev/fuse ; make BUILD_TYPE=Release test
+  #+++++++++++-+-+--+----- --- -- -  -  -   -
   release:
     if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
     runs-on: self-hosted
+    env:
+      CONAN_HOME: /cache/.conan2
+      XDG_CACHE_HOME: /cache/.ccache
+    container:
+      image: registry.gitlab.com/batteriescpp/batteries:v0.60.2-devel.linux_gcc11_amd64
+      volumes:
+        - /actions-runner-cache:/cache
     needs:
+      - install
       - build
       - test
     steps:
       - name: make_export-pkg
-        run: script/run-with-docker.sh make BUILD_TYPE=Release export-pkg
+        run: make BUILD_TYPE=Release export-pkg
       - name: publish-release
         env:
           RELEASE_CONAN_REMOTE: ${{ vars.RELEASE_CONAN_REMOTE }}
           RELEASE_CONAN_LOGIN_USERNAME: ${{ vars.RELEASE_CONAN_LOGIN_USERNAME }}
           RELEASE_CONAN_PASSWORD: ${{ secrets.RELEASE_CONAN_PASSWORD }}
           EXPORT_PKG_ONLY: 1
-        run: script/run-with-docker.sh script/publish-release.sh
+        run: script/publish-release.sh
   

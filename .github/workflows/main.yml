@@ -25,6 +25,9 @@ jobs:
         with:
           submodules: recursive
       #----- --- -- -  -  -   -
+      - name: Set scripts permissions
+        run: chmod +x scripts/ci-build-with-docker.sh && scripts/ci-build.sh
+      #----- --- -- -  -  -   -
       - name: Build and test
         env:
           CACHE_CONAN_REMOTE: ${{ vars.CACHE_CONAN_REMOTE }}

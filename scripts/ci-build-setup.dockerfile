@@ -2,6 +2,10 @@
 # Extra User Commands to be run to set up a container-based ci build.
 #
 
+RUN apt-get update && \
+    apt-get install --no-install-recommends -y \
+    fuse3
+
 #----- --- -- -  -  -   -
 # Install cor launcher.
 #

@@ -69,6 +69,12 @@ struct JobSizeSpec {
   usize calculate_grant_size() const noexcept;
 };
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/** \brief For testing only; allows a job to be committed to page devices without having a Volume.
+ */
+Status unsafe_commit_job(std::unique_ptr<PageCacheJob>&& job) noexcept;
+
 }  // namespace llfs
 
 #endif  // LLFS_APPENDABLE_JOB_HPP

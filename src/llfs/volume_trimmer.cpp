@@ -281,15 +281,24 @@ Status VolumeTrimmer::run()
                    << BATT_INSPECT(this->metadata_refresher_.grant_required())
                    << BATT_INSPECT(this->metadata_refresher_.grant_size());
 
-      BATT_REQUIRE_OK(this->metadata_refresher_.invalidate(*trim_upper_bound))
-          << this->error_log_level_.load();
+      {
+        BATT_DEBUG_INFO("Invalidating metadata");
+
+        BATT_REQUIRE_OK(this->metadata_refresher_.invalidate(*trim_upper_bound))
+            << this->error_log_level_.load();
+      }
 
       //+++++++++++-+-+--+----- --- -- -  -  -   -
       // Make sure all Volume metadata has been refreshed.
       //
       if (this->metadata_refresher_.needs_flush()) {
+        Optional<SlotRange> metadata_slot_range;
+        BATT_DEBUG_INFO("Refreshing metadata" << BATT_INSPECT(metadata_slot_range)
+                                              << BATT_INSPECT(sync_point));
+
         StatusOr<SlotRange> metadata_slots = this->metadata_refresher_.flush();
         BATT_REQUIRE_OK(metadata_slots) << this->error_log_level_.load();
+        metadata_slot_range = *metadata_slots;
 
         clamp_min_slot(&sync_point, metadata_slots->upper_bound);
       }
@@ -300,6 +309,8 @@ Status VolumeTrimmer::run()
       //  crash, then forget there was a trim; this could exhaust available grant!
       //
       if (trimmed_region_info->requires_trim_event_slot()) {
+        BATT_DEBUG_INFO("Writing TrimEvent");
+
         LLFS_VLOG(1) << "[VolumeTrimmer] write_trim_event";
         //
         BATT_ASSIGN_OK_RESULT(
@@ -313,6 +324,8 @@ Status VolumeTrimmer::run()
       // Sync if necessary.
       //
       if (sync_point) {
+        BATT_DEBUG_INFO("Flushing TrimEvent and metadata");
+
         LLFS_VLOG(1) << "Flushing trim event," << BATT_INSPECT(*sync_point) << ";"
                      << BATT_INSPECT(trimmed_region_info->slot_range);
         //
@@ -325,6 +338,8 @@ Status VolumeTrimmer::run()
     //+++++++++++-+-+--+----- --- -- -  -  -   -
     // Trim the log.
     //
+    BATT_DEBUG_INFO("Trimming: " << trimmed_region_info->slot_range);
+
     const slot_offset_type new_trim_target = trimmed_region_info->slot_range.upper_bound;
 
     BATT_DEBUG_INFO("VolumeTrimmer -> trim_volume_log;" << BATT_INSPECT(this->name_));

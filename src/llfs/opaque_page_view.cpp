@@ -78,13 +78,6 @@ Optional<KeyView> OpaquePageView::max_key() const /*override*/
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-std::shared_ptr<PageFilter> OpaquePageView::build_filter() const /*override*/
-{
-  return std::make_shared<NullPageFilter>(this->page_id());
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
 void OpaquePageView::dump_to_ostream(std::ostream& out) const /*override*/
 {
   out << "(?)";

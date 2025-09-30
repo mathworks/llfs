@@ -33,8 +33,8 @@ LoadingPageTracer::~LoadingPageTracer()
 batt::StatusOr<batt::BoxedSeq<PageId>> LoadingPageTracer::trace_page_refs(
     PageId from_page_id) noexcept
 {
-  batt::StatusOr<PinnedPage> status_or_page =
-      this->page_loader_.get_page(from_page_id, OkIfNotFound{this->ok_if_not_found_});
+  batt::StatusOr<PinnedPage> status_or_page = this->page_loader_.load_page(
+      from_page_id, PageLoadOptions{OkIfNotFound{this->ok_if_not_found_}});
   BATT_REQUIRE_OK(status_or_page);
 
   this->pinned_page_ = std::move(*status_or_page);

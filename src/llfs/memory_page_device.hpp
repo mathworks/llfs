@@ -32,6 +32,9 @@ class MemoryPageDevice : public PageDevice
   explicit MemoryPageDevice(page_device_id_int device_id, PageCount capacity,
                             PageSize page_size) noexcept;
 
+  std::unique_ptr<PageDevice> make_sharded_view(page_device_id_int device_id,
+                                                PageSize shard_size) override;
+
   PageIdFactory page_ids() override;
 
   PageSize page_size() override;
@@ -45,6 +48,30 @@ class MemoryPageDevice : public PageDevice
   void drop(PageId page_id, WriteHandler&& handler) override;
 
  private:
+  class ShardedView : public PageDevice
+  {
+   public:
+    explicit ShardedView(MemoryPageDevice& real_device, page_device_id_int device_id,
+                         PageSize shard_size) noexcept;
+
+    PageIdFactory page_ids() override;
+
+    PageSize page_size() override;
+
+    StatusOr<std::shared_ptr<PageBuffer>> prepare(PageId page_id) override;
+
+    void write(std::shared_ptr<const PageBuffer>&& buffer, WriteHandler&& handler) override;
+
+    void read(PageId page_id, ReadHandler&& handler) override;
+
+    void drop(PageId page_id, WriteHandler&& handler) override;
+
+   private:
+    MemoryPageDevice& real_device_;
+    const PageIdFactory page_ids_;
+    PageSize shard_size_;
+  };
+
   struct PageRec {
     std::shared_ptr<const PageBuffer> page;
     page_generation_int generation = 0;

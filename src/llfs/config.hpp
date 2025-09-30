@@ -50,9 +50,42 @@ namespace llfs {
 //
 //#define LLFS_DISABLE_IO_URING
 
-// The number of bits in a page_id int allocated to page device.
+// The size of a page id, in bits.
 //
-constexpr usize kPageDeviceIdBits = 24;
+constexpr usize kPageIdBits = 64;
+
+// The number of bits in a page id int allocated to page device.
+//
+constexpr usize kPageIdDeviceBits = 8;
+
+// The number of bits in a page id allocated to generation number.
+//
+constexpr usize kPageIdGenerationBits = 24;
+
+// The number of bits in a page id allocated to page address (physical).
+//
+constexpr usize kPageIdAddressBits = 32;
+
+// The three components of a page id, device:generation:address, should add up to the total
+// number of bits.
+//
+static_assert(kPageIdDeviceBits + kPageIdGenerationBits + kPageIdAddressBits == kPageIdBits);
+
+// The left bit-shift of the address component of a page id.
+//
+constexpr usize kPageIdAddressShift = 0;
+
+// The left bit-shift of the generation component of a page id.
+//
+constexpr usize kPageIdGenerationShift = kPageIdAddressBits + kPageIdAddressShift;
+
+// The left bit-shift of the device component of a page id.
+//
+constexpr usize kPageIdDeviceShift = kPageIdGenerationBits + kPageIdGenerationShift;
+
+// Sanity check.
+//
+static_assert(kPageIdDeviceBits + kPageIdDeviceShift == kPageIdBits);
 
 // The queue discipline for page pool allocation.
 //
@@ -88,22 +121,24 @@ inline std::atomic<bool>& suppress_log_output_for_test()
   return value_;
 }
 
-// The device-level log page size and max atomic write size.
+// When doing direct I/O, buffers must be a multiple of this number.
 //
-constexpr usize kLogPageSize = 512;
-constexpr usize kLogPageSizeLog2 = 9;
+constexpr usize kDirectIOBlockSize = 4096;
+constexpr usize kDirectIOBlockSizeLog2 = 12;
 
-BATT_STATIC_ASSERT_EQ(usize{1} << kLogPageSizeLog2, kLogPageSize);
+BATT_STATIC_ASSERT_EQ(usize{1} << kDirectIOBlockSizeLog2, kDirectIOBlockSize);
 
-constexpr usize kLogAtomicWriteSize = 512;
-constexpr usize kLogAtomicWriteSizeLog2 = 9;
+// When doing direct I/O, buffers must be aligned to this number, in memory and on device.
+//
+constexpr usize kDirectIOBlockAlign = 4096;
+constexpr usize kDirectIOBlockAlignLog2 = 12;
 
-BATT_STATIC_ASSERT_EQ(usize{1} << kLogAtomicWriteSizeLog2, kLogAtomicWriteSize);
+BATT_STATIC_ASSERT_EQ(usize{1} << kDirectIOBlockAlignLog2, kDirectIOBlockAlign);
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 // Controls whether a pool of page buffers is maintained by class PageBuffer to speed up allocation.
 //
-constexpr bool kEnablePageBufferPool = true;
+constexpr bool kEnablePageBufferPoolByDefault = true;
 
 // The maximum number of page buffers of a given size to cache (in order to avoid/reduce heap
 // allocation).
@@ -145,6 +180,10 @@ constexpr bool kFastIoRingLogDeviceInit = true;
 // page recovery when generation == 0).
 //
 constexpr bool kFastIoRingPageDeviceInit = true;
+
+/** \brief Define as 1 to enable tracking of new page events, 0 to disable.
+ */
+#define LLFS_TRACK_NEW_PAGE_EVENTS 0
 
 }  // namespace llfs
 

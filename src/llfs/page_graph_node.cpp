@@ -78,7 +78,7 @@ StatusOr<PinnedPage> PageGraphNodeBuilder::build(PageCacheJob& job) &&
   BATT_ASSIGN_OK_RESULT(std::shared_ptr<PageGraphNodeView> view,
                         PageGraphNodeView::make_shared(this->page_buffer_));
 
-  return job.pin_new(std::move(view), /*callers=*/0);
+  return job.pin_new(std::move(view), LruPriority{0}, /*callers=*/0);
 }
 
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------

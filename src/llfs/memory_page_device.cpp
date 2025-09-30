@@ -26,6 +26,14 @@ MemoryPageDevice::MemoryPageDevice(page_device_id_int device_id, PageCount capac
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+std::unique_ptr<PageDevice> MemoryPageDevice::make_sharded_view(page_device_id_int device_id,
+                                                                PageSize shard_size) /*override*/
+{
+  return std::make_unique<MemoryPageDevice::ShardedView>(*this, device_id, shard_size);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 PageIdFactory MemoryPageDevice::page_ids()
 {
   return this->page_ids_;
@@ -97,7 +105,7 @@ void MemoryPageDevice::read(PageId page_id, ReadHandler&& handler)
       not_found = true;
       not_found_reason = "generations do not match";
     }
-    if (rec.page == nullptr) {
+    if (rec.page == nullptr && requested_generation <= current_generation_on_device) {
       not_found = true;
       not_found_reason = "page has been dropped";
     }
@@ -173,6 +181,95 @@ void MemoryPageDevice::drop(PageId page_id, WriteHandler&& handler)
   }();
 
   handler(result);
+}
+
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*explicit*/ MemoryPageDevice::ShardedView::ShardedView(MemoryPageDevice& real_device,
+                                                        page_device_id_int device_id,
+                                                        PageSize shard_size) noexcept
+    : real_device_{real_device}
+    , page_ids_{PageCount{
+                    (real_device.page_size_ * real_device.page_ids_.get_physical_page_count()) /
+                    shard_size},
+                device_id}
+    , shard_size_{shard_size}
+{
+  BATT_CHECK_EQ(batt::bit_count(shard_size), 1);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+PageIdFactory MemoryPageDevice::ShardedView::page_ids() /*override*/
+{
+  return this->page_ids_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+PageSize MemoryPageDevice::ShardedView::page_size() /*override*/
+{
+  return this->shard_size_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+StatusOr<std::shared_ptr<PageBuffer>> MemoryPageDevice::ShardedView::prepare(
+    PageId page_id [[maybe_unused]]) /*override*/
+{
+  return {batt::StatusCode::kUnimplemented};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void MemoryPageDevice::ShardedView::write(std::shared_ptr<const PageBuffer>&& buffer
+                                          [[maybe_unused]],
+                                          WriteHandler&& handler) /*override*/
+{
+  handler(Status{batt::StatusCode::kUnimplemented});
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void MemoryPageDevice::ShardedView::read(PageId page_id, ReadHandler&& handler) /*override*/
+{
+  const i64 shard_addr = this->page_ids_.get_physical_page(page_id);
+  const i64 byte_addr = shard_addr * this->shard_size_;
+  const i64 full_page = byte_addr / this->real_device_.page_size();
+  const i64 page_offset = byte_addr % this->real_device_.page_size();
+
+  LLFS_VLOG(1) << "ShardedView::read(" << page_id << ")" << std::hex << BATT_INSPECT(shard_addr)
+               << std::hex << BATT_INSPECT(byte_addr) << std::hex << BATT_INSPECT(full_page)
+               << std::hex << BATT_INSPECT(page_offset) << std::dec
+               << BATT_INSPECT(this->shard_size_);
+
+  BATT_CHECK_EQ(page_offset % this->shard_size_, 0);
+
+  std::shared_ptr<PageBuffer> buffer = PageBuffer::allocate(this->shard_size_, page_id);
+
+  {  //----- --- -- -  -  -   -
+    batt::ScopedLock<MemoryPageDevice::State> locked_state{this->real_device_.state_};
+
+    BATT_CHECK_LT(full_page, locked_state->page_recs.size());
+
+    auto& page_rec = locked_state->page_recs[full_page];
+
+    BATT_CHECK_NOT_NULLPTR(page_rec.page);
+
+    std::memcpy(buffer.get(), advance_pointer(page_rec.page.get(), page_offset), this->shard_size_);
+  }  // unlock
+
+  handler(std::move(buffer));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void MemoryPageDevice::ShardedView::drop(PageId page_id [[maybe_unused]],
+                                         WriteHandler&& handler) /*override*/
+{
+  handler(Status{batt::StatusCode::kUnimplemented});
 }
 
 }  // namespace llfs

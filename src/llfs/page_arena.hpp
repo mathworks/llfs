@@ -46,19 +46,29 @@ class PageArena
 
   PageAllocator& allocator() const
   {
+    BATT_CHECK_NOT_NULLPTR(this->allocator_);
     return *this->allocator_;
+  }
+
+  bool has_allocator() const
+  {
+    return this->allocator_ != nullptr;
   }
 
   void halt()
   {
     // this->device_->close();  TODO [tastolfi 2021-04-07]
-    this->allocator_->halt();
+    if (this->allocator_) {
+      this->allocator_->halt();
+    }
   }
 
   void join()
   {
     // this->device_->join();  TODO [tastolfi 2021-04-07]
-    this->allocator_->join();
+    if (this->allocator_) {
+      this->allocator_->join();
+    }
   }
 
  private:

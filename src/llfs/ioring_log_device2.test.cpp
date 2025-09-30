@@ -42,15 +42,15 @@ class IoRingLogDevice2SimTest : public ::testing::Test
 {
  public:
   static constexpr usize kNumSeeds = 250 * 1000;
-  static constexpr u64 kTestLogSize = 16 * kKiB;
+  static constexpr u64 kTestLogSize = 128 * kKiB;
   static constexpr i64 kTestLogBegin = 7 * 4 * kKiB;
   static constexpr i64 kTestLogEnd =
       kTestLogBegin + 4 * kKiB /*control block (aligned)*/ + kTestLogSize;
   static constexpr usize kTestMinSlotSize = 50;
-  static constexpr usize kTestMaxSlotSize = 1500;
+  static constexpr usize kTestMaxSlotSize = 6000;
   static constexpr usize kNumSlots = 50;
-  static constexpr usize kDevicePageSize = 512;
-  static constexpr usize kDataAlignment = 4096;
+  static constexpr usize kDevicePageSize = llfs::kDirectIOBlockSize;
+  static constexpr usize kDataAlignment = llfs::kDirectIOBlockAlign;
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
@@ -583,8 +583,8 @@ TEST(IoRingLogDevice2Test, Benchmark)
     llfs::IoRingLogConfig2 config{
         .control_block_offset = 0,
         .log_capacity = log_size,
-        .device_page_size_log2 = 9,
-        .data_alignment_log2 = 12,
+        .device_page_size_log2 = llfs::kDirectIOBlockSizeLog2,
+        .data_alignment_log2 = llfs::kDirectIOBlockAlignLog2,
     };
 
     llfs::StatusOr<int> status_or_fd = [&] {

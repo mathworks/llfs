@@ -12,6 +12,7 @@
 
 #include <llfs/config.hpp>
 //
+#include <llfs/testing/test_config.hpp>
 
 #include <llfs/int_types.hpp>
 

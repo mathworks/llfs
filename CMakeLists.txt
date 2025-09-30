@@ -21,10 +21,6 @@ set(CMAKE_SKIP_INSTALL_RPATH TRUE)
 #
 add_definitions("-fno-diagnostics-color")
 
-# Set options needed for stack tracing.
-#
-add_compile_options(-D_GNU_SOURCE -fno-omit-frame-pointer)
-
 # Set warning/error level for the compilation.
 #
 add_compile_options(-Wall -Wextra -Werror -Werror=switch-enum -Wswitch-enum)
@@ -43,13 +39,6 @@ endif()
 add_compile_definitions(_BITS_UIO_EXT_H=1)
 
 #==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -               
-
-set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer")
-set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer")
-
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
-set (CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -fno-omit-frame-pointer")
-
 if(APPLE)
   set(BACKTRACE_DEPENDENCY "")
 else()

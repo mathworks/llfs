@@ -26,7 +26,7 @@ jobs:
           submodules: recursive
       #----- --- -- -  -  -   -
       - name: Set scripts permissions
-        run: chmod +x scripts/ci-build-with-docker.sh && scripts/ci-build.sh
+        run: chmod +x scripts/ci-build-with-docker.sh && chmod +x scripts/ci-build.sh
       #----- --- -- -  -  -   -
       - name: Build and test
         env:

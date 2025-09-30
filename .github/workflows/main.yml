@@ -32,28 +32,19 @@ jobs:
           CACHE_CONAN_PASSWORD: ${{ secrets.CACHE_CONAN_PASSWORD }}
         run: scripts/ci-build-with-docker.sh
   #+++++++++++-+-+--+----- --- -- -  -  -   -
-  release:
-    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
-    runs-on: self-hosted
-    env:
-      CONAN_HOME: /cache/.conan2
-      XDG_CACHE_HOME: /cache/.ccache
-    container:
-      image: registry.gitlab.com/batteriescpp/batteries:v0.60.2-devel.linux_gcc11_amd64
-      volumes:
-        - /actions-runner-cache:/cache
-    needs:
-      - install
-      - build
-      - test
-    steps:
-      - name: make_export-pkg
-        run: make BUILD_TYPE=Release export-pkg
-      - name: publish-release
-        env:
-          RELEASE_CONAN_REMOTE: ${{ vars.RELEASE_CONAN_REMOTE }}
-          RELEASE_CONAN_LOGIN_USERNAME: ${{ vars.RELEASE_CONAN_LOGIN_USERNAME }}
-          RELEASE_CONAN_PASSWORD: ${{ secrets.RELEASE_CONAN_PASSWORD }}
-          EXPORT_PKG_ONLY: 1
-        run: script/publish-release.sh
-  
+   #release:
+  #  if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+  #  runs-on: self-hosted
+  #  needs:
+  #    - build
+  #    - test
+  #  steps:
+  #    - name: make_export-pkg
+  #      run: script/run-with-docker.sh make BUILD_TYPE=Release export-pkg
+  #    - name: publish-release
+  #      env:
+  #        RELEASE_CONAN_REMOTE: ${{ vars.RELEASE_CONAN_REMOTE }}
+  #        RELEASE_CONAN_LOGIN_USERNAME: ${{ vars.RELEASE_CONAN_LOGIN_USERNAME }}
+  #        RELEASE_CONAN_PASSWORD: ${{ secrets.RELEASE_CONAN_PASSWORD }}
+  #        EXPORT_PKG_ONLY: 1
+  #      run: script/run-with-docker.sh script/publish-release.sh

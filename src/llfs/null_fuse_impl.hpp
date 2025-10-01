@@ -510,7 +510,8 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
    */ // 37/44
   template <typename Handler>
   void async_write_buf(fuse_req_t req, fuse_ino_t ino, const FuseImplBase::ConstBufferVec& bufv,
-                       FileOffset offset, FuseFileHandle fh, Handler&& handler)
+                       FileOffset offset, FuseFileHandle fh, std::shared_ptr<char[]>&& storage,
+                       Handler&& handler)
   {
     LLFS_LOG_WARNING() << "Not Implemented: " << BATT_THIS_FUNCTION;
 
@@ -519,6 +520,7 @@ class NullFuseImpl : public FuseImpl<NullFuseImpl>
     (void)bufv;
     (void)offset;
     (void)fh;
+    (void)storage;
 
     BATT_FORWARD(handler)(batt::StatusOr<usize>{batt::Status{batt::StatusCode::kUnimplemented}});
   }

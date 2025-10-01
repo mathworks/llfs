@@ -7,7 +7,7 @@ PROJECT_DIR=$(realpath $(dirname "${SCRIPT_DIR}"))
 
 # Run the ci-build.sh script using docker.
 #
-ROOT_IMAGE=registry.gitlab.com/batteriesincluded/batt-docker/batteries-debian12-build-tools:0.5.0
+ROOT_IMAGE=registry.gitlab.com/batteriescpp/batteries:v0.60.2-devel.linux_gcc11_amd64
 USER_IMAGE=$(cor docker user-image ${ROOT_IMAGE} --user-commands-file="${SCRIPT_DIR}/ci-build-setup.dockerfile")
 
 docker run \

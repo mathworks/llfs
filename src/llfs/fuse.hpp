@@ -61,6 +61,30 @@ struct DumpFileMode {
 
 std::ostream& operator<<(std::ostream& out, const DumpFileMode t);
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+struct DumpFuseBufInfo {
+  explicit DumpFuseBufInfo(const fuse_buf& buf) noexcept : buf{buf}
+  {
+  }
+
+  const fuse_buf& buf;
+};
+
+std::ostream& operator<<(std::ostream& out, const DumpFuseBufInfo& t);
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+struct DumpFuseBufFlags {
+  explicit DumpFuseBufFlags(enum fuse_buf_flags flags) noexcept : flags{flags}
+  {
+  }
+
+  enum fuse_buf_flags flags;
+};
+
+std::ostream& operator<<(std::ostream& out, const DumpFuseBufFlags& t);
+
 //=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
 class FuseImplBase
@@ -174,7 +198,8 @@ class FuseImplBase
 
   /** \brief
    */
-  static batt::StatusOr<ConstBufferVec> const_buffer_vec_from_bufv(const fuse_bufvec& bufv);
+  static batt::StatusOr<ConstBufferVec> const_buffer_vec_from_bufv(
+      fuse_bufvec& bufv, std::shared_ptr<char[]>* storage);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

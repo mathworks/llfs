@@ -26,28 +26,29 @@ jobs:
           submodules: recursive
       #----- --- -- -  -  -   -
       - name: Set scripts permissions
-        run: chmod +x scripts/ci-build-with-docker.sh && chmod +x scripts/ci-build.sh
+        run: chmod +x scripts/ci-job-with-docker.sh && chmod +x scripts/ci-job.sh
       #----- --- -- -  -  -   -
       - name: Build and test
         env:
           CACHE_CONAN_REMOTE: ${{ vars.CACHE_CONAN_REMOTE }}
           CACHE_CONAN_LOGIN_USERNAME: ${{ vars.CACHE_CONAN_LOGIN_USERNAME }}
           CACHE_CONAN_PASSWORD: ${{ secrets.CACHE_CONAN_PASSWORD }}
-        run: scripts/ci-build-with-docker.sh
+          CI_JOB_NAME: build_and_test
+        run: scripts/ci-job-with-docker.sh
   #+++++++++++-+-+--+----- --- -- -  -  -   -
-   #release:
-  #  if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
-  #  runs-on: self-hosted
-  #  needs:
-  #    - build
-  #    - test
-  #  steps:
-  #    - name: make_export-pkg
-  #      run: script/run-with-docker.sh make BUILD_TYPE=Release export-pkg
-  #    - name: publish-release
-  #      env:
-  #        RELEASE_CONAN_REMOTE: ${{ vars.RELEASE_CONAN_REMOTE }}
-  #        RELEASE_CONAN_LOGIN_USERNAME: ${{ vars.RELEASE_CONAN_LOGIN_USERNAME }}
-  #        RELEASE_CONAN_PASSWORD: ${{ secrets.RELEASE_CONAN_PASSWORD }}
-  #        EXPORT_PKG_ONLY: 1
-  #      run: script/run-with-docker.sh script/publish-release.sh
+  release:
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
+    runs-on: self-hosted
+    defaults:
+      run:
+        shell: bash
+    needs:
+      - build_and_test
+    steps:
+      - name: Release
+        env:
+          RELEASE_CONAN_REMOTE: ${{ vars.RELEASE_CONAN_REMOTE }}
+          RELEASE_CONAN_LOGIN_USERNAME: ${{ vars.RELEASE_CONAN_LOGIN_USERNAME }}
+          RELEASE_CONAN_PASSWORD: ${{ secrets.RELEASE_CONAN_PASSWORD }}
+          CI_JOB_NAME: release
+        run: scripts/ci-job-with-docker.sh

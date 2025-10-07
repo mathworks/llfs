@@ -142,7 +142,7 @@ template <typename Derived>
  * If writeback caching is enabled, the kernel may have a
  * better idea of a file's length than the FUSE file system
  * (eg if there has been a write that extended the file size,
- * but that has not yet been passed to the filesystem.n
+ * but that has not yet been passed to the filesystem.
  *
  * In this case, the st_size value provided by the file system
  * will be ignored.
@@ -163,7 +163,7 @@ template <typename Derived>
   [[maybe_unused]] auto* impl = static_cast<FuseImpl<Derived>*>(userdata);
 
   if (fi != nullptr) {
-    LLFS_LOG_WARNING() << "(getattr) Expected fi to be NULL!";
+    LLFS_LOG_WARNING() << "(getattr) Expected fi to be NULL!" << BATT_INSPECT(*fi);
   }
 
   impl->derived_this()->async_get_attributes(req, ino, impl->make_attributes_handler(req));
@@ -1307,16 +1307,20 @@ template <typename Derived>
   BATT_CHECK_NOT_NULLPTR(fi);
   BATT_CHECK_NOT_NULLPTR(bufv);
 
+  std::shared_ptr<char[]> storage;
+
   batt::StatusOr<FuseImplBase::ConstBufferVec> buf_vec =
-      FuseImplBase::const_buffer_vec_from_bufv(*bufv);
+      FuseImplBase::const_buffer_vec_from_bufv(*bufv, &storage);
 
   if (!buf_vec.ok()) {
+    LLFS_VLOG(1) << " --" << BATT_INSPECT(buf_vec.status());
     fuse_reply_err(req, FuseImplBase::errno_from_status(buf_vec.status()));
     return;
   }
 
   impl->derived_this()->async_write_buf(req, ino, *buf_vec, FileOffset{offset},
-                                        FuseFileHandle{fi->fh}, impl->make_write_handler(req));
+                                        FuseFileHandle{fi->fh}, std::move(storage),
+                                        impl->make_write_handler(req));
 }
 
 /**

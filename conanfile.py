@@ -8,16 +8,7 @@
 
 from conan import ConanFile
 
-import os, sys, platform
-
-
-#==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-# Import batt helper utilities module.
-#
-import script.batt
-from script.batt import VISIBLE, OVERRIDE
-#
-#+++++++++++-+-+--+----- --- -- -  -  -   -
+import platform
 
 
 class LlfsConan(ConanFile):
@@ -45,13 +36,18 @@ class LlfsConan(ConanFile):
         "shared": False,
     }
 
+    python_requires = "cor_recipe_utils/0.18.2"
+    python_requires_extend = "cor_recipe_utils.ConanFileBase"
+
+    tool_requires = [
+        "cmake/[>=3.20.0 <4]",
+        "ninja/[>=1.12.1 <2]",
+    ]
+
     build_policy = "missing"
 
-    exports = [
-        "script/*.py",
-        "script/*.sh",
-    ]
     exports_sources = [
+        "CMakeLists.txt",
         "src/CMakeLists.txt",
         "src/**/*.hpp",
         "src/**/*.h",
@@ -75,6 +71,9 @@ class LlfsConan(ConanFile):
 
 
     def requirements(self):
+        VISIBLE = self.cor.VISIBLE
+        OVERRIDE = self.cor.OVERRIDE
+
         self.requires("batteries/0.60.2", **VISIBLE)
         self.requires("boost/1.88.0", **VISIBLE, **OVERRIDE)
         self.requires("cli11/2.5.0", **VISIBLE)
@@ -94,12 +93,26 @@ class LlfsConan(ConanFile):
 
     #+++++++++++-+-+--+----- --- -- -  -  -   -
 
-    from script.batt import set_version_from_git_tags as set_version
-    from script.batt import cmake_unified_src_layout  as layout
-    from script.batt import default_cmake_generate    as generate
-    from script.batt import default_cmake_build       as build
-    from script.batt import default_cmake_lib_package as package
-    from script.batt import default_lib_package_info  as package_info
-    from script.batt import default_lib_package_id    as package_id
+    def set_version(self):
+        return self.cor.set_version_from_git_tags(self)
+
+    def layout(self):
+        return self.cor.layout_cmake_unified_src(self)
+
+    def generate(self):
+        return self.cor.generate_cmake_default(self)
+
+    def build(self):
+        return self.cor.build_cmake_default(self)
+
+    def package(self):
+        return self.cor.package_cmake_install(self)
+
+    def package_info(self):
+        return self.cor.package_info_lib_default(self)
+
+    def package_id(self):
+        return self.cor.package_id_lib_default(self)
 
     #+++++++++++-+-+--+----- --- -- -  -  -   -
+

@@ -6,90 +6,20 @@
 #
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 
-cmake_minimum_required(VERSION 3.16)
-project(LLFS CXX)
+cmake_minimum_required(VERSION 3.20)
 
-# Enable link-time optimization. NOTE: currently breaks arm64 Linux (M1)
-#
-set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
+macro(LLFS_CollectHeaders TARGET_NAME TARGET_SRCDIR)
 
-# The src dir should appear in the include path.
-#
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
-set(CMAKE_INCLUDE_CURRENT_DIR_IN_INTERFACE ON)
+  file(GLOB_RECURSE ${TARGET_NAME}_Headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ./${TARGET_SRCDIR}/*.hpp ./${TARGET_SRCDIR}/*.ipp)
+  
+  foreach(_header IN LISTS ${TARGET_NAME}_Headers)
+    get_filename_component(_destination "${_header}" PATH)
+    install(FILES "${_header}" DESTINATION include/${_destination})
+  endforeach()
 
-# Generate compile_commands.json.
-#
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+endmacro()
+# LLFS_CollectHeaders
 
-# Enable ccache on systems where it is installed.
-#
-find_program(CCACHE_PROGRAM ccache)
-if (CCACHE_PROGRAM)
-  set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "${CCACHE_PROGRAM}")
-  message("Enabled ccache builds")
-endif ()
-
-#==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-# Include the options file we generated in conanfile.py.
-#
-include(${CMAKE_BINARY_DIR}/conan_find_requirements.cmake)
-
-add_definitions("-fno-diagnostics-color")
-
-# Set options needed for stack tracing.
-#
-add_compile_options(-D_GNU_SOURCE -fno-omit-frame-pointer)
-
-# Set warning/error level for the compilation.
-#
-add_compile_options(-Wall -Wextra -Werror -Werror=switch-enum -Wswitch-enum)
-add_compile_options(-Wsuggest-override -Woverloaded-virtual)
-
-# Configuration macros for Boost.
-#
-add_compile_definitions(BOOST_ERROR_CODE_HEADER_ONLY)
-if(NOT APPLE)
-    add_compile_definitions(BOOST_STACKTRACE_USE_BACKTRACE)
-endif()
-
-# liburing/2.1 Conan package conflicts with linux system headers, but
-# defining this macro resolves the conflict.
-#
-add_compile_definitions(_BITS_UIO_EXT_H=1)
-
-#==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -               
-
-set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer")
-set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer")
-
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
-set (CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -fno-omit-frame-pointer")
-
-if(APPLE)
-  set(BACKTRACE_DEPENDENCY "")
-else()
-  set(BACKTRACE_DEPENDENCY "backtrace")
-endif()
-
-enable_testing()
-
-include_directories(${GTest_INCLUDE_DIRS})
-
-# Configure libfuse.
-#
-include_directories(${libfuse_INCLUDE_DIRS})
-add_compile_definitions(FUSE_USE_VERSION=35)
-
-# Configure Google Logging.
-#
-add_compile_definitions(GLOG_CUSTOM_PREFIX_SUPPORT=1)
-
-add_custom_target(RunAllLibTests)
-
-#==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -               
-# Define a submodule of LLFS.
-#
 macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
 
   set(TARGET_DEPS ${ARGN})
@@ -159,6 +89,8 @@ macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
     LIBRARY DESTINATION lib
     )
 
+  LLFS_CollectHeaders(llfs ./llfs)
+
 endmacro()
 # LLFS_DefineLibrary
 #==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -204,6 +136,8 @@ install(TARGETS llfs_cli DESTINATION "."
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   )
+
+LLFS_CollectHeaders(llfs_cli ./llfs_cli)
 
 #=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 

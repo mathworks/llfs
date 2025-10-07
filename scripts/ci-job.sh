@@ -9,7 +9,7 @@ cor conan config install --type git https://gitlab.com/batteriesincluded/conan-c
 # Enable the local cache server.
 #
 if [ "${CACHE_CONAN_REMOTE:-}" != "" ]; then
-    cor conan remote enable "${CACHE_CONAN_REMOTE}"
+    # TODO[tastolfi 2025-10-07] - cor conan remote enable "${CACHE_CONAN_REMOTE}"
 fi
 
 # Select the build configuration.

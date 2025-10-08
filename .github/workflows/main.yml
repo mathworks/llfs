@@ -30,9 +30,9 @@ jobs:
       #----- --- -- -  -  -   -
       - name: Build and test
         env:
-          CACHE_CONAN_REMOTE: ${{ vars.CACHE_CONAN_REMOTE }}
-          CACHE_CONAN_LOGIN_USERNAME: ${{ vars.CACHE_CONAN_LOGIN_USERNAME }}
-          CACHE_CONAN_PASSWORD: ${{ secrets.CACHE_CONAN_PASSWORD }}
+          #CACHE_CONAN_REMOTE: ${{ vars.CACHE_CONAN_REMOTE }}
+          #CACHE_CONAN_LOGIN_USERNAME: ${{ vars.CACHE_CONAN_LOGIN_USERNAME }}
+          #CACHE_CONAN_PASSWORD: ${{ secrets.CACHE_CONAN_PASSWORD }}
           CI_JOB_NAME: build_and_test
         run: scripts/ci-job-with-docker.sh
   #+++++++++++-+-+--+----- --- -- -  -  -   -

@@ -33,7 +33,7 @@ case "$CI_JOB_NAME" in
     # TODO [tastolfi 2025-09-27] - Add a `cor pre-cache <options> <package_name>/<version> ...` command
     #
     cor install --clean
-    cor build   --clean
+    cor build
     cor test    --only
     ;;
   release)

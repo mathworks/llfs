@@ -5,6 +5,11 @@ set -Eeuo pipefail
 SCRIPT_DIR=$(realpath $(dirname "$0"))
 PROJECT_DIR=$(realpath $(dirname "${SCRIPT_DIR}"))
 
+echo "ci-job-with-docker.sh:"
+echo "CACHE_CONAN_REMOTE='${CACHE_CONAN_REMOTE:-}'"
+echo "CACHE_CONAN_LOGIN_USERNAME='${CACHE_CONAN_LOGIN_USERNAME:-}'"
+echo "CACHE_CONAN_PASSWORD='${CACHE_CONAN_PASSWORD:-}'"
+
 # Run the ci-job.sh script using docker.
 #
 ROOT_IMAGE=registry.gitlab.com/batteriescpp/batteries:v0.60.2-devel.linux_gcc11_amd64

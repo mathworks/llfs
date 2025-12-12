@@ -5,6 +5,8 @@ set -Eeuo pipefail
 SCRIPT_DIR=$(realpath $(dirname "$0"))
 PROJECT_DIR=$(realpath $(dirname "${SCRIPT_DIR}"))
 
+"${SCRIPT_DIR}/ci-print-diagnostics.sh" "ci-job-with-docker.sh"
+
 # Run the ci-job.sh script using docker.
 #
 ROOT_IMAGE=registry.gitlab.com/batteriescpp/batteries:v0.60.2-devel.linux_gcc11_amd64

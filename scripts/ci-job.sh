@@ -2,14 +2,19 @@
 #
 set -Eeuo pipefail
 
+SCRIPT_DIR=$(realpath $(dirname "$0"))
+PROJECT_DIR=$(realpath $(dirname "${SCRIPT_DIR}"))
+
 # Pull configs for this build.
 #
 cor conan config install --type git https://gitlab.com/batteriesincluded/conan-config/linux-gcc12-x86_64.git
 
 # Enable the local cache server.
 #
+"${SCRIPT_DIR}/ci-print-diagnostics.sh" "ci-job.sh"
 if [ "${CACHE_CONAN_REMOTE:-}" != "" ]; then
-    # TODO[tastolfi 2025-10-07] - cor conan remote enable "${CACHE_CONAN_REMOTE}"
+    cor conan remote enable "${CACHE_CONAN_REMOTE}"
+else
     echo "WARNING: Conan local cache remote disabled"
 fi
 
@@ -28,7 +33,7 @@ case "$CI_JOB_NAME" in
     # TODO [tastolfi 2025-09-27] - Add a `cor pre-cache <options> <package_name>/<version> ...` command
     #
     cor install --clean
-    cor build   --clean
+    cor build
     cor test    --only
     ;;
   release)

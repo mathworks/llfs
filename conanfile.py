@@ -74,22 +74,21 @@ class LlfsConan(ConanFile):
         VISIBLE = self.cor.VISIBLE
         OVERRIDE = self.cor.OVERRIDE
 
-        self.requires("batteries/0.60.2", **VISIBLE)
-        self.requires("boost/1.88.0", **VISIBLE, **OVERRIDE)
-        self.requires("cli11/2.5.0", **VISIBLE)
-        self.requires("glog/0.7.1", **VISIBLE, **OVERRIDE)
-        self.requires("libbacktrace/cci.20240730", **VISIBLE, **OVERRIDE)
-        self.requires("openssl/3.5.2", **VISIBLE, **OVERRIDE)
-        self.requires("xxhash/0.8.3", **VISIBLE)
+        self.requires("batteries/[>=0.62.0 <1]", **VISIBLE)
+        self.requires("boost/[>=1.88.0 <2]", **VISIBLE)
+        self.requires("cli11/[>=2.5.0 <3]", **VISIBLE)
+        self.requires("glog/[>=0.7.1 <1]", **VISIBLE)
+        self.requires("libbacktrace/[>=cci.20240730]", **VISIBLE)
+        self.requires("openssl/[>=3.6.0 <4]", **VISIBLE)
+        self.requires("xxhash/[>=0.8.3 <1]", **VISIBLE)
+        self.requires("zlib/[>=1.3.1 <2]")
 
-        self.requires("zlib/1.3.1", **OVERRIDE)
-
-        self.test_requires("gtest/1.16.0")
+        self.test_requires("gtest/[>=1.16.0 <2]")
         
         if platform.system() == "Linux":
-            self.requires("liburing/2.11", **VISIBLE)
-            self.requires("libfuse/3.16.2", **VISIBLE)
-            self.requires("libunwind/1.8.1", **VISIBLE, **OVERRIDE)
+            self.requires("liburing/[>=2.11 <3]", **VISIBLE)
+            self.requires("libfuse/[>=3.16.2 <4]", **VISIBLE)
+            self.requires("libunwind/[>=1.8.1 <2]", **VISIBLE)
 
     #+++++++++++-+-+--+----- --- -- -  -  -   -
 

@@ -412,28 +412,24 @@ std::unique_ptr<PageCacheJob> PageCache::new_job()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<PinnedPage> PageCache::allocate_page_of_size(PageSize size,
-                                                      batt::WaitForResource wait_for_resource,
-                                                      LruPriority lru_priority, u64 callers,
-                                                      u64 job_id,
-                                                      const batt::CancelToken& cancel_token)
+StatusOr<PinnedPage> PageCache::allocate_page_of_size(
+    PageSize size, batt::WaitForResource wait_for_resource, LruPriority lru_priority,
+    PageCacheOvercommit& overcommit, u64 callers, u64 job_id, const batt::CancelToken& cancel_token)
 {
   const PageSizeLog2 size_log2 = log2_ceil(size);
   BATT_CHECK_EQ(usize{1} << size_log2, size) << "size must be a power of 2";
 
-  return this->allocate_page_of_size_log2(size_log2, wait_for_resource, lru_priority,
+  return this->allocate_page_of_size_log2(size_log2, wait_for_resource, lru_priority, overcommit,
                                           callers | Caller::PageCache_allocate_page_of_size, job_id,
                                           std::move(cancel_token));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-StatusOr<PinnedPage> PageCache::allocate_page_of_size_log2(PageSizeLog2 size_log2,
-                                                           batt::WaitForResource wait_for_resource,
-                                                           LruPriority lru_priority,
-                                                           u64 callers [[maybe_unused]],
-                                                           u64 job_id [[maybe_unused]],
-                                                           const batt::CancelToken& cancel_token)
+StatusOr<PinnedPage> PageCache::allocate_page_of_size_log2(
+    PageSizeLog2 size_log2, batt::WaitForResource wait_for_resource, LruPriority lru_priority,
+    PageCacheOvercommit& overcommit, u64 callers [[maybe_unused]], u64 job_id [[maybe_unused]],
+    const batt::CancelToken& cancel_token)
 {
   BATT_CHECK_LT(size_log2, kMaxPageSizeLog2);
 
@@ -476,7 +472,8 @@ StatusOr<PinnedPage> PageCache::allocate_page_of_size_log2(PageSizeLog2 size_log
       });
 #endif  // LLFS_TRACK_NEW_PAGE_EVENTS
 
-      return this->pin_allocated_page_to_cache(device_entry, page_size, *page_id, lru_priority);
+      return this->pin_allocated_page_to_cache(device_entry, page_size, *page_id, lru_priority,
+                                               overcommit);
     }
 
     if (wait_for_resource == batt::WaitForResource::kFalse) {
@@ -494,7 +491,8 @@ StatusOr<PinnedPage> PageCache::allocate_page_of_size_log2(PageSizeLog2 size_log
 //
 StatusOr<PinnedPage> PageCache::pin_allocated_page_to_cache(PageDeviceEntry* device_entry,
                                                             PageSize page_size, PageId page_id,
-                                                            LruPriority lru_priority)
+                                                            LruPriority lru_priority,
+                                                            PageCacheOvercommit& overcommit)
 {
   PageArena& arena = device_entry->arena;
 
@@ -506,7 +504,7 @@ StatusOr<PinnedPage> PageCache::pin_allocated_page_to_cache(PageDeviceEntry* dev
   // PageDevice::prepare must be thread-safe.
   //
   StatusOr<PageCacheSlot::PinnedRef> pinned_slot = device_entry->cache.find_or_insert(
-      page_id, page_size, lru_priority,
+      page_id, page_size, lru_priority, overcommit,
       /*initialize=*/
       [&new_page_buffer, &p_new_page_view](const PageCacheSlot::PinnedRef& pinned_slot) {
         // Create a NewPageView object as a placeholder so we can insert the new page into the
@@ -750,7 +748,8 @@ Status PageCache::assign_paired_device(PageSize src_page_size, const PageDeviceP
 //
 StatusOr<PinnedPage> PageCache::allocate_paired_page_for(PageId page_id,
                                                          const PageDevicePairing& pairing,
-                                                         LruPriority lru_priority)
+                                                         LruPriority lru_priority,
+                                                         PageCacheOvercommit& overcommit)
 {
   Optional<PageId> paired_page_id = this->paired_page_id_for(page_id, pairing);
   if (!paired_page_id) {
@@ -763,7 +762,7 @@ StatusOr<PinnedPage> PageCache::allocate_paired_page_for(PageId page_id,
   PageDevice* paired_page_device = std::addressof(paired_device_entry->arena.device());
 
   return this->pin_allocated_page_to_cache(paired_device_entry, paired_page_device->page_size(),
-                                           *paired_page_id, lru_priority);
+                                           *paired_page_id, lru_priority, overcommit);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -871,7 +870,7 @@ auto PageCache::find_page_in_cache(PageId page_id, const PageLoadOptions& option
   BATT_CHECK_NOT_NULLPTR(entry);
 
   return entry->cache.find_or_insert(
-      page_id, entry->page_size(), options.lru_priority(),
+      page_id, entry->page_size(), options.lru_priority(), options.overcommit(),
       [this, entry, &options](const PageCacheSlot::PinnedRef& pinned_slot) {
         entry->cache.metrics().miss_count.add(1);
         this->async_load_page_into_slot(pinned_slot, options.required_layout(),

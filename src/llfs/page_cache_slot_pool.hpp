@@ -12,6 +12,7 @@
 
 #include <llfs/metrics.hpp>
 #include <llfs/optional.hpp>
+#include <llfs/page_cache_overcommit.hpp>
 
 #include <boost/lockfree/policies.hpp>
 #include <boost/lockfree/queue.hpp>
@@ -177,7 +178,15 @@ class PageCacheSlot::Pool : public boost::intrusive_ref_counter<Pool>
    * Thereafter, it will attempt to evict an unpinned slot that hasn't been used recently.  If no
    * such slot can be found, `nullptr` will be returned.
    */
-  auto allocate(PageSize size_needed) -> std::tuple<PageCacheSlot*, ExternalAllocation>;
+  auto allocate(PageSize size_needed, PageCacheOvercommit& overcommit)
+      -> std::tuple<PageCacheSlot*, ExternalAllocation>;
+
+  /** \brief Allocate a slot; over-commit is not allowed.
+   */
+  auto allocate(PageSize size_needed) -> std::tuple<PageCacheSlot*, ExternalAllocation>
+  {
+    return this->allocate(size_needed, PageCacheOvercommit::not_allowed());
+  }
 
   /** \brief Returns the index of the specified slot object.
    *
@@ -231,7 +240,7 @@ class PageCacheSlot::Pool : public boost::intrusive_ref_counter<Pool>
    * unable to shrink the cache to the desired limit.  If this happens, the size limit will not be
    * changed, and `batt::StatusCode::kResourceExhausted` will be returned.
    */
-  Status set_max_byte_size(usize new_size_limit);
+  Status set_max_byte_size(usize new_size_limit, PageCacheOvercommit& overcommit);
 
   /** \brief Allocates against the maximum byte size limit, without explicitly allocating or filling
    * any cache slots.
@@ -240,7 +249,7 @@ class PageCacheSlot::Pool : public boost::intrusive_ref_counter<Pool>
    * page cache quota for external use.  The returned object is a move-only RAII type that returns
    * the allocated amount to the cache when the last (moved) copy is destructed.
    */
-  ExternalAllocation allocate_external(usize byte_size);
+  ExternalAllocation allocate_external(usize byte_size, PageCacheOvercommit& overcommit);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
@@ -266,7 +275,8 @@ class PageCacheSlot::Pool : public boost::intrusive_ref_counter<Pool>
   /** \brief If the passed observed size is over the limit, evict pages until resident size is at or
    * below the maximum size.
    */
-  Status enforce_max_size(i64 observed_resident_size, usize max_steps = 0);
+  Status enforce_max_size(i64 observed_resident_size, PageCacheOvercommit& overcommit,
+                          usize max_steps = 0);
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

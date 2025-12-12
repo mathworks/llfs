@@ -104,15 +104,16 @@ bool PageCacheJob::is_page_new_and_pinned(PageId page_id) const
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 StatusOr<std::shared_ptr<PageBuffer>> PageCacheJob::new_page(
-    PageSize size, batt::WaitForResource wait_for_resource, const PageLayoutId& layout_id,
-    LruPriority lru_priority, u64 callers, const batt::CancelToken& cancel_token)
+    PageSize size, batt::WaitForResource wait_for_resource, llfs::PageCacheOvercommit& overcommit,
+    const PageLayoutId& layout_id, LruPriority lru_priority, u64 callers,
+    const batt::CancelToken& cancel_token)
 {
   // TODO [tastolfi 2021-04-07] instead of WaitForResource::kTrue, implement a backoff-and-retry
   // loop with a cancel token.
   //
   StatusOr<PinnedPage> pinned_page = this->cache_->allocate_page_of_size(
-      size, wait_for_resource, lru_priority, callers | Caller::PageCacheJob_new_page, this->job_id,
-      cancel_token);
+      size, wait_for_resource, lru_priority, overcommit, callers | Caller::PageCacheJob_new_page,
+      this->job_id, cancel_token);
 
   BATT_REQUIRE_OK(pinned_page);
   BATT_CHECK(*pinned_page);

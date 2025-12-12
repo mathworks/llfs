@@ -137,9 +137,20 @@ class PageCacheJob : public PageLoader
   //
   StatusOr<std::shared_ptr<PageBuffer>> new_page(PageSize size,
                                                  batt::WaitForResource wait_for_resource,
+                                                 llfs::PageCacheOvercommit& overcommit,
                                                  const PageLayoutId& layout_id,
                                                  LruPriority lru_priority, u64 callers,
                                                  const batt::CancelToken& cancel_token);
+
+  StatusOr<std::shared_ptr<PageBuffer>> new_page(PageSize size,
+                                                 batt::WaitForResource wait_for_resource,
+                                                 const PageLayoutId& layout_id,
+                                                 LruPriority lru_priority, u64 callers,
+                                                 const batt::CancelToken& cancel_token)
+  {
+    return this->new_page(size, wait_for_resource, llfs::PageCacheOvercommit::not_allowed(),
+                          layout_id, lru_priority, callers, cancel_token);
+  }
 
   // Inserts a new page into the cache.  The passed PageView must have been created using a
   // PageBuffer returned by `new_page` for this job, or we will panic.

@@ -165,17 +165,40 @@ class PageCache : public PageLoader
   std::unique_ptr<PageCacheJob> new_job();
 
   StatusOr<PinnedPage> allocate_page_of_size(PageSize size, batt::WaitForResource wait_for_resource,
-                                             LruPriority lru_priority, u64 callers, u64 job_id,
+                                             LruPriority lru_priority,
+                                             PageCacheOvercommit& overcommit, u64 callers,
+                                             u64 job_id,
                                              const batt::CancelToken& cancel_token = None);
+
+  StatusOr<PinnedPage> allocate_page_of_size(PageSize size, batt::WaitForResource wait_for_resource,
+                                             LruPriority lru_priority, u64 callers, u64 job_id,
+                                             const batt::CancelToken& cancel_token = None)
+  {
+    return this->allocate_page_of_size(size, wait_for_resource, lru_priority,
+                                       PageCacheOvercommit::not_allowed(), callers, job_id,
+                                       cancel_token);
+  }
+
+  StatusOr<PinnedPage> allocate_page_of_size_log2(PageSizeLog2 size_log2,
+                                                  batt::WaitForResource wait_for_resource,
+                                                  LruPriority lru_priority,
+                                                  PageCacheOvercommit& overcommit, u64 callers,
+                                                  u64 job_id,
+                                                  const batt::CancelToken& cancel_token = None);
 
   StatusOr<PinnedPage> allocate_page_of_size_log2(PageSizeLog2 size_log2,
                                                   batt::WaitForResource wait_for_resource,
                                                   LruPriority lru_priority, u64 callers, u64 job_id,
-                                                  const batt::CancelToken& cancel_token = None);
-
-  ExternalAllocation allocate_external(usize byte_size)
+                                                  const batt::CancelToken& cancel_token = None)
   {
-    return this->cache_slot_pool_->allocate_external(byte_size);
+    return this->allocate_page_of_size_log2(size_log2, wait_for_resource, lru_priority,
+                                            PageCacheOvercommit::not_allowed(), callers, job_id,
+                                            cancel_token);
+  }
+
+  ExternalAllocation allocate_external(usize byte_size, PageCacheOvercommit& overcommit)
+  {
+    return this->cache_slot_pool_->allocate_external(byte_size, overcommit);
   }
 
   // Returns a page allocated via `allocate_page` to the free pool.  This MUST be done before the
@@ -222,7 +245,17 @@ class PageCache : public PageLoader
    * resulting PinnedPage.
    */
   StatusOr<PinnedPage> allocate_paired_page_for(PageId page_id, const PageDevicePairing& pairing,
-                                                LruPriority lru_priority);
+                                                LruPriority lru_priority,
+                                                PageCacheOvercommit& overcommit);
+
+  /** \brief Calls allocate_paired_page_for with no overcommit.
+   */
+  StatusOr<PinnedPage> allocate_paired_page_for(PageId page_id, const PageDevicePairing& pairing,
+                                                LruPriority lru_priority)
+  {
+    return this->allocate_paired_page_for(page_id, pairing, lru_priority,
+                                          PageCacheOvercommit::not_allowed());
+  }
 
   /** \brief Writes the specified paired page.  This happens outside the normal transactional page
    * creation workflow.
@@ -341,7 +374,8 @@ class PageCache : public PageLoader
   //----- --- -- -  -  -   -
   StatusOr<PinnedPage> pin_allocated_page_to_cache(PageDeviceEntry* device_entry,
                                                    PageSize page_size, PageId page_id,
-                                                   LruPriority lru_priority);
+                                                   LruPriority lru_priority,
+                                                   PageCacheOvercommit& overcommit);
 
   //----- --- -- -  -  -   -
   /** \brief Attempts to find the specified page (`page_id`) in the cache; if successful, the cache

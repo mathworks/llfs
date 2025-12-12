@@ -8,6 +8,10 @@ cor conan config install --type git https://gitlab.com/batteriesincluded/conan-c
 
 # Enable the local cache server.
 #
+echo "CACHE_CONAN_REMOTE='${CACHE_CONAN_REMOTE:-}'"
+echo "CACHE_CONAN_LOGIN_USERNAME='${CACHE_CONAN_LOGIN_USERNAME:-}'"
+echo "CACHE_CONAN_PASSWORD='${CACHE_CONAN_PASSWORD:-}'"
+#----- --- -- -  -  -   -
 if [ "${CACHE_CONAN_REMOTE:-}" != "" ]; then
     cor conan remote enable "${CACHE_CONAN_REMOTE}"
 else

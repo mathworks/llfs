@@ -89,6 +89,13 @@ class CommittablePageCacheJob
    */
   FinalizedPageCacheJob finalized_job() const;
 
+  /** \brief Returns a read-only reference to the original job.
+   */
+  const PageCacheJob& get_const_job() const
+  {
+    return *this->job_;
+  }
+
   /** \brief Returns the process-unique serial number of this job; this will be the same as
    * job->job_id, where job is the PageCacheJob used to create this.
    */

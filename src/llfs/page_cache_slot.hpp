@@ -411,6 +411,14 @@ class PageCacheSlot
    */
   void on_evict_success(ExternalAllocation* reclaim);
 
+  /** \brief Adds the passed amount to the total pinned byte count metric.
+   */
+  void add_pinned_bytes(usize n);
+
+  /** \brief Adds the passed amount to the total unpinned byte count metric.
+   */
+  void add_unpinned_bytes(usize n);
+
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   Pool& pool_;
@@ -561,6 +569,12 @@ BATT_ALWAYS_INLINE inline i64 PageCacheSlot::get_latest_use() const
 //
 BATT_ALWAYS_INLINE inline void PageCacheSlot::release_pin()
 {
+  // Save the page size while the slot is pinned, so we can update metrics below if necessary.
+  //
+  const usize saved_page_size = this->page_size_;
+
+  // Decrement the pin count.
+  //
   const auto old_state = this->state_.fetch_sub(kPinCountDelta, std::memory_order_release);
 
   LLFS_PAGE_CACHE_ASSERT(Self::is_pinned(old_state))
@@ -574,6 +588,8 @@ BATT_ALWAYS_INLINE inline void PageCacheSlot::release_pin()
   LLFS_PAGE_CACHE_ASSERT_EQ(new_state & Self::kOverflowMask, 0);
 
   if (newly_unpinned) {
+    this->add_unpinned_bytes(saved_page_size);
+
     // Load the state with `acquire` order to create a full memory barrier.
     //
     (void)this->state_.load(std::memory_order_acquire);
@@ -631,6 +647,8 @@ BATT_ALWAYS_INLINE inline auto PageCacheSlot::acquire_pin(PageId key, IgnoreKey 
                                                           IgnoreGeneration ignore_generation)
     -> PinnedRef
 {
+  // Increment the pin count.
+  //
   const auto old_state = this->state_.fetch_add(kPinCountDelta, std::memory_order_acquire);
   const auto new_state = old_state + kPinCountDelta;
   const bool newly_pinned = !Self::is_pinned(old_state);
@@ -644,6 +662,7 @@ BATT_ALWAYS_INLINE inline auto PageCacheSlot::acquire_pin(PageId key, IgnoreKey 
   // `remove_ref` in `release_pin` below.
   //
   if (newly_pinned) {
+    this->add_pinned_bytes(this->page_size_);
     this->add_ref();
   }
 

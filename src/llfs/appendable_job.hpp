@@ -36,6 +36,13 @@ struct AppendableJob {
    * for this job.
    */
   u64 calculate_grant_size() const noexcept;
+
+  /** \brief Returns a read-only reference to the original job.
+   */
+  const PageCacheJob& get_const_job() const
+  {
+    return this->job.get_const_job();
+  }
 };
 
 // Construct an AppendableJob.

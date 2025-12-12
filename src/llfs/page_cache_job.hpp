@@ -306,14 +306,26 @@ class PageCacheJob : public PageLoader
         BATT_FORWARD(page_id_fn));
   }
 
+  /** \brief Returns the number of new pages added by this job.
+   */
   usize new_page_count() const
   {
     return this->new_pages_.size();
   }
 
+  /** \brief Returns the number of pages currently pinned to the job; this includes both new pages
+   * and pre-existing pages.
+   */
   usize pinned_page_count() const
   {
     return this->pinned_.size();
+  }
+
+  /** \brief Returns the number of pages deleted by this job.
+   */
+  usize deleted_page_count() const
+  {
+    return this->deleted_pages_.size();
   }
 
   bool is_pruned() const

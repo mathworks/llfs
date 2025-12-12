@@ -191,7 +191,7 @@ class TypedSlotReader<PackedVariant<Ts...>> : public SlotReader
   template <typename... CaseHandlerFns>
   static auto make_slot_visitor(CaseHandlerFns&&... case_handler_fns)
   {
-    return [&](const SlotParse& slot, const std::string_view& user_data) {
+    return [&](const SlotParse& slot, const std::string_view& user_data) -> Status {
       return TypedSlotReader<PackedVariant<Ts...>>::visit_slot(slot, user_data,
                                                                BATT_FORWARD(case_handler_fns)...);
     };

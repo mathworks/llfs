@@ -2,17 +2,16 @@
 #
 set -Eeuo pipefail
 
+SCRIPT_DIR=$(realpath $(dirname "$0"))
+PROJECT_DIR=$(realpath $(dirname "${SCRIPT_DIR}"))
+
 # Pull configs for this build.
 #
 cor conan config install --type git https://gitlab.com/batteriesincluded/conan-config/linux-gcc12-x86_64.git
 
 # Enable the local cache server.
 #
-echo "ci-job.sh:"
-echo "CACHE_CONAN_REMOTE='${CACHE_CONAN_REMOTE:-}'"
-echo "CACHE_CONAN_LOGIN_USERNAME='${CACHE_CONAN_LOGIN_USERNAME:-}'"
-echo "CACHE_CONAN_PASSWORD='${CACHE_CONAN_PASSWORD:-}'"
-#----- --- -- -  -  -   -
+"${SCRIPT_DIR}/ci-print-diagnostics.sh" "ci-job.sh"
 if [ "${CACHE_CONAN_REMOTE:-}" != "" ]; then
     cor conan remote enable "${CACHE_CONAN_REMOTE}"
 else

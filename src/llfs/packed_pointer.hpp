@@ -57,6 +57,11 @@ struct PackedPointer {
                                    << BATT_INSPECT(sizeof(T)) << BATT_INSPECT((const void*)ptr);
     BATT_CHECK_LT((const void*)this, (const void*)ptr);
 
+    this->reset_unsafe(ptr);
+  }
+
+  void reset_unsafe(T* ptr)
+  {
     this->offset = byte_distance(this, ptr);
   }
 

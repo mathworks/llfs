@@ -14,6 +14,7 @@
 //
 #include <llfs/buffer.hpp>
 #include <llfs/int_types.hpp>
+#include <llfs/metrics.hpp>
 #include <llfs/page_id.hpp>
 #include <llfs/page_size.hpp>
 
@@ -31,6 +32,79 @@ class PageBuffer
 {
  public:
   using Block = std::aligned_storage_t<kDirectIOBlockSize, kDirectIOBlockAlign>;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+  /** \brief Metric collectors for the PageBuffer class.
+   */
+  struct Metrics {
+    /** \brief The total number of buffers which have been allocated.
+     */
+    FastCountMetric<i64> allocate_count;
+
+    /** \brief The total size (bytes) of all buffers which have been allocated.
+     */
+    FastCountMetric<i64> allocate_bytes;
+
+    /** \brief The total number of buffers which have been deallocated.
+     */
+    FastCountMetric<i64> deallocate_count;
+
+    /** \brief The total size (bytes) of all buffers which have been deallocated.
+     */
+    FastCountMetric<i64> deallocate_bytes;
+
+    /** \brief Returns an estimate of the number of currently existing PageBuffer objects.
+     *
+     * This may not be accurate since we do not synchronize across threads or across the two
+     * monotonic counters whose difference is the true value; because we observe the dealloc counter
+     * first, the estimate is likely to be higher than the true value.
+     */
+    i64 estimate_active_count() const
+    {
+      const i64 observed_dealloc = this->deallocate_count.get();
+      return this->allocate_count.get() - observed_dealloc;
+    }
+
+    /** \brief Returns an estimate of the total bytes size of all active PageBuffer objects.
+     *
+     * This may not be accurate since we do not synchronize across threads or across the two
+     * monotonic counters whose difference is the true value; because we observe the dealloc counter
+     * first, the estimate is likely to be higher than the true value.
+     */
+    i64 estimate_active_bytes() const
+    {
+      const i64 observed_dealloc = this->deallocate_bytes.get();
+      return this->allocate_bytes.get() - observed_dealloc;
+    }
+
+    /** \brief Returns an estiamte of the average PageBuffer size; if there are no active buffers,
+     * returns 0.
+     */
+    double average_active_size() const
+    {
+      double n = this->estimate_active_count();
+      if (n == 0) {
+        return 0;
+      }
+      return (double)this->estimate_active_bytes() / n;
+    }
+
+    /** \brief Returns an estimate of the average size (bytes) of all PageBuffers that have ever
+     * been allocated in the current process; if no buffers have been allocated, returns 0.
+     */
+    double average_size() const
+    {
+      double n = this->allocate_count.get();
+      if (n == 0) {
+        return 0;
+      }
+      return (double)this->allocate_bytes.get() / n;
+    }
+  };
+
+  /** \brief Returns a reference to the PageBuffer metric collectors.
+   */
+  static Metrics& metrics();
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 

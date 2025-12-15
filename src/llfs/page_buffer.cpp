@@ -22,6 +22,15 @@
 namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*static*/ PageBuffer::Metrics& PageBuffer::metrics()
+{
+  static Metrics metrics_;
+
+  return metrics_;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 // PageBuffer object memory cache.
 //
 namespace {
@@ -125,6 +134,9 @@ void PageBuffer::set_page_id(PageId id)
 
   obj->set_page_id(page_id);
 
+  PageBuffer::metrics().allocate_count.add(1);
+  PageBuffer::metrics().allocate_bytes.add(page_size);
+
   return std::shared_ptr<PageBuffer>{obj, PageBufferDeleter{page_size, page_id}};
 }
 
@@ -132,6 +144,9 @@ void PageBuffer::set_page_id(PageId id)
 //
 /*static*/ void PageBuffer::deallocate(PageSize page_size, void* ptr)
 {
+  PageBuffer::metrics().deallocate_count.add(1);
+  PageBuffer::metrics().deallocate_bytes.add(page_size);
+
   if (enable_page_buffer_pool()) {
     PageBuffer* obj = reinterpret_cast<PageBuffer*>(ptr);
     if (obj) {

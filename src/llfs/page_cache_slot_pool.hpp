@@ -64,6 +64,14 @@ class PageCacheSlot::Pool : public boost::intrusive_ref_counter<Pool>
     FastCountMetric<i64> erase_byte_count{0};
     FastCountMetric<i64> evict_byte_count{0};
 
+    /** \brief The total size of all pages that have ever been pinned to the cache.
+     */
+    FastCountMetric<i64> pinned_byte_count{0};
+
+    /** \brief The total size of all pages that have ever been unpinned from the cache.
+     */
+    FastCountMetric<i64> unpinned_byte_count{0};
+
     CountMetric<i64> total_capacity_allocated{0};
     CountMetric<i64> total_capacity_freed{0};
 
@@ -81,14 +89,34 @@ class PageCacheSlot::Pool : public boost::intrusive_ref_counter<Pool>
       return (query_count == 0) ? -1 : (non_miss_count / query_count);
     }
 
+    /** \brief Returns an estimate of the total byte size of page data in the cache.
+     *
+     * This may not be accurate since we do not synchronize across threads or across the two
+     * monotonic counters whose difference is the true value; because we observe the negative
+     * counter first, the estimate is likely to be higher than the true value.
+     */
     i64 estimate_cache_bytes() const
     {
-      return this->admit_byte_count.get() - this->evict_byte_count.get();
+      const i64 observed_evict_byte_count = this->evict_byte_count.get();
+      return this->admit_byte_count.get() - observed_evict_byte_count;
     }
 
     i64 estimate_total_limit() const
     {
-      return this->total_capacity_allocated.get() - this->total_capacity_freed.get();
+      const i64 observed_freed = this->total_capacity_freed.get();
+      return this->total_capacity_allocated.get() - observed_freed;
+    }
+
+    /** \brief Returns an estimate of the total byte size of pinned page data in the cache.
+     *
+     * This may not be accurate since we do not synchronize across threads or across the two
+     * monotonic counters whose difference is the true value; because we observe the negative
+     * counter first, the estimate is likely to be higher than the true value.
+     */
+    i64 estimate_pinned_bytes() const
+    {
+      const i64 observed_unpinned = this->unpinned_byte_count.get();
+      return this->pinned_byte_count.get() - observed_unpinned;
     }
 
    private:

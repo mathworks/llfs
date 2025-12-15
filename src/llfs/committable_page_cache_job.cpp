@@ -23,6 +23,14 @@ namespace llfs {
 
   // This job will no longer be changing, so unpin pages to save memory.
   //
+  {
+    static const bool job_stats = batt::getenv_as<bool>("LLFS_JOB_STATS").value_or(false);
+    if (job_stats) {
+      LLFS_LOG_INFO() << BATT_INSPECT(job->new_page_count())
+                      << BATT_INSPECT(job->pinned_page_count())
+                      << BATT_INSPECT(job->deleted_page_count());
+    }
+  }
   job->unpin_all();
 
   auto committable_job = CommittablePageCacheJob{std::move(job)};

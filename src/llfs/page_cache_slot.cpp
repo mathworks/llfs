@@ -62,6 +62,7 @@ auto PageCacheSlot::fill(PageId key, PageSize page_size, i64 lru_priority, Exter
 
   claim.absorb();
 
+  this->add_pinned_bytes(page_size);
   this->add_ref();
   this->set_valid();
 
@@ -122,10 +123,15 @@ bool PageCacheSlot::evict_if_key_equals(PageId key)
 
   const bool newly_pinned = !Self::is_pinned(old_state);
   if (newly_pinned) {
+    this->add_pinned_bytes(this->page_size_);
     this->add_ref();
   }
 
   BATT_CHECK_EQ(observed_state & Self::kOverflowMask, 0);
+
+  // Save the page size while the slot is pinned, so we can update metrics if we succeed below.
+  //
+  const usize saved_page_size = this->page_size_;
 
   // Use a CAS loop here to guarantee an atomic transition from Valid + Filled (unpinned) state to
   // Invalid.
@@ -147,6 +153,7 @@ bool PageCacheSlot::evict_if_key_equals(PageId key)
         << BATT_INSPECT(target_state);
 
     if (this->state_.compare_exchange_weak(observed_state, target_state)) {
+      this->add_unpinned_bytes(saved_page_size);
       this->on_evict_success(nullptr);
 
       // At this point, we always expect to be going from pinned to unpinned.
@@ -170,6 +177,10 @@ bool PageCacheSlot::evict_and_release_pin(ExternalAllocation* reclaim)
   BATT_CHECK(Self::is_pinned(observed_state));
   BATT_CHECK_EQ(observed_state & Self::kOverflowMask, 0);
 
+  // Save the page size while the slot is pinned, so we can update metrics if we succeed below.
+  //
+  const usize saved_page_size = this->page_size_;
+
   // Use a CAS loop here to guarantee an atomic transition from Valid + Filled (unpinned) state to
   // Invalid.
   //
@@ -189,6 +200,7 @@ bool PageCacheSlot::evict_and_release_pin(ExternalAllocation* reclaim)
         << BATT_INSPECT(target_state);
 
     if (this->state_.compare_exchange_weak(observed_state, target_state)) {
+      this->add_unpinned_bytes(saved_page_size);
       this->on_evict_success(reclaim);
 
       // At this point, we always expect to be going from pinned to unpinned.
@@ -219,6 +231,22 @@ void PageCacheSlot::on_evict_success(ExternalAllocation* reclaim)
   this->value_ = None;
   this->p_value_ = nullptr;
   this->page_size_ = PageSize{0};
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void PageCacheSlot::add_pinned_bytes(usize n)
+{
+  static PageCacheSlot::Pool::Metrics& metrics_ = PageCacheSlot::Pool::Metrics::instance();
+  metrics_.pinned_byte_count.add(n);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void PageCacheSlot::add_unpinned_bytes(usize n)
+{
+  static PageCacheSlot::Pool::Metrics& metrics_ = PageCacheSlot::Pool::Metrics::instance();
+  metrics_.unpinned_byte_count.add(n);
 }
 
 #if LLFS_PAGE_CACHE_SLOT_UPDATE_POOL_REF_COUNT

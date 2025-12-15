@@ -111,9 +111,16 @@ StatusOr<std::shared_ptr<PageBuffer>> PageCacheJob::new_page(
   // TODO [tastolfi 2021-04-07] instead of WaitForResource::kTrue, implement a backoff-and-retry
   // loop with a cancel token.
   //
-  StatusOr<PinnedPage> pinned_page = this->cache_->allocate_page_of_size(
-      size, wait_for_resource, lru_priority, overcommit, callers | Caller::PageCacheJob_new_page,
-      this->job_id, cancel_token);
+  StatusOr<PinnedPage> pinned_page = this->cache_->allocate_page(
+      PageAllocateOptions{
+          batt::make_copy(size),
+          batt::make_copy(wait_for_resource),
+          batt::make_copy(lru_priority),
+          batt::make_copy(layout_id),
+          overcommit,
+          cancel_token,
+      },
+      callers | Caller::PageCacheJob_new_page, this->job_id);
 
   BATT_REQUIRE_OK(pinned_page);
   BATT_CHECK(*pinned_page);
@@ -122,10 +129,13 @@ StatusOr<std::shared_ptr<PageBuffer>> PageCacheJob::new_page(
       BATT_OK_RESULT_OR_PANIC(pinned_page->get()->get_new_page_buffer());
 
   const PageId page_id = buffer->page_id();
+
+#if 0 // TODO REMOVE ME!!!
   {
     PackedPageHeader* const header = mutable_page_header(buffer.get());
     header->layout_id = layout_id;
   }
+#endif
 
   this->pruned_ = false;
   this->new_pages_.emplace(page_id, NewPage{std::move(*pinned_page), IsRecoveredPage{false}});

@@ -12,6 +12,7 @@
 
 #include <llfs/metrics.hpp>
 #include <llfs/optional.hpp>
+#include <llfs/page_cache_insert_options.hpp>
 #include <llfs/page_cache_overcommit.hpp>
 
 #include <boost/lockfree/policies.hpp>
@@ -178,14 +179,18 @@ class PageCacheSlot::Pool : public boost::intrusive_ref_counter<Pool>
    * Thereafter, it will attempt to evict an unpinned slot that hasn't been used recently.  If no
    * such slot can be found, `nullptr` will be returned.
    */
-  auto allocate(PageSize size_needed, PageCacheOvercommit& overcommit)
+  auto allocate(const PageCacheInsertOptions& options)
       -> std::tuple<PageCacheSlot*, ExternalAllocation>;
 
   /** \brief Allocate a slot; over-commit is not allowed.
    */
   auto allocate(PageSize size_needed) -> std::tuple<PageCacheSlot*, ExternalAllocation>
   {
-    return this->allocate(size_needed, PageCacheOvercommit::not_allowed());
+    return this->allocate(PageCacheInsertOptions{
+        batt::make_copy(size_needed),
+        LruPriority{0},
+        PageCacheOvercommit::not_allowed(),
+    });
   }
 
   /** \brief Returns the index of the specified slot object.

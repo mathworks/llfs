@@ -115,9 +115,12 @@ PageCacheSlot* PageCacheSlot::Pool::get_slot(usize i)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-auto PageCacheSlot::Pool::allocate(PageSize page_size, PageCacheOvercommit& overcommit)
+auto PageCacheSlot::Pool::allocate(const PageCacheInsertOptions& options)
     -> std::tuple<PageCacheSlot*, ExternalAllocation>
 {
+  const PageSize page_size = options.page_size();
+  PageCacheOvercommit& overcommit = options.overcommit();
+
   this->metrics_.allocate_count.add(1);
 
   const i64 max_resident_size = static_cast<i64>(this->max_byte_size_);

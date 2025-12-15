@@ -52,9 +52,12 @@ const PageIdFactory& PageDeviceCache::page_ids() const noexcept
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
 batt::StatusOr<PageCacheSlot::PinnedRef> PageDeviceCache::find_or_insert(
-    PageId key, PageSize page_size, LruPriority lru_priority, PageCacheOvercommit& overcommit,
+    PageId key, const PageCacheInsertOptions& options,
     const batt::SmallFn<void(const PageCacheSlot::PinnedRef&)>& initialize)
 {
+  const PageSize page_size = options.page_size();
+  const LruPriority lru_priority = options.lru_priority();
+
   static const bool kEvictOldGenSlot =
       batt::getenv_as<bool>("LLFS_EVICT_OLD_GEN_SLOT").value_or(true);
 
@@ -148,7 +151,7 @@ batt::StatusOr<PageCacheSlot::PinnedRef> PageDeviceCache::find_or_insert(
       PageCacheSlot::ExternalAllocation claim;
 
       new_slot.emplace();
-      std::tie(new_slot->p_slot, claim) = this->slot_pool_->allocate(page_size, overcommit);
+      std::tie(new_slot->p_slot, claim) = this->slot_pool_->allocate(options);
       if (!new_slot->p_slot) {
         this->metrics().full_count.add(1);
         return ::llfs::make_status(StatusCode::kCacheSlotsFull);

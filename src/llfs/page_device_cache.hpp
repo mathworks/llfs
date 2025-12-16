@@ -14,6 +14,7 @@
 //
 #include <llfs/api_types.hpp>
 #include <llfs/int_types.hpp>
+#include <llfs/page_cache_insert_options.hpp>
 #include <llfs/page_cache_slot.hpp>
 #include <llfs/page_id_factory.hpp>
 #include <llfs/page_view.hpp>
@@ -74,7 +75,7 @@ class PageDeviceCache
    * called to start the process of loading the page data into the slot.
    */
   batt::StatusOr<PageCacheSlot::PinnedRef> find_or_insert(
-      PageId key, PageSize page_size, LruPriority lru_priority,
+      PageId key, const PageCacheInsertOptions& options,
       const batt::SmallFn<void(const PageCacheSlot::PinnedRef&)>& initialize);
 
   /** \brief Attempt to find and pin the given page in the cache.  No attempt to load the page will

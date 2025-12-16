@@ -115,9 +115,12 @@ PageCacheSlot* PageCacheSlot::Pool::get_slot(usize i)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-auto PageCacheSlot::Pool::allocate(PageSize page_size)
+auto PageCacheSlot::Pool::allocate(const PageCacheInsertOptions& options)
     -> std::tuple<PageCacheSlot*, ExternalAllocation>
 {
+  const PageSize page_size = options.page_size();
+  PageCacheOvercommit& overcommit = options.overcommit();
+
   this->metrics_.allocate_count.add(1);
 
   const i64 max_resident_size = static_cast<i64>(this->max_byte_size_);
@@ -144,10 +147,10 @@ auto PageCacheSlot::Pool::allocate(PageSize page_size)
 
   // Free queue is empty; if we can construct a new one, do it.
   //
-  const auto try_construct_new_slot = [this, prior_resident_size,
-                                       max_resident_size](PageCacheSlot** p_free_slot) {
+  const auto try_construct_new_slot = [this, prior_resident_size, max_resident_size,
+                                       &overcommit](PageCacheSlot** p_free_slot) {
     if (!*p_free_slot && this->n_allocated_.load() < this->n_slots_ &&
-        prior_resident_size < max_resident_size) {
+        (prior_resident_size < max_resident_size || overcommit.is_allowed())) {
       *p_free_slot = this->construct_new_slot();
       if (*p_free_slot) {
         BATT_CHECK(!(*p_free_slot)->is_valid());
@@ -169,28 +172,78 @@ auto PageCacheSlot::Pool::allocate(PageSize page_size)
     // the limit.
     //
     usize slot_i = 0;
+    usize try_construct_count = 0;
+
+    bool first_pass = true;
+    usize unpinned_this_pass = 0;
+    usize evictions_this_pass = 0;
+
     for (usize n_attempts = 0;; ++n_attempts) {
       const usize prev_slot_i = slot_i;
       slot_i = this->advance_clock_hand(n_slots_constructed);
 
+      const bool wrap_around = (slot_i < prev_slot_i);
+
       // If we wrap-around and have no free slot, try constructing a new one if possible.
       //
-      if (!free_slot && (slot_i < prev_slot_i || n_attempts > this->n_slots_ * 2)) {
+      if (!free_slot && (wrap_around || n_attempts > this->n_slots_ * 2)) {
+        ++try_construct_count;
         try_construct_new_slot(&free_slot);
-        if (free_slot && observed_resident_size <= max_resident_size) {
-          break;
+        if (free_slot) {
+          if (observed_resident_size <= max_resident_size) {
+            break;
+          }
         }
       }
+
+      // If overcommit has already been triggered, then we don't impose a minimum number of
+      // attempts; just try to get through the bottleneck as quickly as possible.
+      //
+      if (free_slot && overcommit.is_allowed() && overcommit.is_triggered()) {
+        overcommit.trigger();
+        break;
+      }
+
+      // If overcommit is allowed and we have just completed a pass without making progress, then
+      // just trigger overcommit and return.
+      //
+      if (wrap_around) {
+        n_slots_constructed = this->n_constructed_.load();
+        const bool making_progress = (evictions_this_pass != 0) || (unpinned_this_pass != 0);
+        const bool enough_effort = (n_attempts > n_slots_constructed * 16);
+
+        if (free_slot && overcommit.is_allowed() &&
+            ((!first_pass && !making_progress) || enough_effort)) {
+          overcommit.trigger();
+          break;
+        }
+        //----- --- -- -  -  -   -
+        first_pass = false;
+        evictions_this_pass = 0;
+        unpinned_this_pass = 0;
+      }
+
+      LOG_IF_EVERY_N(INFO, n_attempts > 100000, 10000000)
+          << std::endl
+          << " slot_i: " << prev_slot_i << "->" << slot_i << BATT_INSPECT(try_construct_count)
+          << BATT_INSPECT(n_attempts) << BATT_INSPECT(n_slots_constructed) << "/" << this->n_slots_
+          << BATT_INSPECT(overcommit.is_allowed()) << BATT_INSPECT(overcommit.is_triggered())
+          << BATT_INSPECT((bool)free_slot) << BATT_INSPECT(first_pass)
+          << BATT_INSPECT(unpinned_this_pass) << BATT_INSPECT(evictions_this_pass);
 
       // Try to expire the next slot; if that succeeds, try evicting.
       //
       PageCacheSlot* candidate = p_slots[slot_i].get();
       if (!candidate->expire()) {
+        if (!candidate->is_pinned()) {
+          ++unpinned_this_pass;
+        }
         continue;
       }
       if (!candidate->evict()) {
         continue;
       }
+      ++evictions_this_pass;
 
       // If we don't have a slot to return yet, take this one; else add the just-evicted slot to
       // the free list so other threads can pick it up immediately.
@@ -318,7 +371,7 @@ bool PageCacheSlot::Pool::push_free_slot(PageCacheSlot* slot)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status PageCacheSlot::Pool::set_max_byte_size(usize new_size_limit)
+Status PageCacheSlot::Pool::set_max_byte_size(usize new_size_limit, PageCacheOvercommit& overcommit)
 {
   const usize old_max_byte_size = this->max_byte_size_.exchange(new_size_limit);
   if (old_max_byte_size == new_size_limit) {
@@ -328,7 +381,7 @@ Status PageCacheSlot::Pool::set_max_byte_size(usize new_size_limit)
   const usize n_slots_constructed = this->n_constructed_.load();
   const usize max_steps = n_slots_constructed * 4;
 
-  Status status = this->enforce_max_size(this->resident_size_.load(), max_steps);
+  Status status = this->enforce_max_size(this->resident_size_.load(), overcommit, max_steps);
   if (!status.ok()) {
     usize expected = new_size_limit;
     do {
@@ -345,22 +398,24 @@ Status PageCacheSlot::Pool::set_max_byte_size(usize new_size_limit)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-auto PageCacheSlot::Pool::allocate_external(usize byte_size) -> ExternalAllocation
+auto PageCacheSlot::Pool::allocate_external(usize byte_size, PageCacheOvercommit& overcommit)
+    -> ExternalAllocation
 {
   if (byte_size != 0) {
     BATT_CHECK_LE(byte_size, this->max_byte_size_);
 
     const i64 prior_resident_size = this->resident_size_.fetch_add(byte_size);
-    i64 observed_resident_size = prior_resident_size + byte_size;
+    const i64 observed_resident_size = prior_resident_size + byte_size;
 
-    BATT_CHECK_OK(this->enforce_max_size(observed_resident_size));
+    BATT_CHECK_OK(this->enforce_max_size(observed_resident_size, overcommit));
   }
   return ExternalAllocation{*this, byte_size};
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-Status PageCacheSlot::Pool::enforce_max_size(i64 observed_resident_size, usize max_steps)
+Status PageCacheSlot::Pool::enforce_max_size(i64 observed_resident_size,
+                                             PageCacheOvercommit& overcommit, usize max_steps)
 {
   const i64 max_resident_size = static_cast<i64>(this->max_byte_size_);
 
@@ -368,23 +423,57 @@ Status PageCacheSlot::Pool::enforce_max_size(i64 observed_resident_size, usize m
     usize n_slots_constructed = this->n_constructed_.load();
     batt::CpuCacheLineIsolated<PageCacheSlot>* const p_slots = this->slots();
 
+    if (overcommit.is_allowed() && overcommit.is_triggered()) {
+      return OkStatus();
+    }
+
+    usize slot_i = 0;
     usize step_count = 0;
+
+    bool first_pass = true;
+    usize unpinned_this_pass = 0;
+    usize evictions_this_pass = 0;
+
     while (observed_resident_size > max_resident_size) {
       ++step_count;
       if (max_steps && step_count > max_steps) {
+        if (overcommit.is_allowed()) {
+          overcommit.trigger();
+          return OkStatus();
+        }
         return batt::StatusCode::kResourceExhausted;
       }
 
       // Try to expire the next slot; if that succeeds, try evicting.
       //
-      const usize slot_i = this->advance_clock_hand(n_slots_constructed);
+      const usize prev_slot_i = slot_i;
+      slot_i = this->advance_clock_hand(n_slots_constructed);
+
+      const bool wrap_around = (slot_i < prev_slot_i);
+      if (wrap_around) {
+        const bool making_progress = (evictions_this_pass != 0) || (unpinned_this_pass != 0);
+        if (overcommit.is_allowed() && !first_pass && !making_progress) {
+          overcommit.trigger();
+          break;
+        }
+        //----- --- -- -  -  -   -
+        first_pass = false;
+        evictions_this_pass = 0;
+        unpinned_this_pass = 0;
+      }
+
       PageCacheSlot* candidate = p_slots[slot_i].get();
       if (!candidate->expire()) {
+        if (!candidate->is_pinned()) {
+          ++unpinned_this_pass;
+        }
         continue;
       }
       if (!candidate->evict()) {
         continue;
       }
+      ++evictions_this_pass;
+
       candidate->clear();
       this->push_free_slot(candidate);
       observed_resident_size = this->resident_size_.load();

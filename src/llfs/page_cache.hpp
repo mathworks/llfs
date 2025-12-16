@@ -16,8 +16,10 @@
 #include <llfs/log_device.hpp>
 #include <llfs/metrics.hpp>
 #include <llfs/optional.hpp>
+#include <llfs/page_allocate_options.hpp>
 #include <llfs/page_allocator.hpp>
 #include <llfs/page_buffer.hpp>
+#include <llfs/page_cache_insert_options.hpp>
 #include <llfs/page_cache_metrics.hpp>
 #include <llfs/page_cache_options.hpp>
 #include <llfs/page_device.hpp>
@@ -164,18 +166,11 @@ class PageCache : public PageLoader
 
   std::unique_ptr<PageCacheJob> new_job();
 
-  StatusOr<PinnedPage> allocate_page_of_size(PageSize size, batt::WaitForResource wait_for_resource,
-                                             LruPriority lru_priority, u64 callers, u64 job_id,
-                                             const batt::CancelToken& cancel_token = None);
+  StatusOr<PinnedPage> allocate_page(const PageAllocateOptions& options, u64 callers, u64 job_id);
 
-  StatusOr<PinnedPage> allocate_page_of_size_log2(PageSizeLog2 size_log2,
-                                                  batt::WaitForResource wait_for_resource,
-                                                  LruPriority lru_priority, u64 callers, u64 job_id,
-                                                  const batt::CancelToken& cancel_token = None);
-
-  ExternalAllocation allocate_external(usize byte_size)
+  ExternalAllocation allocate_external(usize byte_size, PageCacheOvercommit& overcommit)
   {
-    return this->cache_slot_pool_->allocate_external(byte_size);
+    return this->cache_slot_pool_->allocate_external(byte_size, overcommit);
   }
 
   // Returns a page allocated via `allocate_page` to the free pool.  This MUST be done before the
@@ -218,11 +213,11 @@ class PageCache : public PageLoader
   Optional<PageId> paired_page_id_for(PageId page_id, const PageDevicePairing& pairing) const;
 
   /** \brief Allocates a PageBuffer for the page paired to `page_id` under the specified pairing
-   * relationship; pins the new page to the cache (with the specified priority)and returns the
+   * relationship; pins the new page to the cache (with the specified priority) and returns the
    * resulting PinnedPage.
    */
   StatusOr<PinnedPage> allocate_paired_page_for(PageId page_id, const PageDevicePairing& pairing,
-                                                LruPriority lru_priority);
+                                                const PageAllocateOptions& options);
 
   /** \brief Writes the specified paired page.  This happens outside the normal transactional page
    * creation workflow.
@@ -339,9 +334,8 @@ class PageCache : public PageLoader
   void index_device_entries_by_page_size() noexcept;
 
   //----- --- -- -  -  -   -
-  StatusOr<PinnedPage> pin_allocated_page_to_cache(PageDeviceEntry* device_entry,
-                                                   PageSize page_size, PageId page_id,
-                                                   LruPriority lru_priority);
+  StatusOr<PinnedPage> pin_allocated_page_to_cache(PageDeviceEntry* device_entry, PageId page_id,
+                                                   const PageAllocateOptions& options);
 
   //----- --- -- -  -  -   -
   /** \brief Attempts to find the specified page (`page_id`) in the cache; if successful, the cache

@@ -35,9 +35,8 @@ inline void dump_packed_art(std::ostream& out, const llfs::PackedART::NodeBase* 
       out << indent << "Small{.prefix=" << batt::c_str_literal(root->prefix_str()) << "}"
           << std::endl;
 
-      llfs::PackedART::visit_branches(
-          (const llfs::PackedART::SmallNode*)root,
-          [&](u8 branch_byte, const llfs::PackedART::NodeBase* branch_root) {
+      ((const llfs::PackedART::SmallNode*)root)
+          ->visit_branches([&](u8 branch_byte, const llfs::PackedART::NodeBase* branch_root) {
             out << indent << batt::c_str_literal(std::string_view{(const char*)&branch_byte, 1})
                 << std::endl;
             dump_packed_art(out, branch_root, depth + 1);

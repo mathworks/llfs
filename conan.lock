@@ -1,7 +1,7 @@
 {
   "version": "0.5",
   "requires": [
-    "batteries/0.62.0",
+    "batteries/0.63.0",
     "boost/1.88.0",
     "bzip2/1.0.8",
     "cli11/2.5.0",

@@ -176,6 +176,45 @@ class PageCacheSlot
       return this->size_;
     }
 
+    /** \brief Takes the size allocated to `that` and moves it to `this`.
+     */
+    void subsume(ExternalAllocation&& that)
+    {
+      if (that.pool_ == nullptr || that.pool_ == 0) {
+        return;
+      }
+
+      if (this->pool_ == nullptr || this->size_ == 0) {
+        *this = std::move(that);
+        return;
+      }
+
+      BATT_CHECK_EQ(this->pool_, that.pool_);
+      this->size_ += that.size_;
+
+      that.pool_ = nullptr;
+      that.size_ = 0;
+    }
+
+    /** \brief Divides this allocation into two, returning a new object with the passed size, which
+     * is subtracted from this->size().
+     *
+     * If byte_count is too large, returns batt::StatusCode::kOutOfRange.
+     */
+    StatusOr<ExternalAllocation> split(usize byte_count)
+    {
+      if (this->size_ < byte_count) {
+        return {batt::StatusCode::kOutOfRange};
+      }
+
+      this->size_ -= byte_count;
+      if (this->size_ == 0) {
+        this->pool_ = nullptr;
+      }
+
+      return ExternalAllocation{*this->pool_, byte_count};
+    }
+
     explicit operator bool() const noexcept
     {
       return this->pool_ && this->size_ != 0;

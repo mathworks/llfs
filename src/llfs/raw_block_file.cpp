@@ -10,6 +10,7 @@
 //
 
 #include <batteries/hint.hpp>
+#include "llfs/config.hpp"
 
 namespace llfs {
 
@@ -36,14 +37,15 @@ Status RawBlockFile::validate_buffer(const ConstBuffer& buffer, i64 offset)
 //
 /*static*/ i64 RawBlockFile::align_up(i64 n)
 {
-  return (n + 511) & ~511ll;
+  return (n + static_cast<i64>(kDirectIOBlockAlign - 1)) &
+         ~static_cast<i64>(kDirectIOBlockAlign - 1);
 }
 
 // Return the greatest block-aligned value not greater than n.
 //
 /*static*/ i64 RawBlockFile::align_down(i64 n)
 {
-  return n & ~511ll;
+  return n & ~static_cast<i64>(kDirectIOBlockAlign - 1);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

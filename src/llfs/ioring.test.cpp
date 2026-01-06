@@ -75,9 +75,12 @@ TEST(IoRingTest, Test)
                               /*mode=*/0644);
   ASSERT_GE(fd, 0) << std::strerror(errno);
 
-  std::array<char, 1023> buf;
+  std::array<char, kDirectIOBlockSize + kDirectIOBlockAlign - 1> buf;
   std::intptr_t i = (std::intptr_t)buf.data();
-  i = (i + 511) & ~std::intptr_t{511};
+  i = (i + static_cast<std::intptr_t>(kDirectIOBlockAlign - 1)) &
+      ~static_cast<std::intptr_t>(kDirectIOBlockAlign - 1);
+
+  ASSERT_EQ(i % kDirectIOBlockAlign, 0);
 
   std::ostringstream oss;
   oss << "hello, io_uring world!";

@@ -115,6 +115,10 @@ class IoRingPageFileDevice : public PageDevice
 
  private:
   //+++++++++++-+-+--+----- --- -- -  -  -   -
+  Status init_known_file_size();
+
+  i64 update_known_file_size(i64 target_min_size);
+
   StatusOr<u64> get_physical_page(PageId page_id) const;
 
   StatusOr<i64> get_file_offset_of_page(PageId page_id) const;
@@ -145,6 +149,10 @@ class IoRingPageFileDevice : public PageDevice
   // Used to construct and parse PageIds for this device.
   //
   PageIdFactory page_ids_;
+
+  // If this is not read-only, then track the known file size.
+  //
+  std::atomic<i64> known_file_size_{0};
 };
 
 }  // namespace llfs

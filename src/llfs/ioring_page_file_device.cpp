@@ -105,6 +105,10 @@ StatusOr<std::shared_ptr<PageBuffer>> IoRingPageFileDevice::prepare(PageId page_
     return {batt::StatusCode::kFailedPrecondition};
   }
 
+  if (this->known_file_size_.load() == 0) {
+    BATT_REQUIRE_OK(this->init_known_file_size());
+  }
+
   StatusOr<u64> physical_page = this->get_physical_page(page_id);
   BATT_REQUIRE_OK(physical_page);
 
@@ -137,6 +141,7 @@ void IoRingPageFileDevice::write(std::shared_ptr<const PageBuffer>&& page_buffer
   const PackedPageHeader& page_header = get_page_header(*page_buffer);
   ConstBuffer remaining_data = [&] {
     ConstBuffer buffer = get_const_buffer(page_buffer);
+
     if (page_header.unused_end == page_header.size &&
         page_header.unused_begin < page_header.unused_end) {
       buffer = resize_buffer(
@@ -192,6 +197,10 @@ void IoRingPageFileDevice::write_some(i64 page_offset_in_file,
         remaining_data += bytes_written;
         page_offset_in_file += bytes_written;
 
+        // Update the known file size.
+        //
+        this->update_known_file_size(page_offset_in_file);
+
         // The write was short; write again from the new stop point.
         //
         this->write_some(page_offset_in_file, std::move(page_buffer), remaining_data,
@@ -211,6 +220,10 @@ void IoRingPageFileDevice::read(PageId page_id, ReadHandler&& handler)
                  << BATT_INSPECT(page_offset_in_file.status());
     handler(page_offset_in_file.status());
     return;
+  }
+
+  if (this->known_file_size_.load() == 0) {
+    this->init_known_file_size().IgnoreError();
   }
 
   PageDeviceMetrics::instance()  //
@@ -238,64 +251,99 @@ void IoRingPageFileDevice::read_some(PageId page_id, i64 page_offset_in_file,
 
   this->file_.async_read_some(
       page_offset_in_file + n_read_so_far, buffer,
-      bind_handler(
-          std::move(handler),
-          [this, page_id, page_offset_in_file, page_buffer = std::move(page_buffer),
-           page_buffer_size, n_read_so_far](ReadHandler&& handler, StatusOr<i32> result) mutable {
-            if (!result.ok()) {
-              if (batt::status_is_retryable(result.status())) {
-                this->read_some(page_id, page_offset_in_file, std::move(page_buffer),
-                                page_buffer_size, n_read_so_far, std::move(handler));
-                return;
-              }
+      bind_handler(std::move(handler), [this, page_id, page_offset_in_file,
+                                        page_buffer = std::move(page_buffer), page_buffer_size,
+                                        n_read_so_far,
+                                        file_size_before = this->known_file_size_.load()](
+                                           ReadHandler&& handler, StatusOr<i32> result) mutable {
+        if (!result.ok()) {
+          if (batt::status_is_retryable(result.status())) {
+            this->read_some(page_id, page_offset_in_file, std::move(page_buffer), page_buffer_size,
+                            n_read_so_far, std::move(handler));
+            return;
+          }
 
-              LLFS_LOG_WARNING() << "IoRingPageFileDevice::read failed; page_offset_in_file+"
-                                 << n_read_so_far << "=" << page_offset_in_file + n_read_so_far
-                                 << " n_read_so_far=" << n_read_so_far
-                                 << " page_offset_in_file=" << page_offset_in_file;
+          LLFS_LOG_WARNING() << "IoRingPageFileDevice::read failed; page_offset_in_file+"
+                             << n_read_so_far << "=" << page_offset_in_file + n_read_so_far
+                             << " n_read_so_far=" << n_read_so_far
+                             << " page_offset_in_file=" << page_offset_in_file
+                             << BATT_INSPECT(result.status());
 
-              handler(result.status());
-              return;
-            }
-            BATT_CHECK_GT(*result, 0) << "We must either make progress or receive an error code!";
+          handler(result.status());
+          return;
+        }
 
-            // Sanity check the page header and fail fast if something looks wrong.
-            //
-            const usize n_read_before = n_read_so_far;
-            n_read_so_far += *result;
+        // If this is a grow-on-demand page file, and we are trying to read the last written
+        // page, fill with zeros if necessary.
+        //
+        if (*result == 0 && n_read_so_far > 0) {
+          const i64 file_size_now = this->known_file_size_.load();
 
-            if (!this->is_sharded_view_ && (n_read_before < sizeof(PackedPageHeader) &&
-                                            n_read_so_far >= sizeof(PackedPageHeader))) {
-              Status status = get_page_header(*page_buffer)
-                                  .sanity_check(PageSize{BATT_CHECKED_CAST(u32, page_buffer_size)},
-                                                page_id, this->page_ids_);
-              if (!status.ok()) {
-                // If the only sanity check that failed was a bad generation number, then we report
-                // page not found.
-                //
-                if (status == StatusCode::kPageHeaderBadGeneration) {
-                  status = batt::StatusCode::kNotFound;
-                }
-                handler(status);
-                return;
-              }
-              VLOG(1) << "Short read: " << BATT_INSPECT(page_id)
-                      << BATT_INSPECT(page_offset_in_file) << BATT_INSPECT(page_buffer_size)
-                      << BATT_INSPECT(n_read_so_far);
-            }
+          if (this->physical_layout_.is_last_in_file) {
+            StatusOr<i64> file_size = sizeof_fd(this->file_.get_fd());
+            if (file_size.ok() &&
+                page_offset_in_file + n_read_so_far == BATT_CHECKED_CAST(u64, *file_size)) {
+              MutableBuffer buffer = get_mutable_buffer(page_buffer) + n_read_so_far;
+              std::memset(buffer.data(), 0, buffer.size());
 
-            // If we have reached the end of the buffer, invoke the handler.  Success!
-            //
-            if (n_read_so_far == page_buffer_size) {
+              // Success!
+              //
               handler(std::move(page_buffer));
               return;
             }
+          }
 
-            // The write was short; write again from the new stop point.
-            //
+          // If file has grown, then try again.
+          //
+          if (file_size_now != file_size_before) {
             this->read_some(page_id, page_offset_in_file, std::move(page_buffer), page_buffer_size,
                             n_read_so_far, std::move(handler));
-          }));
+            return;
+          }
+
+          BATT_CHECK_GT(*result, 0)
+              << "We must either make progress or receive an error code!"
+              << BATT_INSPECT(page_offset_in_file) << BATT_INSPECT(n_read_so_far)
+              << BATT_INSPECT(page_offset_in_file + n_read_so_far)
+              << BATT_INSPECT(this->physical_layout_.is_last_in_file);
+        }
+
+        // Sanity check the page header and fail fast if something looks wrong.
+        //
+        const usize n_read_before = n_read_so_far;
+        n_read_so_far += *result;
+
+        if (!this->is_sharded_view_ && (n_read_before < sizeof(PackedPageHeader) &&
+                                        n_read_so_far >= sizeof(PackedPageHeader))) {
+          Status status = get_page_header(*page_buffer)
+                              .sanity_check(PageSize{BATT_CHECKED_CAST(u32, page_buffer_size)},
+                                            page_id, this->page_ids_);
+          if (!status.ok()) {
+            // If the only sanity check that failed was a bad generation number, then we report
+            // page not found.
+            //
+            if (status == StatusCode::kPageHeaderBadGeneration) {
+              status = batt::StatusCode::kNotFound;
+            }
+            handler(status);
+            return;
+          }
+          VLOG(1) << "Short read: " << BATT_INSPECT(page_id) << BATT_INSPECT(page_offset_in_file)
+                  << BATT_INSPECT(page_buffer_size) << BATT_INSPECT(n_read_so_far);
+        }
+
+        // If we have reached the end of the buffer, invoke the handler.  Success!
+        //
+        if (n_read_so_far == page_buffer_size) {
+          handler(std::move(page_buffer));
+          return;
+        }
+
+        // The write was short; write again from the new stop point.
+        //
+        this->read_some(page_id, page_offset_in_file, std::move(page_buffer), page_buffer_size,
+                        n_read_so_far, std::move(handler));
+      }));
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -320,6 +368,36 @@ void IoRingPageFileDevice::drop(PageId id, WriteHandler&& handler)
 bool IoRingPageFileDevice::is_last_in_file() const
 {
   return this->layout().is_last_in_file;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+Status IoRingPageFileDevice::init_known_file_size()
+{
+  StatusOr<i64> file_size = sizeof_fd(this->file_.get_fd());
+  BATT_REQUIRE_OK(file_size);
+
+  this->update_known_file_size(*file_size);
+
+  return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+i64 IoRingPageFileDevice::update_known_file_size(i64 target_min_size)
+{
+  i64 observed_size = this->known_file_size_.load();
+  for (;;) {
+    if (observed_size >= target_min_size) {
+      break;
+    }
+
+    if (this->known_file_size_.compare_exchange_weak(observed_size, target_min_size)) {
+      observed_size = target_min_size;
+      break;
+    }
+  }
+  return observed_size;
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -

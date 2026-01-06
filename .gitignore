@@ -8,3 +8,5 @@ a8/
 CMakeUserPresets.json
 src/CMakeUserPresets.json
 __pycache__/
+compile_commands.json
+.cache/

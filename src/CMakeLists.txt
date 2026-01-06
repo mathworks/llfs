@@ -10,8 +10,11 @@ cmake_minimum_required(VERSION 3.20)
 
 macro(LLFS_CollectHeaders TARGET_NAME TARGET_SRCDIR)
 
-  file(GLOB_RECURSE ${TARGET_NAME}_Headers RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} ./${TARGET_SRCDIR}/*.hpp ./${TARGET_SRCDIR}/*.ipp)
-  
+  file(GLOB_RECURSE ${TARGET_NAME}_Headers
+       RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
+       ./${TARGET_SRCDIR}/*.hpp
+       ./${TARGET_SRCDIR}/*.ipp)
+
   foreach(_header IN LISTS ${TARGET_NAME}_Headers)
     get_filename_component(_destination "${_header}" PATH)
     install(FILES "${_header}" DESTINATION include/${_destination})
@@ -23,7 +26,7 @@ endmacro()
 macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
 
   set(TARGET_DEPS ${ARGN})
-  
+
   file(GLOB ${TARGET_NAME}_LibSources
     ./${TARGET_SRCDIR}/*.cpp
     ./${TARGET_SRCDIR}/*/*.cpp
@@ -41,7 +44,7 @@ macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
     ./${TARGET_SRCDIR}/*/*/*.test.cpp
     ./${TARGET_SRCDIR}/*/*/*/*.test.cpp
     )
-  
+
   foreach (_file "FORCE_LIST_NOT_EMPTY;${${TARGET_NAME}_TestSources}")
     list(REMOVE_ITEM ${TARGET_NAME}_LibSources ${_file})
   endforeach ()
@@ -51,18 +54,11 @@ macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
   add_library(${TARGET_NAME} ${${TARGET_NAME}_LibSources})
   target_link_libraries(${TARGET_NAME} ${TARGET_DEPS})
 
-  # Define unit test target
-  #
-  add_executable(${TARGET_NAME}_Test ${${TARGET_NAME}_TestSources} ./common/test_environment.cpp)
-  target_link_libraries(
-    ${TARGET_NAME}_Test
-    ${TARGET_NAME}
-    ${TARGET_DEPS}
+  set(EXTRA_TEST_DEPS
     GTest::gtest
     GTest::gtest_main
     GTest::gmock
     GTest::gmock_main
-    libfuse::libfuse
     OpenSSL::Crypto
     Boost::context
     Boost::stacktrace_backtrace
@@ -70,6 +66,20 @@ macro(LLFS_DefineLibrary TARGET_NAME TARGET_SRCDIR)
     xxHash::xxhash
     dl
     stdc++fs)
+
+  if (LINUX)
+    set(EXTRA_TEST_DEPS ${EXTRA_TEST_DEPS} libfuse::libfuse)
+  endif()
+
+  # Define unit test target
+  #
+  add_executable(${TARGET_NAME}_Test ${${TARGET_NAME}_TestSources} ./common/test_environment.cpp)
+  target_link_libraries(
+    ${TARGET_NAME}_Test
+    ${TARGET_NAME}
+    ${TARGET_DEPS}
+    ${EXTRA_TEST_DEPS}
+  )
 
   add_test(NAME ${TARGET_NAME}_Test
            WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/bin
@@ -100,12 +110,18 @@ endmacro()
 # Library definitions.
 #
 
-LLFS_DefineLibrary(llfs ./llfs
+set(LLFS_Deps
   batteries::batteries
-  liburing::liburing
   OpenSSL::Crypto
   xxHash::xxhash
-  )
+)
+
+if (LINUX)
+  set(LLFS_Deps ${LLFS_Deps} liburing::liburing)
+endif()
+
+
+LLFS_DefineLibrary(llfs ./llfs ${LLFS_Deps})
 
 #=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
@@ -149,9 +165,8 @@ file(GLOB llfs_fuse_Sources
 
 add_executable(llfs_fuse ${llfs_fuse_Sources})
 
-target_link_libraries(llfs_fuse
+set(LLFS_TestDeps
   llfs
-  libfuse::libfuse
   batteries::batteries
   Boost::context
   Boost::stacktrace_backtrace
@@ -159,4 +174,11 @@ target_link_libraries(llfs_fuse
   OpenSSL::Crypto
   CLI11::CLI11
   dl
-  stdc++fs)
+  stdc++fs
+)
+
+if (LINUX)
+  set(LLFS_TestDeps ${LLFS_TestDeps} libfuse::libfuse)
+endif()
+
+target_link_libraries(llfs_fuse ${LLFS_TestDeps})

@@ -130,13 +130,6 @@ StatusOr<std::shared_ptr<PageBuffer>> PageCacheJob::new_page(
 
   const PageId page_id = buffer->page_id();
 
-#if 0 // TODO REMOVE ME!!!
-  {
-    PackedPageHeader* const header = mutable_page_header(buffer.get());
-    header->layout_id = layout_id;
-  }
-#endif
-
   this->pruned_ = false;
   this->new_pages_.emplace(page_id, NewPage{std::move(*pinned_page), IsRecoveredPage{false}});
 

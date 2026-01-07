@@ -1,6 +1,7 @@
 BasedOnStyle: Google
 
 ColumnLimit: 100
+Standard: c++20
 
 AlignEscapedNewlines: Right
 AllowAllArgumentsOnNextLine: false

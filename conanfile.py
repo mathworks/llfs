@@ -7,8 +7,9 @@
 #+++++++++++-+-+--+----- --- -- -  -  -   -
 
 from conan import ConanFile
+from conan.errors import ConanInvalidConfiguration
 
-import platform
+import io, os, platform, shlex, subprocess
 
 
 class LlfsConan(ConanFile):
@@ -60,6 +61,8 @@ class LlfsConan(ConanFile):
         "ninja/[>=1.12.1 <2]",
     ]
 
+    _is_header_only = (platform.system() != "Linux")
+
     #+++++++++++-+-+--+----- --- -- -  -  -   -
 
     def configure(self):
@@ -96,7 +99,10 @@ class LlfsConan(ConanFile):
         return self.cor.set_version_from_git_tags(self)
 
     def layout(self):
-        return self.cor.layout_cmake_unified_src(self)
+        self.cor.layout_cmake_unified_src(self)
+        self.cpp.build.libdirs += ['src']
+        if not self._is_header_only:
+            self.cpp.build.libs += ['llfs']
 
     def generate(self):
         return self.cor.generate_cmake_default(self)
@@ -113,5 +119,23 @@ class LlfsConan(ConanFile):
     def package_id(self):
         return self.cor.package_id_lib_default(self)
 
+    def validate_build(self):
+        if self.settings.compiler == "gcc":
+            out_capture = io.StringIO()
+            cc_name = (
+                self.buildenv.vars(self).get('CC') or
+                self.buildenv.vars(self).get('CXX') or
+                os.getenv('CC') or
+                os.getenv('CXX') or
+                'gcc'
+            )
+            self.run(shlex.join([cc_name, '-dumpversion']), stdout=out_capture, shell=True)
+            actual_compiler_version = out_capture.getvalue().strip()
+            profile_compiler_version = str(self.settings.compiler.version)
+            if profile_compiler_version != actual_compiler_version:
+                raise ConanInvalidConfiguration(f"Compiler version mismatch: actual={actual_compiler_version}"
+                                                f", expected={profile_compiler_version}")
+
     #+++++++++++-+-+--+----- --- -- -  -  -   -
+
 

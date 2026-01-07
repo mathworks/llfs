@@ -13,7 +13,19 @@
 #include <llfs/config.hpp>
 //
 
-#ifndef LLFS_DISABLE_IO_URING
+#include <batteries/shared_ptr.hpp>
+
+#ifdef LLFS_DISABLE_IO_URING
+
+namespace llfs {
+
+class StorageContext : public batt::RefCounted<StorageContext>
+{
+};
+
+}  // namespace llfs
+
+#else  // !LLFS_DISABLE_IO_URING
 
 #include <llfs/ioring.hpp>
 #include <llfs/log_device_runtime_options.hpp>
@@ -27,7 +39,6 @@
 #include <llfs/storage_object_info.hpp>
 
 #include <batteries/async/task_scheduler.hpp>
-#include <batteries/shared_ptr.hpp>
 
 #include <boost/functional/hash.hpp>
 

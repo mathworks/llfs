@@ -44,6 +44,9 @@ jobs:
     steps:
       - name: Release
         env:
+          CACHE_CONAN_REMOTE: ${{ vars.CACHE_CONAN_REMOTE }}
+          CACHE_CONAN_LOGIN_USERNAME: ${{ vars.CACHE_CONAN_LOGIN_USERNAME }}
+          CACHE_CONAN_PASSWORD: ${{ secrets.CACHE_CONAN_PASSWORD }}
           RELEASE_CONAN_REMOTE: ${{ vars.RELEASE_CONAN_REMOTE }}
           RELEASE_CONAN_LOGIN_USERNAME: ${{ vars.RELEASE_CONAN_LOGIN_USERNAME }}
           RELEASE_CONAN_PASSWORD: ${{ secrets.RELEASE_CONAN_PASSWORD }}

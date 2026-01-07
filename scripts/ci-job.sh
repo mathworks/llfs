@@ -5,6 +5,10 @@ set -Eeuo pipefail
 SCRIPT_DIR=$(realpath $(dirname "$0"))
 PROJECT_DIR=$(realpath $(dirname "${SCRIPT_DIR}"))
 
+if [ -f "/conan-local-cache-server-config.sh" ]; then
+    source "/conan-local-cache-server-config.sh"
+fi
+
 # Pull configs for this build.
 #
 cor conan config install --type git https://gitlab.com/batteriesincluded/conan-config/linux-gcc12-x86_64.git

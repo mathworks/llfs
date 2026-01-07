@@ -9,7 +9,7 @@ PROJECT_DIR=$(realpath $(dirname "${SCRIPT_DIR}"))
 
 # Run the ci-job.sh script using docker.
 #
-ROOT_IMAGE=registry.gitlab.com/batteriesincluded/batt-docker/batteries-debian12-build-tools:0.5.0
+ROOT_IMAGE=registry.gitlab.com/batteriesincluded/batt-docker/batteries-debian12-build-tools:0.6.0
 USER_IMAGE=$(cor docker user-image ${ROOT_IMAGE} --user-commands-file="${SCRIPT_DIR}/ci-job-setup.dockerfile")
 
 VOLUMES=

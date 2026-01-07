@@ -12,7 +12,9 @@ cor conan config install --type git https://gitlab.com/batteriesincluded/conan-c
 # Enable the local cache server.
 #
 if [ -f "/conan-local-cache-server-config.sh" ]; then
+    set +x
     source "/conan-local-cache-server-config.sh"
+    set -x
 fi
 "${SCRIPT_DIR}/ci-print-diagnostics.sh" "ci-job.sh"
 if [ "${CACHE_CONAN_REMOTE:-}" != "" ]; then

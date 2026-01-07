@@ -14,7 +14,7 @@ USER_IMAGE=$(cor docker user-image ${ROOT_IMAGE} --user-commands-file="${SCRIPT_
 
 VOLUMES=
 if [ -f "${HOME}/conan-local-cache-server-config.sh" ]; then
-    VOLUMES+="--volume \"${HOME}/conan-local-cache-server-config.sh:/conan-local-cache-server-config.sh\""
+    VOLUMES+="--volume ${HOME}/conan-local-cache-server-config.sh:/conan-local-cache-server-config.sh"
 fi
 
 docker run \

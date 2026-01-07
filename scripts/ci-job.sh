@@ -39,7 +39,7 @@ case "$CI_JOB_NAME" in
   release)
     echo "Running release job..."
     cor export --only
-    cor export-pkg --only
+    cor export-pkg --clean
     cor upload
     ;;
   *)

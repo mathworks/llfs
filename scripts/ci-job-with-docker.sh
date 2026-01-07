@@ -12,6 +12,11 @@ PROJECT_DIR=$(realpath $(dirname "${SCRIPT_DIR}"))
 ROOT_IMAGE=registry.gitlab.com/batteriesincluded/batt-docker/batteries-debian12-build-tools:0.5.0
 USER_IMAGE=$(cor docker user-image ${ROOT_IMAGE} --user-commands-file="${SCRIPT_DIR}/ci-job-setup.dockerfile")
 
+VOLUMES=
+if [ -f "${HOME}/conan-local-cache-server-config.sh" ]; then
+    VOLUMES+="--volume '${HOME}/conan-local-cache-server-config.sh:/conan-local-cache-server-config.sh'"
+fi
+
 docker run \
        --ulimit memlock=-1:-1 \
        --cap-add SYS_ADMIN --device /dev/fuse \
@@ -26,6 +31,7 @@ docker run \
        --env CI_JOB_NAME \
        --volume "${HOME}/ci_conan_hosts:/etc/hosts:ro" \
        --volume "${PROJECT_DIR}:${PROJECT_DIR}" \
+       ${VOLUMES} \
        --workdir "${PROJECT_DIR}" \
        ${USER_IMAGE} \
        "${BUILD_COMMAND:-${SCRIPT_DIR}/ci-job.sh}"

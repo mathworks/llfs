@@ -60,6 +60,8 @@ class LlfsConan(ConanFile):
         "ninja/[>=1.12.1 <2]",
     ]
 
+    _is_header_only = (platform.system() != "Linux")
+
     #+++++++++++-+-+--+----- --- -- -  -  -   -
 
     def configure(self):
@@ -96,7 +98,10 @@ class LlfsConan(ConanFile):
         return self.cor.set_version_from_git_tags(self)
 
     def layout(self):
-        return self.cor.layout_cmake_unified_src(self)
+        self.cor.layout_cmake_unified_src(self)
+        self.cpp.build.libdirs += ['src']
+        if not self._is_header_only:
+            self.cpp.build.libs += ['llfs']
 
     def generate(self):
         return self.cor.generate_cmake_default(self)

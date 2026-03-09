@@ -634,7 +634,7 @@ TEST_F(VolumeTest, TrimControl_VolumeReaderCloneLock)
 
   for (int i = 0; i < 100; ++i) {
     EXPECT_EQ(this->volume->trim_control().get_lower_bound(), reader->slot_range().lower_bound);
-    batt::Task::sleep(boost::posix_time::milliseconds(1));
+    batt::Task::sleep(std::chrono::milliseconds(1));
   }
 
   llfs::SlotReadLock cloned_lock = reader->clone_lock();
@@ -642,7 +642,7 @@ TEST_F(VolumeTest, TrimControl_VolumeReaderCloneLock)
 
   for (int i = 0; i < 100; ++i) {
     EXPECT_EQ(this->volume->trim_control().get_lower_bound(), cloned_lock.slot_range().lower_bound);
-    batt::Task::sleep(boost::posix_time::milliseconds(1));
+    batt::Task::sleep(std::chrono::milliseconds(1));
   }
 
   cloned_lock.clear();
@@ -696,7 +696,7 @@ TEST_F(VolumeTest, TrimControl_LastVolumeReaderCausesTrim)
   while (!readers.empty()) {
     for (int i = 0; i < 25; ++i) {
       EXPECT_EQ(this->volume->trim_control().get_lower_bound(), 0u);
-      batt::Task::sleep(boost::posix_time::milliseconds(1));
+      batt::Task::sleep(std::chrono::milliseconds(1));
     }
     readers.pop_back();
   }

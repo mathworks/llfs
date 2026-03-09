@@ -448,7 +448,7 @@ bool PageAllocator::await_ref_count(PageId page_id, i32 ref_count)
     if (prc.ref_count == ref_count) {
       break;
     }
-    batt::Task::sleep(boost::posix_time::milliseconds(1));
+    batt::Task::sleep(std::chrono::milliseconds(1));
     ++counter;
 
     if ((counter & 4095) == 0) {

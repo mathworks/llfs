@@ -28,6 +28,7 @@
 #include <batteries/env.hpp>
 #include <batteries/state_machine_model.hpp>
 
+#include <chrono>
 #include <cstdlib>
 
 namespace {

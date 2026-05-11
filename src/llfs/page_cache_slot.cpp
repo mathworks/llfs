@@ -53,16 +53,21 @@ auto PageCacheSlot::fill(PageId key, PageSize page_size, i64 lru_priority, Exter
   this->page_size_ = page_size;
   this->update_latest_use(lru_priority);
 
-  auto observed_state = this->state_.fetch_add(kPinCountDelta) + kPinCountDelta;
-  BATT_CHECK_EQ(observed_state & Self::kOverflowMask, 0);
-  BATT_CHECK(Self::is_pinned(observed_state));
+  if (PageCacheSlot::eviction_pause() == false) {
+    auto observed_state = this->state_.fetch_add(kPinCountDelta) + kPinCountDelta;
+    BATT_CHECK_EQ(observed_state & Self::kOverflowMask, 0);
+    BATT_CHECK(Self::is_pinned(observed_state));
+  }
 
   this->pool_.metrics().admit_count.add(1);
   this->pool_.metrics().admit_byte_count.add(page_size);
 
   claim.absorb();
 
-  this->add_pinned_bytes(page_size);
+  if (PageCacheSlot::eviction_pause() == false) {
+    this->add_pinned_bytes(page_size);
+    PageCacheSlot::add_pin_count();
+  }
   this->add_ref();
   this->set_valid();
 
@@ -91,6 +96,10 @@ void PageCacheSlot::clear()
 //
 bool PageCacheSlot::evict()
 {
+  if (PageCacheSlot::eviction_pause()) {
+    return false;
+  }
+
   // Use a CAS loop here to guarantee an atomic transition from Valid + Filled (unpinned) state to
   // Invalid.
   //
@@ -116,6 +125,10 @@ bool PageCacheSlot::evict_if_key_equals(PageId key)
 {
   static_assert(std::is_same_v<decltype(this->state_)::value_type, u64>);
 
+  if (PageCacheSlot::eviction_pause()) {
+    return false;
+  }
+
   // The slot must be pinned in order to read the key, so increase the pin count.
   //
   const u64 old_state = this->state_.fetch_add(kPinCountDelta, std::memory_order_acquire);
@@ -126,6 +139,7 @@ bool PageCacheSlot::evict_if_key_equals(PageId key)
     this->add_pinned_bytes(this->page_size_);
     this->add_ref();
   }
+  PageCacheSlot::add_pin_count();
 
   BATT_CHECK_EQ(observed_state & Self::kOverflowMask, 0);
 
@@ -156,6 +170,8 @@ bool PageCacheSlot::evict_if_key_equals(PageId key)
       this->add_unpinned_bytes(saved_page_size);
       this->on_evict_success(nullptr);
 
+      PageCacheSlot::add_unpin_count();
+
       // At this point, we always expect to be going from pinned to unpinned.
       // In order to successfully evict the slot, we must be holding the only pin,
       // as guarenteed by the first if statement in the for loop.
@@ -171,6 +187,10 @@ bool PageCacheSlot::evict_if_key_equals(PageId key)
 bool PageCacheSlot::evict_and_release_pin(ExternalAllocation* reclaim)
 {
   static_assert(std::is_same_v<decltype(this->state_)::value_type, u64>);
+
+  if (PageCacheSlot::eviction_pause()) {
+    return false;
+  }
 
   u64 observed_state = this->state_.load(std::memory_order_acquire);
 
@@ -202,6 +222,8 @@ bool PageCacheSlot::evict_and_release_pin(ExternalAllocation* reclaim)
     if (this->state_.compare_exchange_weak(observed_state, target_state)) {
       this->add_unpinned_bytes(saved_page_size);
       this->on_evict_success(reclaim);
+
+      PageCacheSlot::add_unpin_count();
 
       // At this point, we always expect to be going from pinned to unpinned.
       // In order to successfully evict the slot, we must be holding the only pin,
@@ -266,6 +288,20 @@ void PageCacheSlot::notify_last_ref_released()
 }
 
 #endif  // LLFS_PAGE_CACHE_SLOT_UPDATE_POOL_REF_COUNT
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*static*/ void PageCacheSlot::add_pin_count()
+{
+  Pool::Metrics::instance().pin_count.add(1);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+/*static*/ void PageCacheSlot::add_unpin_count()
+{
+  Pool::Metrics::instance().unpin_count.add(1);
+}
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //

@@ -4,12 +4,11 @@
 # See https://www.apache.org/licenses/LICENSE-2.0 for license information.
 # SPDX short identifier: Apache-2.0
 #
-#+++++++++++-+-+--+----- --- -- -  -  -   -
+import io, os, platform, shlex, subprocess, sys
 
 from conan import ConanFile
 from conan.errors import ConanInvalidConfiguration
-
-import io, os, platform, shlex, subprocess
+from conan.tools.scm import Version
 
 
 class LlfsConan(ConanFile):
@@ -37,7 +36,7 @@ class LlfsConan(ConanFile):
         "shared": False,
     }
 
-    python_requires = "cor_recipe_utils/0.18.2"
+    python_requires = "cor_recipe_utils/0.19.1"
     python_requires_extend = "cor_recipe_utils.ConanFileBase"
 
     tool_requires = [
@@ -119,20 +118,25 @@ class LlfsConan(ConanFile):
     def package_id(self):
         return self.cor.package_id_lib_default(self)
 
+    #+++++++++++-+-+--+----- --- -- -  -  -   -
+
     def validate_build(self):
         if self.settings.compiler == "gcc":
             out_capture = io.StringIO()
+            from_conf = self.conf.get('tools.build:compiler_executables')
             cc_name = (
                 self.buildenv.vars(self).get('CC') or
                 self.buildenv.vars(self).get('CXX') or
                 os.getenv('CC') or
                 os.getenv('CXX') or
+                (from_conf and from_conf.get('cpp')) or
                 'gcc'
             )
             self.run(shlex.join([cc_name, '-dumpversion']), stdout=out_capture, shell=True)
-            actual_compiler_version = out_capture.getvalue().strip()
-            profile_compiler_version = str(self.settings.compiler.version)
-            if profile_compiler_version != actual_compiler_version:
+            actual_compiler_version = Version(out_capture.getvalue().strip())
+            profile_compiler_version = Version(str(self.settings.compiler.version))
+
+            if profile_compiler_version.major != actual_compiler_version.major:
                 raise ConanInvalidConfiguration(f"Compiler version mismatch: actual={actual_compiler_version}"
                                                 f", expected={profile_compiler_version}")
 

@@ -13,13 +13,9 @@ include(${COR_CMAKE_INCLUDE_DIR}/common.cmake)
 include(${CMAKE_BINARY_DIR}/conan_find_requirements.cmake)
 
 #==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-# Disable link-time optimization if the compilation flags are not compatible.
+# Disable link-time optimization.  (Breaks Apple Silicon and Windows builds)
 #
-if ("${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_DEBUG} ${CMAKE_CXX_FLAGS_RELEASE} ${CMAKE_CXX_FLAGS_RELWITHDEBINFO}"
-    MATCHES "-fsanitize=address|-fno-lto")
-  message("\nNDTE: Disabling LTO because of compile flags: ${CMAKE_MATCH_0}\n")
-  set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
-endif ()
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
 
 #==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 # Do not attempt to set/fix rpath for binaries.

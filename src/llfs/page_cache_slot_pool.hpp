@@ -69,10 +69,12 @@ class PageCacheSlot::Pool : public boost::intrusive_ref_counter<Pool>
     /** \brief The total size of all pages that have ever been pinned to the cache.
      */
     FastCountMetric<i64> pinned_byte_count{0};
+    FastCountMetric<i64> pin_count{0};
 
     /** \brief The total size of all pages that have ever been unpinned from the cache.
      */
     FastCountMetric<i64> unpinned_byte_count{0};
+    FastCountMetric<i64> unpin_count{0};
 
     CountMetric<i64> total_capacity_allocated{0};
     CountMetric<i64> total_capacity_freed{0};

@@ -44,7 +44,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(name);
 
     batt::Status push_status = this->work_queue_->push_job(
-        [this, req, parent, name = std::string{name}, handler = BATT_FORWARD(handler)] {
+        [this, req, parent, name = std::string{name}, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->lookup(req, parent, name));
         });
 
@@ -61,8 +61,8 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
     LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
                  << BATT_INSPECT(nlookup);
 
-    batt::Status push_status =
-        this->work_queue_->push_job([this, req, ino, nlookup, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, nlookup, handler = BATT_FORWARD(handler)]() mutable {
           auto on_scope_exit = batt::finally([&] {
             BATT_FORWARD(handler)();
           });
@@ -85,7 +85,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(ino);
 
     batt::Status push_status =
-        this->work_queue_->push_job([this, req, ino, handler = BATT_FORWARD(handler)] {
+        this->work_queue_->push_job([this, req, ino, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->get_attributes(req, ino));
         });
 
@@ -124,7 +124,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
     }();
 
     batt::Status push_status = this->work_queue_->push_job(
-        [this, req, ino, attr = *attr, to_set, fh, handler = BATT_FORWARD(handler)] {
+        [this, req, ino, attr = *attr, to_set, fh, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)
           (this->derived_this()->set_attributes(req, ino, &attr, to_set, fh));
         });
@@ -142,7 +142,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
     LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino);
 
     batt::Status push_status =
-        this->work_queue_->push_job([this, req, ino, handler = BATT_FORWARD(handler)] {
+        this->work_queue_->push_job([this, req, ino, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->readlink(req, ino));
         });
 
@@ -164,8 +164,9 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(DumpFileMode{mode})  //
                  << BATT_INSPECT(rdev);
 
-    batt::Status push_status = this->work_queue_->push_job(
-        [this, req, parent, name = std::string{name}, mode, rdev, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, parent, name = std::string{name}, mode, rdev,
+                                     handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->make_node(req, parent, name, mode, rdev));
         });
 
@@ -183,8 +184,9 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
     LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(parent)
                  << BATT_INSPECT(name) << BATT_INSPECT(DumpFileMode{mode});
 
-    batt::Status push_status = this->work_queue_->push_job(
-        [this, req, parent, name = std::string{name}, mode, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, parent, name = std::string{name}, mode,
+                                     handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->make_directory(req, parent, name, mode));
         });
 
@@ -202,7 +204,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(name);
 
     batt::Status push_status = this->work_queue_->push_job(
-        [this, req, parent, name = std::string{name}, handler = BATT_FORWARD(handler)] {
+        [this, req, parent, name = std::string{name}, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->unlink(req, parent, name));
         });
 
@@ -221,7 +223,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(name);
 
     batt::Status push_status = this->work_queue_->push_job(
-        [this, req, parent, name = std::string{name}, handler = BATT_FORWARD(handler)] {
+        [this, req, parent, name = std::string{name}, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->remove_directory(req, parent, name));
         });
 
@@ -239,9 +241,9 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
     LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(link)
                  << BATT_INSPECT(parent) << BATT_INSPECT(name);
 
-    batt::Status push_status =
-        this->work_queue_->push_job([this, req, link = std::string{link}, parent,
-                                     name = std::string{name}, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, link = std::string{link}, parent, name = std::string{name},
+         handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->symbolic_link(req, link, parent, name));
         });
 
@@ -262,7 +264,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
 
     batt::Status push_status = this->work_queue_->push_job(
         [this, req, parent, name = std::string{name}, newparent, newname = std::string{newname},
-         flags, handler = BATT_FORWARD(handler)] {
+         flags, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)
           (this->derived_this()->rename(req, parent, name, newparent, newname, flags));
         });
@@ -283,7 +285,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
 
     batt::Status push_status =
         this->work_queue_->push_job([this, req, ino, newparent, newname = std::string{newname},
-                                     handler = BATT_FORWARD(handler)] {
+                                     handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->hard_link(req, ino, newparent, newname));
         });
 
@@ -302,8 +304,8 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
 
     BATT_CHECK_NOT_NULLPTR(fi);
 
-    batt::Status push_status =
-        this->work_queue_->push_job([this, req, ino, fi = *fi, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, fi = *fi, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->open(req, ino, fi));
         });
 
@@ -322,7 +324,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(size) << BATT_INSPECT(offset) << BATT_INSPECT(fh);
 
     batt::Status push_status = this->work_queue_->push_job(
-        [this, req, ino, size, offset, fh, handler = BATT_FORWARD(handler)] {
+        [this, req, ino, size, offset, fh, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->read(req, ino, size, offset, fh));
         });
 
@@ -342,7 +344,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(fh);
 
     batt::Status push_status = this->work_queue_->push_job(
-        [this, req, ino, buffer, offset, fh, handler = BATT_FORWARD(handler)] {
+        [this, req, ino, buffer, offset, fh, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->write(req, ino, buffer, offset, fh));
         });
 
@@ -359,8 +361,8 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
     LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
                  << BATT_INSPECT(fh);
 
-    batt::Status push_status =
-        this->work_queue_->push_job([this, req, ino, fh, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, fh, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->flush(req, ino, fh));
         });
 
@@ -378,8 +380,8 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
     LLFS_VLOG(1) << BATT_THIS_FUNCTION << BATT_INSPECT(req) << BATT_INSPECT(ino)
                  << BATT_INSPECT(fh);
 
-    batt::Status push_status =
-        this->work_queue_->push_job([this, req, ino, fh, flags, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, fh, flags, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->release(req, ino, fh, flags));
         });
 
@@ -398,7 +400,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(datasync) << BATT_INSPECT(fh);
 
     batt::Status push_status = this->work_queue_->push_job(
-        [this, req, ino, datasync, fh, handler = BATT_FORWARD(handler)] {
+        [this, req, ino, datasync, fh, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->fsync(req, ino, datasync, fh));
         });
 
@@ -417,8 +419,8 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
 
     BATT_CHECK_NOT_NULLPTR(fi);
 
-    batt::Status push_status =
-        this->work_queue_->push_job([this, req, ino, fi = *fi, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, fi = *fi, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->opendir(req, ino, fi));
         });
 
@@ -441,7 +443,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(fh);
 
     batt::Status push_status = this->work_queue_->push_job(
-        [this, req, ino, size, off, fh, handler = BATT_FORWARD(handler)] {
+        [this, req, ino, size, off, fh, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)
           (this->derived_this()->readdir(req, ino, size, off, fh));
         });
@@ -461,8 +463,8 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(ino)   //
                  << BATT_INSPECT(fh);
 
-    batt::Status push_status =
-        this->work_queue_->push_job([this, req, ino, fh, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, fh, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->releasedir(req, ino, fh));
         });
 
@@ -484,7 +486,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(fh);
 
     batt::Status push_status = this->work_queue_->push_job(
-        [this, req, ino, datasync, fh, handler = BATT_FORWARD(handler)] {
+        [this, req, ino, datasync, fh, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)
           (this->derived_this()->fsyncdir(req, ino, datasync, fh));
         });
@@ -504,7 +506,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(ino);
 
     batt::Status push_status =
-        this->work_queue_->push_job([this, req, ino, handler = BATT_FORWARD(handler)] {
+        this->work_queue_->push_job([this, req, ino, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->statfs(req, ino));
         });
 
@@ -526,8 +528,8 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(batt::make_printable(attr))  //
                  << BATT_INSPECT(flags);
 
-    batt::Status push_status =
-        this->work_queue_->push_job([this, req, ino, attr, flags, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, attr, flags, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)
           (this->derived_this()->set_extended_attribute(req, ino, attr, flags));
         });
@@ -549,8 +551,9 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(name)  //
                  << BATT_INSPECT(size);
 
-    batt::Status push_status = this->work_queue_->push_job(
-        [this, req, ino, name = std::string{name}, size, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, ino, name = std::string{name}, size,
+                                     handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)
           (this->derived_this()->get_extended_attribute(req, ino, name, size));
         });
@@ -573,7 +576,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(name);
 
     batt::Status push_status = this->work_queue_->push_job(
-        [this, req, ino, name = std::string{name}, handler = BATT_FORWARD(handler)] {
+        [this, req, ino, name = std::string{name}, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->remove_extended_attribute(req, ino, name));
         });
 
@@ -592,8 +595,8 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(ino)   //
                  << BATT_INSPECT(mask);
 
-    batt::Status push_status =
-        this->work_queue_->push_job([this, req, ino, mask, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, ino, mask, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->check_access(req, ino, mask));
         });
 
@@ -619,7 +622,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
 
     batt::Status push_status =
         this->work_queue_->push_job([this, req, parent, name = std::string{name}, mode, fi = *fi,
-                                     handler = BATT_FORWARD(handler)] {
+                                     handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->create(req, parent, name, mode, fi));
         });
 
@@ -648,8 +651,9 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
 
     BATT_CHECK_NOT_NULLPTR(fi);
 
-    batt::Status push_status = this->work_queue_->push_job(
-        [this, req, ino, cmd, arg, fi, flags, in_buf, out_bufsz, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status =
+        this->work_queue_->push_job([this, req, ino, cmd, arg, fi, flags, in_buf, out_bufsz,
+                                     handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)
           (this->derived_this()->ioctl(req, ino, cmd, arg, fi, flags, in_buf, out_bufsz));
         });
@@ -676,7 +680,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
 
     batt::Status push_status =
         this->work_queue_->push_job([this, req, ino, bufv, offset, fh, storage = std::move(storage),
-                                     handler = BATT_FORWARD(handler)] {
+                                     handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)(this->derived_this()->write_buf(req, ino, bufv, offset, fh));
         });
 
@@ -699,7 +703,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(bufv);
 
     batt::Status push_status = this->work_queue_->push_job(
-        [this, req, cookie, ino, offset, bufv, handler = BATT_FORWARD(handler)] {
+        [this, req, cookie, ino, offset, bufv, handler = BATT_FORWARD(handler)]() mutable {
           auto on_scope_exit = batt::finally([&] {
             BATT_FORWARD(handler)();
           });
@@ -722,8 +726,8 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(req)   //
         /*<< BATT_INSPECT(batt::make_printable(forgets)) TODO [tastolfi 2023-06-30] */;
 
-    batt::Status push_status =
-        this->work_queue_->push_job([this, req, forgets, handler = BATT_FORWARD(handler)] {
+    batt::Status push_status = this->work_queue_->push_job(
+        [this, req, forgets, handler = BATT_FORWARD(handler)]() mutable {
           auto on_scope_exit = batt::finally([&] {
             BATT_FORWARD(handler)();
           });
@@ -751,7 +755,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(fi);
 
     batt::Status push_status = this->work_queue_->push_job(
-        [this, req, ino, mode, offset, length, fi, handler = BATT_FORWARD(handler)] {
+        [this, req, ino, mode, offset, length, fi, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)
           (this->derived_this()->file_allocate(req, ino, mode, offset, length, fi));
         });
@@ -775,7 +779,7 @@ class WorkerTaskFuseImpl : public FuseImpl<Derived>
                  << BATT_INSPECT(fh);
 
     batt::Status push_status = this->work_queue_->push_job(
-        [this, req, ino, size, offset, fh, handler = BATT_FORWARD(handler)] {
+        [this, req, ino, size, offset, fh, handler = BATT_FORWARD(handler)]() mutable {
           BATT_FORWARD(handler)
           (this->derived_this()->readdirplus(req, ino, size, offset, fh));
         });

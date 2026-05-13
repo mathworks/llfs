@@ -269,6 +269,17 @@ class PageCacheSlot
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
+  /** \brief When set to true, no evictions are allowed.  Any pins that happen while evictions are
+   * paused do nothing.
+   */
+  static std::atomic<bool>& eviction_pause() noexcept
+  {
+    static std::atomic<bool> b_{false};
+    return b_;
+  }
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   PageCacheSlot(const PageCacheSlot&) = delete;
   PageCacheSlot& operator=(const PageCacheSlot&) = delete;
 
@@ -426,6 +437,11 @@ class PageCacheSlot
 
   //+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
+  static void add_pin_count();
+  static void add_unpin_count();
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
   /** \brief The implementation of acquire_pin; returns true iff successful.
    */
   bool acquire_pin_impl(PageId key);
@@ -561,6 +577,10 @@ BATT_ALWAYS_INLINE inline void PageCacheSlot::remove_ref()
 //
 BATT_ALWAYS_INLINE inline void PageCacheSlot::extend_pin()
 {
+  if (PageCacheSlot::eviction_pause()) {
+    return;
+  }
+
   const auto old_state = this->state_.fetch_add(kPinCountDelta, std::memory_order_relaxed);
   const auto new_state = old_state + kPinCountDelta;
 
@@ -569,6 +589,8 @@ BATT_ALWAYS_INLINE inline void PageCacheSlot::extend_pin()
   LLFS_PAGE_CACHE_ASSERT(Self::is_pinned(old_state))
       << "This method should never be called in cases where the current pin count might be 0; "
          "use acquire_pin() instead.";
+
+  PageCacheSlot::add_pin_count();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -608,6 +630,10 @@ BATT_ALWAYS_INLINE inline i64 PageCacheSlot::get_latest_use() const
 //
 BATT_ALWAYS_INLINE inline void PageCacheSlot::release_pin()
 {
+  if (PageCacheSlot::eviction_pause()) {
+    return;
+  }
+
   // Save the page size while the slot is pinned, so we can update metrics below if necessary.
   //
   const usize saved_page_size = this->page_size_;
@@ -635,6 +661,8 @@ BATT_ALWAYS_INLINE inline void PageCacheSlot::release_pin()
 
     this->remove_ref();
   }
+
+  PageCacheSlot::add_unpin_count();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -686,6 +714,10 @@ BATT_ALWAYS_INLINE inline auto PageCacheSlot::acquire_pin(PageId key, IgnoreKey 
                                                           IgnoreGeneration ignore_generation)
     -> PinnedRef
 {
+  if (PageCacheSlot::eviction_pause()) {
+    return PinnedRef{this, CallerPromisesTheyAcquiredPinCount{}};
+  }
+
   // Increment the pin count.
   //
   const auto old_state = this->state_.fetch_add(kPinCountDelta, std::memory_order_acquire);
@@ -704,6 +736,7 @@ BATT_ALWAYS_INLINE inline auto PageCacheSlot::acquire_pin(PageId key, IgnoreKey 
     this->add_pinned_bytes(this->page_size_);
     this->add_ref();
   }
+  PageCacheSlot::add_pin_count();
 
   // If the pin_count > 1 (because of the fetch_add above) and the slot is valid, it is safe to read
   // the key.  If the key doesn't match, release the ref and return failure.

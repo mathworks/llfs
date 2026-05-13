@@ -61,7 +61,7 @@ namespace llfs {
     , name_{std::move(name)}
     , slot_storage_{new SlotStorage[n_slots]}
 {
-  LLFS_LOG_INFO_FIRST_N(10) << "PageCacheSlot::Pool created, n_slots=" << this->n_slots_;
+  LLFS_VLOG(1) << "PageCacheSlot::Pool created, n_slots=" << this->n_slots_;
   this->metrics_.total_capacity_allocated.add(this->max_byte_size_.load());
 }
 

@@ -13,6 +13,11 @@ include(${COR_CMAKE_INCLUDE_DIR}/common.cmake)
 include(${CMAKE_BINARY_DIR}/conan_find_requirements.cmake)
 
 #==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+# Disable link-time optimization.  (Breaks Apple Silicon and Windows builds)
+#
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION FALSE)
+
+#==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 # Do not attempt to set/fix rpath for binaries.
 #
 set(CMAKE_SKIP_INSTALL_RPATH TRUE)

@@ -361,12 +361,13 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages_depth_0(
     const Slice<const PageId>& page_ids_in, llfs::slot_offset_type volume_trim_slot) noexcept
 {
   constexpr i32 depth = 0;
+
   // Check to make sure request was never seen before.
   //
   std::vector<PageId> page_ids_list(page_ids_in.begin(), page_ids_in.end());
   {
     auto locked_state = this->state_.lock();
-    if (!is_page_recycling_allowed(page_ids_in, volume_trim_slot)) {
+    if (!this->is_page_recycling_allowed(page_ids_in, volume_trim_slot)) {
       return this->wal_device_->slot_range(LogReadMode::kDurable).upper_bound;
     }
   }
@@ -388,7 +389,8 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages_depth_0(
       const usize needed_size = options.insert_grant_size();
 
       BATT_DEBUG_INFO("[PageRecycler::recycle_page_depth_0] waiting for log space; "
-                      << BATT_INSPECT(needed_size) << BATT_INSPECT(this->insert_grant_pool_.size())
+                      << BATT_INSPECT(this->stop_requested_.load()) << BATT_INSPECT(needed_size)
+                      << BATT_INSPECT(this->insert_grant_pool_.size())
                       << BATT_INSPECT(options.total_grant_size_for_depth(depth))
                       << BATT_INSPECT(this->slot_writer_.in_use_size())
                       << BATT_INSPECT(this->slot_writer_.log_capacity())
@@ -473,9 +475,9 @@ StatusOr<slot_offset_type> PageRecycler::recycle_pages(const Slice<const PageId>
                                      "specify depth == 0 and grant == nullptr; other values are "
                                      "for PageRecycler internal use only.";
 
-    return recycle_pages_depth_0(page_ids, volume_trim_slot);
+    return this->recycle_pages_depth_0(page_ids, volume_trim_slot);
   } else {
-    return recycle_pages_depth_n(page_ids, *grant, depth);
+    return this->recycle_pages_depth_n(page_ids, *grant, depth);
   }
 }
 

@@ -20,6 +20,8 @@
 #include <boost/range/irange.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
+#include <chrono>
+
 namespace llfs {
 
 u64 PageAllocator::calculate_log_size(u64 physical_page_count, u64 max_attachments)

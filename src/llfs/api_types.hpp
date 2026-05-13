@@ -37,9 +37,17 @@ BATT_STRONG_TYPEDEF(bool, UseParallelCopy);
  */
 BATT_STRONG_TYPEDEF(u64, TrimDelayByteCount);
 
+/** \brief A number of bytes at the scale of file sizes.
+ */
+BATT_STRONG_TYPEDEF(i64, FileByteCount);
+
 /** \brief Wrapper for off_t used as an offset.
  */
 BATT_STRONG_TYPEDEF(i64, FileOffset);
+
+/** \brief A file size or number of bytes at the scale of file sizes.
+ */
+BATT_STRONG_TYPEDEF(i64, FileSize);
 
 /** \brief Wrapper for off_t used as a dirent offset.
  */

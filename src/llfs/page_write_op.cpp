@@ -32,7 +32,7 @@ batt::CustomAllocHandler<PageWriteOp::HandlerImpl> PageWriteOp::get_handler(
   BATT_CHECK_EQ(std::exchange(this->pending_, true), false)
       << "Only one handler per PageWriteOp is allowed at a time!";
 
-  BATT_CHECK_NOT_NULLPTR(this->done_counter_);
+  BATT_CHECK_NOT_NULLPTR(done_counter);
 
   this->page_id_ = id;
   this->done_counter_ = done_counter;

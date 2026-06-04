@@ -48,6 +48,11 @@ struct PackedPointer {
     return reinterpret_cast<const T*>(reinterpret_cast<const u8*>(this) + this->offset);
   }
 
+  void reset_unsafe(T* ptr)
+  {
+    this->offset = byte_distance(this, ptr);
+  }
+
   template <typename Dst>
   void reset(T* ptr, Dst* dst)
   {

@@ -24,30 +24,82 @@
 
 namespace llfs {
 
-// Represents/tracks a single async PageDevice::write/drop operation.
+//=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 //
+/** \brief Represents/tracks a single async PageDevice::write/drop operation.
+ */
+
 struct PageWriteOp {
-  PageWriteOp(const PageWriteOp&) = delete;
-  PageWriteOp& operator=(const PageWriteOp&) = delete;
+  struct HandlerImpl {
+    PageWriteOp* op_;
 
-  batt::HandlerMemory<256> handler_memory;
-  PageId page_id;
-  batt::Watch<i64>* done_counter = nullptr;
-  PageDevice::WriteResult result;
+    void operator()(PageDevice::WriteResult result) const noexcept;
+  };
 
-  static std::unique_ptr<PageWriteOp[]> allocate_array(usize n, batt::Watch<i64>& done_counter);
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   explicit PageWriteOp() noexcept;
 
+  PageWriteOp(const PageWriteOp&) = delete;
+  PageWriteOp& operator=(const PageWriteOp&) = delete;
+
   ~PageWriteOp() noexcept;
 
-  auto get_handler()
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief Returns a write handler for this op; there must only be one active handler per op at a
+   * time!
+   */
+  batt::CustomAllocHandler<PageWriteOp::HandlerImpl> get_handler(
+      PageId id, batt::Watch<i64>* done_counter) noexcept;
+
+  /** \brief Returns the most recent result that was passed to the handler; only valid after
+   * get_handler has been called and the returned handler has been invoked.
+   */
+  const PageDevice::WriteResult& result() const noexcept
   {
-    return make_custom_alloc_handler(this->handler_memory, [this](PageDevice::WriteResult result) {
-      this->result = std::move(result);
-      this->done_counter->fetch_add(1);
-    });
+    return this->result_;
   }
+
+  /** \brief Returns the most recent PageId passed to get_handler.
+   */
+  PageId page_id() const noexcept
+  {
+    return this->page_id_;
+  }
+
+  /** \brief Returns true iff this op has a handler which hasn't been invoked.
+   */
+  bool is_pending() const noexcept
+  {
+    return this->pending_;
+  }
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+ private:
+  void handle_write(PageDevice::WriteResult result) noexcept;
+
+  //+++++++++++-+-+--+----- --- -- -  -  -   -
+
+  /** \brief Pre-allocated memory for the write handler.
+   */
+  batt::HandlerMemory<256> handler_memory_;
+
+  /** \brief The Watch to increment when this operation's handler is invoked.
+   */
+  batt::Watch<i64>* done_counter_ = nullptr;
+
+  /** \brief The most recent page associated with this op.
+   */
+  PageId page_id_;
+
+  /** \brief The result of the last operation.
+   */
+  PageDevice::WriteResult result_;
+
+  /** \brief Set to true when get_handler is called; set to false when that handler is invoked.
+   */
+  bool pending_ = false;
 };
 
 // Drops a range of PageIds in parallel.

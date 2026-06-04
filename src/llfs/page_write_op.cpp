@@ -13,18 +13,6 @@ namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
-/*static*/ std::unique_ptr<PageWriteOp[]> PageWriteOp::allocate_array(
-    usize n, batt::Watch<i64>& done_counter)
-{
-  auto ops = std::make_unique<PageWriteOp[]>(n);
-  for (auto& op : as_slice(ops.get(), n)) {
-    op.done_counter = &done_counter;
-  }
-  return ops;
-}
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
 /*explicit*/ PageWriteOp::PageWriteOp() noexcept
 {
 }
@@ -33,6 +21,43 @@ namespace llfs {
 //
 PageWriteOp::~PageWriteOp() noexcept
 {
+  BATT_CHECK_EQ(this->is_pending(), false) << "This write op has an uninvoked handler!";
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+batt::CustomAllocHandler<PageWriteOp::HandlerImpl> PageWriteOp::get_handler(
+    PageId id, batt::Watch<i64>* done_counter) noexcept
+{
+  BATT_CHECK_EQ(std::exchange(this->pending_, true), false)
+      << "Only one handler per PageWriteOp is allowed at a time!";
+
+  BATT_CHECK_NOT_NULLPTR(this->done_counter_);
+
+  this->page_id_ = id;
+  this->done_counter_ = done_counter;
+
+  return make_custom_alloc_handler(this->handler_memory_, HandlerImpl{.op_ = this});
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void PageWriteOp::HandlerImpl::operator()(PageDevice::WriteResult result) const noexcept
+{
+  this->op_->handle_write(std::move(result));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+void PageWriteOp::handle_write(PageDevice::WriteResult result) noexcept
+{
+  BATT_CHECK_EQ(std::exchange(this->pending_, false), true)
+      << "PageWriteOp handlers may only be invoked once!";
+
+  BATT_CHECK_NOT_NULLPTR(this->done_counter_);
+
+  this->result_ = std::move(result);
+  this->done_counter_->fetch_add(1);
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -48,12 +73,12 @@ Status parallel_drop_pages(const std::vector<PageId>& deleted_pages, PageCache& 
   }
 
   batt::Watch<i64> done_counter{0};
-  std::unique_ptr<PageWriteOp[]> ops = PageWriteOp::allocate_array(n_ops, done_counter);
+  auto ops = std::make_unique<PageWriteOp[]>(n_ops);
   {
     usize i = 0;
     for (const PageId page_id : deleted_pages) {
-      ops[i].page_id = page_id;
-      cache.arena_for_page_id(page_id).device().drop(page_id, ops[i].get_handler());
+      cache.arena_for_page_id(page_id).device().drop(page_id,
+                                                     ops[i].get_handler(page_id, &done_counter));
       ++i;
 
 #if LLFS_TRACK_NEW_PAGE_EVENTS
@@ -79,10 +104,10 @@ Status parallel_drop_pages(const std::vector<PageId>& deleted_pages, PageCache& 
   //
   Status overall_status;
   for (PageWriteOp& op : as_slice(ops.get(), n_ops)) {
-    Status page_status = op.result;
+    Status page_status = op.result();
     overall_status.Update(page_status);
     if (page_status.ok()) {
-      cache.purge(op.page_id, callers | Caller::PageCacheJob_commit_2, job_id);
+      cache.purge(op.page_id(), callers | Caller::PageCacheJob_commit_2, job_id);
     }
   }
 

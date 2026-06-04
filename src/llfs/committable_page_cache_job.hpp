@@ -152,6 +152,10 @@ class CommittablePageCacheJob
    */
   Status start_writing_new_pages();
 
+  /** \brief Waits for asynchronous writes of new pages to complete.
+   */
+  Status await_new_page_writes() noexcept;
+
   //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
  private:
   struct DeviceUpdateState {
@@ -172,7 +176,7 @@ class CommittablePageCacheJob
   struct WriteNewPagesContext {
     CommittablePageCacheJob* const that;
     const PageCacheJob* const job;
-    u64 op_count;
+    u64 normalized_iop_count;
     u64 used_byte_count;
     u64 total_byte_count;
     batt::Watch<i64> done_counter;
@@ -185,6 +189,8 @@ class CommittablePageCacheJob
 
     WriteNewPagesContext(const WriteNewPagesContext&) = delete;
     WriteNewPagesContext& operator=(const WriteNewPagesContext&) = delete;
+
+    ~WriteNewPagesContext() noexcept;
 
     Status start();
 

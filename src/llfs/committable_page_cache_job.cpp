@@ -316,17 +316,36 @@ Status CommittablePageCacheJob::start_writing_new_pages()
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+Status CommittablePageCacheJob::await_new_page_writes() noexcept
+{
+  if (this->write_new_pages_context_) {
+    BATT_REQUIRE_OK(this->write_new_pages_context_->await_finish());
+  }
+  return OkStatus();
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 /*explicit*/ CommittablePageCacheJob::WriteNewPagesContext::WriteNewPagesContext(
     CommittablePageCacheJob* that) noexcept
     : that{that}
     , job{that->job_.get()}
-    , op_count{0}
+    , normalized_iop_count{0}
     , used_byte_count{0}
     , total_byte_count{0}
     , done_counter{0}
     , n_ops{0}
     , ops{nullptr}
 {
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+CommittablePageCacheJob::WriteNewPagesContext::~WriteNewPagesContext() noexcept
+{
+  // Wait for any pending asynchronous writes to finish.
+  //
+  this->await_finish().IgnoreError();
 }
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -346,18 +365,22 @@ Status CommittablePageCacheJob::WriteNewPagesContext::start()
   // throughput.
   //
   this->n_ops = this->job->get_new_pages().size();
-  this->ops = PageWriteOp::allocate_array(this->n_ops, this->done_counter);
+  this->ops = std::make_unique<PageWriteOp[]>(n_ops);
   LLFS_VLOG(1) << "commit(PageCacheJob): writing new pages";
   {
     usize i = 0;
     for (auto& p : this->job->get_new_pages()) {
+      auto increment_i = batt::finally([&i] {
+        ++i;
+      });
+
       const PageId page_id = p.first;
 
       // There's no need to write recovered pages, since they are already durable; skip.
       //
       if (this->job->is_recovered_page(page_id)) {
         LLFS_VLOG(1) << "commit(PageCacheJob): skipping recovered page " << page_id;
-        this->ops[i].get_handler()(batt::OkStatus());
+        this->ops[i].get_handler(page_id, &this->done_counter)(batt::OkStatus());
         continue;
       }
 
@@ -382,14 +405,12 @@ Status CommittablePageCacheJob::WriteNewPagesContext::start()
       const usize page_size = page_header.size;
       const usize used_size = page_header.used_size();
 
-      this->ops[i].page_id = page_id;
-
-      this->job->cache().async_write_new_page(std::move(*pinned_page), this->ops[i].get_handler());
+      this->job->cache().async_write_new_page(
+          std::move(*pinned_page), this->ops[i].get_handler(page_id, &this->done_counter));
 
       this->total_byte_count += page_size;
       this->used_byte_count += used_size;
-      this->op_count += page_size / 4096;
-      ++i;
+      this->normalized_iop_count += page_size / kDirectIOBlockSize;
     }
   }
 
@@ -422,13 +443,13 @@ Status CommittablePageCacheJob::WriteNewPagesContext::await_finish()
     });
 #endif  // LLFS_TRACK_NEW_PAGE_EVENTS
 
-    all_ops_status.Update(op.result);
+    all_ops_status.Update(op.result());
   }
   BATT_REQUIRE_OK(all_ops_status);
 
   this->job->cache().metrics().total_bytes_written += this->total_byte_count;
   this->job->cache().metrics().used_bytes_written += this->used_byte_count;
-  this->job->cache().metrics().total_write_ops += this->op_count;
+  this->job->cache().metrics().total_write_ops += this->normalized_iop_count;
 
   return OkStatus();
 }

@@ -520,6 +520,9 @@ StatusOr<SlotRange> Volume::append(AppendableJob&& appendable, batt::Grant& gran
   if (write_new_pages_asap()) {
     BATT_REQUIRE_OK(appendable.job.start_writing_new_pages());
   }
+  auto wait_for_async_ops = batt::finally([&] {
+    appendable.job.await_new_page_writes().IgnoreError();
+  });
 
   StatusOr<SlotRange> result;
 

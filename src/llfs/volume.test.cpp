@@ -1692,6 +1692,8 @@ void VolumeSimTest::run_recovery_sim(u32 seed)
                            llfs::PageGraphNodeView::page_reader());
 
   const auto main_task_fn = [&] {
+    BATT_DEBUG_INFO(BATT_INSPECT(seed));
+
     sim.set_inject_failures_mode(false);
 
     LLFS_VLOG(1) << "Entered main task;" << BATT_INSPECT(seed) << BATT_INSPECT(sim.is_running());

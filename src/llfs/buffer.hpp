@@ -20,21 +20,12 @@
 namespace llfs {
 
 using batt::buffer_from_struct;
+using batt::byte_distance;
 using batt::ConstBuffer;
 using batt::make_buffer;
 using batt::mutable_buffer_from_struct;
 using batt::MutableBuffer;
 using batt::resize_buffer;
-
-//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
-//
-/** \brief Returns the distance, in bytes, from `begin` to `end`.  If `end` is less than `begin`,
- * the result is negative.
- */
-inline isize byte_distance(const void* begin, const void* end)
-{
-  return static_cast<const u8*>(end) - static_cast<const u8*>(begin);
-}
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //

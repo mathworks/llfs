@@ -410,7 +410,7 @@ Status CommittablePageCacheJob::WriteNewPagesContext::start()
 
       this->total_byte_count += page_size;
       this->used_byte_count += used_size;
-      this->normalized_iop_count += page_size / 4096;
+      this->normalized_iop_count += page_size / kDirectIOBlockSize;
     }
   }
 

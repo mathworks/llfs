@@ -62,6 +62,8 @@ class LlfsConan(ConanFile):
 
     _is_header_only = (platform.system() != "Linux")
 
+    package_id_non_embed_mode = "full_mode"
+
     #+++++++++++-+-+--+----- --- -- -  -  -   -
 
     def configure(self):
@@ -76,7 +78,7 @@ class LlfsConan(ConanFile):
         VISIBLE = self.cor.VISIBLE
         OVERRIDE = self.cor.OVERRIDE
 
-        self.requires("batteries/[>=0.65.0 <1]", **VISIBLE)
+        self.requires("batteries/[>=0.71.0 <1]", **VISIBLE)
         self.requires("boost/[>=1.88.0 <2]", **VISIBLE)
         self.requires("cli11/[>=2.5.0 <3]", **VISIBLE)
         self.requires("glog/[>=0.7.1 <1]", **VISIBLE)

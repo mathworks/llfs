@@ -48,7 +48,8 @@ struct PageWriteOp {
   //+++++++++++-+-+--+----- --- -- -  -  -   -
 
   /** \brief Returns a write handler for this op; there must only be one active handler per op at a
-   * time!
+   * time!  If `this->get_handler()` is called twice before invoking the first returned handler (or
+   * a copy of it), this function will panic.
    */
   batt::CustomAllocHandler<PageWriteOp::HandlerImpl> get_handler(
       PageId id, batt::Watch<i64>* done_counter) noexcept;

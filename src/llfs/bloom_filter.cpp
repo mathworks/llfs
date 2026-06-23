@@ -10,6 +10,8 @@
 //
 #include <llfs/conversion.hpp>
 
+#include <batteries/env.hpp>
+
 namespace llfs {
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
@@ -307,18 +309,25 @@ std::ostream& operator<<(std::ostream& out, const BloomFilterConfig& t)
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
+bool avx512_enabled() noexcept
+{
+  static const bool enabled = [] {
+    bool value = false;
+#ifdef __AVX512F__
+    value = batt::getenv_as<bool>("LLFS_AVX512").value_or(true);
+#endif
+    LLFS_LOG_INFO() << "AVX512 " << (value ? "enabled" : "NOT enabled");
+    return value;
+  }();
+
+  return enabled;
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
 void PackedBloomFilter::initialize(const BloomFilterConfig& config) noexcept
 {
-  [[maybe_unused]] static const bool init = [] {
-    LLFS_LOG_INFO() <<
-#ifdef __AVX512F__
-        "AVX512 enabled"
-#else
-        "AVX512 NOT enabled"
-#endif
-        ;
-    return true;
-  }();
+  [[maybe_unused]] static const bool init = avx512_enabled();
 
   BATT_CHECK_NE(config.word_count(), 0);
   BATT_CHECK_NE(config.block_count(), 0);
@@ -331,6 +340,11 @@ void PackedBloomFilter::initialize(const BloomFilterConfig& config) noexcept
   this->word_count_post_mul_shift_ = 64 - this->word_count_pre_mul_shift_;
   this->block_count_pre_mul_shift_ = batt::log2_ceil(this->block_count_) + 1;
   this->block_count_post_mul_shift_ = 64 - this->block_count_pre_mul_shift_;
+
+  const std::uintptr_t addr_int = reinterpret_cast<std::uintptr_t>((const void*)this->words);
+  BATT_CHECK_EQ(addr_int % (512 / 8), 0)
+      << BATT_INSPECT(addr_int) << BATT_INSPECT((const void*)this)
+      << BATT_INSPECT((const void*)this->words);
 
   this->check_invariants();
 }

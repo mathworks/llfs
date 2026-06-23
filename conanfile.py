@@ -80,7 +80,7 @@ class LlfsConan(ConanFile):
         self.requires("boost/[>=1.88.0 <2]", **VISIBLE)
         self.requires("cli11/[>=2.5.0 <3]", **VISIBLE)
         self.requires("glog/[>=0.7.1 <1]", **VISIBLE)
-        self.requires("libbacktrace/[>=cci.20240730]", **VISIBLE)
+        self.requires("libbacktrace/[>=cci.20210118]", **VISIBLE)
         self.requires("openssl/[>=3.6.0 <4]", **VISIBLE)
         self.requires("xxhash/[>=0.8.3 <1]", **VISIBLE)
         self.requires("zlib/[>=1.3.1 <2]")

@@ -39,6 +39,8 @@
 
 namespace llfs {
 
+bool avx512_enabled() noexcept;
+
 /** \brief Physical layout of a Bloom filter; each carries different trade-offs.
  */
 enum struct BloomFilterLayout : u8 {
@@ -185,7 +187,7 @@ std::ostream& operator<<(std::ostream& out, const BloomFilterConfig& t);
 template <typename T>
 struct BloomFilterQuery {
   T key;
-  batt::SmallVec<u64, 24> hash;
+  batt::SmallVec<u64, 36> hash;
   batt::SmallVec<u64, 8> mask;
   u32 mask_n_hashes = 0;
 
@@ -282,6 +284,7 @@ struct BloomFilterQuery {
 
       // The mask should exactly as large as the block; all 0's initially.
       //
+      this->mask.clear();
       this->mask.resize(kBlockWord64Size, 0);
 
       // Each time through the loop, we pull enough bits from this->hash[1..] to locate a single bit
@@ -318,6 +321,7 @@ struct BloomFilterQuery {
           shift = 0;
           ++src_val_j;
         }
+        BATT_ASSERT_LT(shift, kShiftOverflow);
       }
 
       // Finally store the new number of hashes.
@@ -400,7 +404,7 @@ struct PackedBloomFilter {
   //
   little_u8 block_count_post_mul_shift_;
 
-  // Align to 64-bit boundary.
+  // Align to 512-bit boundary.
   //
   little_u8 reserved_[41];
 
@@ -532,6 +536,8 @@ struct PackedBloomFilter {
 
     const usize block_i = this->block_index_from_hash(query.hash[0]);
 
+    BATT_ASSERT_LT(block_i, this->block_count_.value());
+
     return (this->words[block_i] & query.mask[0]) == query.mask[0];
   }
 
@@ -545,36 +551,41 @@ struct PackedBloomFilter {
     const usize block_i = this->block_index_from_hash(query.hash[0]);
     const usize block_first_word_i = block_i * 8;
 
+    BATT_ASSERT_LT(block_i, this->block_count_.value());
+    BATT_ASSERT_LT(block_first_word_i + 7, this->word_count_.value());
+
     const i64* const block_p = (const i64*)&this->words[block_first_word_i];
     const i64* const query_p = (const i64*)&query.mask[0];
 
     BATT_CHECK_EQ(query.mask.size(), 8);
 
+    if (avx512_enabled()) {
 #ifdef __AVX512F__
 
-    __m512i block_512 = {block_p[0], block_p[1], block_p[2], block_p[3],
-                         block_p[4], block_p[5], block_p[6], block_p[7]};
+      __m512i block_512 = {block_p[0], block_p[1], block_p[2], block_p[3],
+                           block_p[4], block_p[5], block_p[6], block_p[7]};
 
-    __m512i query_512 = {query_p[0], query_p[1], query_p[2], query_p[3],
-                         query_p[4], query_p[5], query_p[6], query_p[7]};
+      __m512i query_512 = {query_p[0], query_p[1], query_p[2], query_p[3],
+                           query_p[4], query_p[5], query_p[6], query_p[7]};
 
-    const bool match = _mm512_cmp_epi64_mask(_mm512_and_epi64(block_512, query_512), query_512,
-                                             _MM_CMPINT_EQ) == __mmask8{0b11111111};
+      const bool match = _mm512_cmp_epi64_mask(_mm512_and_epi64(block_512, query_512), query_512,
+                                               _MM_CMPINT_EQ) == __mmask8{0b11111111};
 
-    return match;
+      return match;
 
 #else
-
-    return ((block_p[0] & query_p[0]) == query_p[0]) &&  //
-           ((block_p[1] & query_p[1]) == query_p[1]) &&  //;
-           ((block_p[2] & query_p[2]) == query_p[2]) &&  //;
-           ((block_p[3] & query_p[3]) == query_p[3]) &&  //;
-           ((block_p[4] & query_p[4]) == query_p[4]) &&  //;
-           ((block_p[5] & query_p[5]) == query_p[5]) &&  //;
-           ((block_p[6] & query_p[6]) == query_p[6]) &&  //;
-           ((block_p[7] & query_p[7]) == query_p[7]);
-
+      BATT_PANIC() << "AVX512 not compiled in!";
 #endif
+    } else {
+      return ((block_p[0] & query_p[0]) == query_p[0]) &&  //
+             ((block_p[1] & query_p[1]) == query_p[1]) &&  //;
+             ((block_p[2] & query_p[2]) == query_p[2]) &&  //;
+             ((block_p[3] & query_p[3]) == query_p[3]) &&  //;
+             ((block_p[4] & query_p[4]) == query_p[4]) &&  //;
+             ((block_p[5] & query_p[5]) == query_p[5]) &&  //;
+             ((block_p[6] & query_p[6]) == query_p[6]) &&  //;
+             ((block_p[7] & query_p[7]) == query_p[7]);
+    }
   }
 
   template <typename T>
@@ -583,34 +594,39 @@ struct PackedBloomFilter {
     const usize block_i = this->block_index_from_hash(query.hash[0]);
     const usize block_first_word_i = block_i * 8;
 
+    BATT_ASSERT_LT(block_i, this->block_count_.value());
+    BATT_ASSERT_LT(block_first_word_i + 7, this->word_count_.value());
+
     const i64* const block_p = (const i64*)&this->words[block_first_word_i];
     const i64* const query_p = (const i64*)query.mask.data();
 
+    if (avx512_enabled()) {
 #ifdef __AVX512F__
 
-    __m512i block_512 = {block_p[0], block_p[1], block_p[2], block_p[3],
-                         block_p[4], block_p[5], block_p[6], block_p[7]};
+      __m512i block_512 = {block_p[0], block_p[1], block_p[2], block_p[3],
+                           block_p[4], block_p[5], block_p[6], block_p[7]};
 
-    __m512i query_512 = {query_p[0], query_p[1], query_p[2], query_p[3],
-                         query_p[4], query_p[5], query_p[6], query_p[7]};
+      __m512i query_512 = {query_p[0], query_p[1], query_p[2], query_p[3],
+                           query_p[4], query_p[5], query_p[6], query_p[7]};
 
-    const bool match = _mm512_cmp_epi64_mask(_mm512_and_epi64(block_512, query_512), query_512,
-                                             _MM_CMPINT_EQ) == __mmask8{0b11111111};
+      const bool match = _mm512_cmp_epi64_mask(_mm512_and_epi64(block_512, query_512), query_512,
+                                               _MM_CMPINT_EQ) == __mmask8{0b11111111};
 
-    return match;
+      return match;
 
 #else
-
-    return ((block_p[0] & query_p[0]) == query_p[0]) &&  //
-           ((block_p[1] & query_p[1]) == query_p[1]) &&  //;
-           ((block_p[2] & query_p[2]) == query_p[2]) &&  //;
-           ((block_p[3] & query_p[3]) == query_p[3]) &&  //;
-           ((block_p[4] & query_p[4]) == query_p[4]) &&  //;
-           ((block_p[5] & query_p[5]) == query_p[5]) &&  //;
-           ((block_p[6] & query_p[6]) == query_p[6]) &&  //;
-           ((block_p[7] & query_p[7]) == query_p[7]);
-
+      BATT_PANIC() << "AVX512 not compiled in!";
 #endif
+    } else {
+      return ((block_p[0] & query_p[0]) == query_p[0]) &&  //
+             ((block_p[1] & query_p[1]) == query_p[1]) &&  //;
+             ((block_p[2] & query_p[2]) == query_p[2]) &&  //;
+             ((block_p[3] & query_p[3]) == query_p[3]) &&  //;
+             ((block_p[4] & query_p[4]) == query_p[4]) &&  //;
+             ((block_p[5] & query_p[5]) == query_p[5]) &&  //;
+             ((block_p[6] & query_p[6]) == query_p[6]) &&  //;
+             ((block_p[7] & query_p[7]) == query_p[7]);
+    }
   }
 
   template <typename T>

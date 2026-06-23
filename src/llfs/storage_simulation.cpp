@@ -19,6 +19,8 @@
 #include <llfs/simulated_page_device.hpp>
 #include <llfs/simulated_page_device_impl.hpp>
 
+#include <random>
+
 namespace llfs {
 
 class StorageSimulation::TaskSchedulerImpl : public batt::TaskScheduler

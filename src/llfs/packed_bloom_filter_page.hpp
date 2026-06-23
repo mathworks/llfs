@@ -68,10 +68,18 @@ struct PackedBloomFilterPage {
    */
   little_u64 bit_count;
 
+  /** \brief The number of keys in this filter.
+   */
+  little_u64 key_count;
+
   /** \brief If this filter is associated with another page, the page id of that page is stored
    * here.
    */
   PackedPageId src_page_id;
+
+  // Needed to make sure bloom_filter's word array starts on a 512-bit boundary.
+  //
+  u8 pad_[24];
 
   /** \brief The Bloom filter header; the actual filter bits follow this struct, and may extend to
    * the end of the page.
@@ -101,6 +109,8 @@ struct PackedBloomFilterPage {
    */
   void check_integrity() const;
 };
+
+static_assert(sizeof(PackedBloomFilterPage) == 128);
 
 //==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
 //
@@ -155,6 +165,7 @@ StatusOr<const PackedBloomFilterPage*> build_bloom_filter_page(
   // Grab the item count to figure out how to size the filter.
   //
   const u64 item_count = std::distance(std::begin(items), std::end(items));
+  packed_filter_page->key_count = item_count;
 
   // Calculate the total filter bits to use.
   //

@@ -575,17 +575,17 @@ struct PackedBloomFilter {
 
 #else
       BATT_PANIC() << "AVX512 not compiled in!";
+      BATT_UNREACHABLE();
 #endif
-    } else {
-      return ((block_p[0] & query_p[0]) == query_p[0]) &&  //
-             ((block_p[1] & query_p[1]) == query_p[1]) &&  //;
-             ((block_p[2] & query_p[2]) == query_p[2]) &&  //;
-             ((block_p[3] & query_p[3]) == query_p[3]) &&  //;
-             ((block_p[4] & query_p[4]) == query_p[4]) &&  //;
-             ((block_p[5] & query_p[5]) == query_p[5]) &&  //;
-             ((block_p[6] & query_p[6]) == query_p[6]) &&  //;
-             ((block_p[7] & query_p[7]) == query_p[7]);
     }
+    return ((block_p[0] & query_p[0]) == query_p[0]) &&  //
+           ((block_p[1] & query_p[1]) == query_p[1]) &&  //;
+           ((block_p[2] & query_p[2]) == query_p[2]) &&  //;
+           ((block_p[3] & query_p[3]) == query_p[3]) &&  //;
+           ((block_p[4] & query_p[4]) == query_p[4]) &&  //;
+           ((block_p[5] & query_p[5]) == query_p[5]) &&  //;
+           ((block_p[6] & query_p[6]) == query_p[6]) &&  //;
+           ((block_p[7] & query_p[7]) == query_p[7]);
   }
 
   template <typename T>
@@ -616,6 +616,7 @@ struct PackedBloomFilter {
 
 #else
       BATT_PANIC() << "AVX512 not compiled in!";
+      BATT_UNREACHABLE();
 #endif
     } else {
       return ((block_p[0] & query_p[0]) == query_p[0]) &&  //

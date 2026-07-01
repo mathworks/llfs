@@ -52,6 +52,7 @@ namespace llfs {
               .fd = 0,
               .pos = 0,
           }},
+          .mem_size = 0,
       };
 
       const isize n_copied = fuse_buf_copy(&tmp, &bufv, /*flags=*/(fuse_buf_copy_flags)0);

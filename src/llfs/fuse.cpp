@@ -41,18 +41,17 @@ namespace llfs {
       BATT_CHECK_NOT_NULLPTR(storage);
       storage->reset(new char[total_size]);
 
-      fuse_bufvec tmp{
-          .count = 1,
-          .idx = 0,
-          .off = 0,
-          .buf = {{
-              .size = total_size,
-              .flags = (fuse_buf_flags)0,
-              .mem = storage->get(),
-              .fd = 0,
-              .pos = 0,
-          }},
-      };
+      fuse_bufvec tmp{};
+
+      tmp.count = 1;
+      tmp.idx = 0;
+      tmp.off = 0;
+
+      tmp.buf[0].size = total_size;
+      tmp.buf[0].flags = static_cast<fuse_buf_flags>(0);
+      tmp.buf[0].mem = storage->get();
+      tmp.buf[0].fd = 0;
+      tmp.buf[0].pos = 0;
 
       const isize n_copied = fuse_buf_copy(&tmp, &bufv, /*flags=*/(fuse_buf_copy_flags)0);
       if (n_copied < 0) {

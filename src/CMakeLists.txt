@@ -157,14 +157,6 @@ LLFS_CollectHeaders(llfs_cli ./llfs_cli)
 
 #=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
-file(GLOB llfs_fuse_Sources
-  ./llfs_fuse/*.cpp
-  ./llfs_fuse/*/*.cpp
-  ./llfs_fuse/*/*/*.cpp
-  )
-
-add_executable(llfs_fuse ${llfs_fuse_Sources})
-
 set(LLFS_TestDeps
   llfs
   batteries::batteries
@@ -181,4 +173,3 @@ if (LINUX)
   set(LLFS_TestDeps ${LLFS_TestDeps} libfuse::libfuse)
 endif()
 
-target_link_libraries(llfs_fuse ${LLFS_TestDeps})

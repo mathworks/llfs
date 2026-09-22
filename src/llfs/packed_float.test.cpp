@@ -93,4 +93,66 @@ TEST(PackedFloat, Test)
   }
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST(PackedFloat, SubnormalNumbers32)
+{
+  const float subnormals[] = {
+      std::numeric_limits<float>::denorm_min(),
+      -std::numeric_limits<float>::denorm_min(),
+      std::numeric_limits<float>::min() / 2.0f,
+      -std::numeric_limits<float>::min() / 2.0f,
+      std::numeric_limits<float>::min() / 4.0f,
+  };
+
+  for (float v : subnormals) {
+    u32 encoded = llfs::ieee_754_encode_32(v);
+    float decoded = llfs::ieee_754_decode_32(encoded);
+
+    EXPECT_FALSE(std::isinf(decoded)) << "subnormal value=" << v;
+    EXPECT_NE(decoded, 0.0f) << "subnormal value=" << v;
+    EXPECT_EQ(std::signbit(v), std::signbit(decoded)) << "subnormal value=" << v;
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST(PackedFloat, SubnormalNumbers64)
+{
+  const double subnormals[] = {
+      std::numeric_limits<double>::denorm_min(),
+      -std::numeric_limits<double>::denorm_min(),
+      std::numeric_limits<double>::min() / 2.0,
+      -std::numeric_limits<double>::min() / 2.0,
+      std::numeric_limits<double>::min() / 4.0,
+  };
+
+  for (double v : subnormals) {
+    u64 encoded = llfs::ieee_754_encode_64(v);
+    double decoded = llfs::ieee_754_decode_64(encoded);
+
+    EXPECT_FALSE(std::isinf(decoded)) << "subnormal value=" << v;
+    EXPECT_NE(decoded, 0.0) << "subnormal value=" << v;
+    EXPECT_EQ(std::signbit(v), std::signbit(decoded)) << "subnormal value=" << v;
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST(PackedFloat, DecodeNegativeZero32)
+{
+  float decoded = llfs::ieee_754_decode_32(0x80000000u);
+  EXPECT_TRUE(std::signbit(decoded));
+  EXPECT_EQ(decoded, 0.0f);
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST(PackedFloat, DecodeNegativeZero64)
+{
+  double decoded = llfs::ieee_754_decode_64(0x8000000000000000ull);
+  EXPECT_TRUE(std::signbit(decoded));
+  EXPECT_EQ(decoded, 0.0);
+}
+
 }  // namespace

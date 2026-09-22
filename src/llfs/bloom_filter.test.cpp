@@ -201,4 +201,210 @@ TEST(BloomFilterTest, RandomItems)
   }  // layout
 }
 
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST(BloomFilterConfigTest, FromOverloads)
+{
+  for (llfs::BloomFilterLayout layout : {
+           llfs::BloomFilterLayout::kFlat,
+           llfs::BloomFilterLayout::kBlocked64,
+           llfs::BloomFilterLayout::kBlocked512,
+       }) {
+    const auto min_size = llfs::min_filter_size(layout);
+
+    // from(layout, ItemCount, FalsePositiveRate)
+    //
+    {
+      auto config = llfs::BloomFilterConfig::from(layout, llfs::ItemCount{1000},
+                                                   llfs::FalsePositiveRate{0.01});
+
+      EXPECT_EQ(config.layout, layout);
+      EXPECT_GE(config.filter_size, min_size);
+      EXPECT_GT(config.hash_count, llfs::HashCount{0});
+      EXPECT_LT(config.bits_per_key, llfs::RealBitCount{0});
+      EXPECT_EQ(config.false_positive_rate, llfs::FalsePositiveRate{0.01});
+      if (layout == llfs::BloomFilterLayout::kBlocked512) {
+        EXPECT_EQ(config.filter_size.value() % 8, 0u);
+      }
+    }
+
+    // from(layout, Word64Count, RealBitCount)
+    //
+    {
+      auto config = llfs::BloomFilterConfig::from(layout, llfs::Word64Count{64},
+                                                   llfs::RealBitCount{10.0});
+
+      EXPECT_EQ(config.layout, layout);
+      EXPECT_GE(config.filter_size, min_size);
+      EXPECT_LE(config.filter_size, llfs::Word64Count{64});
+      EXPECT_GT(config.hash_count, llfs::HashCount{0});
+      EXPECT_GT(config.key_count, llfs::ItemCount{0});
+      EXPECT_GT(config.false_positive_rate, llfs::FalsePositiveRate{0});
+      EXPECT_LT(config.false_positive_rate, llfs::FalsePositiveRate{1});
+      if (layout == llfs::BloomFilterLayout::kBlocked512) {
+        EXPECT_EQ(config.filter_size.value() % 8, 0u);
+      }
+    }
+
+    // from(layout, Word64Count, HashCount)
+    //
+    {
+      auto config =
+          llfs::BloomFilterConfig::from(layout, llfs::Word64Count{64}, llfs::HashCount{7});
+
+      EXPECT_EQ(config.layout, layout);
+      EXPECT_GE(config.filter_size, min_size);
+      EXPECT_LE(config.filter_size, llfs::Word64Count{64});
+      EXPECT_EQ(config.hash_count, llfs::HashCount{7});
+      EXPECT_GT(config.key_count, llfs::ItemCount{0});
+      EXPECT_GT(config.bits_per_key, llfs::RealBitCount{0});
+      EXPECT_GT(config.false_positive_rate, llfs::FalsePositiveRate{0});
+      EXPECT_LT(config.false_positive_rate, llfs::FalsePositiveRate{1});
+      if (layout == llfs::BloomFilterLayout::kBlocked512) {
+        EXPECT_EQ(config.filter_size.value() % 8, 0u);
+      }
+    }
+
+    // from(layout, Word64Count, ItemCount)
+    //
+    {
+      auto config =
+          llfs::BloomFilterConfig::from(layout, llfs::Word64Count{64}, llfs::ItemCount{500});
+
+      EXPECT_EQ(config.layout, layout);
+      EXPECT_GE(config.filter_size, min_size);
+      EXPECT_LE(config.filter_size, llfs::Word64Count{64});
+      EXPECT_EQ(config.key_count, llfs::ItemCount{500});
+      EXPECT_GT(config.hash_count, llfs::HashCount{0});
+      EXPECT_GT(config.bits_per_key, llfs::RealBitCount{0});
+      EXPECT_GT(config.false_positive_rate, llfs::FalsePositiveRate{0});
+      EXPECT_LT(config.false_positive_rate, llfs::FalsePositiveRate{1});
+      if (layout == llfs::BloomFilterLayout::kBlocked512) {
+        EXPECT_EQ(config.filter_size.value() % 8, 0u);
+      }
+
+      // operator<<(ostream, BloomFilterConfig)
+      //
+      std::ostringstream oss;
+      oss << config;
+      const std::string str = oss.str();
+
+      EXPECT_THAT(str, ::testing::HasSubstr("BloomFilterConfig{"));
+      EXPECT_THAT(str, ::testing::HasSubstr(".layout="));
+      EXPECT_THAT(str, ::testing::HasSubstr(".filter_size="));
+      EXPECT_THAT(str, ::testing::HasSubstr(".key_count="));
+      EXPECT_THAT(str, ::testing::HasSubstr(".hash_count="));
+      EXPECT_THAT(str, ::testing::HasSubstr(".bits_per_key="));
+      EXPECT_THAT(str, ::testing::HasSubstr(".false_positive_rate="));
+    }
+  }
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST(BloomFilterTest, SequentialBuild)
+{
+  using AlignedUnit = std::aligned_storage_t<64, 64>;
+
+  const std::vector<std::string> items = {"alpha", "bravo", "charlie", "delta", "echo"};
+
+  auto config = llfs::BloomFilterConfig::from(llfs::BloomFilterLayout::kFlat,
+                                               llfs::ItemCount{items.size()},
+                                               llfs::RealBitCount{10.0});
+
+  std::unique_ptr<AlignedUnit[]> memory{new AlignedUnit[config.word_count() + 1]};
+  auto* filter = reinterpret_cast<PackedBloomFilter*>(memory.get());
+  filter->initialize(config);
+
+  parallel_build_bloom_filter(
+      WorkerPool::null_pool(), items.begin(), items.end(),
+      [](const std::string& s) -> std::string_view {
+        return s;
+      },
+      filter);
+
+  for (const std::string& s : items) {
+    EXPECT_TRUE(filter->might_contain(std::string_view{s})) << "missing: " << s;
+  }
+
+  // packed_sizeof / packed_sizeof_bloom_filter
+  //
+  const usize expected_size = sizeof(PackedBloomFilter) + sizeof(llfs::little_u64) * filter->word_count();
+
+  EXPECT_EQ(llfs::packed_sizeof(*filter), expected_size);
+  EXPECT_EQ(llfs::packed_sizeof_bloom_filter(config), expected_size);
+  EXPECT_EQ(llfs::packed_sizeof(*filter), llfs::packed_sizeof_bloom_filter(config));
+
+  // filter_data_end / get_words / dump
+  //
+  EXPECT_EQ(filter->filter_data_end(), static_cast<const void*>(&filter->words[filter->word_count()]));
+  EXPECT_EQ(filter->get_words().size(), filter->word_count());
+
+  std::ostringstream dump_oss;
+  dump_oss << filter->dump();
+  EXPECT_FALSE(dump_oss.str().empty());
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST(BloomFilterQueryTest, Operators)
+{
+  llfs::BloomFilterQuery<std::string_view> a{"hello"};
+  llfs::BloomFilterQuery<std::string_view> b{"hello"};
+  llfs::BloomFilterQuery<std::string_view> c{"world"};
+
+  EXPECT_TRUE(a == b);
+  EXPECT_FALSE(a != b);
+
+  EXPECT_FALSE(a == c);
+  EXPECT_TRUE(a != c);
+
+  std::ostringstream oss;
+  oss << a;
+  const std::string str = oss.str();
+
+  EXPECT_THAT(str, ::testing::HasSubstr("BloomFilterQuery{"));
+  EXPECT_THAT(str, ::testing::HasSubstr(".key="));
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST(BloomFilterDeathTest, WordIndexFromHashOutOfBounds)
+{
+  using AlignedUnit = std::aligned_storage_t<64, 64>;
+
+  auto config = llfs::BloomFilterConfig::from(llfs::BloomFilterLayout::kFlat,
+                                               llfs::ItemCount{100},
+                                               llfs::RealBitCount{10.0});
+
+  std::unique_ptr<AlignedUnit[]> memory{new AlignedUnit[config.word_count() + 1]};
+  auto* filter = reinterpret_cast<PackedBloomFilter*>(memory.get());
+  filter->initialize(config);
+
+  filter->word_count_pre_mul_shift_ = 0;
+  filter->word_count_post_mul_shift_ = 0;
+
+  EXPECT_DEATH(filter->word_index_from_hash(~u64{0}), "Assertion failed:.*ans.*<.*word_count");
+}
+
+//==#==========+==+=+=++=+++++++++++-+-+--+----- --- -- -  -  -   -
+//
+TEST(BloomFilterDeathTest, BlockIndexFromHashOutOfBounds)
+{
+  using AlignedUnit = std::aligned_storage_t<64, 64>;
+
+  auto config = llfs::BloomFilterConfig::from(llfs::BloomFilterLayout::kBlocked512,
+                                               llfs::ItemCount{100},
+                                               llfs::RealBitCount{10.0});
+
+  std::unique_ptr<AlignedUnit[]> memory{new AlignedUnit[config.word_count() + 1]};
+  auto* filter = reinterpret_cast<PackedBloomFilter*>(memory.get());
+  filter->initialize(config);
+
+  filter->block_count_pre_mul_shift_ = 0;
+  filter->block_count_post_mul_shift_ = 0;
+
+  EXPECT_DEATH(filter->block_index_from_hash(~u64{0}), "Assertion failed:.*ans.*<.*block_count");
+}
+
 }  // namespace

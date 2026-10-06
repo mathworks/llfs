@@ -17,7 +17,6 @@
 #include <llfs/page_id.hpp>
 #include <llfs/page_layout.hpp>
 #include <llfs/seq.hpp>
-#include <llfs/stable_string_store.hpp>
 #include <llfs/user_data.hpp>
 
 #include <batteries/async/mutex.hpp>

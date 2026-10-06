@@ -125,15 +125,7 @@ LLFS_DefineLibrary(llfs ./llfs ${LLFS_Deps})
 
 #=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
 
-file(GLOB llfs_cli_Sources
-  ./llfs_cli/*.cpp
-  ./llfs_cli/*/*.cpp
-  ./llfs_cli/*/*/*.cpp
-  )
-
-add_executable(llfs_cli ${llfs_cli_Sources})
-
-target_link_libraries(llfs_cli
+target_link_libraries(
                       llfs
                       batteries::batteries
                       Boost::context
@@ -143,27 +135,8 @@ target_link_libraries(llfs_cli
                       dl
                       stdc++fs)
 
-set_target_properties(llfs_cli PROPERTIES OUTPUT_NAME "llfs")
-
-# Default packaging instructions for the library.
-#
-install(TARGETS llfs_cli DESTINATION "."
-  RUNTIME DESTINATION bin
-  ARCHIVE DESTINATION lib
-  LIBRARY DESTINATION lib
-  )
-
-LLFS_CollectHeaders(llfs_cli ./llfs_cli)
 
 #=#=#==#==#===============+=+=+=+=++=++++++++++++++-++-+--+-+----+---------------
-
-file(GLOB llfs_fuse_Sources
-  ./llfs_fuse/*.cpp
-  ./llfs_fuse/*/*.cpp
-  ./llfs_fuse/*/*/*.cpp
-  )
-
-add_executable(llfs_fuse ${llfs_fuse_Sources})
 
 set(LLFS_TestDeps
   llfs
@@ -181,4 +154,3 @@ if (LINUX)
   set(LLFS_TestDeps ${LLFS_TestDeps} libfuse::libfuse)
 endif()
 
-target_link_libraries(llfs_fuse ${LLFS_TestDeps})
